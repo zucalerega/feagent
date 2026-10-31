@@ -37,6 +37,12 @@ def image_block(path) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}}
 
 
+# Seconds before a structured call gives up. The --deep roles are on the generation's critical path
+# and their answers are a few thousand tokens, so a stalled call should fail fast (the loop then
+# skips that one update) rather than hold the whole generation for 10 minutes.
+TIMEOUT = {"teacher": 420, "reflect": 240, "organizer": 240}   # teacher: Opus, high effort, up to 16k tokens
+
+
 def _cached_system(text: str) -> list[dict]:
     # The system prompt (base instructions + playbook) is identical for every run in a
     # generation, so mark it for prompt caching: later calls read it at ~10% of the price.
@@ -89,8 +95,8 @@ class LLM:
                 messages=[{"role": "user", "content": user}],
                 output_config={"format": fmt, "effort": EFFORT[role]},
                 # An explicit timeout: without one the SDK refuses any non-streaming call whose
-                # max_tokens could take over 10 minutes (the teacher's 32000 does), before sending.
-                timeout=600,
+                # max_tokens could take over 10 minutes, before sending.
+                timeout=TIMEOUT.get(role, 600),
             )
             records.append(usage_record(role, resp.model, resp.usage))
             text = "".join(b.text for b in resp.content if b.type == "text")
@@ -99,3 +105,24 @@ class LLM:
             except pydantic.ValidationError:
                 continue  # truncated (max_tokens), refused, or malformed: try once more
         return None, records
+
+    def warm_cache(self, role: str, system: str, user: list[dict], schema: type[pydantic.BaseModel],
+                   records: list | None = None) -> None:
+        """Write the prompt cache for calls that will share this system prompt, schema and the start
+        of `user` (up to its block marked cache_control), by sending them with max_tokens=1. Parallel
+        calls cannot read a cache that is still being written, so the deep teacher sends this first
+        and then all its per-agent calls at once: they read the long shared prefix at ~5% of the
+        price. The 1-token answer is thrown away. A failure only costs the cache, so it is reported
+        and swallowed."""
+        import anthropic
+        try:
+            fmt = {"type": "json_schema", "schema": anthropic.transform_schema(schema.model_json_schema())}
+            resp = self.client.messages.create(
+                model=MODELS[role], max_tokens=1, system=_cached_system(system),
+                messages=[{"role": "user", "content": user}],
+                output_config={"format": fmt, "effort": EFFORT[role]}, timeout=120)
+        except Exception as e:      # noqa: BLE001
+            print(f"  warm_cache({role}) failed, calls go uncached: {e}")
+            return
+        if records is not None:
+            records.append(usage_record(role, resp.model, resp.usage))

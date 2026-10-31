@@ -1,12 +1,15 @@
-"""The deep teacher (--deep): one expert review of EVERY run on a task, from everything they did.
+"""The deep teacher (--deep): an expert review of EVERY run on a task, from everything they did.
 
-Where ace/diagnoser.py wrote about one generic sentence per agent, this teacher sees, for each run:
-its numbers and rank, its setup, its mesh request, where its error is (hotspots, a coarse grid over
-the WHOLE mesh, every check point), its reasoning, the notes it had, and pictures of its mesh, its
-error and its stress (ace/run_report.py builds all of that). In one structured call it compares the
-runs side by side, checks every setup against the problem statement, and writes for each agent a
-diagnosis, 8-15 concrete notes and an exact next mesh call, plus the best idea of every agent (so
-the others can copy it) and shared lessons. ace/organizer.py then files the notes into memory.
+For each run the teacher sees its numbers and rank, setup, mesh request, where its error is
+(hotspots, a coarse grid over the WHOLE mesh, every check point), its full reasoning and tool calls,
+the notes it had, pictures of its mesh, error and stress (ace/run_report.py), the disagreement map
+across runs (ace.run_report.disagreement_map) and each agent's own previous run.
+
+To keep a generation fast, the review is split into parallel calls that share one cached prefix
+(everything above): one call per agent (a step-by-step critique, notes, the next mesh call, a check
+of what it promised last time) and one cross-run call (summary, setup warnings, contested regions,
+highlights, shared lessons). teach() merges them into one TeacherFeedback. ace/organizer.py then
+files the notes into memory.
 
 The schema below (NoteItem, MeshCall) is shared with ace/self_reflect.py and ace/organizer.py.
 """
@@ -14,6 +17,7 @@ The schema below (NoteItem, MeshCall) is shared with ace/self_reflect.py and ace
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -39,9 +43,10 @@ except ImportError:
 
 Kind = Literal["fix", "idea", "keep", "avoid", "highlight"]
 
-MAX_IMAGES = 12          # images per teacher call: mesh + error for every run, stress while within this
+MAX_IMAGES = 20          # images in the shared prefix: mesh + error for every run, stress while within this
 REPORT_CHARS = 6000      # report_text per run
-TRACE_CHARS = 3000       # reasoning excerpt per run
+TRACE_CHARS = 14000      # reasoning and tool calls per run
+THOUGHT_CHARS = 1500     # one thought (or said text) in a trace
 NOTES_CHARS = 3000       # the notes a run had, per run
 
 
@@ -49,6 +54,8 @@ NOTES_CHARS = 3000       # the notes a run had, per run
 
 
 class NoteItem(BaseModel):
+    task: str = Field(default="general", description='the task id this note is about (e.g. "nafems_le1"), '
+                                                      'or "general" if it applies to any task')
     section: Section
     content: str = Field(description="one specific, actionable note (<= 60 words): WHERE (group, point or "
                                      "region), WHAT (size, order, refinement, setup change) and the EXPECTED "
@@ -71,14 +78,32 @@ class MeshCall(BaseModel):
     refinements: list[Refinement] = Field(default_factory=list)
 
 
+class StepCritique(BaseModel):
+    step: str = Field(description='which step, e.g. "mesh call 2" or "solve 1 setup" or "choice of order"')
+    what_it_did: str
+    verdict: Literal["good", "mistake", "missed_opportunity"]
+    correction: str = Field(description="for a mistake or missed opportunity: the named, concrete correction "
+                                        "(what to do instead, with numbers); for good: why to keep it")
+
+
+class PromiseCheck(BaseModel):
+    item: str = Field(description="what the agent promised or was told to do after its previous run")
+    status: Literal["done", "partly", "not_done", "unclear"]
+    comment: str = Field(description="evidence from this run; say REPEATED MISTAKE if it repeated one")
+
+
 class AgentFeedback(BaseModel):
     agent: str = Field(description='the agent, e.g. "a3" (the end of its run_id)')
     run_id: str
     diagnosis: str = Field(description="what happened and WHY, citing regions/groups/numbers from its report")
+    step_critique: list[StepCritique] = Field(default_factory=list,
+                                              description="every meaningful step of the run, in order")
+    promised_items_check: list[PromiseCheck] = Field(default_factory=list,
+                                                     description="each item from its previous run's plan/feedback")
     strengths: list[str] = Field(default_factory=list)
     mistakes: list[str] = Field(default_factory=list)
     next_mesh_call: MeshCall = Field(description="the exact mesh call that should beat this run's score next time")
-    notes: list[NoteItem] = Field(description="8-15 agent-specific, actionable notes")
+    notes: list[NoteItem] = Field(description="8-15 agent-specific, actionable notes, each tagged with its task")
 
 
 class Highlight(BaseModel):
@@ -95,18 +120,31 @@ class BulletRating(BaseModel):
     why: str
 
 
-class TeacherFeedback(BaseModel):
-    task: str
+class ContestedRegion(BaseModel):
+    region: str = Field(description="the region of the disagreement map (and the nearest named group)")
+    why_contested: str = Field(description="why the runs differ there (mesh size, order, setup, a singularity)")
+    which_agents_differ: list[str] = Field(default_factory=list)
+    what_to_do: str = Field(description="concrete: size/order/radius there, or the setup check to make")
+
+
+class CrossRunFeedback(BaseModel):
+    """The cross-run call's output: everything in TeacherFeedback except per_agent."""
     task_summary: str = Field(description="what separates the best runs from the worst on this task")
     setup_warnings: list[str] = Field(default_factory=list,
                                       description="every setup that differs from the problem statement, by run_id")
+    contested_regions: list[ContestedRegion] = Field(default_factory=list,
+                                                     description="the most contested regions, most contested first")
     highlights: list[Highlight] = Field(default_factory=list,
                                         description="the best idea of every agent where anything was good, "
                                                     "plus the best ideas overall")
-    per_agent: list[AgentFeedback] = Field(description="one per run")
     shared_lessons: list[NoteItem] = Field(description="6-12 lessons for every agent")
     bullet_ratings: list[BulletRating] = Field(default_factory=list,
                                                description="for playbook bullets the runs cited (optional)")
+
+
+class TeacherFeedback(CrossRunFeedback):
+    task: str
+    per_agent: list[AgentFeedback] = Field(description="one per run")
 
 
 # --------------------------------------------------------------------------- shared helpers
@@ -148,11 +186,12 @@ def trace_excerpt(run: dict, max_chars: int = TRACE_CHARS) -> str:
     for t in run.get("trace") or []:
         kind = t.get("type")
         if kind in ("text", "thinking"):
-            lines.append(f"  [{'thought' if kind == 'thinking' else 'said'}] {_short(t.get('text', ''), 350)}")
-        elif kind == "tool_call":
+            lines.append(f"  [{'thought' if kind == 'thinking' else 'said'}] "
+                         f"{_short(t.get('text', ''), THOUGHT_CHARS)}")
+        elif kind == "tool_call":                       # full arguments: the setup and mesh are the decisions
             args = {k: v for k, v in (t.get("input") or {}).items() if k != "using"}
             used = (t.get("input") or {}).get("using") or []
-            lines.append(f"  -> {t.get('name')}({_short(args, 600)})" + (f" using {used}" if used else ""))
+            lines.append(f"  -> {t.get('name')}({json.dumps(args, default=str)})" + (f" using {used}" if used else ""))
         elif kind == "tool_result":
             out = t.get("result") or {}
             if t.get("name") == "mesh":
@@ -164,7 +203,7 @@ def trace_excerpt(run: dict, max_chars: int = TRACE_CHARS) -> str:
             else:
                 keep = tuple(out) if isinstance(out, dict) else ()
             brief = {k: out[k] for k in keep if isinstance(out, dict) and k in out}
-            lines.append(f"  <- {t.get('name')}: {_short(brief or out, 300)}")
+            lines.append(f"  <- {t.get('name')}: {_short(brief or out, 400)}")
     text = "\n".join(lines)
     if len(text) > max_chars:                            # keep the start and the end (the decisions)
         half = max_chars // 2
@@ -194,9 +233,9 @@ def _task_statement(task: str) -> str:
         return f"Problem id: {task} (statement unavailable: {e})"
 
 
-def prev_summary(prev: dict | None, max_chars: int = 3000) -> str:
-    """The previous generation's feedback on this task, short: what was said and what each agent was
-    told to try, so the teacher can check whether the advice was followed and whether it worked."""
+def prev_summary(prev: dict | None, max_chars: int = 2000) -> str:
+    """The previous generation's feedback on this task, short (it mostly concerns OTHER agents: the
+    agents are re-split each generation; each agent's own history is in continuity_text)."""
     if not prev:
         return "(none: this is the first generation with deep feedback on this task)"
     lines = [f"Summary: {prev.get('task_summary', '')}"]
@@ -211,70 +250,102 @@ def prev_summary(prev: dict | None, max_chars: int = 3000) -> str:
 # --------------------------------------------------------------------------- the prompt
 
 
+# For the generator's context (ace/process_brief.deep_context): the closing block after the
+# teacher's feedback, so every item is answered before the agent meshes.
+BEFORE_YOU_MESH = (
+    "Before you mesh: for EACH item above (every step-critique correction, every mistake, every setup "
+    "warning, the suggested mesh call, every contested region) write one line: what you will do about it, "
+    "and answer 'could my solution fail in a way that makes the teacher tell me this again?' If yes, change "
+    "your plan until the answer is no. Check your setup against every setup item before your first solve. "
+    "Then follow your plan.")
+
+
 SYSTEM = f"""\
 You are the TEACHER: an expert in finite element analysis and adaptive meshing, mentoring a class of
-FEA meshing agents. You review every run on one task in a single pass and write feedback deep and
-concrete enough that each agent can do clearly better next generation. Your feedback is the main way
-the agents learn, so be generous with specific, evidence-based detail.
+FEA meshing agents. You see every run on one task: results, full reasoning and every tool call. Your
+feedback is the main way the agents learn. Each agent will try again and the ONLY difference is the
+context you write: write it so it cannot repeat any of its mistakes and does much, much better. Every
+mistake gets a named, concrete correction.
 
 {PROCESS_BRIEF}
 
 WHAT EACH AGENT DID. It inspected the geometry, called mesh(h, order, refinements) (refinements: an
 element size `size` at a named `group` or at a `point`, growing linearly back to h over `radius`),
-called solve(setup) at most {MAX_SOLVES} times, and submitted one solve. You get, for each run: its
-numbers and rank; its submitted setup; its mesh request and mesh statistics; an error map (hotspots
-of the stress error with their share of the error energy, nearest named group and local element
-size); a REGION GRID over the whole part (per cell: element count, mean element size, share of the
-error energy, max local error), which shows where its elements and its error are everywhere; every
-check point ({PROBE_DISCLOSED} disclosed to the agent, {PROBE_POINTS - PROBE_DISCLOSED} hidden; you see all) with its error; its
-reasoning and tool calls; the notes it had; and images: its mesh (element edges, named groups and
-check points marked), its error (log error-energy density, top hotspots numbered) and, when they
-fit, its von Mises stress next to the reference on one colour scale.
+called solve(setup) at most {MAX_SOLVES} times, and submitted one solve. For each run you get: its
+numbers and rank; its submitted setup; its mesh request and statistics; an error map (hotspots with
+their share of the error energy, nearest named group, local element size); a REGION GRID over the
+whole part (per cell: element count, mean size, share of error energy, max local error); every check
+point ({PROBE_DISCLOSED} disclosed to the agent, {PROBE_POINTS - PROBE_DISCLOSED} hidden; you see all) with its error; its full reasoning
+and tool calls; the notes it had; images of its mesh, its error (log error-energy density, hotspots
+numbered) and, when they fit, its von Mises stress next to the reference. You also get a DISAGREEMENT
+MAP (per region of a common grid: spread of the runs' von Mises = std/mean across runs, consensus =
+median, outlier agents; it needs no reference) and each agent's OWN previous run with what it was
+told and what it promised.
 
-SCORING, in short: error e = max(field energy-norm error, RMS check-point error); gain g =
-automesher error / e; A = (g/2)^2 below 2x the automesher, g/2 above; score = A / (DOFs / automesher
-DOFs), plus up to {BEST_BONUS:g} for the smallest error on hidden check points (a tie pays nobody). So the
-winning mesh puts small elements exactly where the error energy is and stays coarse elsewhere.
+HIDDEN CHECK POINTS ARE SECRET. Never write a hidden point's id (H<i>), coordinates or exact location
+in anything you output: agents read all of it. You may use them to judge runs; speak of them only in
+aggregate ("hidden-point RMS error 4%") or by region/group ("near the hole edge").
 
-YOUR PROCEDURE
-1. Compare all runs side by side first: scores, errors, DOFs, mesh requests (h, order, every
-   refinement), region grids and images. Find what separates the best from the worst: element size
-   in the high-error regions, order, wasted DOFs in low-error regions, setup mistakes.
-2. Check the setup of EVERY run against the problem statement: formulation, thickness, material
-   (E, nu, alpha), every support and load (group, components, sign, magnitude, units) and any
-   temperature field. Translate coordinates where needed: e.g. in an axisymmetric model x = r and
-   y = z, so a 3D temperature sqrt(x^2+y^2)+z becomes x + y. Report every difference in
-   setup_warnings with the run_id and the correct form. A wrong setup is the first thing to fix.
-3. For each run, write per_agent feedback:
-   - diagnosis: where its error is and why (which group or region of the grid, the element size it
-     had there vs the size needed, what share of the error energy sits there), and how its DOFs were
-     spent. Cite the numbers.
-   - strengths and mistakes: short, specific.
-   - next_mesh_call: the exact mesh call (h, order, refinements with group or point, size, radius)
-     you expect to beat its current score. Size it from the evidence: take the local size in the
-     worst region and the error share there; with order p the error energy falls roughly like
-     h^(2p) where the field is smooth. Keep the total DOFs in check (DOFs ~ volume / h^dim).
-   - 8-15 notes. Every note must be concrete: a location (group name, point coordinates or grid
-     region) + a change (size, order, radius, setup fix) + the expected effect, e.g. "Refine
-     edge_inner to size 0.02 with radius 0.15 (it holds 45% of the error energy at local h 0.08);
-     expect the field error to roughly halve." Never write generic notes like "refine more" or
-     "check the setup". Mix kinds: fixes for its mistakes, keeps for what worked, avoids, ideas to
-     test, and highlights of peers' good ideas adapted to it.
-   - Push it to change something meaningful next generation, and to try something DIFFERENT from
-     its peers: if everyone converges on one mesh, ties on the hidden points pay nothing. Tell
-     each agent which experiment to spend one of its solves on.
-4. highlights: for every agent that did anything well, its best idea: what, why it works, and how
-   the others can copy or adapt it (concrete parameters). Include the best ideas overall.
-5. shared_lessons: 6-12 notes for every agent, general enough to reuse on other parts but still
-   concrete (what to look for, what to do, by how much).
-6. bullet_ratings (optional): for playbook bullets the runs cited, whether each was useful,
-   harmful or not useful here, and why.
+SCORING AND SIZING. e = max(field energy-norm error, RMS check-point error); gain g = automesher
+error / e; c = DOFs / automesher DOFs; score = (g/2)^2 / c below 2x the automesher (g < 2) and
+g / (2c) above, plus up to {BEST_BONUS:g} for the uniquely smallest hidden-point error (a tie pays nobody).
+Consequences: first name the BINDING term (field error or check-point error): improving the other one
+does nothing. With order 2 in 2D the energy error falls ~ N^-1 (N = DOFs) on smooth fields (in 3D
+~ N^-2/3), slower near singular, re-entrant or clamped corners, so refine LOCALLY there. Below the
+target, uniform refinement still raises the score (g^2 grows faster than c); above it, uniform
+refinement only breaks even, so only moving DOFs to where the error energy is pays. DOFs ~ volume /
+h^dim times a factor for order 2. When you estimate an effect, say it is an estimate.
 
-Use the previous generation's feedback for continuity: say whether an agent followed its advice and
-whether it worked, and adjust. Never invent numbers you were not given; when you estimate (e.g. the
-effect of a size change), say it is an estimate. Write densely: no filler, every sentence carries
-information. Work out the reasoning first, then write the result.
+SETUP CHECKING (generic). Translate EVERY expression in the problem statement (geometry, thickness,
+material E/nu/alpha, each support and load: group, components, sign, magnitude, units, any
+temperature or body-force field) into the model's own coordinates (e.g. in an axisymmetric model
+x = r, y = z; in a symmetry model only part of the load acts), then check each run's setup against
+it term by term. A setup error shows as error spread over the WHOLE part rather than concentrated at
+features; runs with similar meshes but very different errors, or with different setups, are a strong
+signal. A wrong setup is the first thing to fix.
+
+CONTESTED REGIONS. From the disagreement map find the regions where runs disagree most, explain WHY
+(element size or order there, a singularity, a setup difference), name the general traits of such
+hard regions (re-entrant corners, load/support edges, holes, thin sections, material or load jumps)
+and direct agents there with a concrete size/order/radius.
+
+CONTINUITY. For each agent check every item it promised or was told after its previous run (the
+suggested mesh call, its own plan): done, partly, not done. Flag every REPEATED mistake loudly.
+
+STYLE. Write densely: no filler, every sentence carries information and numbers from the inputs.
+Every note: WHERE (group, point or region) + WHAT (size, order, radius, setup change) + EXPECTED
+effect. Never generic ("refine more", "check the setup"). Tag each note with its task id, or "general"
+when it transfers to any part. Push each agent to try something DIFFERENT from its peers on purpose
+(ties on hidden points pay nothing) and say which experiment to spend one solve on. Never invent
+numbers you were not given. Work out the reasoning first, then write the result.
 """
+
+AGENT_JOB = """\
+YOUR JOB NOW: the AgentFeedback for run {rid} (agent {agent}) only. Judge EVERYTHING it did.
+- diagnosis: where its error is and why (group/region, its local size there vs what is needed, the
+  share of error energy there, the binding term), and how its DOFs were spent. Cite numbers.
+- step_critique: every meaningful step in order (each mesh call, each solve and its setup, the choice
+  of order and sizes, what it read or ignored, the submit): what it did, verdict good / mistake /
+  missed_opportunity, and the named concrete correction.
+- promised_items_check: each item from its previous run (see CONTINUITY for {agent}; empty if none).
+- strengths, mistakes: short and specific.
+- next_mesh_call: the exact call (h, order, refinements) you expect to beat its score, sized from the
+  evidence (see SCORING AND SIZING).
+- notes: 8-15, mixing fix / keep / avoid / idea / highlight (a peer's idea adapted to it), each tagged
+  with task "{task}" or "general".
+No hidden-point ids or coordinates anywhere."""
+
+CROSS_JOB = """\
+YOUR JOB NOW: the cross-run review of task {task} (not per-agent feedback; that is written separately).
+- task_summary: what separates the best runs from the worst.
+- setup_warnings: every setup that differs from the statement, by run_id, with the correct form.
+- contested_regions: the most contested regions of the disagreement map (most first), why the runs
+  differ there, which agents differ, what to do; then name the general traits of hard regions.
+- highlights: the best idea of every agent that did anything well (what, why it works, how to copy it
+  with concrete parameters), plus the best ideas overall.
+- shared_lessons: 6-12 lessons for every agent, concrete, tagged with task "{task}" or "general".
+- bullet_ratings (optional): playbook bullets the runs cited: useful / harmful / not_useful, why.
+No hidden-point ids or coordinates anywhere."""
 
 
 def _run_block(run: dict, report: dict, notes_text: str) -> str:
@@ -284,19 +355,54 @@ def _run_block(run: dict, report: dict, notes_text: str) -> str:
             f"--- report ---\n{report_as_text(report, REPORT_CHARS)}\n"
             f"--- notes it had (playbook + own notes) ---\n{(notes_text or '(none)')[:NOTES_CHARS]}\n"
             f"--- bullets it cited --- {', '.join(cited) or '(none)'}\n"
-            f"--- its steps ---\n{trace_excerpt(run, TRACE_CHARS)}\n")
+            f"--- its steps (reasoning and every tool call) ---\n{trace_excerpt(run, TRACE_CHARS)}\n")
 
 
-def build_user(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict[str, str],
-               shared_text: str, prev_feedback: dict | None) -> list[dict]:
-    """The teacher's user message: problem, ranking, every run in full, then the images."""
+def disagreement_text(dmap: dict | None, max_cells: int = 30) -> str:
+    """The disagreement map (ace.run_report.disagreement_map) as lines, most contested cells first."""
+    if not dmap:
+        return "(not available)"
+    try:
+        grid = sorted(dmap.get("grid") or [], key=lambda c: -(c.get("spread") or 0))
+        lines = ["region | centre | spread (std/mean of von Mises across runs) | consensus von Mises | outliers"]
+        lines += [f"{c.get('region')} | {_short(c.get('centre'), 60)} | {_fmt(c.get('spread'))} | "
+                  f"{_fmt(c.get('consensus_vm'))} | {', '.join(map(str, c.get('outliers') or [])) or '-'}"
+                  for c in grid[:max_cells]]
+        if len(grid) > max_cells:
+            lines.append(f"... {len(grid) - max_cells} less contested cells omitted")
+        if dmap.get("most_contested"):
+            lines.append(f"most contested: {_short(dmap['most_contested'], 1500)}")
+        return "\n".join(lines)
+    except Exception:                    # noqa: BLE001  (a malformed map must not stop teaching)
+        return _short(dmap, 4000)
+
+
+def continuity_text(last_by_agent: dict | None, agents: list[str]) -> str:
+    """Each agent's OWN previous run (any task) and what it was told / promised after it."""
+    if not last_by_agent:
+        return "(none: no agent has a previous deep run)"
+    out = []
+    for a in agents:
+        last = last_by_agent.get(a)
+        if not last:
+            out.append(f"{a}: (no previous run)")
+            continue
+        out.append(f"{a}: " + "; ".join(f"{k}: {_short(v, 1200)}" for k, v in last.items() if v not in (None, "", [])))
+    return "\n".join(out)
+
+
+def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict[str, str],
+                 shared_text: str, prev_feedback: dict | None, disagreement: dict | None,
+                 last_by_agent: dict | None) -> tuple[list[dict], list[tuple[dict, dict]]]:
+    """The shared user-message prefix of every teacher call (its last block marked for caching), and
+    the (run, report) pairs best first."""
     by_id = {r["run_id"]: r for r in reports}
     pairs = [(run, by_id.get(run["run_id"], {"run_id": run["run_id"], "error": "no report"})) for run in runs]
     pairs.sort(key=lambda p: -(_numbers(p[1], p[0])["score"] or 0))      # best first
 
     head = [f"TASK {task}\n--- problem statement as the agents saw it ---\n{_task_statement(task)}\n",
             f"--- shared playbook (all agents saw it) ---\n{shared_text or '(empty)'}\n",
-            f"--- your feedback on this task last generation ---\n{prev_summary(prev_feedback)}\n",
+            f"--- last generation's review of this task (mostly other agents) ---\n{prev_summary(prev_feedback)}\n",
             "--- ranking (best first) ---\nrun_id | agent | score | error | probe_error | DOFs | gain | bonus"]
     for run, rep in pairs:
         n = _numbers(rep, run)
@@ -305,6 +411,10 @@ def build_user(task: str, reports: list[dict], runs: list[dict], notes_by_agent:
     blocks = [text_block("\n".join(head))]
     blocks += [text_block(_run_block(run, rep, notes_by_agent.get(agent_name(run["run_id"]), "")))
                for run, rep in pairs]
+    blocks.append(text_block(f"\n=== DISAGREEMENT MAP (across these runs) ===\n{disagreement_text(disagreement)}\n"))
+    agents = [agent_name(run["run_id"]) for run, _ in pairs]
+    blocks.append(text_block(f"\n=== CONTINUITY: each agent's own previous run and what it was told/promised ===\n"
+                             f"{continuity_text(last_by_agent, agents)}\n"))
 
     # Images: mesh + error of every run, then stress pictures while the total stays within MAX_IMAGES.
     chosen = [(run["run_id"], k, path) for run, rep in pairs for k, path in report_images(rep, ("mesh", "error"))]
@@ -320,19 +430,48 @@ def build_user(task: str, reports: list[dict], runs: list[dict], notes_by_agent:
         except OSError:
             continue                                   # a missing picture is not worth failing over
         blocks += [text_block(f"{rid}: {k}"), img]
-    blocks.append(text_block(f"\nWrite the TeacherFeedback for task {task}: one per_agent entry for each of "
-                             f"these runs: {', '.join(r['run_id'] for r, _ in pairs)}."))
-    return blocks
+    blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}   # end of the shared prefix
+    return blocks, pairs
 
 
 def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict[str, str], shared_text: str,
-          prev_feedback: dict | None, llm, records: list) -> TeacherFeedback | None:
-    """One teacher call for one task. None if the model's output did not validate twice."""
-    user = build_user(task, reports, runs, notes_by_agent, shared_text, prev_feedback)
-    fb, _ = llm.structured("teacher", SYSTEM, user, TeacherFeedback, records)
-    if fb is not None:
-        fb.task = task                                 # the caller's id, whatever the model wrote
-    return fb
+          prev_feedback: dict | None, llm, records: list, disagreement: dict | None = None,
+          last_by_agent: dict | None = None) -> TeacherFeedback | None:
+    """The teacher for one task: warm the cache with the shared prefix, then one call per run and one
+    cross-run call in parallel; merged. None if nothing validated."""
+    prefix, pairs = build_prefix(task, reports, runs, notes_by_agent, shared_text, prev_feedback,
+                                 disagreement, last_by_agent)
+    cross_user = prefix + [text_block(CROSS_JOB.format(task=task))]
+
+    def agent_user(rid: str) -> list[dict]:
+        return prefix + [text_block(f"FOR RUN {rid}\n" + AGENT_JOB.format(rid=rid, agent=agent_name(rid), task=task))]
+
+    def call(user, schema):
+        try:
+            return llm.structured("teacher", SYSTEM, user, schema, records)[0]
+        except Exception as e:           # noqa: BLE001  (one failed call must not lose the others)
+            print(f"  teacher {task}: a {schema.__name__} call failed: {e}")
+            return None
+
+    rids = [run["run_id"] for run, _ in pairs]
+    with ThreadPoolExecutor(max_workers=len(rids) + 1) as pool:
+        cross = pool.submit(call, cross_user, CrossRunFeedback)   # different schema: its own cache, start now
+        if len(rids) > 1:
+            llm.warm_cache("teacher", SYSTEM, agent_user(rids[0]), AgentFeedback, records)
+        per = [pool.submit(call, agent_user(rid), AgentFeedback) for rid in rids]
+        per_agent = [f.result() for f in per]
+        cross_fb = cross.result()
+
+    got = []
+    for rid, af in zip(rids, per_agent):
+        if af is not None:
+            af.run_id, af.agent = rid, agent_name(rid)   # the caller's ids, whatever the model wrote
+            got.append(af)
+    if not got and cross_fb is None:
+        return None
+    base = cross_fb.model_dump() if cross_fb is not None else {
+        "task_summary": "(the cross-run review failed this generation)", "shared_lessons": []}
+    return TeacherFeedback(task=task, per_agent=got, **base)
 
 
 assert config.SECTIONS.keys() == set(Section.__args__)   # NoteItem.section must match the playbook

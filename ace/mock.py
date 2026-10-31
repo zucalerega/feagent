@@ -164,7 +164,7 @@ class MockLLM:
                 for i in range(n)
             ]), rec
         text = user if isinstance(user, str) else "\n".join(b["text"] for b in user if b["type"] == "text")
-        if schema.__name__ in ("TeacherFeedback", "SelfReflection", "OrganizerOutput"):
+        if schema.__name__ in ("AgentFeedback", "CrossRunFeedback", "SelfReflection", "OrganizerOutput"):
             return getattr(self, "_" + schema.__name__)(text, schema), rec
         raise ValueError(f"mock has no canned answer for {schema}")
 
@@ -176,20 +176,31 @@ class MockLLM:
     def _note(section="meshing", kind="fix", content="mock: use quadratic (order 2) elements"):
         return {"section": section, "kind": kind, "content": content}
 
-    def _TeacherFeedback(self, text: str, schema):
+    def warm_cache(self, *args, **kwargs):
+        pass                                        # no cache to warm in mock mode
+
+    def _AgentFeedback(self, text: str, schema):
+        rid = re.search(r"^FOR RUN (\S+)", text, re.M).group(1)
         task = re.search(r"^TASK (\S+)", text, re.M).group(1)
-        run_ids = list(dict.fromkeys(re.findall(r"^=== RUN (\S+) ", text, re.M)))
         call = {"h": 0.1, "order": 2, "refinements": [{"group": None, "point": [0.0, 0.0], "size": 0.02,
                                                        "radius": 0.2}]}
-        per_agent = [{"agent": rid.rsplit("-", 1)[-1], "run_id": rid, "diagnosis": f"mock: {rid} error near the corner",
-                      "strengths": ["mock strength"], "mistakes": ["mock mistake"], "next_mesh_call": call,
-                      "notes": [self._note(content=f"mock teacher note {i} for {rid}: refine the hotspot to h/4, order 2")
-                                for i in range(8)]} for rid in run_ids]
         return schema.model_validate({
-            "task": task, "task_summary": "mock: the best run used quadratic elements", "setup_warnings": [],
+            "agent": rid.rsplit("-", 1)[-1], "run_id": rid, "diagnosis": f"mock: {rid} error near the corner",
+            "step_critique": [{"step": "mesh call 1", "what_it_did": "uniform mesh", "verdict": "mistake",
+                               "correction": "mock: refine the corner to h/4"}],
+            "promised_items_check": [], "strengths": ["mock strength"], "mistakes": ["mock mistake"],
+            "next_mesh_call": call,
+            "notes": [{**self._note(content=f"mock teacher note {i} for {rid}: refine the hotspot to h/4, order 2"),
+                       "task": task} for i in range(8)]})
+
+    def _CrossRunFeedback(self, text: str, schema):
+        run_ids = list(dict.fromkeys(re.findall(r"^=== RUN (\S+) ", text, re.M)))
+        return schema.model_validate({
+            "task_summary": "mock: the best run used quadratic elements", "setup_warnings": [],
+            "contested_regions": [{"region": "mock corner", "why_contested": "mock", "which_agents_differ": [],
+                                   "what_to_do": "mock: refine there"}],
             "highlights": [{"agent": rid.rsplit("-", 1)[-1], "run_id": rid, "what": "mock idea", "why_it_works": "mock",
                             "how_to_copy": "mock"} for rid in run_ids[:1]],
-            "per_agent": per_agent,
             "shared_lessons": [self._note(kind="idea", content=f"mock shared lesson {i}: order 2 near hotspots")
                                for i in range(6)],
             "bullet_ratings": [{"bullet_id": b, "rating": "useful", "why": "mock"}

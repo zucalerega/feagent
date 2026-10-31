@@ -17,11 +17,11 @@ MODELS = {
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
 MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000,
-              "teacher": 32000, "reflect": 8000, "organizer": 16000}
+              "teacher": 16000, "reflect": 8000, "organizer": 8000}   # teacher: one agent's feedback per call (~3k + thinking)
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
-EFFORT = {"generator": "medium", "reflector": "high", "diagnoser": "medium", "curator": "low",
-          "teacher": "medium", "reflect": "low", "organizer": "low"}
+EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
+          "teacher": "high", "reflect": "low", "organizer": "low"}
 
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
