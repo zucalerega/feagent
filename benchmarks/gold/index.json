@@ -1,0 +1,308 @@
+{
+ "sets": {
+  "abc_00000003_bc0": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "vm_mean",
+    "vm_max",
+    "u_mean_f18"
+   ],
+   "singular": [],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    4.5,
+    10.05,
+    80.78
+   ]
+  },
+  "abc_00000003_bc1": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "vm_mean",
+    "Rz_f23"
+   ],
+   "singular": [
+    "vm_max"
+   ],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    4.58,
+    10.44,
+    82.98
+   ]
+  },
+  "abc_00000003_bc2": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "strain_energy",
+    "u_max",
+    "vm_mean",
+    "u_mean_f3",
+    "u_mean_f16"
+   ],
+   "singular": [
+    "vm_max",
+    "Rx_f23",
+    "Ry_f23"
+   ],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    3.61,
+    9.31,
+    78.42
+   ]
+  },
+  "abc_00000003_bc3": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "strain_energy",
+    "u_max",
+    "vm_mean",
+    "Rx_f16"
+   ],
+   "singular": [
+    "vm_max",
+    "u_mean_f20",
+    "Rx_f3",
+    "Ry_f3",
+    "Ry_f16",
+    "Rz_f16"
+   ],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    4.26,
+    10.92,
+    73.42
+   ]
+  },
+  "abc_00000003_bc4": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "strain_energy",
+    "vm_mean",
+    "u_mean_f3"
+   ],
+   "singular": [
+    "u_max",
+    "vm_max"
+   ],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    4.83,
+    9.14,
+    74.53
+   ]
+  },
+  "abc_00000003_bc5": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "vm_mean"
+   ],
+   "singular": [
+    "vm_max"
+   ],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    3.6,
+    10.02,
+    80.02
+   ]
+  },
+  "abc_00000003_bc6": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "u_max",
+    "u_mean_f16"
+   ],
+   "singular": [
+    "vm_mean",
+    "vm_max"
+   ],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    3.57,
+    9.62,
+    68.26
+   ]
+  },
+  "abc_00000003_bc7": {
+   "part": "abc_00000003",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "strain_energy",
+    "vm_mean",
+    "u_mean_f23",
+    "u_mean_f16"
+   ],
+   "singular": [],
+   "dofs": [
+    22920,
+    146481,
+    1032318
+   ],
+   "seconds": [
+    3.89,
+    11.04,
+    85.47
+   ]
+  },
+  "abc_00000065_bc0": {
+   "part": "abc_00000065",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "strain_energy",
+    "u_max",
+    "vm_mean",
+    "u_mean_f7"
+   ],
+   "singular": [
+    "vm_max"
+   ],
+   "dofs": [
+    17283,
+    112839,
+    804333
+   ],
+   "seconds": [
+    3.99,
+    7.11,
+    71.85
+   ]
+  },
+  "abc_00000065_bc1": {
+   "part": "abc_00000065",
+   "archive": "goldgen-l2_0000",
+   "references": [
+    "u_max",
+    "vm_mean",
+    "u_mean_f13",
+    "Rx_f9",
+    "Rz_f9",
+    "Rx_f18",
+    "Rz_f18"
+   ],
+   "singular": [
+    "vm_max"
+   ],
+   "dofs": [
+    17283,
+    112839,
+    804333
+   ],
+   "seconds": [
+    1.46,
+    5.85,
+    48.87
+   ]
+  }
+ },
+ "parts": {
+  "abc_00000003": {
+   "source": "00000003_1ffb81a71e5b402e966b9341_step_002.step",
+   "faces": 25,
+   "meshes": {
+    "L0": {
+     "file": "_meshes/abc_00000003/L0.msh",
+     "h": 0.023700072077523015,
+     "cells": 3483,
+     "scheme": "curved-opt",
+     "min_sj": 0.1535946491952944,
+     "bytes": 802938,
+     "sha256": "5404dfcd2f51682790482cf4aa3b9751680a568e0da151c4dd1c810cb1ebe088",
+     "archive": "goldgen-l2_0000"
+    },
+    "L1": {
+     "file": "_meshes/abc_00000003/L1.msh",
+     "h": 0.011850036038761507,
+     "cells": 28020,
+     "scheme": "curved-opt",
+     "min_sj": 0.14654989675186156,
+     "bytes": 5549425,
+     "sha256": "7b06c194d8ea6b70198263a2492828dcc9a37456bd97e9fdbcfe3f01f5b4dc02",
+     "archive": "goldgen-l2_0000"
+    },
+    "L2": {
+     "file": "_meshes/abc_00000003/L2.msh",
+     "h": 0.005925018019380754,
+     "cells": 224341,
+     "scheme": "curved-local",
+     "min_sj": 0.07305347656451959,
+     "bytes": 42047392,
+     "sha256": "fec489b5e85781aaff0418f7f19bb091e417b10e5214fab18c35d066975a8a50",
+     "archive": "goldgen-l2_0000"
+    }
+   }
+  },
+  "abc_00000065": {
+   "source": "00000065_767e4372b5f94a88a7a17d90_step_006.step",
+   "faces": 55,
+   "meshes": {
+    "L0": {
+     "file": "_meshes/abc_00000065/L0.msh",
+     "h": 0.0237000732272305,
+     "cells": 2761,
+     "scheme": "curved-opt",
+     "min_sj": 0.1019842084500704,
+     "bytes": 641321,
+     "sha256": "908568db6dcb606576585c366557716a2f10b6bd4e32089611f588ba0c1ce7cb",
+     "archive": "goldgen-l2_0000"
+    },
+    "L1": {
+     "file": "_meshes/abc_00000065/L1.msh",
+     "h": 0.01185003661361525,
+     "cells": 22121,
+     "scheme": "curved-local",
+     "min_sj": 0.08633791286946164,
+     "bytes": 4332832,
+     "sha256": "e35aefb94e2d6d6882d7e552a245703db9a0655f0259403aa305311db12b4e8e",
+     "archive": "goldgen-l2_0000"
+    },
+    "L2": {
+     "file": "_meshes/abc_00000065/L2.msh",
+     "h": 0.005925018306807625,
+     "cells": 177011,
+     "scheme": "curved-opt",
+     "min_sj": 0.10788806420313395,
+     "bytes": 32693432,
+     "sha256": "18fbf59cd5d9927a30b73a3abc1682b2ef8ed1ca2030fa77c2e7020d254a2fb9",
+     "archive": "goldgen-l2_0000"
+    }
+   }
+  }
+ }
+}

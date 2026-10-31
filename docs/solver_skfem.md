@@ -33,7 +33,7 @@ Files: `feacore/solver/skfem_backend.py` (driver, physics, `SkfemResult`), `_skf
 | Mesh | gmsh 4.1 or 2.2, ASCII or binary; tri3 / tri6 / tet4 / tet10. 2D meshes in the xy-plane (z dropped) |
 | Geometry | quadratic mesh + order 2: isoparametric (curved cells). Order 1 always runs on the straight-sided corner mesh, so P1 on a tri6/tet10 file ignores the midside nodes (`info:` warning). Order 2 on a linear mesh gives straight-sided P2 |
 | Groups | by dimension: cells (mesh dim), facets (dim-1), edges (curves in 3D), vertices (points). An unknown name raises an error that lists every group with its kind and size |
-| Elasticity BCs | `fixed`, `displacement` (any subset of components; scalar, per-component list or expressions), `symmetry`, `pressure`, `traction`, `force`. Dirichlet types also accept point groups, curve groups (3D), or `point` = nearest solution node |
+| Elasticity BCs | `fixed`, `displacement` (any subset of components; scalar, per-component list or expressions), `symmetry`, `pressure`, `traction`, `force`. Dirichlet types also accept point groups, curve groups (3D), `point` = nearest solution node, and a `where` node filter |
 | Heat BCs | `temperature` (group or point; expression allowed), `flux` (into the body; expression allowed), `convection` (`h`, `T_inf`) |
 | Loads | elasticity: `body_force` (vector, expressions), `temperature` (thermal strain `alpha (T - T_ref)`, expression); heat: `source` (expression). Applied on a cell group or `"*"` |
 | Materials | multi-material `regions` (first matching region wins, as in `Case.material_for`; uncovered cells are an error) |
@@ -58,9 +58,10 @@ Files: `feacore/solver/skfem_backend.py` (driver, physics, `SkfemResult`), `_skf
   `2 pi r` (axisymmetric).
 - **symmetry**: zero normal displacement. The group must be a planar facet group normal to x, y or z;
   anything else is an error.
-- **reaction**: `sum over the group's DOFs of (K u - f)` for the component. This is the force the
-  support exerts on the body, in the same units as `force` (thickness or 360° included). If the group
-  has no Dirichlet constraint in that component, the value is ~0 and a warning is added. Heat
+- **reaction**: `sum over the group's constrained DOFs of (K u - f)` for the component. This is the
+  force the support exerts on the body, in the same units as `force` (thickness or 360° included).
+  With a `where`-filtered BC only the selected nodes count. If the group has no Dirichlet constraint
+  in that component, the value is 0 and a warning is added. Heat
   (`component` 0): the heat flow into the body through the Dirichlet group.
 - **strain_energy**: `0.5 u.K.u` with the full K (thickness or `2 pi r` included). With thermal
   loads this is the energy of the total strain, not the elastic strain, as the case schema states.
@@ -74,6 +75,13 @@ Files: `feacore/solver/skfem_backend.py` (driver, physics, `SkfemResult`), `_skf
   domain (curved boundaries approximated by chords, round-off on edges and vertices) are evaluated
   in the nearest cell by polynomial extension. Points more than 1% of the bounding-box diagonal away
   raise `ValueError`.
+- **where** (on `fixed` / `displacement` / `temperature` BCs with a group, including
+  lower-dimensional groups): only the group's solution nodes (vertices, plus midside nodes for P2)
+  where the expression is nonzero and finite are constrained. It is evaluated at the node
+  coordinates (axisymmetric x = r, y = z). Example: `"where": "abs(z) < 1e-6"` on the outer face is
+  the face's z = 0 line, with no edge group needed. If it selects no node, a `CaseError` names the
+  BC. For NAFEMS LE10, outer face + `where` gives exactly the same constrained DOFs and solution as
+  the `line_outer_midplane` edge group.
 - **point BCs**: the nearest node of the solution space. A warning is added if that node is more than
   1% of the diagonal away.
 - **Several Dirichlet BCs on one DOF**: the last one in the list wins, with a warning if the values

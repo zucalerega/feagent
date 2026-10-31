@@ -1,0 +1,90 @@
+{
+ "id": "verification/gravity_column",
+ "volume": 1250000.0,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -25.0000001,
+  -25.0000001,
+  -1e-07,
+  25.0000001,
+  25.0000001,
+  500.0000001
+ ],
+ "n_cad_faces": 6,
+ "qois": [
+  {
+   "id": "uz_top",
+   "kind": "point",
+   "field": "U",
+   "component": "z",
+   "point": [
+    0,
+    0,
+    500.0
+   ],
+   "reference": -0.004672619047619048,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "reference_type": "analytical",
+   "provenance": "uniaxial self-weight solution sigma_zz = -rho g (H - z) (exact with a frictionless base)",
+   "note": "exact uniaxial solution lets the base warp by nu rho g r^2 / 2E; the uz=0 floor suppresses that, shifting the top displacement by ~0.05 % (seen identically at every mesh size), well inside the 0.5 % tolerance",
+   "description": "vertical displacement of the top centre [0, 0, 500.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "szz_mid",
+   "kind": "point",
+   "field": "S",
+   "component": "zz",
+   "point": [
+    25.0,
+    0,
+    250.0
+   ],
+   "reference": -1.9625000000000004,
+   "tolerance": {
+    "rel": 0.01
+   },
+   "reference_type": "analytical",
+   "provenance": "uniaxial self-weight solution sigma_zz = -rho g (H - z) (exact with a frictionless base)",
+   "description": "axial stress at mid-height on a side face [25.0, 0, 250.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "reaction_z",
+   "kind": "reaction",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "component": "z",
+   "reference": 9812.500000000002,
+   "tolerance": {
+    "rel": 0.02
+   },
+   "gate": true,
+   "reference_type": "analytical",
+   "provenance": "weight = rho V g; ccx RF at base nodes also contains their O(h) share of the body force, hence the 2 % tolerance",
+   "description": "total vertical reaction at the base",
+   "weight": 1.0
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 1,
+  "reference_n_dof": 1392,
+  "reference_solver_cpu_s": 0.058071
+ }
+}

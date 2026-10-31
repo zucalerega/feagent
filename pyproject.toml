@@ -23,17 +23,21 @@ dependencies = [
 ui = ["fastapi", "uvicorn", "python-multipart"]
 gpu = ["nvmath-python", "cupy-cuda12x"]
 pardiso = ["pypardiso"]
+cfd = ["foamlib"]
+feabench = ["h5py"]   # code_aster MED meshes
 ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib", "streamlit", "plotly", "altair"]
 
 [project.scripts]
 feagent = "feagent.cli:main"
+feagent-mcp = "feagent.mcp_server:main"
+feabench = "feabench.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/feagent", "feacore", "ace"]
+packages = ["meshing-harness/src/feagent", "feacore", "feabench", "ace"]
 
 [dependency-groups]
 dev = [
@@ -44,5 +48,6 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "meshing-harness/tests"]
+pythonpath = ["meshing-harness/src", "."]
 markers = ["slow: longer convergence / 3D checks (deselect with -m 'not slow')"]

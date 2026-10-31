@@ -1,0 +1,195 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+#       MODELE AVEC 160 ELEMENTS DANS LE SECTEUR DE BASE
+#       ICI, LA ROTATION DE LA STRUCTURE N'EST PAS PRISE
+#       EN COMPTE.
+# VALIDATION INDEPENDANTE PAR SAMTECH (H.DRION)
+# CAS_TEST__: SDLV301A
+#################################################################
+#
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="ALARME"), DEBUG=_F(SDVERI="OUI"), IGNORE_ALARM="ALGORITH16_57")
+
+#
+MAT = DEFI_MATERIAU(ELAS=_F(RHO=7.8e03, NU=0.3, E=2.1e11))
+
+#
+MAYA = LIRE_MAILLAGE(FORMAT="MED", UNITE=20)
+
+#
+CHMAT = AFFE_MATERIAU(MAILLAGE=MAYA, AFFE=_F(TOUT="OUI", MATER=MAT))
+
+#
+ROUET = AFFE_MODELE(MAILLAGE=MAYA, AFFE=_F(TOUT="OUI", MODELISATION="3D", PHENOMENE="MECANIQUE"))
+
+#
+#################################################################
+#
+#  MODELISATION DU SUPER ELEMENT
+#
+#################################################################
+#
+#
+LIMIT = AFFE_CHAR_MECA(
+    MODELE=ROUET,
+    DDL_IMPO=(
+        _F(GROUP_NO="FIXAT", DX=0.0, DY=0.0, DZ=0.0),
+        #
+        #  INTERFACE DE CRAIG BAMPTON --> FIXATION DE L'INTERFACE
+        #
+        _F(GROUP_NO="GAUCHE", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="DROITE", DX=0.0, DY=0.0, DZ=0.0),
+    ),
+)
+
+#
+K_ELEM = CALC_MATR_ELEM(MODELE=ROUET, CHAM_MATER=CHMAT, OPTION="RIGI_MECA", CHARGE=(LIMIT,))
+
+#
+M_ELEM = CALC_MATR_ELEM(MODELE=ROUET, CHAM_MATER=CHMAT, OPTION="MASS_MECA", CHARGE=(LIMIT,))
+
+#
+NUM = NUME_DDL(MATR_RIGI=K_ELEM)
+
+#
+K_ASSE = ASSE_MATRICE(MATR_ELEM=K_ELEM, NUME_DDL=NUM)
+
+#
+M_ASSE = ASSE_MATRICE(MATR_ELEM=M_ELEM, NUME_DDL=NUM)
+
+#
+MODES = CALC_MODES(MATR_RIGI=K_ASSE, MATR_MASS=M_ASSE, CALC_FREQ=_F(NMAX_FREQ=10))
+
+
+#
+INTERF = DEFI_INTERF_DYNA(
+    NUME_DDL=NUM,
+    INTERFACE=(
+        _F(NOM="GAUCHE", TYPE="CRAIGB", GROUP_NO="GAUCHE"),
+        _F(NOM="DROITE", TYPE="CRAIGB", GROUP_NO="DROITE"),
+    ),
+)
+
+#
+BAMO = DEFI_BASE_MODALE(CLASSIQUE=_F(INTERF_DYNA=INTERF, MODE_MECA=MODES, NMAX_MODE=10))
+
+#
+MOCYCL = MODE_ITER_CYCL(
+    BASE_MODALE=BAMO,
+    NB_MODE=10,
+    NB_SECTEUR=21,
+    LIAISON=_F(DROITE="DROITE", GAUCHE="GAUCHE"),
+    CALCUL=_F(OPTION="BANDE", FREQ=(400.0, 5000.0), NB_DIAM=1),
+)
+
+#
+SQUEL = DEFI_SQUELETTE(CYCLIQUE=_F(MODE_CYCL=MOCYCL), SECTEUR=_F(TOUT="OUI"))
+
+#
+DYNAM = REST_SOUS_STRUC(RESU_GENE=MOCYCL, SQUELETTE=SQUEL)
+
+#
+TEST_RESU(
+    RESU=(
+        _F(
+            PARA="FREQ",
+            NUME_MODE=1,
+            RESULTAT=DYNAM,
+            VALE_CALC=450.000491826,
+            VALE_REFE=442.10000000000002,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=2,
+            RESULTAT=DYNAM,
+            VALE_CALC=450.000491826,
+            VALE_REFE=442.10000000000002,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=3,
+            RESULTAT=DYNAM,
+            VALE_CALC=1.49308600e03,
+            VALE_REFE=1452.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=4,
+            RESULTAT=DYNAM,
+            VALE_CALC=1.49308600e03,
+            VALE_REFE=1452.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=5,
+            RESULTAT=DYNAM,
+            VALE_CALC=3.41956425e03,
+            VALE_REFE=3342.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=6,
+            RESULTAT=DYNAM,
+            VALE_CALC=3.41956425e03,
+            VALE_REFE=3342.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=7,
+            RESULTAT=DYNAM,
+            VALE_CALC=4.95594403e03,
+            VALE_REFE=4855.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=8,
+            RESULTAT=DYNAM,
+            VALE_CALC=4.95594403e03,
+            VALE_REFE=4855.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+    )
+)
+
+#
+FIN()
+#

@@ -20,20 +20,38 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
+- `main` has the mesh harness (package `feagent`, in `meshing-harness/`: STEP → YAML mesh spec → gmsh
+  mesh with named groups, quality gates, `report.json` with the spec's `bcs:`, plus the agent's MCP server,
+  `fe-mesh` skill and Stop hook — see `meshing-harness/README.md`), the fixed solver, verification,
+  benchmarks and UI (`feacore/`), and the diagnostics (`feacore/diagnostics/`). One root
+  `pyproject.toml` ships both packages.
+- `mesh-harness` branch: Alexander's ongoing harness work; merged into `main` as it lands.
 - `improver-loop` branch: improver side of the loop.
 - `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
   `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
-- `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
-  gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
-  deterministic failure-mode flags (precheck before solving + post-solve checks), reference-free accuracy
-  (ZZ estimate, refinement study of the agent's own setup, P1-vs-P2) and the speed / accuracy score
-  (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py`: agent prompt for a
-  NAFEMS benchmark and reply-vs-reference scoring (LE10 first, with `benchmarks/nafems_le10/public/mesh.msh`).
-  The only solver change is `qp_stress_elasticity` split out of `_recover_elasticity` (same results).
-- `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
-  parts and a UI (package `feacore/`, see below). The scikit-fem solver works (all formulations, BCs,
-  heat, QoIs, CLI). The CalculiX cross-check, benchmarks, test parts, UI and surrogate are in progress.
+  deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
+  accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy
+  score (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py` give the agent
+  prompt for a NAFEMS benchmark and score the reply against the reference. LE10 comes first, with
+  `benchmarks/nafems_le10/public/mesh.msh`.
+- `cfd-openfoam` branch (PR #3): OpenFOAM backend and CFD benchmarks, in progress.
+- `benchmarks` branch (PR #13): `feabench/` plus `benchmarks/{verification,code_aster,calculix,simjeb}`
+  and `docs/eval-design.md`. It was built before `feacore` landed, and its ccx-deck evaluator and
+  `model.inp` contract are superseded by the decisions below (skfem, case JSON + `.msh`).
+  Still useful:
+  - code_aster reference values with locations;
+  - the CalculiX deck corpus;
+  - the SimJEB loader (needs `dataverse.harvard.edu` allowed);
+  - the scoring proposal in `docs/eval-design.md`.
+  Next: port the verification cases and QoIs to `feacore` Problems.
+- `gold-benchmarks` branch (Jaime): the gold-benchmark generator `feacore.goldgen`. It takes ABC
+  CAD parts, generates BC sets, meshes nested tet10 levels L0-L2 and keeps the QoIs that the GCI
+  certifies; it runs on an H100 and packs its output into numbered archives
+  (`goldgen-l2_0000.tgz`, ...). `benchmarks/gold/` holds the imported sets (see FEA core). Its
+  solver fixes for curved tet10 are ported to main byte-identical: a robust inverse isoparametric
+  map, curved-cell validity judged by the Jacobian, and a reduced SVD in the rigid-body checks.
+  Without them skfem rejects some of these meshes.
 
 ## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
 
@@ -61,15 +79,28 @@ Decisions:
   plus a gmsh `.msh` file whose physical groups are named. This is what the agent's MCP / mesh harness
   must produce. Run it with `feacore.solver.solve(case, backend)` or the CLI
   `python -m feacore.cli case.json --out result.json`.
-- **Mesh harness → solver:** `feacore/adapters/mesh_harness.py` turns a harness output directory
-  (`mesh.msh` + `manifest.json` + `report.json` with `bcs.fea: {fixed, loads: [{group, force}], E, nu}`)
-  into a case: `python -m feacore.adapters.mesh_harness <out_dir>`. `fixed` → `fixed` and
-  `loads[].force` → `force` (total force spread per area) map 1:1. The case schema also has pressure,
-  symmetry, prescribed displacement, thermal loads and explicit QoIs if the harness wants to declare them.
+- **Mesh harness → solver:** `feacore/adapters/mesh_harness.py` turns a harness output directory or its
+  YAML spec into a case: `python -m feacore.adapters.mesh_harness <out_dir | mesh.yaml>`. The spec's
+  `bcs.fea` maps 1:1:
+  - `fixed`, `loads: [{group, force}]` (total force spread per area);
+  - `symmetry: [group]`, `pressure: [{group, value}]`;
+  - `displacement: [{group, components, value, where}]`, where `where` filters nodes, e.g. a line on a
+    face for LE10's mid-thickness support.
+
+  `E` and `nu` give the material.
 - **Problems** (the "CAD design problems"): `feacore/problems/` (the `Problem` API + registry),
   exported to `benchmarks/<id>/public/` (statement + STEP: give these to agents) and
   `benchmarks/<id>/private/` (reference values, reference setup, validation studies: evaluator only,
   never give these to agents).
+- **Gold benchmarks** (`benchmarks/gold/`, `feacore/problems/gold.py`, `benchmarks/gold/README.md`):
+  - Import generator archives with `python scripts/gold.py import ARCHIVE`. It checks every set,
+    stores one STEP blob per part, and lists the meshes with their sha256 in `index.json`.
+  - Each set registers as a `GoldProblem` (tag `gold`, family = part id) read straight from its
+    files. The UI and the ACE loop see it with no export step, and `export_all` skips it.
+  - Groups are `f<tag>` (the STEP's OCC face tags) and `solid`.
+  - The study meshes (`benchmarks/gold/_meshes/`) are not in git.
+  - `scripts/gold.py verify` re-solves a stored level against the study. `scripts/gold.py render`
+    records runs for the UI viewer, and `--png` writes images.
 - **Verification** = Richardson extrapolation / Grid Convergence Index (Celik et al. 2008),
   `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to
@@ -86,6 +117,24 @@ Decisions:
   meshes; the consensus view uses the median and MAD of each submission's best estimate. For display
   only, the UI calls a QoI converged when both mesh-to-mesh changes are under 0.1%, even if `gci3`
   can't assign an order. Verdicts still come from `feacore.verification`.
+- **Running it for the team (Brev):** `bash scripts/serve.sh` installs the UI/solver service (systemd,
+  starts on boot) plus an auto-update timer. Every minute it fast-forwards the checked-out branch and
+  restarts the service, re-runs setup when dependencies change, and waits while jobs are running.
+  Set `FEACORE_UI_TOKEN` (or start the UI with `--token auto`) before sharing a tunnel URL. Every
+  `/api/*` call then needs the token. Teammates' scripts and agents call `POST <url>/api/solve`;
+  the UI's Connect page shows copy-paste examples. Details are in `docs/brev.md`; any account's box is set up
+  with one command (`curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash`),
+  which a Brev Launchable can also run as its setup script. Expose port 8000 via the instance's HTTP Ports.
+- The UI shows small trendless mesh-to-mesh changes (under 2%) as "scatter between meshes", not as
+  divergence. Real singularities still show as diverging.
+- **CFD (`backend="openfoam"`, physics "flow"):** OpenFOAM ESI (v1912 from Ubuntu's `openfoam`
+  package works) plus `foamlib` (the `cfd` extra). It runs 2D/3D laminar steady SIMPLEC with tight
+  residuals; forces and the probes are computed in numpy, because v1912's function objects crash.
+  Benchmarks: Poiseuille channel, lid-driven cavity Re 100, DFG 2D-1 cylinder, 3D pipe
+  (`docs/benchmarks_cfd.md`). Use quad/hex meshes for GCI: on unstructured triangles OpenFOAM's cell
+  values stop converging. Ghia's cavity table is itself 1.4-3.5% off converged solutions, so its
+  tolerances are 3-5%. Pressure drops use the `point_difference` QoI. To enable it on a box:
+  `sudo apt-get install -y openfoam && uv pip install --python .venv/bin/python foamlib`.
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
@@ -104,14 +153,27 @@ Decisions:
   `python-gmsh`), as `scripts/setup_gpu_box.sh` does. MKL PARDISO is x86-only. CuPy, nvmath-python
   (cuDSS) and torch do have aarch64 wheels.
 
+## Mesh harness decisions (`meshing-harness/`)
+
+- **Agent MCP tools** (`meshing-harness/`, server `uv run feagent-mcp`): `automesh` (zero-config start),
+  `inspect_geometry` (digest: features, faces, hazards), `find_faces` (geometric face query with
+  expected count), `render_view`, `mesh`, `check_mesh`; prompt `meshing_workflow`. Geometry, mesh and BCs
+  are all declared in `mesh.yaml` (`groups:` by query, `bcs:` for fixed/loads or inlet/outlet).
+- **Solver hand-off:** `out/mesh.msh` (named physical groups) + `out/report.json` → `bcs`, turned into
+  the fixed solver's case JSON by `python -m feacore.adapters.mesh_harness <out_dir | mesh.yaml>` (CFD:
+  `feacore.adapters.mesh_harness_cfd`). Also `out/mesh.inp` (every group as NSET/ELSET; surface elements
+  for groups must not get a section) and `.su2`.
+- **Evaluator input:** `out/report.json` (`schema_version: 1`, per-gate pass/warn/fail with value and
+  threshold) — schema in `meshing-harness/docs/report-schema.md`.
+- **Improver-editable surface:** `meshing-harness/agent_context/` — `SKILL.md` (workflow prompt),
+  `tools.yaml` (MCP tool descriptions), `examples/` (few-shot specs). Give each agent its own copy via
+  `FEAGENT_CONTEXT_DIR`. Harness code changes are possible but not required for prompt-level improvement.
+
 ## Open questions
 
 - How exactly is a solution scored? (proposal above; the evaluator decides)
-- Which MCP tools does the agent get (geometry / mesh / BCs)? It must emit the case JSON + `.msh` above.
-- Merging into `main`: `mesh-harness` and `fea-solver-benchmarks` both add a root `pyproject.toml`
-  (`feagent` with uv_build, `feacore` with setuptools). Pick one root project that ships both
-  packages, or make `feacore` a sub-project.
-- What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
+- What exactly can an improver change beyond `meshing-harness/agent_context/` (harness code? per-agent
+  spec defaults?)
 - What does the evaluator output look like (schema for rankings + summary)?
 
 ## Conventions

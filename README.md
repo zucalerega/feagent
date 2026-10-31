@@ -15,6 +15,15 @@ Multiple (agent, context+harness improver) pairs that get better at CAD/FEA setu
 The solver agents never touch, the Richardson/GCI verification the evaluator scores with, and the
 benchmark problems agents are assigned. Shared decisions and conventions are in `CLAUDE.md`.
 
+Any fresh Ubuntu / Brev box (any account), one command; then expose port 8000 via the
+instance's HTTP Ports (see docs/brev.md):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash
+```
+
+Or step by step:
+
 ```bash
 bash scripts/setup_gpu_box.sh        # fresh Ubuntu / Brev / DGX Spark box (docs/brev.md)
 pip install -e ".[dev]"              # or: an existing Python >= 3.12 env with gmsh's system libs
@@ -42,3 +51,15 @@ Suggested first swarm problems (3D, so the mesh harness can mesh them):
 
 These need `symmetry`, `pressure` or `displacement` BCs as well as `fixed` / `force`; the adapter
 already accepts them under `bcs.fea`.
+
+## Benchmark library and evaluation design (`feabench/`, PR #13)
+
+Built before `feacore` landed; complementary to it (see `docs/decisions.md` D19).
+
+- `benchmarks/code_aster/`: 3,589 analytical / literature reference values from 253 code_aster
+  validation tests, with locations (`manifest.json`, `CATALOG.md`).
+- `benchmarks/calculix/`: CalculiX regression suite verified against ccx 2.21; 214 known-good decks.
+- `benchmarks/verification/`: 10 CAD tasks with exact / NAFEMS / converged references, scored on
+  CalculiX decks by `feabench evaluate`.
+- `benchmarks/simjeb/`: SimJEB fetcher and `.fem` → ccx converter. Needs `dataverse.harvard.edu`.
+- `docs/eval-design.md`: accuracy vs speed vs compute-cost scoring proposal for the evaluator.

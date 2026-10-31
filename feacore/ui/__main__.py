@@ -17,6 +17,9 @@ def main(argv: list[str] | None = None) -> None:
                     help="BLAS/OpenMP threads per worker process (sets OMP/MKL/OPENBLAS_NUM_THREADS)")
     ap.add_argument("--extra-problems", default=None,
                     help="comma-separated modules or .py files registering extra problems (scratch problems)")
+    ap.add_argument("--token", default=None,
+                    help="require this shared token on every /api/* request ('auto' generates one); "
+                         "default: $FEACORE_UI_TOKEN, unset = no auth")
     ap.add_argument("--fetch-vendor", action="store_true",
                     help="download the pinned three.js files for offline use, then exit")
     ap.add_argument("--log-level", default="info")
@@ -39,9 +42,19 @@ def main(argv: list[str] | None = None) -> None:
 
     from feacore.ui.server import create_app
 
-    app = create_app(runs_dir=args.runs_dir, quick_workers=args.quick_workers, study_workers=args.study_workers)
-    print(f"feacore UI: http://{'localhost' if args.host in ('0.0.0.0', '::') else args.host}:{args.port}/  "
-          f"(run store: {app.state.store.root})")
+    token = args.token or os.environ.get("FEACORE_UI_TOKEN") or None
+    if token == "auto":
+        import secrets
+
+        token = secrets.token_urlsafe(18)
+    if token:
+        os.environ["FEACORE_UI_TOKEN"] = token
+    app = create_app(runs_dir=args.runs_dir, quick_workers=args.quick_workers, study_workers=args.study_workers,
+                     token=token)
+    url = f"http://{'localhost' if args.host in ('0.0.0.0', '::') else args.host}:{args.port}/"
+    print(f"feacore UI: {url}  (run store: {app.state.store.root})")
+    if token:
+        print(f"token auth ON. Share: {url}?token={token}  (or your tunnel URL + /?token=...)")
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level,
                 proxy_headers=True, forwarded_allow_ips="*")
 
