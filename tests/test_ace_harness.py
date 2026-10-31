@@ -4,6 +4,8 @@ Mock LLM only: no API calls, no key needed."""
 import hashlib
 import json
 
+import feagent.geometry
+import feagent.quality
 import pytest
 
 from ace import agent, config, fea, harness
@@ -87,9 +89,9 @@ def test_harness_on_3d_inspect_has_a_digest_labelled_by_group(tmp_path, harness_
     digest = h["digest"]
     assert "NAMED SURFACE GROUPS" in digest and "- face_hole: faces [" in digest
     faces = next(s for s in digest.split("\n\n") if s.startswith("FACES ("))
-    assert faces.splitlines()[1].endswith("groups")
+    assert faces.splitlines()[1].split()[-2:] == ["nbrs", "groups"]                  # the added groups column
     assert any(row.endswith("  face_hole") for row in faces.splitlines()[2:])   # the elliptic hole's face
-    assert "spec:" not in digest and len(digest) < 8000                          # no feagent-spec hints; bounded
+    assert "spec:" not in digest and "detail=full" not in digest and len(digest) < 8000   # no feagent-only hints
 
 
 def test_harness_on_3d_mesh_has_a_quality_table_and_the_same_mesh(tmp_path, harness_on, monkeypatch):
@@ -127,3 +129,20 @@ def test_harness_on_2d_problem_is_unchanged(tmp_path, harness_on, monkeypatch):
     _, results, offered = _mock_run(D2, tmp_path)
     assert "harness" not in results[0] and "quality" not in results[1]
     assert _sha(_rounded(results)) == GOLDEN[D2] and all(tools is TOOLS for tools in offered)
+
+
+def _boom(*args, **kwargs):
+    raise RuntimeError("boom")
+
+
+def test_harness_failures_never_fail_the_tool_call(tmp_path, harness_on, monkeypatch):
+    monkeypatch.setattr(feagent.geometry, "digest_text", _boom)
+    monkeypatch.setattr(feagent.quality, "assess_mesh", _boom)
+    tools = Tools(D3, tmp_path)
+    out, is_err = tools.call("inspect_geometry", {"using": []})
+    assert not is_err and out["groups"] and "boom" in out["harness"]["error"]
+    request = {"h": 0.3, "order": 1, "using": []}
+    out, is_err = tools.call("mesh", request)
+    assert not is_err and "boom" in out.pop("quality")["error"]
+    monkeypatch.setattr(config, "HARNESS", False)
+    assert Tools(D3, tmp_path / "off").call("mesh", request) == (out, False)   # the mesh result is unchanged

@@ -12,6 +12,9 @@ analyses 3D OCC solids only). feagent is imported lazily: ACE imports without it
 from __future__ import annotations
 
 import math
+import os
+import sys
+from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -21,7 +24,9 @@ from ace import config, fea
 from feacore.geometry.gmsh_tools import ensure_domain_group, gmsh_session
 from feacore.problems.base import Problem
 
-MAX_ITEMS = 20   # features / hazards listed in the inspect_geometry result (the digest has the counts)
+MAX_ITEMS = 10    # features / hazards listed in the inspect_geometry result (the digest has the counts)
+MAX_GROUPS = 40   # named surface groups listed in the digest
+GROUPS_NOTE = "(not listed; NAMED SURFACE GROUPS above gives every group's faces)"
 
 TOOL_NOTES = {
     "inspect_geometry": " Also returns `harness`: a geometry digest (CAD faces with kind, area, centre, "
@@ -66,14 +71,14 @@ def _analysis(problem_id: str):
 
 
 def inspect(problem: Problem) -> dict:
-    """The `harness` field of inspect_geometry; {"error": ...} if the analysis fails."""
+    """The `harness` field of inspect_geometry; {"error": ...} if anything in the harness fails."""
     try:
         geo, groups = _analysis(problem.id)
-    except Exception as e:  # noqa: BLE001  the agent still gets the plain summary
+        labels = _face_labels(groups)
+        return {"digest": _digest(geo, groups, labels), "features": _features(geo, labels),
+                "hazards": _hazards(geo, labels)}
+    except Exception as e:  # noqa: BLE001  the agent still gets the plain summary; the run goes on
         return {"error": f"harness geometry analysis failed: {type(e).__name__}: {e}"}
-    labels = _face_labels(groups)
-    return {"digest": _digest(geo, groups, labels), "features": _features(geo, labels),
-            "hazards": _hazards(geo, labels)}
 
 
 def _face_labels(groups: dict[str, list[int]]) -> dict[int, list[str]]:
@@ -89,16 +94,22 @@ def _groups_of(faces, labels: dict[int, list[str]]) -> list[str]:
 
 
 def _digest(geo, groups: dict[str, list[int]], labels: dict[int, list[str]]) -> str:
-    """feagent's summary digest, adapted: a NAMED GROUPS section after the header, a groups column
-    on the FACES table, and no feagent-spec suggestions or units (ACE problems are built in code)."""
+    """feagent's summary digest, adapted: a NAMED SURFACE GROUPS section after the header, a groups
+    column on the FACES table, and no feagent-only hints (spec suggestions, detail=full, units: ACE
+    problems are built in code)."""
     from feagent.geometry import digest_text
 
     head, *rest = digest_text(geo, detail="summary").rstrip("\n").split("\n\n")
-    named = ["NAMED SURFACE GROUPS (names for refinements and BCs)"] + [
-        f"- {n}: faces {sorted(t)}" for n, t in groups.items()]
     fix = {"FACES": lambda s: _label_faces(s, labels), "HAZARDS": _drop_suggestions}
-    rest = [fix.get(s.split(" ", 1)[0], lambda s: s)(s) for s in rest]
-    return "\n\n".join([head.replace(f"  units={geo.units}", "", 1), "\n".join(named), *rest]) + "\n"
+    rest = [fix.get(s.split(" ", 1)[0], lambda s: s)(s).replace("(use detail=full)", GROUPS_NOTE) for s in rest]
+    return "\n\n".join([head.replace(f"  units={geo.units}", "", 1), _named_groups(groups), *rest]) + "\n"
+
+
+def _named_groups(groups: dict[str, list[int]]) -> str:
+    lines = ["NAMED SURFACE GROUPS (names for refinements and BCs)"]
+    lines += [f"- {n}: faces {sorted(t)}" for n, t in list(groups.items())[:MAX_GROUPS]]
+    more = len(groups) - MAX_GROUPS
+    return "\n".join(lines + ([f"… {more} more (inspect_geometry `groups` lists them all)"] if more > 0 else []))
 
 
 def _label_faces(section: str, labels: dict[int, list[str]]) -> str:
@@ -150,15 +161,33 @@ def _hazards(geo, labels: dict[int, list[str]]) -> list[dict]:
 def quality(problem: Problem, mesh_path: str | Path) -> list[dict] | dict:
     """The `quality` field of a mesh result: feagent's mesh gates on the written .msh (read only).
     Volumes and areas of order-2 meshes are integrated with the curved-element Jacobian."""
-    from feagent.quality import assess_mesh
-    from feagent.spec import QualitySpec
-
     try:
-        rep = assess_mesh(mesh_path, _mesh_result(problem, mesh_path), QualitySpec(), analysis="fea")
+        from feagent.quality import assess_mesh
+        from feagent.spec import QualitySpec
+
+        result = _mesh_result(problem, mesh_path)
+        with _quiet_stderr():   # feagent's own gmsh sessions log every .msh read at Info level
+            rep = assess_mesh(mesh_path, result, QualitySpec(), analysis="fea")
+        return [{"id": g.id, "status": g.status, "value": _num(g.value), "threshold": _num(g.threshold),
+                 "message": g.message} for g in rep.gates]
     except Exception as e:  # noqa: BLE001  the mesh itself is fine; only the measurement failed
         return {"error": f"harness quality check failed: {type(e).__name__}: {e}"}
-    return [{"id": g.id, "status": g.status, "value": _num(g.value), "threshold": _num(g.threshold),
-             "message": g.message} for g in rep.gates]
+
+
+@contextmanager
+def _quiet_stderr():
+    """Send fd 2 to /dev/null. feagent's gmsh_session opens its own sessions (gmsh options reset on
+    initialize, so General.Verbosity can't be set from here) and routes gmsh output to stderr."""
+    sys.stderr.flush()
+    saved, null = os.dup(2), os.open(os.devnull, os.O_WRONLY)
+    os.dup2(null, 2)
+    try:
+        yield
+    finally:
+        sys.stderr.flush()
+        os.dup2(saved, 2)
+        os.close(saved)
+        os.close(null)
 
 
 def _mesh_result(problem: Problem, mesh_path: str | Path):
