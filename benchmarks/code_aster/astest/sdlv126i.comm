@@ -1,0 +1,176 @@
+#!/usr/bin/env python
+# coding: utf-8
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# CAS_TEST: SDLV126G
+#
+# BUT DE LA FAMILLE DE TEST
+# Ce test unitaire permet de verifier la bone implémentation des
+# routines de calcul des matrices de rigidité pour les matériaux
+# élastique et viscoélastique 3D.
+#
+# BUT DE L'INDICE G
+# comparaison avec autre code EF
+
+import numpy as np
+
+from code_aster.Commands import *
+from code_aster import CA
+
+CA.init("--test", ERREUR=_F(ALARME="EXCEPTION"))
+
+
+# Mesh
+mail = CA.Mesh()
+mail.readMedFile("sdlv126g.med")
+
+# Model
+model = AFFE_MODELE(AFFE=(_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="3D")), MAILLAGE=mail)
+
+# Create numbering
+nddl = NUME_DDL(MODELE=model)
+
+# Material parameters: elasticity
+G = 8.08e10
+K = 1.75e11
+nu = (3 * K - 2 * G) / (2 * (3 * K + G))
+E = 2 * G * (1 + nu)
+rho_a = 7800
+acier = DEFI_MATERIAU(ELAS=_F(E=E, NU=nu, RHO=rho_a))
+
+# Material parameters:  deltane350
+G0 = 1.4e6
+Ginf = 0.54e9
+tauG = 0.52e-6
+alphaG = 0.59
+rho_d = 1460
+
+# Load
+excit = AFFE_CHAR_MECA(
+    FORCE_NODALE=_F(GROUP_NO=("EXCIT",), FX=0.0, FY=0.0, FZ=1.0), VERI_NORM="NON", MODELE=model
+)
+
+F_elem = CALC_VECT_ELEM(OPTION="CHAR_MECA", CHARGE=excit)
+F = ASSE_VECTEUR(VECT_ELEM=F_elem, NUME_DDL=nddl)
+
+# Boundary condition
+encas = AFFE_CHAR_CINE(MECA_IMPO=(_F(GROUP_MA=("ENCAS"), DX=0.0, DY=0.0, DZ=0.5)), MODELE=model)
+kineLoad = CALC_CHAR_CINE(NUME_DDL=nddl, CHAR_CINE=encas)
+
+
+# Loop on frequencies
+freq_amor = np.array([45.0, 179.0, 255.0, 696.0])
+val_refe = np.array(
+    [
+        -4.234457692308581 - 12.747092051776347j,
+        -1.4254706152076393 + 0.07409285990878617j,
+        -5.206103972205018 + 11.669342891303831j,
+        3.596707655832039 - 12.75244312484614j,
+    ]
+)
+val_calc = np.array(
+    [
+        -4.2344576992588765 - 12.747092046420414j,
+        -1.425470615222583 + 0.07409285991078836j,
+        -5.206103971895799 + 11.669342891687855j,
+        3.596707655963482 - 12.75244312477191j,
+    ]
+)
+Nb_freq = freq_amor.size
+
+for i in range(Nb_freq):
+
+    freq = freq_amor[i]
+
+    # matériau viscoélastique: deltane350
+    G = (G0 + Ginf * (1j * 2 * np.pi * freq * tauG) ** alphaG) / (
+        1.0 + (1j * 2 * np.pi * freq * tauG) ** alphaG
+    )
+    K = complex(2.22e9, 0)
+    nu = (3 * K - 2 * G) / (3 * K + 2 * G) * 0.5
+    deltane = DEFI_MATERIAU(ELAS_VISCO=_F(G=G, NU=nu, RHO=rho_d))
+
+    # Affectation des matériaux
+    mater = AFFE_MATERIAU(
+        AFFE=(_F(GROUP_MA=("STRUCT", "ENCAS"), MATER=acier), _F(GROUP_MA=("VISCO"), MATER=deltane)),
+        MODELE=model,
+    )
+
+    # Matrice de masse
+    M_elem1 = CALC_MATR_ELEM(OPTION="MASS_MECA", MODELE=model, CHAM_MATER=mater)
+    # Matrice de rigidité
+    K_elem1 = CALC_MATR_ELEM(OPTION="RIGI_MECA", MODELE=model, CHAM_MATER=mater)
+
+    Kc_elem1 = CALC_MATR_ELEM(
+        OPTION="RIGI_MECA_HYST", MODELE=model, CHAM_MATER=mater, RIGI_MECA=K_elem1
+    )
+
+    # Assemblage
+    M1 = ASSE_MATRICE(MATR_ELEM=M_elem1, NUME_DDL=nddl, CHAR_CINE=encas)
+    K1 = ASSE_MATRICE(MATR_ELEM=Kc_elem1, NUME_DDL=nddl, CHAR_CINE=encas)
+
+    # Resolution du système
+    res_harm = DYNA_VIBRA(
+        MODELE=model,
+        TYPE_CALCUL="HARM",
+        BASE_CALCUL="PHYS",
+        MATR_MASS=M1,
+        MATR_RIGI=K1,
+        SOLVEUR=_F(METHODE="MUMPS"),
+        FREQ=freq,
+        TOUT_CHAM="OUI",
+        EXCIT=(_F(VECT_ASSE=F, COEF_MULT=1.0), _F(CHARGE=encas, COEF_MULT=2.0)),
+    )
+
+    # recupération des accélération aux points de postraitement
+    TEST_RESU(
+        RESU=_F(
+            RESULTAT=res_harm,
+            FREQ=freq_amor[i],
+            NOM_CHAM="DEPL",
+            GROUP_NO="EXCIT",
+            NOM_CMP="DZ",
+            REFERENCE="AUTRE_ASTER",
+            VALE_CALC_C=val_calc[i],
+            VALE_REFE_C=val_refe[i],
+            VALE_ABS="NON",
+            CRITERE="RELATIF",
+            PRECISION=1e-1,
+        )
+    )
+
+    TEST_RESU(
+        RESU=_F(
+            RESULTAT=res_harm,
+            FREQ=freq_amor[i],
+            NOM_CHAM="DEPL",
+            GROUP_NO="NodeTest",
+            NOM_CMP="DZ",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE_C=1.0 + 0.0j,
+            VALE_CALC_C=1.0 + 0.0j,
+            VALE_ABS="NON",
+            CRITERE="RELATIF",
+            PRECISION=1e-1,
+        )
+    )
+
+
+FIN()

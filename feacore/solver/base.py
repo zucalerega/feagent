@@ -50,7 +50,16 @@ class Result(ABC):
         """Evaluate one quantity of interest (see the QoI table in ``feacore.case``)."""
 
     def evaluate_all(self) -> dict[str, float]:
-        return {q.name: float(self.evaluate(q)) for q in self.case.qois}
+        return {q.name: float(self.evaluate_qoi(q)) for q in self.case.qois}
+
+    def evaluate_qoi(self, qoi: QoI) -> float:
+        """``evaluate`` plus the backend-independent QoI types (``point_difference``, computed
+        from ``probe``). Prefer this over ``evaluate`` in callers."""
+        if qoi.type == "point_difference":
+            d = self.info.dim
+            v = self.probe(qoi.field, np.array([qoi.point[:d], qoi.point2[:d]], dtype=float))
+            return float(v[0] - v[1])
+        return self.evaluate(qoi)
 
     def write_vtu(self, path: str | Path) -> Path:  # optional for backends
         raise NotImplementedError

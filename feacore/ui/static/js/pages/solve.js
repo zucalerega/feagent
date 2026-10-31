@@ -1,5 +1,5 @@
 // Solve: upload a case JSON + gmsh mesh, run the fixed solver (or a cross-check backend), see results.
-import { api, h, clear, fmt, fmtInt, fmtTime, loading, errorBox, runStatusChip, timeAgo } from '../api.js';
+import { api, authFetch, withToken, h, clear, fmt, fmtInt, fmtTime, loading, errorBox, runStatusChip, timeAgo } from '../api.js';
 
 export async function render(el) {
   el.append(loading());
@@ -36,7 +36,7 @@ export async function render(el) {
     btn.disabled = true;
     out.append(h('div', { class: 'card' }, h('span', { class: 'spinner' }), ' Solving in a worker process…'));
     try {
-      const res = await fetch('/api/solve', { method: 'POST', body: fd });
+      const res = await authFetch('/api/solve', { method: 'POST', body: fd });
       const body = await res.json();
       clear(out);
       if (res.status === 422 && body.errors) {
@@ -84,32 +84,23 @@ function result(r) {
   return h('div', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', {}, 'Result'), runStatusChip(r.status)),
     h('div', { class: 'mono small muted' }, r.run_id),
-    r.error ? h('div', { style: { marginTop: '10px' } }, errorBox(r.error), r.traceback ? h('details', { style: { marginTop: '8px' } }, h('summary', {}, 'Traceback'), h('pre', { class: 'code' }, r.traceback)) : null) : null,
+    r.error ? h('div', { style: { marginTop: '10px' } }, errorBox(r.error), r.traceback ? h('details', { class: 'more' }, h('summary', {}, 'Traceback'), h('pre', { class: 'code' }, r.traceback)) : null) : null,
     q.length ? h('table', { class: 'data', style: { marginTop: '12px' } }, h('thead', {}, h('tr', {}, h('th', {}, 'QoI'), h('th', { class: 'num' }, 'value'))),
       h('tbody', {}, q.map(([k, v]) => h('tr', {}, h('td', { class: 'mono' }, k), h('td', { class: 'num' }, fmt(v, 8)))))) : null,
-    r.info ? h('table', { class: 'kv', style: { marginTop: '12px' } }, h('tbody', {},
-      [['backend', i.backend], ['analysis', `${i.physics} · ${i.formulation} · P${i.order}`], ['mesh', `${i.cell_type} · ${fmtInt(i.n_cells)} cells · ${fmtInt(i.n_nodes)} nodes`],
-       ['unknowns', fmtInt(i.n_dofs)], ['h (measured)', fmt(i.h_rep, 4)], ['solve time', fmtTime(i.wall_time)]].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v))))) : null,
-    (i.warnings || []).length || (r.warnings || []).length ? h('div', { class: 'small secondary', style: { marginTop: '10px' } }, [...(i.warnings || []), ...(r.warnings || [])].join('; ')) : null,
-    h('div', { class: 'row', style: { marginTop: '14px' } },
-      r.fields ? h('a', { class: 'btn primary', href: `#/viewer/${r.run_id}` }, 'Open in field viewer') : null,
-      h('a', { class: 'btn', href: `/api/runs/${r.run_id}`, target: '_blank' }, 'Run record (JSON)'),
-      h('a', { class: 'btn', href: `/api/runs/${r.run_id}/log`, target: '_blank' }, 'Worker log')));
+    h('div', { class: 'row', style: { marginTop: '18px', gap: '10px' } },
+      r.fields ? h('a', { class: 'btn primary', href: `#/viewer/${r.run_id}` }, 'Open in field viewer') : null),
+    r.info || (i.warnings || []).length || (r.warnings || []).length ? h('details', { class: 'more' }, h('summary', {}, 'Solver details'),
+      r.info ? h('table', { class: 'kv', style: { marginTop: '10px' } }, h('tbody', {},
+        [['backend', i.backend], ['analysis', `${i.physics} · ${i.formulation} · P${i.order}`], ['mesh', `${i.cell_type} · ${fmtInt(i.n_cells)} cells · ${fmtInt(i.n_nodes)} nodes`],
+         ['unknowns', fmtInt(i.n_dofs)], ['h (measured)', fmt(i.h_rep, 4)], ['solve time', fmtTime(i.wall_time)]].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v))))) : null,
+      [...(i.warnings || []), ...(r.warnings || [])].map(w => h('div', { class: 'small secondary', style: { marginTop: '6px' } }, w)),
+      h('div', { class: 'row', style: { marginTop: '10px', gap: '6px' } },
+        h('a', { class: 'btn ghost small', href: withToken(`/api/runs/${r.run_id}`), target: '_blank' }, 'Run record (JSON)'),
+        h('a', { class: 'btn ghost small', href: withToken(`/api/runs/${r.run_id}/log`), target: '_blank' }, 'Worker log'))) : null);
 }
 
 function curlCard() {
-  const o = location.origin;
-  return h('div', { class: 'card' }, h('h3', {}, 'From a script or the agent harness'),
-    h('pre', { class: 'code' }, `curl -F case=@case.json -F mesh=@part.msh \\
-     -F backend=skfem -F agent_id=agent-07 \\
-     ${o}/api/solve
-
-# python
-import httpx
-files = {"case": open("case.json", "rb"),
-         "mesh": open("part.msh", "rb")}
-r = httpx.post("${o}/api/solve", files=files,
-               data={"agent_id": "agent-07"}, timeout=None)
-run = r.json()  # status, qois, info, error`),
-    h('p', { class: 'small secondary', style: { marginTop: '8px' } }, 'Returns 200 with the run record when the solve succeeds, 422 when the case is invalid or the solver rejects it (the record carries the error), 202 with wait=false.'));
+  return h('div', { class: 'card' }, h('h3', {}, 'Calling this from a script or an agent?'),
+    h('p', { class: 'secondary', style: { margin: '0 0 14px' } }, 'The same solve is one HTTP call: POST the case JSON and the mesh to /api/solve. Copy-paste examples for curl and Python, and how to submit an agent\u2019s runs, are on the Connect page.'),
+    h('a', { class: 'btn', href: '#/connect' }, 'Connect a script'));
 }

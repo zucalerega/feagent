@@ -1,0 +1,562 @@
+{
+  "id": "abc_00000003_bc6",
+  "references": [
+    {
+      "qoi": "u_max",
+      "value": 6.867257451706541e-07,
+      "kind": "converged_numerical",
+      "source": "feacore goldgen: 3 refined tet10 meshes, GCI (Celik 2008)",
+      "tolerance": 0.02,
+      "notes": "reduced_order; p = 0.72 (theory 3); GCI_fine = 0.63%"
+    },
+    {
+      "qoi": "u_mean_f16",
+      "value": 4.6182998283359105e-07,
+      "kind": "converged_numerical",
+      "source": "feacore goldgen: 3 refined tet10 meshes, GCI (Celik 2008)",
+      "tolerance": 0.021965410133435833,
+      "notes": "reduced_order; p = 0.87 (theory 3); GCI_fine = 1.10%"
+    }
+  ],
+  "bcset": {
+    "id": "abc_00000003_bc6",
+    "attempt": 6,
+    "bcs": [
+      {
+        "type": "fixed",
+        "group": "f20",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "pressure",
+        "group": "f16",
+        "point": null,
+        "components": null,
+        "value": 14200000.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "force",
+        "group": "f21",
+        "point": null,
+        "components": null,
+        "value": [
+          635.501153791,
+          -1017.908779572,
+          0.0
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "words": [
+      "Clamped (all displacements zero): face f20 (centroid (0.00, 0.00, 27.56) mm, area 5091.2 mm^2).",
+      "Uniform pressure 14.2 MPa pushing into the part on face f16 (centroid (-27.19, -0.00, 30.59) mm, area 736.6 mm^2).",
+      "Total force (635.5, -1017.9, 0.0) N spread uniformly over planar face f21 (outward normal (0.000, -0.000, -1.000), centroid (-0.00, 0.00, 55.12) mm, area 678.8 mm^2)."
+    ]
+  },
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "3d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 210000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "fixed",
+        "group": "f20",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "pressure",
+        "group": "f16",
+        "point": null,
+        "components": null,
+        "value": 14200000.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "force",
+        "group": "f21",
+        "point": null,
+        "components": null,
+        "value": [
+          635.501153791,
+          -1017.908779572,
+          0.0
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [
+      {
+        "group": "solid",
+        "material": "steel"
+      }
+    ],
+    "qois": [
+      {
+        "name": "strain_energy",
+        "type": "strain_energy",
+        "field": null,
+        "point": null,
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "u_max",
+        "type": "max",
+        "field": "u_mag",
+        "point": null,
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "vm_mean",
+        "type": "mean",
+        "field": "von_mises",
+        "point": null,
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "vm_max",
+        "type": "max",
+        "field": "von_mises",
+        "point": null,
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "u_mean_f16",
+        "type": "mean",
+        "field": "u_mag",
+        "point": null,
+        "group": "f16",
+        "component": null
+      },
+      {
+        "name": "u_mean_f21",
+        "type": "mean",
+        "field": "u_mag",
+        "point": null,
+        "group": "f21",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "abc_00000003_bc6",
+      "setup": "gold_reference"
+    },
+    "schema_version": 1
+  },
+  "part": {
+    "id": "abc_00000003",
+    "source": "00000003_1ffb81a71e5b402e966b9341_step_002.step",
+    "scale": 0.0024113346926057017,
+    "volume": 2.9709162884939355e-05,
+    "bbox": [
+      -0.03485015577835317,
+      -0.01864535796288439,
+      -1e-07,
+      0.03485015577835317,
+      0.01864535796288439,
+      0.06124800119218483
+    ],
+    "faces": [
+      {
+        "tag": 1,
+        "kind": "cylinder",
+        "area": 0.00015253858575953557,
+        "centroid": [
+          -0.01648051830722734,
+          -0.012201491791531452,
+          0.030588346396072788
+        ],
+        "normal": null,
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "radius": 0.013780777768241586
+      },
+      {
+        "tag": 2,
+        "kind": "other",
+        "area": 0.00048701421454123544,
+        "centroid": [
+          -3.469446951953614e-18,
+          -1.7129955288763555e-19,
+          0.06008446582877627
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 3,
+        "kind": "other",
+        "area": 0.0007365670929636256,
+        "centroid": [
+          0.02719406812933006,
+          0.0,
+          0.030588014047588232
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 4,
+        "kind": "other",
+        "area": 3.7621407381563506e-05,
+        "centroid": [
+          0.017916190563331783,
+          8.15604747447013e-09,
+          0.04532009510713893
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 5,
+        "kind": "cylinder",
+        "area": 0.00015250602704811161,
+        "centroid": [
+          0.016481128710255078,
+          -0.012201813453825925,
+          0.0305871525499318
+        ],
+        "normal": null,
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "radius": 0.013780777768241586
+      },
+      {
+        "tag": 6,
+        "kind": "cylinder",
+        "area": 0.0001525493445383204,
+        "centroid": [
+          -0.016480374544002918,
+          0.01220133296837655,
+          0.03058715279456048
+        ],
+        "normal": null,
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "radius": 0.013780777768241586
+      },
+      {
+        "tag": 7,
+        "kind": "other",
+        "area": 3.762140664559193e-05,
+        "centroid": [
+          -0.01791619057363911,
+          8.183063739993738e-09,
+          0.015855933031439732
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 8,
+        "kind": "other",
+        "area": 3.762140683491662e-05,
+        "centroid": [
+          -0.017916190568557148,
+          -8.199083546408855e-09,
+          0.04532009507190216
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 9,
+        "kind": "other",
+        "area": 0.00012037528443257107,
+        "centroid": [
+          -0.014423185657318937,
+          -0.00978987126133372,
+          0.03058787222108774
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 10,
+        "kind": "other",
+        "area": 0.00012036597200538382,
+        "centroid": [
+          -0.014423484095435687,
+          0.009789553881294169,
+          0.030588462129121353
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 11,
+        "kind": "other",
+        "area": 3.762140739992399e-05,
+        "centroid": [
+          0.01791619056296671,
+          -8.156720145965077e-09,
+          0.015855932987070172
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 12,
+        "kind": "other",
+        "area": 0.00012036597200538375,
+        "centroid": [
+          0.014423484095435686,
+          -0.009789553881294174,
+          0.030588462129121353
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 13,
+        "kind": "other",
+        "area": 0.00012037528443257105,
+        "centroid": [
+          0.014423185657318937,
+          0.00978987126133372,
+          0.03058787222108774
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 14,
+        "kind": "cylinder",
+        "area": 0.0001525213237659886,
+        "centroid": [
+          0.01648084137138695,
+          0.012201683263463239,
+          0.030588346433687106
+        ],
+        "normal": null,
+        "axis": [
+          1.0,
+          -0.0,
+          -0.0
+        ],
+        "radius": 0.013780777768241586
+      },
+      {
+        "tag": 15,
+        "kind": "plane",
+        "area": 0.00018414177324090633,
+        "centroid": [
+          0.034850055778353164,
+          -2.602085213965211e-18,
+          0.030588014047588232
+        ],
+        "normal": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 16,
+        "kind": "other",
+        "area": 0.0007365670929636256,
+        "centroid": [
+          -0.02719406812933006,
+          -8.673617379884035e-19,
+          0.030588014047588232
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 17,
+        "kind": "plane",
+        "area": 0.00018414177324090633,
+        "centroid": [
+          -0.034850055778353164,
+          -3.469446951953614e-18,
+          0.030588014047588232
+        ],
+        "normal": [
+          -1.0,
+          -0.0,
+          0.0
+        ],
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 18,
+        "kind": "plane",
+        "area": 0.00041247757205963026,
+        "centroid": [
+          -0.019538080480306957,
+          2.6020852139652106e-18,
+          0.03058801404758823
+        ],
+        "normal": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 19,
+        "kind": "plane",
+        "area": 0.0004124775720596302,
+        "centroid": [
+          0.019538080480306957,
+          -1.0842021724855044e-18,
+          0.03058801404758823
+        ],
+        "normal": [
+          -1.0,
+          -0.0,
+          -0.0
+        ],
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 20,
+        "kind": "other",
+        "area": 0.0050911517465645805,
+        "centroid": [
+          3.469446951953614e-18,
+          4.1714443098658124e-19,
+          0.02756155553648318
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 21,
+        "kind": "plane",
+        "area": 0.0006788202328752771,
+        "centroid": [
+          -1.734723475976807e-18,
+          1.083382651186632e-18,
+          0.055123111072966344
+        ],
+        "normal": [
+          0.0,
+          -0.0,
+          -1.0
+        ],
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 22,
+        "kind": "other",
+        "area": 0.00022395758208035337,
+        "centroid": [
+          3.469446951953614e-18,
+          -4.676033719148884e-19,
+          0.0007774685131973245
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 23,
+        "kind": "other",
+        "area": 0.00443401829431294,
+        "centroid": [
+          1.3839880977362107e-10,
+          -1.709322228535191e-07,
+          0.029578199917942447
+        ],
+        "normal": null,
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 24,
+        "kind": "plane",
+        "area": 9.503556916963128e-05,
+        "centroid": [
+          -1.2663481374630692e-16,
+          -6.918063765476793e-18,
+          0.0
+        ],
+        "normal": [
+          -0.0,
+          0.0,
+          -1.0
+        ],
+        "axis": null,
+        "radius": null
+      },
+      {
+        "tag": 25,
+        "kind": "plane",
+        "area": 0.0006302252189170021,
+        "centroid": [
+          1.734723475976807e-18,
+          -7.710739804892613e-19,
+          0.06124790119218482
+        ],
+        "normal": [
+          0.0,
+          -0.0,
+          1.0
+        ],
+        "axis": null,
+        "radius": null
+      }
+    ]
+  }
+}

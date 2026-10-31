@@ -1,0 +1,300 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+#        RESEAU PERIODIQUE DE POUTRES BAIGNE PAR UN FLUIDE
+#              INCOMPRESSIBLE INITIALEMENT AU REPOS.
+# -------------------------------------------------------------------
+#                 A :   ETUDE DU CAS SANS FLUIDE
+#                 B :   ETUDE DU CAS AVEC FLUIDE
+# -------------------------------------------------------------------
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+MA = LIRE_MAILLAGE(FORMAT="MED")
+
+MA = DEFI_GROUP(reuse=MA, MAILLAGE=MA, CREA_GROUP_MA=_F(NOM="TOUT", TOUT="OUI"))
+
+MA = DEFI_GROUP(reuse=MA, MAILLAGE=MA, CREA_GROUP_NO=(_F(GROUP_MA="SB"), _F(GROUP_MA="SH")))
+
+MO = AFFE_MODELE(
+    MAILLAGE=MA, AFFE=_F(GROUP_MA="V", PHENOMENE="MECANIQUE", MODELISATION="3D_FAISCEAU")
+)
+
+MTA = DEFI_MATERIAU(ELAS=_F(E=1.0e9, NU=0.3, RHO=7641.0), FLUIDE=_F(RHO=1000.0))
+
+MTB = DEFI_MATERIAU(ELAS=_F(E=1.0e9, NU=0.3, RHO=7641.0), FLUIDE=_F(RHO=1000.0))
+
+AMA = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MTA))
+
+AMB = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MTB))
+
+ACB = AFFE_CARA_ELEM(
+    MODELE=MO,
+    POUTRE=_F(GROUP_MA="V", SECTION="RECTANGLE", CARA=("H",), VALE=(0.15,)),
+    ORIENTATION=_F(GROUP_MA="V", CARA="ANGL_NAUT", VALE=(0.0, -90.0, 0.0)),
+    POUTRE_FLUI=_F(GROUP_MA="V", B_T=0.79, B_N=0.79, A_FLUI=2.16, A_CELL=4.41, COEF_ECHELLE=10.0),
+)
+
+ACA = AFFE_CARA_ELEM(
+    MODELE=MO,
+    POUTRE=_F(GROUP_MA="V", SECTION="RECTANGLE", CARA=("H",), VALE=(0.15,)),
+    ORIENTATION=_F(GROUP_MA="V", CARA="ANGL_NAUT", VALE=(0.0, -90.0, 0.0)),
+    POUTRE_FLUI=_F(GROUP_MA="V", B_T=0.0, B_N=0.0, A_FLUI=4.41, A_CELL=4.41, COEF_ECHELLE=10.0),
+)
+
+
+CHA = AFFE_CHAR_MECA(
+    MODELE=MO,
+    DDL_IMPO=(
+        _F(GROUP_NO=("SB", "SH"), DX=0.0, DY=0.0, DZ=0.0, DRX=0.0, DRY=0.0, DRZ=0.0),
+        _F(
+            GROUP_NO="N1",
+            # TOUT : 'OUI'
+            PHI=0.0,
+        ),
+    ),
+)
+
+CHB = AFFE_CHAR_MECA(
+    MODELE=MO,
+    DDL_IMPO=(
+        _F(GROUP_NO="SB", DX=0.0, DY=0.0, DZ=0.0, DRX=0.0, DRY=0.0, DRZ=0.0),
+        _F(GROUP_NO="SH", DZ=0.0, DRX=0.0, DRY=0.0, DRZ=0.0),
+        _F(GROUP_NO="N1", PHI=0.0),
+    ),
+    LIAISON_UNIF=(_F(GROUP_NO="SH", DDL="DX"), _F(GROUP_NO="SH", DDL="DY")),
+)
+
+MASSB = POST_ELEM(MODELE=MO, CHAM_MATER=AMB, CARA_ELEM=ACB, MASS_INER=_F(TOUT="OUI"))
+
+
+IMPR_TABLE(TABLE=MASSB)
+
+# TEST SUR LA MASSE:
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-3,
+    VALE_CALC=1.26950760e04,
+    VALE_REFE=1.2695075999999999e4,
+    NOM_PARA="MASSE",
+    TABLE=MASSB,
+)
+
+# TEST SUR LE CENTRE DE GRAVITE:
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-3,
+    VALE_CALC=0.420000000,
+    VALE_REFE=0.41999999999999998,
+    NOM_PARA="CDG_X",
+    TABLE=MASSB,
+)
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-3,
+    VALE_CALC=0.420000000,
+    VALE_REFE=0.41999999999999998,
+    NOM_PARA="CDG_Y",
+    TABLE=MASSB,
+)
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-3,
+    VALE_CALC=2.050000000,
+    VALE_REFE=2.0499999999999998,
+    NOM_PARA="CDG_Z",
+    TABLE=MASSB,
+)
+
+# TEST SUR LES INERTIES AU CENTRE DE GRAVITE:
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-3,
+    VALE_CALC=1.85301561e04,
+    VALE_REFE=1.8530154999999999e4,
+    NOM_PARA="IX_G",
+    TABLE=MASSB,
+)
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-3,
+    VALE_CALC=1.85301561e04,
+    VALE_REFE=1.8530154999999999e4,
+    NOM_PARA="IY_G",
+    TABLE=MASSB,
+)
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-3,
+    VALE_CALC=1.49294094e03,
+    VALE_REFE=1492.941,
+    NOM_PARA="IZ_G",
+    TABLE=MASSB,
+)
+
+MRA = CALC_MATR_ELEM(MODELE=MO, OPTION="RIGI_MECA", CHAM_MATER=AMA, CHARGE=CHA, CARA_ELEM=ACA)
+
+MRB = CALC_MATR_ELEM(MODELE=MO, OPTION="RIGI_MECA", CHAM_MATER=AMB, CHARGE=CHB, CARA_ELEM=ACB)
+
+MMA = CALC_MATR_ELEM(MODELE=MO, OPTION="MASS_MECA", CHAM_MATER=AMA, CHARGE=CHA, CARA_ELEM=ACA)
+
+MMB = CALC_MATR_ELEM(MODELE=MO, OPTION="MASS_MECA", CHAM_MATER=AMB, CHARGE=CHB, CARA_ELEM=ACB)
+
+NUMA = NUME_DDL(MATR_RIGI=MRA)
+
+NUMB = NUME_DDL(MATR_RIGI=MRB)
+
+MASRA = ASSE_MATRICE(MATR_ELEM=MRA, NUME_DDL=NUMA)
+
+MASMA = ASSE_MATRICE(MATR_ELEM=MMA, NUME_DDL=NUMA)
+
+MASRB = ASSE_MATRICE(MATR_ELEM=MRB, NUME_DDL=NUMB)
+
+MASMB = ASSE_MATRICE(MATR_ELEM=MMB, NUME_DDL=NUMB)
+nprec = 10
+RESA = CALC_MODES(
+    MATR_RIGI=MASRA,
+    SOLVEUR=_F(NPREC=nprec),
+    VERI_MODE=_F(SEUIL=3.0e-5),
+    OPTION="BANDE",
+    CALC_FREQ=_F(FREQ=(3.0, 9.3), SEUIL_FREQ=0.0),
+    MATR_MASS=MASMA,
+    SOLVEUR_MODAL=_F(METHODE="JACOBI", NMAX_ITER_BATHE=35),
+)
+
+
+RESB = CALC_MODES(
+    MATR_RIGI=MASRB,
+    SOLVEUR=_F(NPREC=nprec),
+    OPTION="BANDE",
+    CALC_FREQ=_F(FREQ=(0.5, 3.8), SEUIL_FREQ=0.0),
+    MATR_MASS=MASMB,
+    SOLVEUR_MODAL=_F(MODE_RIGIDE="NON", METHODE="TRI_DIAG"),
+)
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            PARA="FREQ",
+            NUME_MODE=1,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESA,
+            VALE_CALC=3.318294909,
+            VALE_REFE=3.3332999999999999,
+            CRITERE="RELATIF",
+            PRECISION=5.0000000000000001e-3,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=2,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESA,
+            VALE_CALC=3.318294909,
+            VALE_REFE=3.3332999999999999,
+            CRITERE="RELATIF",
+            PRECISION=5.0000000000000001e-3,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=6,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESA,
+            VALE_CALC=3.318294909,
+            VALE_REFE=3.3332999999999999,
+            CRITERE="RELATIF",
+            PRECISION=5.0000000000000001e-3,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=19,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESA,
+            VALE_CALC=9.148009340,
+            VALE_REFE=9.2584,
+            CRITERE="RELATIF",
+            PRECISION=0.014999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=20,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESA,
+            VALE_CALC=9.148009340,
+            VALE_REFE=9.2584,
+            CRITERE="RELATIF",
+            PRECISION=0.014999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=1,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESB,
+            VALE_CALC=0.693233661,
+            VALE_REFE=0.69079999999999997,
+            CRITERE="RELATIF",
+            PRECISION=5.0000000000000001e-3,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=2,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESB,
+            VALE_CALC=0.693233661,
+            VALE_REFE=0.69079999999999997,
+            CRITERE="RELATIF",
+            PRECISION=5.0000000000000001e-3,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=19,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESB,
+            VALE_CALC=3.798485123,
+            VALE_REFE=3.7871000000000001,
+            CRITERE="RELATIF",
+            PRECISION=5.0000000000000001e-3,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=20,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=RESB,
+            VALE_CALC=3.798485123,
+            VALE_REFE=3.7871000000000001,
+            CRITERE="RELATIF",
+            PRECISION=5.0000000000000001e-3,
+        ),
+    )
+)
+
+FIN()
+#
+#

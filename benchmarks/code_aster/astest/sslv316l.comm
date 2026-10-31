@@ -1,0 +1,341 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+# ON IGNORE L'ALARME XFEM2_94 PARCE QUE MEME SI DANS LE CAS OU ELLE EST
+# EMISE ON PEUT OBTENIR DES VALEURS DE KI, KII, KIII ET BETA QUI NE SONT PAS
+# CORRECTES, DANS CE CAS TEST CES VALEURS (CALCULEES PAR CALC_G) NE SONT PAS
+# UTILISEES.
+
+# ----------------------------------------------
+#                 MAILLAGE
+# ----------------------------------------------
+
+nbcalc = 4
+
+# on lit le maillage avec GMSH
+
+MAILLAG1 = LIRE_MAILLAGE(FORMAT="GMSH", UNITE=19)
+
+# ----------------------------------------------
+#                   MODELE
+# ----------------------------------------------
+
+
+MODELE = AFFE_MODELE(
+    MAILLAGE=MAILLAG1,
+    AFFE=(
+        _F(GROUP_MA=("VOL",), PHENOMENE="MECANIQUE", MODELISATION="3D"),
+        _F(GROUP_MA=("SURFINF", "SURFSUP"), PHENOMENE="MECANIQUE", MODELISATION="3D"),
+    ),
+)
+
+MAILLAG1 = MODI_MAILLAGE(
+    reuse=MAILLAG1, MAILLAGE=MAILLAG1, ORIE_PEAU=_F(GROUP_MA_PEAU=("SURFSUP", "SURFINF"))
+)
+
+# ----------------------------------------------
+#              FISSURE INITIALE
+# ----------------------------------------------
+
+FISS = [None] * nbcalc
+
+FISS[0] = DEFI_FISS_XFEM(
+    MAILLAGE=MAILLAG1,
+    TYPE_DISCONTINUITE="COHESIF",
+    DEFI_FISS=_F(
+        GROUP_MA_BORD="FONDINI",
+        FORM_FISS="DEMI_PLAN",
+        PFON=(0.0, 2.0, 9.0),
+        NORMALE=(0.0, 0, 1.0),
+        DTAN=(0.0, 1.0, 0.0),
+    ),
+)
+# on cree une table pour imiter une sortie de CALC_G
+SIF0 = CREA_TABLE(
+    LISTE=(
+        _F(LISTE_R=(0.0, 0.25, 0.5, 0.75, 1.0), PARA="ABSC_CURV"),
+        _F(LISTE_R=(1.0, 1.0, 1.0, 1.0, 1.0), PARA="INST"),
+        _F(LISTE_R=(1.0, 1.0, 1.0, 1.0, 1.0), PARA="K1"),
+        _F(LISTE_R=(0.0, 0.0, 0.0, 0.0, 0.0), PARA="K2"),
+        _F(LISTE_R=(0.0, 0.0, 0.0, 0.0, 0.0), PARA="K3"),
+        _F(LISTE_R=(1.0, 1.0, 1.0, 1.0, 1.0), PARA="G"),
+        _F(LISTE_R=(1.0, 1.0, 1.0, 1.0, 1.0), PARA="G_IRWIN"),
+        _F(LISTE_I=(1, 1, 1, 1, 1), PARA="NUME_FOND"),
+        _F(LISTE_I=(1, 1, 1, 1, 1), PARA="NUME_ORDRE"),
+        _F(LISTE_I=(1, 2, 3, 4, 5), PARA="NUM_PT"),
+    )
+)
+
+SIF0NPT = CREA_TABLE(
+    LISTE=(
+        _F(LISTE_R=(0.0, 1.0), PARA="ABSC_CURV"),
+        _F(LISTE_R=(1.0, 1.0), PARA="INST"),
+        _F(LISTE_R=(1.0, 1.0), PARA="K1"),
+        _F(LISTE_R=(0.0, 0.0), PARA="K2"),
+        _F(LISTE_R=(0.0, 0.0), PARA="K3"),
+        _F(LISTE_R=(1.0, 1.0), PARA="G"),
+        _F(LISTE_R=(1.0, 1.0), PARA="G_IRWIN"),
+        _F(LISTE_I=(1, 1), PARA="NUME_FOND"),
+        _F(LISTE_I=(1, 1), PARA="NUME_ORDRE"),
+        _F(LISTE_I=(1, 2), PARA="NUM_PT"),
+    )
+)
+
+# AVANCE IMPOSEE
+da = 2.0
+
+# ANGLE DE PROPAGATION IMPOSE
+beta = 30.0 / 180.0 * pi
+print(sin(beta))
+
+# FUNCTION POUR IMPOSER L'ANGLE DE PROPAGATION CI-DESSUS
+# DANS LA TABLE ISSUE PAR CALC_G
+ZERO = FORMULE(VALE="0.0*G+beta", beta=beta, NOM_PARA="G")
+
+# modif pour imposer un angle
+SIF = CALC_TABLE(
+    TABLE=SIF0,
+    ACTION=(
+        _F(
+            OPERATION="EXTR",
+            NOM_PARA=(
+                "NUME_ORDRE",
+                "INST",
+                "NUM_PT",
+                "ABSC_CURV",
+                "K1",
+                "K2",
+                "K3",
+                "G",
+                "G_IRWIN",
+                "NUME_FOND",
+            ),
+        ),
+        _F(OPERATION="OPER", FORMULE=ZERO, NOM_PARA="BETA"),
+    ),
+)
+SIFNPT = CALC_TABLE(
+    TABLE=SIF0NPT,
+    ACTION=(
+        _F(
+            OPERATION="EXTR",
+            NOM_PARA=(
+                "NUME_ORDRE",
+                "INST",
+                "NUM_PT",
+                "ABSC_CURV",
+                "K1",
+                "K2",
+                "K3",
+                "G",
+                "G_IRWIN",
+                "NUME_FOND",
+            ),
+        ),
+        _F(OPERATION="OPER", FORMULE=ZERO, NOM_PARA="BETA"),
+    ),
+)
+
+# propagation avec NB_POINT_FOND
+FISS[1] = CO("FISS_1")
+PROPA_FISS(
+    MODELE=MODELE,
+    METHODE_PROPA="GEOMETRIQUE",
+    OPERATION="PROPA_COHESIF",
+    FISSURE=_F(FISS_ACTUELLE=FISS[0], FISS_PROPAGEE=FISS[1], NB_POINT_FOND=2, TABLE=SIFNPT),
+    CRIT_ANGL_BIFURCATION="ANGLE_IMPO",
+    ZONE_MAJ="TOUT",
+    DA_MAX=da,
+    INFO=1,
+)
+
+# propagation sans NB_POINT_FOND
+FISS[2] = CO("FISS_2")
+PROPA_FISS(
+    MODELE=MODELE,
+    METHODE_PROPA="GEOMETRIQUE",
+    OPERATION="PROPA_COHESIF",
+    FISSURE=_F(FISS_ACTUELLE=FISS[0], FISS_PROPAGEE=FISS[2], TABLE=SIF),
+    CRIT_ANGL_BIFURCATION="ANGLE_IMPO",
+    ZONE_MAJ="TOUT",
+    DA_MAX=da,
+    INFO=1,
+)
+
+#
+# idem, ms angle plus grand
+beta2 = 70.0 / 180.0 * pi
+#
+ANGLE = FORMULE(VALE="0.0*G+beta2", beta2=beta2, NOM_PARA="G")
+#
+SIF2 = CALC_TABLE(
+    TABLE=SIF0,
+    ACTION=(
+        _F(
+            OPERATION="EXTR",
+            NOM_PARA=(
+                "NUME_ORDRE",
+                "INST",
+                "NUM_PT",
+                "ABSC_CURV",
+                "K1",
+                "K2",
+                "K3",
+                "G",
+                "G_IRWIN",
+                "NUME_FOND",
+            ),
+        ),
+        _F(OPERATION="OPER", FORMULE=ANGLE, NOM_PARA="BETA"),
+    ),
+)
+
+# propagation sans NB_POINT_FOND
+FISS[3] = CO("FISS_3")
+PROPA_FISS(
+    MODELE=MODELE,
+    METHODE_PROPA="GEOMETRIQUE",
+    OPERATION="PROPA_COHESIF",
+    FISSURE=_F(FISS_ACTUELLE=FISS[0], FISS_PROPAGEE=FISS[3], TABLE=SIF2),
+    CRIT_ANGL_BIFURCATION="ANGLE_IMPO",
+    ZONE_MAJ="TOUT",
+    DA_MAX=da,
+    INFO=1,
+)
+# ----------------------------------------------
+#         PROPAGATION SUR 3 PAS DE TEMPS
+# ----------------------------------------------
+
+VAL_CALC = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+# ----------------------------------------------
+#         POST TRAITEMENT
+# ----------------------------------------------
+
+# POSITION INITIALE DU FOND DE FISSURE
+y_in = 2.0
+z_in = 9.0
+
+# TOLERANCE: 15% LONGUEUR MAXIMALE DES ARETES DES ELEMENTS
+tol = 0.15 * 0.33
+
+CHLN = [None] * nbcalc
+CHLT = [None] * nbcalc
+FOND = [None] * nbcalc
+TABLSN = [None] * nbcalc
+TABLST = [None] * nbcalc
+tabBeta = [0.0, beta, beta, beta2]
+
+# VERIFICATION DE LA POSITION DU CHAQUE FOND DE FISSURE CALCULE
+for i in range(1, nbcalc):
+
+    #   CALCUL DE LA POSITION CORRECTE
+    y = y_in + da * cos(tabBeta[i])
+    z = z_in + da * sin(tabBeta[i])
+
+    #   EXTRACTION DES LEVEL SETS POUR LES POINTS D'INTERSECTION
+    #   ENTRE L'ARETE DONNANT LA POSITION CORRECTE DU FOND ET
+    #   LES FACES DES ELEMENTS DU MAILLAGE
+    CHLN[i] = CREA_CHAMP(
+        TYPE_CHAM="NOEU_NEUT_R", OPERATION="EXTR", NOM_CHAM="LNNO", FISSURE=FISS[i]
+    )
+
+    CHLT[i] = CREA_CHAMP(
+        TYPE_CHAM="NOEU_NEUT_R", OPERATION="EXTR", NOM_CHAM="LTNO", FISSURE=FISS[i]
+    )
+
+    TABLSN[i] = MACR_LIGN_COUPE(
+        CHAM_GD=CHLN[i],
+        MODELE=MODELE,
+        LIGN_COUPE=_F(
+            TYPE="SEGMENT",
+            COOR_ORIG=(0, y, z),
+            COOR_EXTR=(1, y, z),
+            NB_POINTS=15,
+            OPERATION="EXTRACTION",
+            INTITULE="Test LSN",
+        ),
+    )
+
+    TABLST[i] = MACR_LIGN_COUPE(
+        CHAM_GD=CHLT[i],
+        MODELE=MODELE,
+        LIGN_COUPE=_F(
+            TYPE="SEGMENT",
+            COOR_ORIG=(0, y, z),
+            COOR_EXTR=(1, y, z),
+            NB_POINTS=15,
+            OPERATION="EXTRACTION",
+            INTITULE="Test LST",
+        ),
+    )
+
+    IMPR_TABLE(TABLE=TABLSN[i])
+    IMPR_TABLE(TABLE=TABLST[i])
+
+    #   VERIFICATION DES VALEURS DES LEVEL SETS. POUR LES POINTS
+    #   SELECTIONNES, LES LEVEL SETS DOIVENT ETRE EGAL A ZERO.
+    TEST_TABLE(
+        TABLE=TABLSN[i],
+        REFERENCE="ANALYTIQUE",
+        NOM_PARA="X1",
+        PRECISION=tol,
+        TYPE_TEST="MAX",
+        CRITERE="ABSOLU",
+        VALE_CALC=VAL_CALC[(i - 1) * 4 + 0],
+        VALE_REFE=0.0,
+    )
+
+    TEST_TABLE(
+        TABLE=TABLSN[i],
+        REFERENCE="ANALYTIQUE",
+        NOM_PARA="X1",
+        PRECISION=tol,
+        TYPE_TEST="MIN",
+        CRITERE="ABSOLU",
+        VALE_CALC=VAL_CALC[(i - 1) * 4 + 1],
+        VALE_REFE=0.0,
+    )
+
+    TEST_TABLE(
+        TABLE=TABLST[i],
+        REFERENCE="ANALYTIQUE",
+        NOM_PARA="X1",
+        PRECISION=tol,
+        TYPE_TEST="MAX",
+        CRITERE="ABSOLU",
+        VALE_CALC=VAL_CALC[(i - 1) * 4 + 2],
+        VALE_REFE=0.0,
+    )
+
+    TEST_TABLE(
+        TABLE=TABLST[i],
+        REFERENCE="ANALYTIQUE",
+        NOM_PARA="X1",
+        PRECISION=tol,
+        TYPE_TEST="MIN",
+        CRITERE="ABSOLU",
+        VALE_CALC=VAL_CALC[(i - 1) * 4 + 3],
+        VALE_REFE=0.0,
+    )
+
+FIN()

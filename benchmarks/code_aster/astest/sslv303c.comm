@@ -1,0 +1,301 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+#       (3D ET FORCE_INTERNE)
+
+DEBUT(CODE="OUI")
+
+MAIL = LIRE_MAILLAGE(FORMAT="MED")
+#
+# DEFINITION DES GROUPES DE NOEUDS
+
+MAIL = DEFI_GROUP(
+    reuse=MAIL,
+    MAILLAGE=MAIL,
+    CREA_GROUP_NO=(
+        _F(GROUP_MA=("FACE1", "FACE2")),
+        _F(GROUP_MA="SECT_MED"),
+        _F(GROUP_MA="PLAN_SYM"),
+    ),
+)
+#
+# DEFINITION DU MODELE
+
+MODELE = AFFE_MODELE(MAILLAGE=MAIL, AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="3D"))
+
+MAIL = MODI_MAILLAGE(
+    reuse=MAIL,
+    MAILLAGE=MAIL,
+    ORIE_PEAU=_F(GROUP_MA_PEAU=("GR1", "GR2", "GR3", "GR4", "GR5", "GR6", "GR7", "GR8")),
+)
+#
+# DEFINITION DU MATERIAU
+
+ACIER = DEFI_MATERIAU(ELAS=_F(E=200000000000.0, NU=0.3, RHO=7800.0, ALPHA=1e-05))
+#
+# ATTRIBUTION DU MATERIAU
+
+CHMAT = AFFE_MATERIAU(MAILLAGE=MAIL, AFFE=_F(TOUT="OUI", MATER=ACIER))
+#
+# DEFINITION DES CONDITIONS AUX LIMITES ET CHARGEMENTS
+
+CLIM = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    DDL_IMPO=(
+        _F(GROUP_NO=("FACE1", "FACE2"), DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="PLAN_SYM", DY=0.0),
+    ),
+)
+
+CHAR_PR = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    PRES_REP=(
+        _F(GROUP_MA="GR1", PRES=9620.0),
+        _F(GROUP_MA="GR2", PRES=8155.0),
+        _F(GROUP_MA="GR3", PRES=5450.0),
+        _F(GROUP_MA="GR4", PRES=1910.0),
+        _F(GROUP_MA="GR5", PRES=-1910.0),
+        _F(GROUP_MA="GR6", PRES=-5450.0),
+        _F(GROUP_MA="GR7", PRES=-8155.0),
+        _F(GROUP_MA="GR8", PRES=-9620.0),
+    ),
+)
+#   GRAVITE SUIVANT X : AVEC LES 2 MOTS-CLES
+
+CHAR_GR = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    PESANTEUR=_F(GRAVITE=4.905, DIRECTION=(1.0, 0.0, 0.0)),
+    FORCE_INTERNE=_F(TOUT="OUI", FX=38259.0),
+)
+#
+# RESOLUTION
+
+DEF = MACRO_ELAS_MULT(
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    CHAR_MECA_GLOBAL=CLIM,
+    CAS_CHARGE=(
+        _F(NOM_CAS="CHARGE1", CHAR_MECA=CHAR_PR),
+        _F(NOM_CAS="CHARGE2", CHAR_MECA=(CHAR_PR, CHAR_GR)),
+    ),
+)
+#
+# CALCUL DES CONTRAINTES
+
+
+DEF = CALC_CHAMP(reuse=DEF, RESULTAT=DEF, CONTRAINTE=("SIGM_ELNO"))
+
+#
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N865",
+            NOM_CMP="DX",
+            VALE_CALC=-7.82845828e-06,
+            VALE_REFE=-7.8199999999999997e-06,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N865",
+            NOM_CMP="DY",
+            VALE_CALC=-8.62532890e-22,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N995",
+            NOM_CMP="DX",
+            VALE_CALC=-7.81688045e-06,
+            VALE_REFE=-7.8199999999999997e-06,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N995",
+            NOM_CMP="DY",
+            VALE_CALC=1.44756607e-22,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-2,
+        ),
+    )
+)
+
+#
+
+T1 = POST_RELEVE_T(
+    ACTION=_F(
+        INTITULE="SIG",
+        GROUP_NO="N965",
+        RESULTAT=DEF,
+        NOM_CHAM="SIGM_ELNO",
+        NUME_ORDRE=1,
+        TOUT_CMP="OUI",
+        OPERATION="EXTRACTION",
+    )
+)
+#
+
+TEST_TABLE(
+    PRECISION=1.0e-2,
+    VALE_CALC=1.73027121e06,
+    VALE_REFE=1.730000e6,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIXX",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="943"),
+)
+
+TEST_TABLE(
+    PRECISION=1.0e-2,
+    VALE_CALC=1.74329646e06,
+    VALE_REFE=1.740000e6,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIYY",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="943"),
+)
+
+TEST_TABLE(
+    PRECISION=1.0e-2,
+    VALE_CALC=5.56148719e06,
+    VALE_REFE=5.560000e6,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIZZ",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="943"),
+)
+
+#
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=2,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N865",
+            NOM_CMP="DX",
+            VALE_CALC=-7.45964973e-06,
+            VALE_REFE=-7.4599999999999997e-06,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=2,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N865",
+            NOM_CMP="DY",
+            VALE_CALC=-4.35297335e-22,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=2,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N995",
+            NOM_CMP="DX",
+            VALE_CALC=-7.44862090e-06,
+            VALE_REFE=-7.4399999999999999e-06,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=2,
+            RESULTAT=DEF,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N995",
+            NOM_CMP="DY",
+            VALE_CALC=-6.85008945e-25,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-2,
+        ),
+    )
+)
+
+#
+
+T2 = POST_RELEVE_T(
+    ACTION=_F(
+        INTITULE="SIG",
+        GROUP_NO="N965",
+        NUME_ORDRE=2,
+        NOM_CHAM="SIGM_ELNO",
+        RESULTAT=DEF,
+        TOUT_CMP="OUI",
+        OPERATION="EXTRACTION",
+    )
+)
+#
+
+TEST_TABLE(
+    PRECISION=1.0e-2,
+    VALE_CALC=1.64856153e06,
+    VALE_REFE=1.640000e6,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIXX",
+    TABLE=T2,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="943"),
+)
+
+TEST_TABLE(
+    PRECISION=1.0e-2,
+    VALE_CALC=1.66097555e06,
+    VALE_REFE=1.660000e6,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIYY",
+    TABLE=T2,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="943"),
+)
+
+TEST_TABLE(
+    PRECISION=1.0e-2,
+    VALE_CALC=5.29926546e06,
+    VALE_REFE=5.300000e6,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIZZ",
+    TABLE=T2,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="943"),
+)
+
+FIN()
+#

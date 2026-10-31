@@ -2,13 +2,16 @@
 
     python scripts/compare_nafems.py REPLY [--problem nafems_le10] [--root benchmarks] [--json OUT]
 
+Any registered problem with references works the same way, e.g. a gold set:
+``--problem abc_00000003_bc0 --root benchmarks/gold``.
+
 REPLY is the agent's raw reply (case JSON, optionally in a ```json fence) or a case .json file.
 The mesh path in the case is resolved against benchmarks/<problem>/public/.
 
 Report:
   setup      each reference BC matched / missing in the agent's case, plus extra agent BCs
   solve      DOFs, wall time, diagnostics status and flags (feacore.diagnostics)
-  reference  per reference QoI: agent value, NAFEMS value, relative error, pass (within tolerance)
+  reference  per reference QoI: agent value, reference value (SI units), relative error, pass (within tolerance)
   verdict    pass = valid reply, setup matches, solution not failed, every reference QoI within tolerance
 """
 
@@ -120,7 +123,7 @@ def render(out: dict) -> str:
         lines.append(f"  error: {out['error']}")
     if "setup" in out:
         s = out["setup"]
-        lines.append(f"  setup: {'matches NAFEMS' if s['matches'] else 'DIFFERS from NAFEMS'}")
+        lines.append(f"  setup: {'matches the reference' if s['matches'] else 'DIFFERS from the reference'}")
         for r in s["bcs"]:
             lines.append(f"    [{'x' if r['matched'] else ' '}] {r['reference']}")
         for e in s["extra"]:
@@ -133,8 +136,8 @@ def render(out: dict) -> str:
         if s["flags"]:
             lines.append(f"    flags: {', '.join(s['flags'])}")
     for r in out.get("reference", []):
-        lines.append(f"  {r['qoi']}: {r['agent_value'] / 1e6:.4g} MPa vs NAFEMS {r['reference'] / 1e6:.4g} MPa "
-                     f"-> error {r['rel_error']:.2%} (tol {r['tolerance']:.0%}) {'PASS' if r['pass'] else 'FAIL'}")
+        lines.append(f"  {r['qoi']}: {r['agent_value']:.4g} vs reference {r['reference']:.4g} "
+                     f"-> error {r['rel_error']:.2%} (tol {r['tolerance']:.1%}) {'PASS' if r['pass'] else 'FAIL'}")
     return "\n".join(lines)
 
 

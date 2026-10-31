@@ -48,9 +48,9 @@ async function renderProblem(el, pid) {
   try { d = await api(`/api/consensus/${encodeURIComponent(pid)}`); } catch (e) { clear(el).append(errorBox(e)); return; }
   clear(el);
   el.append(h('div', { class: 'page-head' }, h('div', {},
-    h('div', { class: 'secondary small' }, h('a', { href: '#/consensus' }, '← Consensus'), ' · ', h('a', { href: `#/benchmarks/${encodeURIComponent(pid)}` }, 'problem')),
-    h('h1', {}, d.title || pid), h('div', { class: 'chips', style: { marginTop: '6px' } }, h('span', { class: 'badge mono' }, pid),
-      h('span', { class: 'badge' }, `${d.n_submissions} submissions`), h('span', { class: 'badge' }, `${d.agents.length} agents`)))));
+    h('div', { class: 'secondary small' }, h('a', { href: '#/runs?tab=consensus' }, '← Consensus'), ' · ', h('a', { href: `#/benchmarks/${encodeURIComponent(pid)}` }, 'problem'), ' · ', h('a', { href: '#/swarm' }, 'swarm')),
+    h('h1', {}, d.title || pid),
+    h('div', { class: 'meta-line' }, `${pid} · ${d.n_submissions} submission${d.n_submissions === 1 ? '' : 's'} from ${d.agents.length} agent${d.agents.length === 1 ? '' : 's'}`))));
   const rows = d.qois.flatMap(q => q.submissions);
   const conv = rows.filter(r => ['converged', 'exact', 'expected_divergence'].includes(r.verdict)).length;
   const flagged = rows.filter(r => r.flags.some(f => ['divergent', 'singular_suspected'].includes(f))).length;
@@ -87,7 +87,7 @@ function qoiBlock(q, width) {
   }
   const subs = [...q.submissions].sort((a, b) => (a.agent_id || '').localeCompare(b.agent_id || ''));
   for (const r of subs) {
-    rows.push({ kind: 'submission', label: r.agent_id || r.submission_id, value: r.fine,
+    rows.push({ kind: 'submission', label: r.loop_id ? `${r.agent_id} \u00b7 ${r.loop_id}` : (r.agent_id || r.submission_id), value: r.fine,
       lo: r.band_abs !== null ? r.fine - r.band_abs : NaN, hi: r.band_abs !== null ? r.fine + r.band_abs : NaN,
       ext: r.extrapolation_reliable ? (r.phi_ext ?? NaN) : NaN,
       status: rowStatus(r),
@@ -110,7 +110,7 @@ function qoiBlock(q, width) {
     h('thead', {}, h('tr', {}, h('th', {}, 'agent'), h('th', { class: 'num' }, 'meshes'), h('th', { class: 'num' }, 'finest mesh'), h('th', { class: 'num' }, '± GCI'),
       h('th', { class: 'num' }, 'extrapolated'), h('th', { class: 'num' }, 'p (theory)'), h('th', {}, 'verdict'), ref ? h('th', { class: 'num' }, 'error vs ref') : null, h('th', {}, 'flags'))),
     h('tbody', {}, subs.map(r => h('tr', {},
-      h('td', {}, h('div', { style: { fontWeight: 600 } }, r.agent_id || '–'), h('div', { class: 'mono small muted' }, `${r.submission_id} · ${timeAgo(r.created_at)}`)),
+      h('td', {}, h('div', { style: { fontWeight: 600 } }, r.agent_id || '\u2013', r.loop_id ? h('span', { class: 'muted small' }, ` \u00b7 loop ${r.loop_id}`) : null), h('div', { class: 'mono small muted' }, `${r.submission_id} · ${timeAgo(r.created_at)}`)),
       h('td', { class: 'num' }, r.n_levels), h('td', { class: 'num' }, fmt(r.fine, 6)), h('td', { class: 'num' }, r.gci_fine !== null ? fmtPct(r.gci_fine, 2) : '–'),
       h('td', { class: 'num' }, fmt(r.phi_ext, 6), r.phi_ext !== null && r.extrapolation_reliable === false ? h('div', { class: 'small muted' }, 'unreliable') : null),
       h('td', { class: 'num' }, `${fmt(r.p, 3)} (${fmt(r.p_theory, 2)})`),

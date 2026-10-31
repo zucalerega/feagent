@@ -1,0 +1,146 @@
+{
+ "id": "verification/torsion_shaft",
+ "volume": 31415.926535897932,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -10.0000001,
+  -10.0000001,
+  -1e-07,
+  10.0000001,
+  10.0000001,
+  100.0000001
+ ],
+ "n_cad_faces": 3,
+ "qois": [
+  {
+   "id": "ut_mid",
+   "kind": "point",
+   "field": "U",
+   "component": "t",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "point": [
+    10.0,
+    0,
+    50.0
+   ],
+   "reference": 0.03940979543227885,
+   "tolerance": {
+    "rel": 0.01
+   },
+   "reference_type": "analytical",
+   "provenance": "Saint-Venant torsion of a circular shaft (exact; fixed end consistent with the exact field)",
+   "description": "tangential displacement of the surface point [10.0, 0, 50.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "ut_3q",
+   "kind": "point",
+   "field": "U",
+   "component": "t",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "point": [
+    0,
+    10.0,
+    75.0
+   ],
+   "reference": 0.05911469314841828,
+   "tolerance": {
+    "rel": 0.01
+   },
+   "reference_type": "analytical",
+   "provenance": "Saint-Venant torsion of a circular shaft (exact; fixed end consistent with the exact field)",
+   "description": "tangential displacement of the surface point [0, 10.0, 75.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "mises_mid",
+   "kind": "point",
+   "field": "S",
+   "component": "mises",
+   "point": [
+    10.0,
+    0,
+    50.0
+   ],
+   "reference": 110.2657790843584,
+   "tolerance": {
+    "rel": 0.015
+   },
+   "reference_type": "analytical",
+   "provenance": "Saint-Venant torsion of a circular shaft (exact; fixed end consistent with the exact field); pure shear tau = T R / J, von Mises = sqrt(3) tau",
+   "description": "von Mises stress at the surface point [10.0, 0, 50.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "reaction_torque",
+   "kind": "reaction",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "moment": {
+    "point": [
+     0,
+     0,
+     0
+    ],
+    "axis": [
+     0,
+     0,
+     1
+    ]
+   },
+   "reference": -100000.0,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "gate": true,
+   "reference_type": "analytical",
+   "provenance": "statics",
+   "description": "reaction moment about z at the fixed face",
+   "weight": 1.0
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 1,
+  "reference_n_dof": 4905,
+  "reference_solver_cpu_s": 0.19974999999999998
+ }
+}

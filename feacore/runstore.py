@@ -10,6 +10,7 @@ written on first use so nothing in it is ever committed)::
       studies/<study_id>/study.json      convergence study: run_ids, progress, GCI analysis
       studies/<study_id>/meshes/*.msh    the study's meshes
       submissions/<submission_id>.json   one agent's set of runs on one problem + GCI analysis
+      batches/<batch_id>.json            a benchmark batch: settings + one study per problem
       cache/                             derived data (geometry previews)
 
 Every record is a JSON object with a ``schema`` key (``feacore.run/1``, ``feacore.study/1``,
@@ -44,6 +45,7 @@ import numpy as np
 RUN_SCHEMA = "feacore.run/1"
 STUDY_SCHEMA = "feacore.study/1"
 SUBMISSION_SCHEMA = "feacore.submission/1"
+BATCH_SCHEMA = "feacore.batch/1"
 
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "interrupted")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -147,8 +149,12 @@ class RunStore:
     def cache_dir(self) -> Path:
         return self.root / "cache"
 
+    @property
+    def batches_dir(self) -> Path:
+        return self.root / "batches"
+
     def ensure(self) -> "RunStore":
-        for d in (self.runs_dir, self.studies_dir, self.submissions_dir, self.cache_dir):
+        for d in (self.runs_dir, self.studies_dir, self.submissions_dir, self.cache_dir, self.batches_dir):
             d.mkdir(parents=True, exist_ok=True)
         gi = self.root / ".gitignore"
         if not gi.exists():
@@ -330,7 +336,7 @@ class RunStore:
     def create_study(self, problem_id: str, backend: str = "skfem", order: int = 2,
                      sizes: list[float] | None = None, geom_order: int | None = None,
                      meta: dict | None = None, study_id: str | None = None,
-                     source: str = "ui") -> dict:
+                     source: str = "ui", nested: bool = False, batch_id: str | None = None) -> dict:
         self.ensure()
         study_id = check_id(study_id) if study_id else new_id("study")
         d = self.study_dir(study_id)
@@ -350,6 +356,8 @@ class RunStore:
             "order": int(order),
             "geom_order": geom_order,
             "sizes": sizes,
+            "nested": bool(nested),
+            "batch_id": batch_id,
             "progress": {"done": 0, "total": len(sizes) if sizes else None, "stage": "queued",
                          "message": "waiting for a worker", "levels": []},
             "run_ids": [],
@@ -492,6 +500,47 @@ class RunStore:
             if agent_id is not None and s.get("agent_id") != agent_id:
                 continue
             out.append(s)
+        return out
+
+    # ================================================================== batches
+    def create_batch(self, items: list[dict], settings: dict, name: str = "", meta: dict | None = None,
+                     batch_id: str | None = None) -> dict:
+        """A benchmark batch: ``items`` = ``[{"problem_id", "study_id"}]`` (one convergence study
+        per problem), ``settings`` = the shared study options (backend, order, nested, levels...).
+        Progress and results are derived from the studies when read, so this record is static."""
+        self.ensure()
+        batch_id = check_id(batch_id) if batch_id else new_id("batch")
+        path = self.batches_dir / f"{batch_id}.json"
+        if path.exists():
+            raise ValueError(f"batch {batch_id!r} already exists")
+        rec = {"schema": BATCH_SCHEMA, "batch_id": batch_id, "created_at": now_iso(), "name": name,
+               "settings": settings, "items": items, "meta": meta or {}}
+        write_json(path, rec)
+        return rec
+
+    def update_batch(self, batch_id: str, **fields) -> dict:
+        rec = self.get_batch(batch_id)
+        rec.update(fields)
+        write_json(self.batches_dir / f"{check_id(batch_id)}.json", rec)
+        return rec
+
+    def get_batch(self, batch_id: str) -> dict:
+        p = self.batches_dir / f"{check_id(batch_id)}.json"
+        if not p.exists():
+            raise KeyError(f"unknown batch {batch_id!r}")
+        return read_json(p)
+
+    def list_batches(self, limit: int | None = None) -> list[dict]:
+        if not self.batches_dir.exists():
+            return []
+        out = []
+        for p in sorted(self.batches_dir.glob("*.json"), reverse=True):
+            try:
+                out.append(read_json(p))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if limit is not None and len(out) >= limit:
+                break
         return out
 
     # ================================================================== maintenance

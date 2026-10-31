@@ -1,0 +1,162 @@
+{
+ "id": "verification/lame_sphere",
+ "volume": 458148.9286485114,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -1.0000002428339552e-07,
+  -1.000000487763315e-07,
+  -1.0000145761533504e-07,
+  100.00000010000002,
+  100.00000010000002,
+  100.00000010000002
+ ],
+ "n_cad_faces": 5,
+ "qois": [
+  {
+   "id": "ur_inner",
+   "kind": "point",
+   "field": "U",
+   "component": "r",
+   "frame": {
+    "type": "spherical",
+    "center": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "point": [
+    28.86751345948129,
+    28.86751345948129,
+    28.86751345948129
+   ],
+   "reference": 0.01904761904761905,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled sphere; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 141",
+   "description": "radial displacement of the inner surface at [28.868, 28.868, 28.868]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "ur_outer",
+   "kind": "point",
+   "field": "U",
+   "component": "r",
+   "frame": {
+    "type": "spherical",
+    "center": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "point": [
+    57.73502691896258,
+    57.73502691896258,
+    57.73502691896258
+   ],
+   "reference": 0.007142857142857143,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled sphere; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 141",
+   "description": "radial displacement of the outer surface at [57.735, 57.735, 57.735]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "hoop_inner",
+   "kind": "point",
+   "field": "S",
+   "component": "tt",
+   "frame": {
+    "type": "spherical",
+    "center": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "point": [
+    28.86751345948129,
+    28.86751345948129,
+    28.86751345948129
+   ],
+   "reference": 71.42857142857143,
+   "tolerance": {
+    "rel": 0.025
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled sphere; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 141",
+   "note": "2.5 %: the hoop stress falls off as 1/r^3 at the bore (~3.4 MPa/mm), so nodal-averaged surface stress on reasonable meshes scatters by ~1-2 % (convergence study: 0.5 %, 1.7 %, 0.2 % on 13k/43k/112k DOF)",
+   "description": "tangential (hoop) stress at the inner surface",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "hoop_outer",
+   "kind": "point",
+   "field": "S",
+   "component": "tt",
+   "frame": {
+    "type": "spherical",
+    "center": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "point": [
+    57.73502691896258,
+    57.73502691896258,
+    57.73502691896258
+   ],
+   "reference": 21.428571428571427,
+   "tolerance": {
+    "rel": 0.015
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled sphere; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 141",
+   "description": "tangential (hoop) stress at the outer surface",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "reaction_x",
+   "kind": "reaction",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "component": "x",
+   "reference": -196349.5408493621,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "gate": true,
+   "reference_type": "analytical",
+   "provenance": "statics",
+   "description": "sum of x-reactions on x=0",
+   "weight": 1.0
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 3,
+  "reference_n_dof": 13227,
+  "reference_solver_cpu_s": 0.898654
+ }
+}

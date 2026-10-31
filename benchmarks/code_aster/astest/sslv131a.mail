@@ -1,0 +1,45 @@
+ TITRE
+ME-30-JUIN-2021 09:22:24                                                        
+ FINSF
+ %
+ COOR_3D
+ A         0.00000000000000E+00  0.00000000000000E+00  0.00000000000000E+00
+ B         3.00000000000000E+00  1.00000000000000E+00  0.00000000000000E+00
+ C         2.00000000000000E+00  3.00000000000000E+00  0.00000000000000E+00
+ D         3.00000000000000E+00  1.00000000000000E+00 -1.00000000000000E+00
+ FINSF
+ %
+ TETRA4  
+ TET1     A        B        C        D       
+ FINSF
+ %
+ TRIA3   
+ TRI1     A        B        C       
+ FINSF
+ %
+ GROUP_NO
+ B                       
+ B       
+ FINSF
+ %
+ GROUP_NO
+ D                       
+ D       
+ FINSF
+ %
+ GROUP_NO
+ A                       
+ A       
+ FINSF
+ %
+ GROUP_NO
+ C                       
+ C       
+ FINSF
+ %
+ GROUP_MA
+ TET1                    
+ TET1    
+ FINSF
+ %
+ FIN

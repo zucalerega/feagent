@@ -1,0 +1,211 @@
+{
+ "case": "verification/nafems_le1",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 500.0,
+   "n_nodes": 991,
+   "n_dof": 2973,
+   "solver_cpu_s": 0.09037499999999998,
+   "solver_wall_s": 0.08132553999985248,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": 92.96174649999999,
+     "error": 0.0028235868392663083,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -1374999.7480000001,
+     "error": 1.8327272717248308e-07,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 2,
+   "h": 300.0,
+   "n_nodes": 2370,
+   "n_dof": 7110,
+   "solver_cpu_s": 0.25768,
+   "solver_wall_s": 0.2224185929999294,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": 92.93421425,
+     "error": 0.002526583063646103,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -1374999.0161999997,
+     "error": 7.15490909293294e-07,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 180.0,
+   "n_nodes": 6207,
+   "n_dof": 18621,
+   "solver_cpu_s": 0.8250949999999999,
+   "solver_wall_s": 0.6663877500004673,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": 79.6088568354138,
+     "error": 0.14122053036231066,
+     "passed": false,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -1374999.82549,
+     "error": 1.269163636660034e-07,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 0.15113215748275632,
+   "all_within_tolerance": false
+  },
+  {
+   "level": 4,
+   "h": 120.0,
+   "n_nodes": 14069,
+   "n_dof": 42207,
+   "solver_cpu_s": 1.8711989999999998,
+   "solver_wall_s": 1.4314595140003803,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": 92.21186750000003,
+     "error": 0.0052657227615963064,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -1375017.0703542999,
+     "error": 1.2414803127165546e-05,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 80.0,
+   "n_nodes": 34738,
+   "n_dof": 104214,
+   "solver_cpu_s": 7.591233,
+   "solver_wall_s": 5.512032169000122,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": 92.5710857000001,
+     "error": 0.0013906612729223924,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -1375007.570169371,
+     "error": 5.505577724426985e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "syy_D": {
+   "q_fine": 92.5710857000001,
+   "monotone": true,
+   "value": 92.5710857000001,
+   "order": null,
+   "uncertainty": 1.3033817661699376,
+   "method": "finest value (no observed order); GCI Fs=3"
+  },
+  "reaction_x": {
+   "q_fine": -1375007.570169371,
+   "monotone": false,
+   "value": -1375007.570169371,
+   "order": null,
+   "uncertainty": 34.470324196805585,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   2973,
+   7110,
+   18621,
+   42207,
+   104214
+  ],
+  "accuracy": [
+   1.0,
+   1.0,
+   0.1511,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   true,
+   true,
+   false,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.09,
+   0.26,
+   0.83,
+   1.87,
+   7.59
+  ]
+ }
+}

@@ -1,0 +1,364 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# CAS_TEST__: SSLV07D
+# SSLV07/D
+# ETIREMENT D'UN PARALLELEPIPEDE SOUS SON PROPRE POIDS
+# PRESSION REPARTIE  + CALCUL DES CONTRAINTES
+# DECOUPAGE: Z=3   X=2    Y=2                      REF: SFM.VPCS SSLV07
+# MODELISATION 3D:  111 NOEUDS -- 12 MAILLES HEXA20
+# POINTS:   A:N59  B:N53  E:N56  C:N12  D:N18
+# ======================================================================
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+MA1 = LIRE_MAILLAGE(FORMAT="ASTER", UNITE=19)
+
+DEFI_GROUP(
+    reuse=MA1,
+    MAILLAGE=MA1,
+    CREA_GROUP_NO=(
+        _F(NOM="B", NOEUD="N17"),
+        _F(NOM="C", NOEUD="N9"),
+        _F(NOM="BX", NOEUD=("N26", "N45", "N17")),
+    ),
+)
+
+MA2 = LIRE_MAILLAGE(FORMAT="ASTER", UNITE=23)
+
+DEFI_GROUP(
+    reuse=MA2,
+    MAILLAGE=MA2,
+    CREA_GROUP_NO=(
+        _F(NOM="E", NOEUD="N45"),
+        _F(NOM="A", NOEUD="N26"),
+        _F(NOM="D", NOEUD="N33"),
+        _F(NOM="AXSANSA", NOEUD=("N17", "N45", "N56", "N75")),
+    ),
+)
+
+MA = ASSE_MAILLAGE(
+    MAILLAGE_1=MA1,
+    MAILLAGE_2=MA2,
+    OPERATION="COLLAGE",
+    COLLAGE=_F(GROUP_MA_1="SURF1", GROUP_MA_2="SURF2"),
+)
+
+
+DEFI_GROUP(
+    reuse=MA,
+    MAILLAGE=MA,
+    CREA_GROUP_MA=_F(NOM="VOLUM", OPTION="APPUI", TYPE_APPUI="AU_MOINS_UN", GROUP_NO="A"),
+)
+
+DEFI_GROUP(reuse=MA, MAILLAGE=MA, CREA_GROUP_NO=_F(NOM="ABSANSA", UNION=("BX", "AXSANSA")))
+
+DEFI_GROUP(
+    MAILLAGE=MA,
+    CREA_GROUP_NO=(
+        _F(NOM="N17", NOEUD="N17"),
+        _F(NOM="N9", NOEUD="N9"),
+        _F(NOM="N84", NOEUD="N84"),
+        _F(NOM="N96", NOEUD="N96"),
+        _F(NOM="N77", NOEUD="N77"),
+    ),
+)
+
+DEFI_GROUP(
+    MAILLAGE=MA,
+    CREA_GROUP_MA=(
+        _F(NOM="M10", MAILLE="M10"),
+        _F(NOM="M6", MAILLE="M6"),
+        _F(NOM="M12", MAILLE="M12"),
+    ),
+)
+
+
+MO = AFFE_MODELE(
+    MAILLAGE=MA,
+    AFFE=_F(
+        GROUP_MA=("VOL1", "VOL2", "FACESUP"), PHENOMENE="MECANIQUE", MODELISATION="3D_INCO_UPG"
+    ),
+)
+
+MAT = DEFI_MATERIAU(ELAS=_F(E=200000000000.0, NU=0.3, RHO=7800.0, ALPHA=0.0))
+
+MAT2 = DEFI_MATERIAU(
+    ELAS=_F(E=200000000000.0, NU=0.3, RHO=7800.0, ALPHA=0.0),
+    ECRO_LINE=_F(D_SIGM_EPSI=200.0, SY=1000000.0),
+)
+
+CHMAT = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MAT))
+
+CHMAT2 = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MAT2))
+
+# ------------------------------------------------------------------
+#    --- STRUCTURE SUSPENDUE //Z EN A + PAS DE ROTATION
+
+BLOQU = AFFE_CHAR_MECA(
+    MODELE=MO,
+    DDL_IMPO=(
+        _F(GROUP_NO="A", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="D", DY=0.0),
+        _F(GROUP_NO="ABSANSA", DX=0.0, DY=0.0),
+    ),
+)
+
+CH = AFFE_CHAR_MECA(
+    MODELE=MO,
+    PESANTEUR=_F(GRAVITE=9.81, DIRECTION=(0.0, 0.0, -1.0)),
+    FORCE_FACE=_F(GROUP_MA="FACESUP", FZ=229553.0),
+)
+# ------------------------------------------------------------------
+L_INST = DEFI_LIST_REEL(
+    DEBUT=0.0, INTERVALLE=(_F(JUSQU_A=1.0, NOMBRE=10), _F(JUSQU_A=1.1, NOMBRE=1))
+)
+
+RAMPE = DEFI_FONCTION(
+    NOM_PARA="INST", VALE=(0.0, 0.0, 10.0, 10.0), PROL_DROITE="LINEAIRE", PROL_GAUCHE="LINEAIRE"
+)
+# STAT_NON_LINE 'VMIS'
+# ---------------------
+
+DEPLD2 = STAT_NON_LINE(
+    MODELE=MO,
+    CHAM_MATER=CHMAT2,
+    EXCIT=(_F(CHARGE=BLOQU), _F(CHARGE=CH, FONC_MULT=RAMPE)),
+    COMPORTEMENT=_F(RELATION="VMIS_ISOT_LINE"),
+    INCREMENT=_F(LIST_INST=L_INST),
+    NEWTON=_F(MATRICE="TANGENTE", REAC_ITER=2),
+    CONVERGENCE=_F(RESI_GLOB_RELA=1e-06),
+    ARCHIVAGE=_F(LIST_INST=L_INST, CHAM_EXCLU="VARI_ELGA"),
+)
+
+# REMARQUE : STRICTO SENSU, LE CALCUL DE ERME_ELEM EST FAUX CAR
+#            DES BORDS A CONTRAINTE NULLE N'ONT PAS ETE DEFINIS DANS LE
+#            MAILLAGE ET A FORTIORI DANS LE CHARGEMENT
+#            IL FAUDRA COMPLETER LE MAILLAGE UN JOUR. G. NICOLAS.
+
+DEPLD2 = CALC_CHAMP(reuse=DEPLD2, RESULTAT=DEPLD2, CONTRAINTE=("SIGM_ELNO"))
+
+
+DEPLD2 = CALC_ERREUR(reuse=DEPLD2, RESULTAT=DEPLD2, OPTION=("ERME_ELEM", "ERME_ELNO"))
+
+# ---------------------------------------------------------------------
+#    ESTIMATEUR D'ERREUR EN RESIDU
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=10,
+            POINT=1,
+            RESULTAT=DEPLD2,
+            NOM_CHAM="ERME_ELEM",
+            NOM_CMP="NUEST",
+            VALE_CALC=20.047249622391,
+            GROUP_MA="M10",
+        ),
+        _F(
+            NUME_ORDRE=10,
+            RESULTAT=DEPLD2,
+            NOM_CHAM="ERME_ELNO",
+            GROUP_NO="N96",
+            NOM_CMP="ERREST",
+            VALE_CALC=0.21086799332511,
+            GROUP_MA="M6",
+        ),
+    )
+)
+
+# ---------------------------------------------------------------------
+#    TEST EN CONTRAINTES
+#
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N17",
+            NOM_CMP="DX",
+            VALE_CALC=-6.1906207163e-26,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N17",
+            NOM_CMP="DY",
+            VALE_CALC=8.3071793774e-26,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N17",
+            NOM_CMP="DZ",
+            VALE_CALC=-1.72167950e-06,
+            VALE_REFE=-1.721655e-06,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N9",
+            NOM_CMP="DX",
+            VALE_CALC=1.3514011667e-12,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N9",
+            NOM_CMP="DY",
+            VALE_CALC=2.2610499060e-23,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N9",
+            NOM_CMP="DZ",
+            VALE_CALC=-1.70733093e-06,
+            VALE_REFE=-1.707308e-06,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N84",
+            NOM_CMP="DX",
+            VALE_CALC=-1.72160340e-07,
+            VALE_REFE=-1.7216549999999999e-07,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N84",
+            NOM_CMP="DY",
+            VALE_CALC=5.0534284145e-25,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N84",
+            NOM_CMP="DZ",
+            VALE_CALC=1.43153831e-08,
+            VALE_REFE=1.4347129999999999e-08,
+            CRITERE="RELATIF",
+            PRECISION=3.0000000000000001e-3,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N96",
+            NOM_CMP="DX",
+            VALE_CALC=-1.5517856169e-25,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N96",
+            NOM_CMP="DY",
+            VALE_CALC=1.2212094302e-24,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N96",
+            NOM_CMP="DZ",
+            VALE_CALC=-1.29126612e-06,
+            VALE_REFE=-1.2912410000000001e-06,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="SIGM_ELNO",
+            GROUP_NO="N77",
+            NOM_CMP="SIZZ",
+            VALE_CALC=2.29565650e05,
+            VALE_REFE=2.29554e5,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+            GROUP_MA="M10",
+        ),
+        _F(
+            NUME_ORDRE=10,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=DEPLD2,
+            NOM_CHAM="SIGM_ELNO",
+            GROUP_NO="N96",
+            NOM_CMP="SIZZ",
+            VALE_CALC=1.14776707e05,
+            VALE_REFE=1.14777e5,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+            GROUP_MA="M6",
+        ),
+    )
+)
+
+FIN()
