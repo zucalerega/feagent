@@ -142,9 +142,10 @@ def _solve_job(job) -> dict:
     return summ
 
 
-# solve-process memory, from the H100 pilot: ~20 GB peak RSS for ~1M dofs (assembly, factorisation,
-# stress recovery and diagnostics in one process); tet10 meshes carry ~4.6 dofs per cell
-MEM_GB_PER_MDOF = 24.0
+# solve-process memory on the H100 (cuDSS): ~7 GB peak RSS for ~1.1M dofs (assembly, factorisation,
+# stress recovery and diagnostics in one process), once the rigid-mode SVD stopped building an n x n
+# matrix; raised automatically when a solve measures more (CPU SuperLU needs ~70). tet10: ~4.6 dofs/cell
+MEM_GB_PER_MDOF = 8.0
 MEM_GB_BASE = 1.5
 DOFS_PER_CELL = 4.6
 
