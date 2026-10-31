@@ -310,8 +310,8 @@ class Tools:
     def call(self, name: str, args: dict) -> tuple[dict, bool]:
         """Returns (result, is_error)."""
         if name == "inspect_geometry":
-            # The old group list (names BCs refer to) plus the face/edge description.
-            return {**fea.geometry_summary(self.problem), **geometry_info.describe(self.problem)}, False
+            # The old group list (names BCs refer to) plus the face/edge description, compacted for big parts.
+            return geometry_info.for_agent({**fea.geometry_summary(self.problem), **geometry_info.describe(self.problem)}), False
         if name == "mesh":
             return self._mesh(args)
         if name == "solve":
