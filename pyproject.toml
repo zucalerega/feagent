@@ -44,4 +44,5 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "."]
 markers = ["slow: longer convergence / 3D checks (deselect with -m 'not slow')"]

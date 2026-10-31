@@ -67,6 +67,7 @@ try:
 except Exception as e:  # the module may not exist on older checkouts
     print("linsolve check skipped:", e)
 EOF
+echo "$PY" > .feacore_python   # read by scripts/serve.sh
 echo "== done. Python: $PY"
 echo "   GPU check:  $PY scripts/gpu_check.py"
 echo "   Headless renders (mesh harness / pyvista) need a virtual display: prefix with  xvfb-run -a"

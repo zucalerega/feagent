@@ -1,7 +1,28 @@
 // Shared helpers: API calls, typed-array decoding, DOM building, number formatting, status chips.
 
+// ------------------------------------------------------------------ shared-token auth (optional)
+const TOKEN_KEY = 'feacore_token';
+export function getToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
+export function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ } }
+/** Headers for fetch: adds ``Authorization: Bearer`` when a token is stored. */
+export function authHeaders(headers = {}) {
+  const t = getToken();
+  return t ? { ...headers, Authorization: `Bearer ${t}` } : headers;
+}
+/** Plain links (downloads, new tabs) cannot send headers: append ?token= instead. */
+export function withToken(url) {
+  const t = getToken();
+  return t ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(t)}` : url;
+}
+/** fetch with the token; a 401 raises the token prompt (app.js). */
+export async function authFetch(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: authHeaders(opts.headers || {}) });
+  if (res.status === 401) window.dispatchEvent(new CustomEvent('feacore-unauthorized'));
+  return res;
+}
+
 export async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
+  const res = await authFetch(path, opts);
   const text = await res.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = { detail: text }; }

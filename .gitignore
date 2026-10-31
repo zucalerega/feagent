@@ -19,3 +19,6 @@ spooles.out
 runs/
 models/*
 !models/.gitignore
+.feacore_python
+.feacore_token
+.feacore_autoupdate_deferrals

@@ -1,7 +1,7 @@
 // Run study: pick problem / backend / order / refinement; live progress; per-QoI convergence plots
 // (QoI vs log h with Richardson extrapolation, GCI band and reference), observed vs theoretical order,
 // and the verification flags in plain words.
-import { api, postJSON, h, clear, fmt, fmtPct, fmtSigned, fmtTime, fmtInt, loading, errorBox, statusChip,
+import { api, postJSON, withToken, h, clear, fmt, fmtPct, fmtSigned, fmtTime, fmtInt, loading, errorBox, statusChip,
   runStatusChip, flagList, qs, qoiDesc, timeAgo } from '../api.js';
 import { convergenceChart, orderChart } from '../plot.js';
 
@@ -25,7 +25,7 @@ async function renderForm(el) {
     return;
   }
   const want = qs().get('problem');
-  const state = { problem: probs.problems.some(p => p.id === want) ? want : probs.problems[0].id, backend: 'skfem', order: 2, mode: 'default', levels: 3, ratio: 2, sizes: '' };
+  const state = { problem: probs.problems.some(p => p.id === want) ? want : probs.problems[0].id, backend: 'skfem', order: 2, mode: 'default', levels: 3, ratio: 2, sizes: '', nested: false };
   const backends = (health && health.backends) || {};
 
   const problemSel = h('select', { style: { width: '100%' }, onchange: e => { state.problem = e.target.value; loadDefaults(); } },
@@ -93,7 +93,7 @@ async function renderForm(el) {
     submit.disabled = true;
     clear(errEl);
     try {
-      const body = { problem_id: state.problem, backend: state.backend, order: state.order };
+      const body = { problem_id: state.problem, backend: state.backend, order: state.order, nested: state.nested };
       const sizes = currentSizes();
       if (state.mode !== 'default') {
         if (!sizes || sizes.length < 2) throw new Error('need at least two mesh sizes (three for a GCI estimate)');
@@ -111,6 +111,8 @@ async function renderForm(el) {
       h('div', { class: 'field' }, h('span', { class: 'section-title' }, 'Element order'), seg('order', [[1, 'P1 linear'], [2, 'P2 quadratic']], loadDefaults)),
       h('div', { class: 'field' }, h('span', { class: 'section-title' }, 'Refinement'), seg('mode', [['default', 'problem default'], ['levels', 'levels × ratio'], ['explicit', 'explicit sizes']], drawCustom))),
     h('div', {}, defaultsEl, customEl, sizesPreview),
+    h('label', { class: 'check', title: 'Mesh once at the coarsest size and split every element (ratio 2 per level): cleaner observed orders. Each 3D split multiplies the cell count by 8.' },
+      h('input', { type: 'checkbox', onchange: e => { state.nested = e.target.checked; } }), 'Nested refinement (split the coarsest mesh instead of remeshing)'),
     h('div', { class: 'row', style: { alignItems: 'center' } }, submit,
       h('span', { class: 'small muted' }, 'Runs in a background worker process; you can leave the page.')),
     errEl));
@@ -160,7 +162,8 @@ function drawHead(el, st) {
     h('h1', {}, st.problem_title || st.problem_id),
     h('div', { class: 'chips', style: { marginTop: '6px' } }, runStatusChip(st.status), h('span', { class: 'badge mono' }, st.study_id),
       h('span', { class: 'badge' }, `backend ${st.backend}`), h('span', { class: 'badge' }, `P${st.order} elements`),
-      h('span', { class: 'badge' }, `${(st.sizes || []).length} meshes`),
+      h('span', { class: 'badge' }, `${(st.sizes || []).length} meshes${st.nested ? ', nested' : ''}`),
+      st.batch_id ? h('a', { class: 'badge', href: `#/batch/${st.batch_id}` }, 'part of a batch') : null,
       st.result && st.result.passed !== null && st.result.passed !== undefined ? statusChip(st.result.passed ? 'good' : 'critical', st.result.passed ? 'matches references' : 'misses a reference') : null))));
 }
 
@@ -172,18 +175,20 @@ function drawProgress(el, st) {
   const levels = p.levels && p.levels.length ? p.levels : (st.sizes || []).map((h0, i) => ({ index: i, h: h0, status: 'pending' }));
   clear(el).append(h('div', { class: 'card', style: { marginBottom: '20px' } },
     h('div', { class: 'card-head' }, h('h2', {}, running ? h('span', {}, h('span', { class: 'spinner' }), ' Running') : 'Mesh sequence'),
-      h('span', { class: 'secondary' }, st.status === 'queued' ? `queued${st.queue_position ? ` (position ${st.queue_position})` : ''}: ${p.message || ''}` : (p.message || ''))),
+      h('span', { class: 'secondary' }, st.status === 'queued' ? `queued${st.queue_position ? ` (position ${st.queue_position})` : ''}: ${p.message || ''}` : (p.message || ''),
+        running && st.status === 'running' && p.stage_started_at && st.server_time ? h('b', {}, ` \u00b7 ${fmtTime(st.server_time - p.stage_started_at)}`) : null,
+        !running && st.elapsed ? ` \u00b7 total ${fmtTime(st.elapsed)}` : null)),
     running ? h('div', { class: 'progress', style: { marginBottom: '14px' } }, h('div', { style: { width: `${Math.max(3, 100 * done / total)}%` } })) : null,
     h('table', { class: 'data' },
       h('thead', {}, h('tr', {}, h('th', {}, 'mesh'), h('th', { class: 'num' }, 'h (nominal)'), h('th', { class: 'num' }, 'h (measured)'), h('th', { class: 'num' }, 'cells'), h('th', { class: 'num' }, 'dofs'), h('th', { class: 'num' }, 'solve time'), h('th', {}, 'status'), h('th', {}, ''))),
       h('tbody', {}, levels.map(l => h('tr', {},
         h('td', {}, `${l.index + 1}`), h('td', { class: 'num' }, fmt(l.h, 4)), h('td', { class: 'num' }, fmt(l.h_rep, 4)),
         h('td', { class: 'num' }, fmtInt(l.n_cells)), h('td', { class: 'num' }, fmtInt(l.n_dofs)), h('td', { class: 'num' }, fmtTime(l.wall_time)),
-        h('td', {}, l.status === 'done' ? statusChip('good', 'done') : l.status === 'pending' ? statusChip('info', 'pending') : l.status === 'failed' ? statusChip('critical', 'failed') : h('span', {}, h('span', { class: 'spinner' }), ` ${l.status}`)),
+        h('td', {}, l.status === 'done' ? statusChip('good', 'done') : l.status === 'pending' ? statusChip('info', 'pending') : l.status === 'failed' ? statusChip('critical', 'failed') : h('span', {}, h('span', { class: 'spinner' }), ` ${l.status}`, l.started_at && st.server_time ? h('span', { class: 'muted' }, ` ${fmtTime(st.server_time - l.started_at)}`) : null)),
         h('td', {}, l.run_id ? h('a', { href: `#/viewer/${l.run_id}` }, 'view field →') : null))))),
     st.error ? h('div', { style: { marginTop: '14px' } }, errorBox(st.error),
       st.traceback ? h('details', { style: { marginTop: '8px' } }, h('summary', {}, 'Traceback'), h('pre', { class: 'code' }, st.traceback)) : null,
-      h('div', { class: 'small', style: { marginTop: '6px' } }, h('a', { href: `/api/studies/${st.study_id}/log`, target: '_blank' }, 'worker log'))) : null));
+      h('div', { class: 'small', style: { marginTop: '6px' } }, h('a', { href: withToken(`/api/studies/${st.study_id}/log`), target: '_blank' }, 'worker log'))) : null));
 }
 
 function drawResults(el, st) {

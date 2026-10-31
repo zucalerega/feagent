@@ -35,13 +35,14 @@ class Job:
     log: Path | None = None
     on_exit: Callable[["Job"], None] | None = None
     id: str = field(default_factory=lambda: new_id("job"))
-    state: str = "queued"           # queued | running | done | failed | timeout
+    state: str = "queued"           # queued | running | done | failed | timeout | cancelled
     created: float = field(default_factory=time.time)
     started: float | None = None
     finished: float | None = None
     pid: int | None = None
     returncode: int | None = None
     future: Future = field(default_factory=Future)
+    cancel_requested: bool = False
 
     def summary(self) -> dict:
         return {"id": self.id, "kind": self.kind, "lane": self.lane, "state": self.state, "pid": self.pid,
@@ -56,7 +57,9 @@ class JobRunner:
         self.store = store
         self.workers = {
             "quick": int(quick_workers or os.environ.get("FEACORE_UI_QUICK_WORKERS", 1)),
-            "study": int(study_workers or os.environ.get("FEACORE_UI_STUDY_WORKERS", 1)),
+            # default: one study per 4 cores (1 on a small shared box, 4 on a 16-core Brev instance)
+            "study": int(study_workers or os.environ.get("FEACORE_UI_STUDY_WORKERS",
+                                                         max(1, min(4, (os.cpu_count() or 4) // 4)))),
         }
         self.timeouts = {
             "solve": float(solve_timeout or os.environ.get("FEACORE_UI_SOLVE_TIMEOUT", 1800)),
@@ -115,6 +118,12 @@ class JobRunner:
         self.queues[lane].put(job)
         return job
 
+    def active_count(self, kinds: tuple[str, ...] = ("solve", "study")) -> int:
+        """Queued + running jobs of these kinds (batches are studies). Used by deploy scripts to
+        avoid restarting the service mid-job."""
+        with self._lock:
+            return sum(1 for j in self.jobs.values() if j.kind in kinds and j.state in ("queued", "running"))
+
     def status(self) -> dict:
         with self._lock:
             jobs = list(self.jobs.values())
@@ -124,6 +133,21 @@ class JobRunner:
             "running": [j.summary() for j in jobs if j.state == "running"],
             "recent": [j.summary() for j in sorted(jobs, key=lambda j: -j.created)[:10]],
         }
+
+    def cancel(self, predicate: Callable[[Job], bool]) -> int:
+        """Cancel matching jobs: queued ones are skipped, running ones are terminated."""
+        n = 0
+        with self._lock:
+            jobs = [j for j in self.jobs.values() if predicate(j) and j.state in ("queued", "running")]
+            procs = {jid: p for jid, p in self._procs.items()}
+        for j in jobs:
+            if j.state == "queued":
+                j.state = "cancelled"
+            elif j.id in procs and procs[j.id].poll() is None:
+                j.cancel_requested = True
+                procs[j.id].terminate()
+            n += 1
+        return n
 
     def queue_position(self, job: Job) -> int | None:
         if job.state != "queued":
@@ -139,6 +163,11 @@ class JobRunner:
             try:
                 job = q.get(timeout=0.5)
             except queue.Empty:
+                continue
+            if job.state == "cancelled":
+                job.finished = time.time()
+                if not job.future.done():
+                    job.future.set_result(job)
                 continue
             try:
                 self._run(job)
@@ -162,7 +191,7 @@ class JobRunner:
                 self._procs[job.id] = p
             try:
                 job.returncode = p.wait(timeout=job.timeout)
-                job.state = "done" if job.returncode == 0 else "failed"
+                job.state = "done" if job.returncode == 0 else ("cancelled" if job.cancel_requested else "failed")
             except subprocess.TimeoutExpired:
                 p.terminate()
                 try:
@@ -202,6 +231,10 @@ def finalize_study(store: RunStore) -> Callable[[Job], None]:
     def hook(job: Job) -> None:
         sid = job.payload["study_id"]
         rec = store.get_study(sid)
+        if job.state == "cancelled":
+            if rec.get("status") != "cancelled":
+                store.update_study(sid, status="cancelled", error="cancelled by the user", finished_at=now_iso())
+            return
         if rec.get("status") in ("queued", "running"):
             prog = rec.get("progress") or {}
             prog.update(stage="failed", message=crash_message(job))

@@ -121,7 +121,8 @@ def two_material_mesh(path, L=2.0, H=1.0, h=0.25, order=2):
 
 
 def box_mesh(path, L=1.0, h=0.4, order=1, distort=0.0, seed=0):
-    """Unit cube; faces x0..z1, edge_z (x=y=0), points p000/p100/p010, volume solid."""
+    """Unit cube; faces x0..z1, edges edge_z (x=y=0) / edge_x1z0 (x=L, z=0), points
+    p000/p100/p010, volume solid."""
     with _session("box"):
         gmsh.model.occ.addBox(0, 0, 0, L, L, L)
         gmsh.model.occ.synchronize()
@@ -133,6 +134,8 @@ def box_mesh(path, L=1.0, h=0.4, order=1, distort=0.0, seed=0):
         _name_by_com(2, rules)
         ed = gmsh.model.getEntitiesInBoundingBox(-1e-6, -1e-6, -1e-6, 1e-6, 1e-6, L + 1e-6, 1)
         gmsh.model.addPhysicalGroup(1, [t for _, t in ed], name="edge_z")
+        ed = gmsh.model.getEntitiesInBoundingBox(L - 1e-6, -1e-6, -1e-6, L + 1e-6, L + 1e-6, 1e-6, 1)
+        gmsh.model.addPhysicalGroup(1, [t for _, t in ed], name="edge_x1z0")  # line x = L, z = 0
         _point_group("p000", 0, 0, 0)
         _point_group("p100", L, 0, 0)
         _point_group("p010", 0, L, 0)
@@ -594,3 +597,56 @@ def test_fast_assembly_matches_skfem_forms(meshdir, formulation):
                     options={"assembly": "skfem"})).evaluate_all()
     for k in a:
         assert abs(a[k] - b[k]) <= 1e-10 * abs(b[k]), k
+
+
+# --------------------------------------------------------------------------- BC.where node filter
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_where_on_face_equals_explicit_edge_group(meshdir, order):
+    """uz = 0 on the x1 face restricted to z = 0 is the same constraint as on the edge group."""
+    mesh = box_mesh(meshdir / f"where3d_{order}.msh", h=0.4, order=order)
+    load = [BC(type="fixed", group="x0"), BC(type="traction", group="x1", value=[0.0, 0.2, -1.0])]
+    q = [QoI(name="U", type="strain_energy")]
+    r_edge = solve(_case(mesh, formulation="3d", order=order, qois=q + [
+        QoI(name="Rz", type="reaction", group="edge_x1z0", component=2)],
+        bcs=load + [BC(type="displacement", group="edge_x1z0", components=[2], value=0.0)]))
+    r_where = solve(_case(mesh, formulation="3d", order=order, qois=q + [
+        QoI(name="Rz", type="reaction", group="x1", component=2)],
+        bcs=load + [BC(type="displacement", group="x1", components=[2], value=0.0, where="abs(z) < 1e-9")]))
+    assert np.array_equal(np.sort(r_edge.dirichlet_dofs), np.sort(r_where.dirichlet_dofs))
+    assert np.abs(r_where.x - r_edge.x).max() <= 1e-12 * np.abs(r_edge.x).max()
+    a, b = r_edge.evaluate_all(), r_where.evaluate_all()
+    # the reaction on the face sums only the where-selected (constrained) DOFs
+    assert abs(b["Rz"] - a["Rz"]) <= 1e-9 * abs(a["Rz"]) and abs(a["Rz"]) > 0.1
+    assert abs(b["U"] - a["U"]) <= 1e-12 * a["U"]
+
+
+def test_where_selecting_no_node_raises(meshdir):
+    mesh = box_mesh(meshdir / "where3d_1.msh", h=0.4, order=1)
+    with pytest.raises(CaseError, match=r"bcs\[2\].*selects none"):
+        solve(_case(mesh, formulation="3d", order=1,
+                    bcs=[BC(type="fixed", group="x0"), BC(type="traction", group="x1", value=[0.0, 0.0, -1.0]),
+                         BC(type="displacement", group="x1", components=[2], value=0.0, where="z > 5")]))
+
+
+def test_where_fixed_2d_and_heat(meshdir):
+    mesh = rect_mesh(meshdir / "where2d.msh", L=2.0, H=1.0, h=0.25, order=2)
+    r = solve(_case(mesh, formulation="plane_stress", order=2, thickness=0.5,
+                    bcs=[BC(type="fixed", group="left", where="y < 0.5 + 1e-9"),
+                         BC(type="traction", group="right", value=[1.0, 0.0])],
+                    qois=[QoI(name="Rx", type="reaction", group="left", component=0)]))
+    X, ux = r.nodal("ux")
+    _, uy = r.nodal("uy")
+    left = np.abs(X[:, 0]) < 1e-12
+    low = left & (X[:, 1] < 0.5 + 1e-9)
+    assert low.sum() >= 3 and (left & ~low).sum() >= 3
+    assert np.abs(ux[low]).max() == 0.0 and np.abs(uy[low]).max() == 0.0
+    assert np.abs(ux[left & ~low]).min() > 0.0                  # the upper half of the edge is free
+    assert abs(r.evaluate_all()["Rx"] + 1.0 * 1.0 * 0.5) < 1e-9   # balances traction * height * thickness
+    # heat: temperature + where on the left edge, insulated elsewhere: T = 10 on y < 0.5 only
+    rh = solve(_case(mesh, physics="heat", formulation="2d", order=2,
+                     bcs=[BC(type="temperature", group="left", value=10.0, where="y < 0.5 + 1e-9"),
+                          BC(type="flux", group="right", value=-1.0)]))
+    Xh, T = rh.nodal("T")
+    assert np.abs(T[low] - 10.0).max() == 0.0 and np.abs(T[left & ~low] - 10.0).min() > 1e-6
