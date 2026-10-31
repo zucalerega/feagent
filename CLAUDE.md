@@ -20,7 +20,7 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
-- Nothing implemented yet.
+- `make_problem.py`: prints a unique, seeded problem statement per (agent number, call number).
 - `improver-loop` branch: improver side of the loop.
 
 ## Open questions
