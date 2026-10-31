@@ -203,3 +203,29 @@ def test_hint_spec_keys_exist_in_schema(cantilever, tmp_path):
                                 "algorithm.mesh3d": 1, "algorithm.mesh2d": 6}.get(k, 1)}}
         data["quality"] = data["quality"] if sect == "quality" else {}
         parse_spec(data, tmp_path / "spec.yaml")  # raises SpecError on an unknown key
+
+
+def test_thin_wall_fallback_matches_surface_triangles(tmp_path):
+    """msh without face elements: edge lengths come from the tet skin. Triangles touching the
+    face's boundary curves must count, so the result equals the true surface-mesh mean."""
+    from feagent import gmsh_util as gu
+    from feagent.meshdata import read_msh
+    from feagent.quality import _face_edge_lengths, _mean_edge_length
+
+    p, ref = tmp_path / "slab.msh", {}
+    with gmsh_session():
+        gmsh.model.occ.addBox(0, 0, 0, 10, 10, 1)
+        gmsh.model.occ.synchronize()
+        gmsh.model.addPhysicalGroup(3, [1], name="domain")  # no surface groups saved
+        gmsh.option.setNumber("Mesh.MeshSizeMax", 1.0)
+        gmsh.model.mesh.generate(3)
+        _, pts, lookup = gu.node_table()
+        for f in gu.entity_tags(2):
+            ref[f] = _mean_edge_length(gu.corner_rows(2, f, gu.TRI_TYPES, 3, lookup), pts)
+        gmsh.write(str(p))
+    md = read_msh(p)
+    assert not md.tris
+    with gmsh_session():
+        gmsh.open(str(p))
+        got = _face_edge_lengths(sorted(ref), md.tets, md.points)
+    assert got == pytest.approx(ref)
