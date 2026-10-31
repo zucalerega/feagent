@@ -40,6 +40,7 @@ _REVOLVED = ("cylinder", "cone", "torus")   # u parameter = angle about the axis
 _MAX_SAMPLES = 24          # exact surface samples per face used for normals / curvature
 _EDGE_SAMPLES = 17         # points per boundary curve used for extents / angle span
 _MAX_RAYS = 50             # thickness / gap rays per face
+THICKNESS_PERCENTILE = 10  # face thickness = this percentile of its inward ray lengths
 _PARITY_RAYS = 3           # orientation rays per face (majority vote)
 _SPAN_FULL = 300.0         # angle_span (deg) at or above which a cylinder counts as a full revolution
 _DIGEST_BUDGET = 7000      # summary digest target size (chars); FACES rows stop here
@@ -722,9 +723,13 @@ class _RayCaster:
 
 def _ray_measures(faces: list[FaceInfo], tess: Tessellation, caster: _RayCaster,
                   group: dict[int, int]) -> None:
-    """thickness = median / thickness_min = min inward first-hit distance over <=50 triangles per
-    face; gap = min outward first-hit distance when the hit is on another face (and not on another
-    face of the same feature, e.g. the other half of a split hole)."""
+    """thickness = THICKNESS_PERCENTILE-th percentile / thickness_min = min inward first-hit
+    distance over <=50 triangles per face. A low percentile, not the median: the rays from a hole
+    face cross ligaments of very different length (bracket load hole: 5 to 36 mm) and the median
+    follows the long ones and jumps with the tessellation; the 10th percentile finds the thin
+    ligament and ignores a few spurious short hits. gap = min outward first-hit distance when the
+    hit is on another face (and not on another face of the same feature, e.g. the other half of a
+    split hole)."""
     rows = _rows_by_face(tess)
     members: dict[int, set[int]] = defaultdict(set)
     for t, g in group.items():
@@ -741,7 +746,8 @@ def _face_rays(fi: FaceInfo, ids, caster: _RayCaster, tess: Tessellation, own: s
     t, _ = caster.first_hits(o, -n, ids)
     if np.isfinite(t).any():
         thick = t[np.isfinite(t)]
-        fi.thickness, fi.thickness_min = float(np.median(thick)), float(np.min(thick))
+        fi.thickness = float(np.percentile(thick, THICKNESS_PERCENTILE))
+        fi.thickness_min = float(np.min(thick))
     if len(fi.volumes) != 1:
         return
     g, cell = caster.first_hits(o, n, ids)
@@ -1165,7 +1171,8 @@ def _dg_edges(model: GeometryModel) -> list[str]:
 
 
 def _dg_measures(model: GeometryModel, z: float) -> list[str]:
-    out = ["FACE MEASURES (thickness = median inward ray, gap = min outward ray)"]
+    out = [f"FACE MEASURES (t = {THICKNESS_PERCENTILE}th-percentile inward ray, t_min = min inward ray, "
+           "gap = min outward ray)"]
     for f in sorted(model.faces, key=lambda f: f.tag):
         if f.thickness is None and f.gap is None and f.angle_span is None:
             continue

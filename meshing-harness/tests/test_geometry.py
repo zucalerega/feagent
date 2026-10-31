@@ -116,6 +116,17 @@ def test_thin_cup_thin_wall_hazard(parts_dir):
         assert m.face(t).thickness == pytest.approx(1.0, abs=0.1)
 
 
+@pytest.mark.parametrize("factor", [0.99, 1.0, 1.01])
+def test_hole_face_thickness_finds_the_thin_ligament(parts_dir, factor):
+    """The r=5 load hole sits 5 mm below the bracket top; its other ligaments are 15-36 mm. The
+    face thickness must see the 5 mm one and not jump with a tiny ref-size (tessellation) change."""
+    from feagent.select import select_faces
+    m = analyze(parts_dir / "bracket.step", ref_size=2.6 * factor)
+    (hole,) = select_faces(m, {"kind": "cylinder", "radius": 5})
+    t = m.face(hole).thickness
+    assert 5.0 <= t < 7.0 and t == pytest.approx(5.25, rel=0.03)
+
+
 def test_sliver_hazards(parts_dir):
     m = analyze(parts_dir / "sliver.step", ref_size=2)
     kinds = {h.kind for h in m.hazards}

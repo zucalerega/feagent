@@ -53,7 +53,7 @@ class FaceInfo(_Base):
     volumes: list[int]
     edges: list[int]
     neighbors: list[int]
-    thickness: float | None = None
+    thickness: float | None = None  # low-percentile inward ray length (geometry.THICKNESS_PERCENTILE)
     thickness_min: float | None = None
     gap: float | None = None
 
