@@ -66,6 +66,20 @@ counts so the cost code is exercised; those dollars are not real.
 
 ## Watch it evolve
 
+Live, while a run is going (refreshes itself every few seconds):
+
+```bash
+.venv/bin/python -m ace.watch ace_runs/<dir>                       # then open http://localhost:8765
+.venv/bin/python -m ace.watch ace_runs/<dir> --export tracker.html  # a static snapshot to share
+```
+
+The tracker follows the team's whiteboard sketch: the shared playbook and what each generation
+taught the next on the left; one lane per task with every agent's card in the middle (its score
+and placing, error over its solves against the uniform-mesh baseline, a strengths/weaknesses
+profile, which mesh attempts fit the node cap, which bullets it cited); and on the right where
+each agent placed and how everyone did, generation by generation. Agents still running show
+their mesh attempts so far.
+
 Everything goes to `ace_runs/<timestamp>/` (gitignored):
 
 | file | what |
