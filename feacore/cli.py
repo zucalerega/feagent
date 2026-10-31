@@ -5,7 +5,8 @@
 
 Loads the case JSON (mesh path relative to the JSON file), runs ``feacore.solver.solve`` with
 the chosen backend, writes the result summary (``info`` + ``qois`` + ``meta``) as JSON to
-``--out`` (or stdout) and optionally a VTU file for ParaView. Exit code 0 on success, 2 for an
+``--out`` (or stdout) and optionally a VTU file for ParaView. A QoI that cannot be evaluated is
+written as null (the reason is in ``info.warnings``). Exit code 0 on success, 2 for an
 invalid case / mesh, 1 for any other failure (the error is printed to stderr and, with
 ``--out``, written as ``{"error": ...}``).
 """
@@ -16,6 +17,18 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+
+def _finite(obj):
+    """NaN / inf -> None so the JSON is standard (a QoI that could not be evaluated is null;
+    the reason is in info.warnings)."""
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite(v) for v in obj]
+    return obj
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001 - report every failure to the caller
         return fail(f"{type(e).__name__}: {e}", 1)
 
-    text = json.dumps(summary, indent=2, default=float)
+    text = json.dumps(_finite(summary), indent=2, default=float, allow_nan=False)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.out).write_text(text)

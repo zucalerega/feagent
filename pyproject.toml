@@ -17,3 +17,4 @@ include = ["feacore*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: longer convergence / 3D checks (deselect with -m 'not slow')"]

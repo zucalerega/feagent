@@ -68,17 +68,29 @@ class MeshData:
         return ", ".join(f"{g.name} ({g.kind}, {len(g.index)})" for g in self.groups.values())
 
 
-def _row_keys(a: np.ndarray) -> np.ndarray:
-    a = np.ascontiguousarray(np.sort(np.asarray(a, dtype=np.int64), axis=1))
-    return a.view(np.dtype((np.void, a.dtype.itemsize * a.shape[1]))).ravel()
+def _row_keys(a: np.ndarray, nmax: int | None = None) -> np.ndarray:
+    """One sortable key per row of ``a`` (n, k), rows compared as sets: packed int64 when the
+    indices fit (fast integer sorts), else a void view (slow but general)."""
+    a = np.sort(np.asarray(a, dtype=np.int64), axis=1)
+    k = a.shape[1]
+    nmax = int(a.max()) + 1 if nmax is None and a.size else (nmax or 1)
+    bits = max(1, int(nmax - 1).bit_length())
+    if bits * k <= 62:
+        key = np.zeros(len(a), dtype=np.int64)
+        for j in range(k):
+            key = (key << bits) | a[:, j]
+        return key
+    a = np.ascontiguousarray(a)
+    return a.view(np.dtype((np.void, a.dtype.itemsize * k))).ravel()
 
 
 def _lookup(table: np.ndarray, query: np.ndarray, what: str, name: str) -> np.ndarray:
     """Indices of rows ``query`` (n, k) in ``table`` (m, k), rows compared as sorted sets."""
-    tk = _row_keys(table)
-    order = np.argsort(tk)
+    nmax = int(max(table.max(initial=0), query.max(initial=0))) + 1
+    tk = _row_keys(table, nmax)
+    order = np.argsort(tk, kind="stable")
     tk_sorted = tk[order]
-    qk = _row_keys(query)
+    qk = _row_keys(query, nmax)
     pos = np.searchsorted(tk_sorted, qk)
     pos = np.clip(pos, 0, len(tk_sorted) - 1)
     ok = tk_sorted[pos] == qk
@@ -143,10 +155,12 @@ def read_mesh(path, dim: int, order: int) -> MeshData:
     cells = np.asarray(cells_dict[ctype], dtype=np.int64)
     warnings: list[str] = []
 
-    # gmsh 2.2 writes an element once per physical group: drop duplicates
-    keys = _row_keys(cells[:, :nv])
-    _, first = np.unique(keys, return_index=True)
+    # gmsh 2.2 writes an element once per physical group: drop duplicates (4.1 never has them)
     dup_map = None
+    first = np.arange(len(cells))
+    if not m.cell_sets:
+        keys = _row_keys(cells[:, :nv])
+        _, first = np.unique(keys, return_index=True)
     if len(first) != len(cells):
         first = np.sort(first)
         warnings.append(f"mesh: {len(cells) - len(first)} duplicate domain cells removed")

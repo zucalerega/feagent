@@ -20,7 +20,9 @@ from __future__ import annotations
 
 from feacore.case import BC, QoI
 from feacore.geometry.gmsh_tools import add_group
-from feacore.problems.analytical._common import STEEL, ExactProblem, group_entities, plate_with_quarter_hole, refine_near
+from feacore.problems.analytical._common import (
+    STEEL, ExactProblem, group_entities, plate_with_quarter_hole, refine_near,
+)
 from feacore.problems.base import Reference
 from feacore.problems.registry import register
 

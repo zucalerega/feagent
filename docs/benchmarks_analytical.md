@@ -120,7 +120,7 @@ below). Total cost: about 27 s for all P2 studies (16 s of it the 3D sphere) and
 
 ### Order 2 (P2, isoparametric P2 geometry)
 
-| problem | QoI | phi(h1) | phi(h2) | phi(h3) | reference | phi_ext | p obs / th | convergence | GCI_fine % | err % | pass |
+| problem | QoI | phi coarse | phi medium | phi fine | reference | phi_ext | p obs / th | convergence | GCI_fine % | err % | pass |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | kirsch_exact_traction | sxx_hole_top | 2.92855e+08 | 2.98066e+08 | 2.99450e+08 | 3.00000e+08 | 2.99905e+08 | 2.09 / 2.00 | monotone | 0.190 | -0.032 (ext) | yes |
 | kirsch_exact_traction | syy_hole_side | -9.44820e+07 | -9.84115e+07 | -9.95997e+07 | -1.00000e+08 | -1.00067e+08 | 1.89 / 2.00 | monotone | 0.586 | +0.067 (ext) | yes |
@@ -194,7 +194,7 @@ below). Total cost: about 27 s for all P2 studies (16 s of it the 3D sphere) and
 
 ### Order 1 (P1, straight-sided P1 geometry)
 
-| problem | QoI | phi(h1) | phi(h2) | phi(h3) | reference | phi_ext | p obs / th | convergence | GCI_fine % | err % | pass |
+| problem | QoI | phi coarse | phi medium | phi fine | reference | phi_ext | p obs / th | convergence | GCI_fine % | err % | pass |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | kirsch_exact_traction | sxx_hole_top | 2.89960e+08 | 2.96384e+08 | 2.98545e+08 | 3.00000e+08 | 2.99575e+08 | 1.65 / 1.00 | monotone | 0.431 | -0.142 (ext) | yes |
 | kirsch_exact_traction | syy_hole_side | -9.11929e+07 | -9.65020e+07 | -9.85032e+07 | -1.00000e+08 | -9.96390e+07 | 1.48 / 1.00 | monotone | 1.441 | -0.361 (ext) | yes |
@@ -264,7 +264,7 @@ below). Total cost: about 27 s for all P2 studies (16 s of it the 3D sphere) and
 ### Discussion
 
 * **Lamé, Kirsch, cantilever, disk, sphere (P2)**: observed orders match theory (stress ~2, displacement
-  ~3, energy ~4) and the extrapolated values agree with the exact ones to <= 0.05 % (3D sphere: 0.3 % on a
+  ~3, energy ~4) and the extrapolated values agree with the exact ones to <= 0.07 % (3D sphere: 0.3 % on a
   displacement whose three values all lie within 0.05 % of exact). The axisymmetric and plane-strain
   cylinders agree with each other and with the exact u_r to 1e-5, which verifies the axisymmetric
   formulation, the axis constraint and the 2*pi*r energy weighting.
@@ -305,7 +305,7 @@ Second (medium) study mesh, P2, same case JSON. Largest |ccx - skfem| / |skfem|:
 | problem | displacements / energies | recovered stresses |
 |---|---|---|
 | kirsch_exact_traction | 0.001 % | 0.60 % (syy_hole_side) |
-| lame_cylinder_axisym (+ open) | 0.000 % | 0.61 % (szz_bore) |
+| lame_cylinder_axisym (+ open) | 0.000 % | 0.61 % (szz_bore; open: 0.20 %) |
 | lame_cylinder_plane_strain | 0.000 % | 0.53 % (szz_bore) |
 | lame_sphere_axisym | 0.003 % | 0.26 % (hoop_bore) |
 | lame_sphere_3d | 0.001 % | 0.40 % (vm_max) |

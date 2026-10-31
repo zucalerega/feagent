@@ -244,7 +244,7 @@ export function orderChart(opts) {
 export function forestChart(opts) {
   const rows = opts.rows || [];
   const rowH = 38, m = { l: 210, r: 34, t: 30, b: 54 };
-  const W = 980, H = m.t + m.b + Math.max(1, rows.length) * rowH;
+  const W = opts.width || 980, H = m.t + m.b + Math.max(1, rows.length) * rowH;
   const svg = frame(W, H);
   const vals = [];
   rows.forEach(r => [r.value, r.lo, r.hi, r.ext].forEach(v => isFinite(v) && vals.push(v)));

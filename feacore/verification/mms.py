@@ -1691,3 +1691,31 @@ def self_check(problem: MMSProblem, n: int = 60, seed: int = 5) -> dict:
         worst = max(worst, float(np.max(np.abs(k * np.sum(_fd_grad(Tf, bq) * geom.normal_np(bq), axis=1)))) / qsc)
     out["boundary_data"] = worst
     return out
+
+
+# --------------------------------------------------------------------------- judging
+
+#: round-off / output-precision floor of the relative errors per backend. CalculiX results
+#: come through the ASCII .frd file (~6 significant digits).
+ROUNDOFF = {"skfem": 1e-10, "ccx": 3e-6}
+PATCH_TOL = {"skfem": (1e-9, 1e-8), "ccx": (5e-5, 5e-5)}
+
+
+def judge(result: dict, problem: MMSProblem, floor: float | None = None, tol: float = 0.3) -> dict:
+    """Observed order of the finest pair above the round-off floor vs theory - tol, per
+    measure: u (displacement / T), s (recovered stress / flux), W (strain energy; not judged
+    for thermal cases, where 0.5 u.K.u is not the physical energy)."""
+    floor = ROUNDOFF.get(result["backend"], 1e-10) if floor is None else floor
+    hs = [lv["h_rep"] for lv in result["levels"]]
+    obs, ok = {}, {}
+    for key, theory in result["theory"].items():
+        if key == "W" and (not problem.energy_exact or problem.energy_physical is not None):
+            continue
+        e = [lv.get(f"e_{key}") for lv in result["levels"]]
+        if any(v is None or not np.isfinite(v) for v in e):
+            obs[key], ok[key] = None, False
+            continue
+        p, _ = _finest_order(hs, e, floor if key != "W" else floor / 10)
+        obs[key] = p
+        ok[key] = bool(p is not None and p >= theory - tol)
+    return {"observed": obs, "pass": ok, "verdict": "pass" if ok and all(ok.values()) else "fail"}

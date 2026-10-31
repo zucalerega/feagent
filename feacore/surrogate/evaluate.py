@@ -282,7 +282,8 @@ def markdown_tables(rep: dict) -> str:
                      f"{t['ood']['t_fem_median_s'] * 1e3:.0f} ms |")
         lines.append(f"| surrogate `solve(case, \"nn\")` | {t['id']['t_nn_median_s'] * 1e3:.0f} ms | "
                      f"{t['ood']['t_nn_median_s'] * 1e3:.0f} ms |")
-        lines.append(f"| speed-up (FEM / surrogate) | {t['id']['speedup_median']:.1f}x | {t['ood']['speedup_median']:.1f}x |")
+        lines.append(f"| speed-up (FEM / surrogate) | {t['id']['speedup_median']:.1f}x | "
+                     f"{t['ood']['speedup_median']:.1f}x |")
         for k in ("vm_max", "ux_tip", "uy_tip"):
             lines.append(f"| QoI `{k}` abs. rel. error | {t['id']['qoi_abs_rel_err_median'][k]:.1%} | "
                          f"{t['ood']['qoi_abs_rel_err_median'][k]:.1%} |")
@@ -290,13 +291,14 @@ def markdown_tables(rep: dict) -> str:
                  f"{t['model_batched_per_case_s'] * 1e3:.1f} ms per graph batched (8 graphs), device {rep['device']}, "
                  f"{rep['threads']} threads")
     if rep.get("scaling"):
-        lines += ["", "| mesh size h / L | nodes | FEM dofs | FEM | surrogate | speed-up |", "|---:|---:|---:|---:|---:|---:|"]
+        lines += ["", "| mesh size h / L | nodes | FEM dofs | FEM | surrogate | speed-up |",
+                  "|---:|---:|---:|---:|---:|---:|"]
         for e in rep["scaling"]:
             lines.append(f"| {e['h_rel']:g} | {e['n_nodes']} | {e['n_dofs']} | {e['t_fem_s'] * 1e3:.0f} ms | "
                          f"{e['t_nn_s'] * 1e3:.0f} ms | {e['speedup']:.1f}x |")
     if rep.get("benchmarks"):
-        lines += ["", "| registered benchmark (never seen) | supported | OOD flagged | QoI error vs FEM (surrogate-evaluable QoIs) |",
-                  "|---|---|---|---|"]
+        lines += ["", "| registered benchmark (never seen) | supported | OOD flagged | QoI error vs FEM "
+                      "(surrogate-evaluable QoIs) |", "|---|---|---|---|"]
         for e in rep["benchmarks"]:
             if "error" in e or "skipped" in e:
                 lines.append(f"| {e['problem']} | n/a ({e.get('error') or e.get('skipped')}) | | |")

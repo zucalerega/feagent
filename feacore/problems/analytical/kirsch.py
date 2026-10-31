@@ -20,8 +20,6 @@ and is zero-normal on both symmetry lines, so no rigid-body offset is needed.
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from feacore.case import BC, QoI

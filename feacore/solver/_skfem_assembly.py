@@ -4,7 +4,8 @@ scikit-fem's generic ``BilinearForm`` loops in Python over every pair of local b
 (900 pairs for a P2 tetrahedron with 3 components). Here the element matrices are formed with
 batched BLAS products over the quadrature points instead, which is ~10x faster for P2 in 3D.
 The skfem forms in ``skfem_backend`` remain the reference (``analysis.options["assembly"] =
-"skfem"``) and the tests check that both agree.
+"skfem"``) and the tests check that both agree. Batches are sized to keep the element-matrix
+temporaries around 20 MB.
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
-CHUNK = 4000  # elements per batch (bounds the temporary memory)
 
 
 def _shape_data(sb):
@@ -22,19 +22,39 @@ def _shape_data(sb):
     return N, G
 
 
-def _scatter(n, gd, chunks):
+def _chunk(m: int) -> int:
+    return max(500, int(2.5e6 // (m * m)))
+
+
+def _scatter(n, gd, chunks, max_entries: int = 20_000_000):
     """Sum element matrices into a CSR matrix. gd: (nel, m) global dofs of each element;
-    chunks yields (element index array, element matrices (ne, m, m))."""
+    chunks yields (element index array, element matrices (ne, m, m)). Entries are gathered into
+    COO batches of up to ``max_entries`` (one COO -> CSR conversion per batch: fast, bounded
+    memory) and the batches are summed."""
+    itype = np.int32 if n < 2**31 - 1 else np.int64
     K = None
-    for E, Ke in chunks:
-        g = gd[E]
-        m = g.shape[1]
-        rows = np.broadcast_to(g[:, :, None], (len(E), m, m)).ravel()
-        cols = np.broadcast_to(g[:, None, :], (len(E), m, m)).ravel()
-        part = sp.coo_matrix((Ke.ravel(), (rows, cols)), shape=(n, n)).tocsr()
+    R, C, V, count = [], [], [], 0
+
+    def flush():
+        nonlocal K, R, C, V, count
+        if not V:
+            return
+        part = sp.coo_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))), shape=(n, n)).tocsr()
         K = part if K is None else K + part
+        R, C, V, count = [], [], [], 0
+
+    for E, Ke in chunks:
+        g = gd[E].astype(itype)
+        m = g.shape[1]
+        R.append(np.broadcast_to(g[:, :, None], (len(E), m, m)).ravel())
+        C.append(np.broadcast_to(g[:, None, :], (len(E), m, m)).ravel())
+        V.append(Ke.ravel())
+        count += Ke.size
+        if count >= max_entries:
+            flush()
+    flush()
     if K is None:
-        K = sp.csr_matrix((n, n))
+        return sp.csr_matrix((n, n))
     K.sum_duplicates()
     return K
 
@@ -52,8 +72,8 @@ def elastic_stiffness(sb, split, lam, mu, c, axi: bool, r=None):
     W = c * sb.dx
 
     def chunks():
-        for s in range(0, nel, CHUNK):
-            E = np.arange(s, min(nel, s + CHUNK))
+        for s in range(0, nel, _chunk(m)):
+            E = np.arange(s, min(nel, s + _chunk(m)))
             ne = len(E)
             B = np.transpose(G[:, :, E, :], (2, 0, 1, 3)).reshape(ne, m, nqp)   # (e, (a,i), q)
             Wl = (W[E] * lam[E])[:, None, :]
@@ -87,8 +107,8 @@ def scalar_stiffness(sb, k, c):
     gd = sb.element_dofs.T
 
     def chunks():
-        for s in range(0, nel, CHUNK):
-            E = np.arange(s, min(nel, s + CHUNK))
+        for s in range(0, nel, _chunk(nloc)):
+            E = np.arange(s, min(nel, s + _chunk(nloc)))
             B = np.transpose(G[:, :, E, :], (2, 0, 1, 3)).reshape(len(E), nloc, dim * nqp)
             Wb = np.repeat(W[E][:, None, :], dim, axis=1).reshape(len(E), 1, dim * nqp)
             yield E, np.matmul(B * Wb, np.swapaxes(B, 1, 2))
@@ -104,8 +124,8 @@ def mass(sb, c=None):
     gd = sb.element_dofs.T
 
     def chunks():
-        for s in range(0, nel, CHUNK):
-            E = np.arange(s, min(nel, s + CHUNK))
+        for s in range(0, nel, _chunk(nloc)):
+            E = np.arange(s, min(nel, s + _chunk(nloc)))
             B = np.transpose(N[:, E, :], (1, 0, 2))
             yield E, np.matmul(B * W[E][:, None, :], np.swapaxes(B, 1, 2))
 

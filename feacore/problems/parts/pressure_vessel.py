@@ -48,7 +48,10 @@ class PressureVesselAxi(PartProblem):
         p = self.params
         self.thin_head = p["head_thickness"] < p["wall_thickness"] - 1e-12
         self.tags = ("part", "axisymmetric", "pressure_vessel", "internal_pressure", "analytical",
-                     "shell_junction") + (("thickness_transition",) if self.thin_head else ())
+                     "shell_junction") + (("thickness_transition", "singular_trap") if self.thin_head else ())
+        # the sharp kink where the outside taper meets the thin head is a 198-degree re-entrant
+        # corner: the whole-wall peak von Mises sits there and creeps up under refinement
+        self.expected_behavior = "singular" if self.thin_head else "smooth"
         self.title = ("Pressure vessel with hemispherical heads" +
                       (", thin heads with tapered transition" if self.thin_head else ", equal thickness") +
                       " (axisymmetric)")
@@ -164,6 +167,9 @@ class PressureVesselAxi(PartProblem):
                                                                   hl + 1e-6, 1e-6, 0)]
         f = threshold(0.5 * h, h, 0.0, 0.2, points=pts)
         finish_sizing([f], h)
+
+    def expectations(self) -> dict[str, str]:
+        return {"peak_von_mises": "diverge"} if self.thin_head else {}
 
     # ---- analysis
     def qois(self) -> list[QoI]:

@@ -563,11 +563,11 @@ def test_info_probe_errors_vtu_cli(meshdir, tmp_path):
 
 def test_insufficient_constraints_reported(meshdir):
     mesh = rect_mesh(meshdir / "rb.msh", h=0.25, order=1)
-    with pytest.raises(RuntimeError, match="rotation about z"):
+    with pytest.raises(CaseError, match="rotation about z"):
         solve(_case(mesh, bcs=[BC(type="fixed", group="p00"), BC(type="traction", group="right", value=[1.0, 0.0])]))
-    with pytest.raises(RuntimeError, match="translation x"):
+    with pytest.raises(CaseError, match="translation x"):
         solve(_case(mesh, bcs=[BC(type="symmetry", group="bottom"), BC(type="traction", group="right", value=[1.0, 0.0])]))
-    with pytest.raises(RuntimeError, match="constant temperature"):
+    with pytest.raises(CaseError, match="constant temperature"):
         solve(_case(mesh, physics="heat", formulation="2d", bcs=[BC(type="flux", group="left", value=1.0),
                                                                   BC(type="flux", group="right", value=-1.0)]))
     # symmetry on two orthogonal edges + nothing else is enough in 2D

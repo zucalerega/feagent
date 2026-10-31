@@ -26,10 +26,7 @@ import sympy as sp
 from feacore.verification import mms
 
 BACKENDS = ("skfem", "ccx")
-# CalculiX results come through the ASCII .frd file (~6 significant digits): that, not the
-# solver, limits how exactly a patch test can be reproduced / how small a P2 error is measurable.
-PATCH_TOL = {"skfem": (1e-9, 1e-8), "ccx": (5e-5, 5e-5)}
-ROUNDOFF = {"skfem": 1e-10, "ccx": 3e-6}
+PATCH_TOL = mms.PATCH_TOL  # CalculiX: limited by the ~6 significant digits of the .frd output
 
 
 def _run_slow(request) -> bool:
@@ -124,15 +121,6 @@ def test_convergence(pid, order, backend, slow, workdir, request):
         r = mms.run_convergence(p, order, backend, workdir=workdir)
     except mms.FeatureMissing as e:
         pytest.skip(str(e))
-    # re-judge with the backend's round-off / output-precision floor
-    hs = [lv["h_rep"] for lv in r["levels"]]
-    msg = {"orders": r["orders"], "theory": r["theory"], "cases": r["levels"][-1]["case"]}
-    for key, theory in r["theory"].items():
-        if key == "W" and (not p.energy_exact or p.energy_physical is not None):
-            continue
-        e = [lv.get(f"e_{key}") for lv in r["levels"]]
-        assert all(v is not None and np.isfinite(v) for v in e), msg
-        floor = ROUNDOFF[backend] if key != "W" else ROUNDOFF[backend] / 10
-        pobs, _ = mms._finest_order(hs, e, floor)
-        assert pobs is not None, msg
-        assert pobs >= theory - 0.3, {"field": key, "observed": pobs, **msg}
+    j = mms.judge(r, p)  # finest pair above the backend's round-off / output-precision floor
+    assert j["verdict"] == "pass", {"observed": j["observed"], "theory": r["theory"],
+                                    "orders": r["orders"], "case": r["levels"][-1]["case"]}

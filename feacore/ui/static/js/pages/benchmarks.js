@@ -186,7 +186,7 @@ async function loadGeometry(id, vp, legendEl, msg, dim) {
   if (!webglAvailable()) { msg.textContent = 'WebGL is not available in this browser.'; return; }
   msg.remove();
   if (viewer) viewer.dispose();
-  viewer = new MeshView(vp, { dim: g.dim });
+  viewer = new MeshView(vp, { dim: g.dim, margin: 1.18 });
   const legend = viewer.setGeometry({
     dim: g.dim, points: decode(g.points), triangles: decode(g.triangles), triEntity: decode(g.tri_entity),
     lines: decode(g.lines), lineEntity: decode(g.line_entity), groups: g.groups, entityGroups: g.entity_groups,

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -55,7 +56,11 @@ _STRESS_COMPS = {
 
 
 class SolverError(RuntimeError):
-    pass
+    """The solve failed numerically."""
+
+
+class InsufficientConstraints(CaseError):
+    """The Dirichlet BCs leave a rigid-body mode free (a setup error: the stiffness is singular)."""
 
 
 # --------------------------------------------------------------------------- forms
@@ -609,7 +614,7 @@ def _check_rigid_modes(md: _Model, D: np.ndarray, has_robin: bool = False) -> No
             return
         null = vt[rank:]  # combinations of modes that the constraints do not touch
         free = [names[int(np.argmax(np.abs(v)))] for v in null]
-    raise SolverError(f"insufficient constraints: the model can move as a rigid body ({', '.join(free)}). "
+    raise InsufficientConstraints(f"insufficient constraints: the model can move as a rigid body ({', '.join(free)}). "
                       f"Add Dirichlet BCs (fixed / displacement / symmetry"
                       f"{' / temperature or convection' if md.physics == 'heat' else ''}) that remove it.")
 
@@ -774,6 +779,10 @@ class SkfemResult(Result):
                 if msg not in self.info.warnings:
                     self.info.warnings.append(msg)
         return out
+
+    def summary(self) -> dict:
+        qois = self.evaluate_all()  # first: it may append warnings to info
+        return {"info": asdict(self.info), "qois": qois, "meta": self.case.meta}
 
     def evaluate(self, qoi: QoI) -> float:
         md = self.model

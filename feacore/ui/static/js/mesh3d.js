@@ -20,8 +20,9 @@ function linearRGB(hex) {
 }
 
 export class MeshView {
-  constructor(container, { dim = 3, padRight = 0, padTop = 0 } = {}) {
+  constructor(container, { dim = 3, padRight = 0, padTop = 0, margin = 1.06 } = {}) {
     this.container = container;
+    this.margin = margin;
     this.dim = dim;
     this.padRight = padRight;
     this.padTop = padTop;
@@ -59,6 +60,7 @@ export class MeshView {
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();
+    (window.__feacoreViews ||= new Set()).add(this);  // debugging / headless tests
   }
 
   // ---------------------------------------------------------------- basics
@@ -103,6 +105,7 @@ export class MeshView {
   }
 
   dispose() {
+    window.__feacoreViews?.delete(this);
     this.ro.disconnect();
     if (this._frame) cancelAnimationFrame(this._frame);
     this.clear();
@@ -119,7 +122,7 @@ export class MeshView {
     const [w, h] = this.size();
     const effW = Math.max(50, w - this.padRight), effH = Math.max(50, h - this.padTop);
     if (this.dim === 2) {
-      let hw = Math.max(size.x, 1e-12) / 2 * 1.1, hh = Math.max(size.y, 1e-12) / 2 * 1.1;
+      let hw = Math.max(size.x, 1e-12) / 2 * this.margin * 1.04, hh = Math.max(size.y, 1e-12) / 2 * this.margin * 1.04;
       if (hw / hh > effW / effH) hh = hw * effH / effW; else hw = hh * effW / effH;
       hh = hh * h / effH;                       // frustum covers the full canvas
       hw = hh * w / h;
@@ -140,16 +143,24 @@ export class MeshView {
       const pts = [];
       if (n) for (let i = 0; i < n; i += step) pts.push(new THREE.Vector3(P[3 * i] - c.x, P[3 * i + 1] - c.y, P[3 * i + 2] - c.z));
       else { const b = this.bbox; for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) pts.push(new THREE.Vector3(x, y, z).sub(c)); }
-      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
-      for (const d of pts) { const a = d.dot(right), b = d.dot(upv); a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
-      const ca = (a0 + a1) / 2, cb = (b0 + b1) / 2;
-      c.addScaledVector(right, ca).addScaledVector(upv, cb);
-      let dist = 0;
-      for (const d of pts) {
-        const a = d.dot(right) - ca, b = d.dot(upv) - cb, along = d.dot(dir);
-        dist = Math.max(dist, along + Math.abs(a) / tx, along + Math.abs(b) / ty);
+      const A = pts.map(d => d.dot(right)), B = pts.map(d => d.dot(upv)), Z = pts.map(d => d.dot(dir));
+      // start from the orthographic centring, then iterate in perspective (near parts look bigger)
+      let da = (Math.min(...A) + Math.max(...A)) / 2, db = (Math.min(...B) + Math.max(...B)) / 2, dist = 0;
+      const distFor = () => { let D = 0; for (let i = 0; i < A.length; i++) D = Math.max(D, Z[i] + Math.abs(A[i] - da) / tx, Z[i] + Math.abs(B[i] - db) / ty); return D * this.margin; };
+      for (let it = 0; it < 6; it++) {
+        dist = distFor();
+        let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity, zm = 0;
+        for (let i = 0; i < A.length; i++) {
+          const depth = dist - Z[i];
+          const u = (A[i] - da) / depth, v = (B[i] - db) / depth;
+          u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); zm += depth;
+        }
+        zm /= A.length;
+        da += (u0 + u1) / 2 * zm;
+        db += (v0 + v1) / 2 * zm;
       }
-      dist = Math.max(dist * 1.06, 1e-9);
+      dist = Math.max(distFor(), 1e-9);
+      c.addScaledVector(right, da).addScaledVector(upv, db);
       this.camera.position.copy(c).addScaledVector(dir, dist);
       this.camera.up.copy(up);
       this.camera.near = dist / 500;

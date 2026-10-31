@@ -64,7 +64,8 @@ async function renderProblem(el, pid) {
     el.append(h('div', { class: 'card empty' }, h('h2', {}, 'No submissions for this problem yet'),
       h('p', {}, 'Reference studies of the fixed solver are shown below once they exist.'), h('pre', { class: 'code' }, submissionExample().replaceAll('PROBLEM', pid))));
   }
-  for (const q of d.qois) el.append(qoiBlock(q));
+  const width = Math.max(720, el.clientWidth - 48);
+  for (const q of d.qois) el.append(qoiBlock(q, width));
 }
 
 const tile = (label, value, sub) => h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
@@ -74,7 +75,7 @@ function rowStatus(r) {
   return r.status;
 }
 
-function qoiBlock(q) {
+function qoiBlock(q, width) {
   const ref = q.reference;
   const cons = q.consensus;
   const rows = [];
@@ -91,7 +92,7 @@ function qoiBlock(q) {
       tip: `<b>${r.agent_id || ''}</b> <span class="t-muted">${r.submission_id}</span><br>finest mesh (${r.n_levels} meshes): ${fmt(r.fine, 6)}${r.band_abs !== null ? ` ± ${fmt(r.band_abs, 3)} (GCI)` : ''}<br>extrapolated: ${fmt(r.phi_ext, 6)} · p = ${fmt(r.p, 3)}<br>${r.label}${r.flags.length ? `<br><span class="t-muted">${r.flags.join(', ')}</span>` : ''}` });
   }
   const chart = forestChart({ rows, reference: ref ? { value: ref.value, tol: ref.tolerance } : null,
-    consensus: cons ? { value: cons.median, lo: cons.median - cons.sigma_robust, hi: cons.median + cons.sigma_robust } : null, xTitle: q.name });
+    consensus: cons ? { value: cons.median, lo: cons.median - cons.sigma_robust, hi: cons.median + cons.sigma_robust } : null, xTitle: q.name, width });
   const legend = h('div', { class: 'legend' },
     h('span', { class: 'key' }, h('span', { class: 'mk', style: { background: '#2a78d6' } }), 'finest-mesh value ± GCI band'),
     h('span', { class: 'key' }, h('span', { class: 'dia', style: { borderColor: '#eb6834' } }), 'Richardson extrapolated'),

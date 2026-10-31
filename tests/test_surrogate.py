@@ -266,3 +266,29 @@ def test_fem_targets_scale_exactly(tmp_path):
     r2 = solve(case2, backend="skfem")
     y1, y2 = fem_targets(r1, build_graph(case)), fem_targets(r2, build_graph(case2))
     np.testing.assert_allclose(y1, y2, rtol=1e-6, atol=1e-9 * np.abs(y1).max())
+
+
+def test_force_bc_equals_traction_and_plane_strain_mapping(tmp_path):
+    """Mesh-harness style `force` BC (total force over the edge) == the equivalent traction;
+    plane strain maps exactly to plane stress (E', nu') with szz = nu (sxx + syy)."""
+    from feacore.case import BC
+
+    _, case = _plate(tmp_path, angle_deg=0.0)
+    g_t = build_graph(case)
+    H, th = 0.07, case.analysis.thickness
+    case_f = copy.deepcopy(case)
+    case_f.bcs[1] = BC("force", group="right", value=[5e6 * H * th, 0.0])
+    g_f = build_graph(case_f)
+    np.testing.assert_allclose(g_f.node_features, g_t.node_features, atol=1e-5)
+    assert math.isclose(g_f.scales.t0, 5e6, rel_tol=1e-3)  # edge length from the (straight) mesh edges
+
+    ps = copy.deepcopy(case)
+    ps.analysis.formulation = "plane_strain"
+    g_p = build_graph(ps)
+    nu = 0.33
+    assert math.isclose(g_p.scales.nu, nu / (1 - nu), rel_tol=1e-12)
+    assert math.isclose(g_p.scales.E, 70e9 / (1 - nu**2), rel_tol=1e-12)
+    y = np.random.default_rng(4).normal(size=(g_p.n_nodes, len(TARGETS)))
+    f = physical_fields(y, g_p.scales)
+    np.testing.assert_allclose(f["szz"], nu * (f["sxx"] + f["syy"]), rtol=1e-12)
+    assert np.all(f["s1"] >= f["s2"]) and np.all(f["s2"] >= f["s3"])

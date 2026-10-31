@@ -22,7 +22,7 @@ class GCIResult:
     r21: float
     r32: float
     R: float | None                # convergence ratio eps21 / eps32
-    convergence: str               # monotone | oscillatory | divergent | oscillatory_divergent | exact | indeterminate
+    convergence: str               # monotone | oscillatory | divergent | oscillatory_divergent | exact | converged | indeterminate
     p: float | None                # observed order
     p_theory: float | None
     phi_ext: float | None          # Richardson-extrapolated value
@@ -54,8 +54,12 @@ def _observed_order(e21: float, e32: float, r21: float, r32: float, s: float,
 
 
 def gci3(h, phi, p_theory: float | None = None, safety: float = 1.25,
-         exact_tol: float = 1e-12) -> GCIResult:
-    """Celik/Roache three-mesh analysis. ``h`` and ``phi`` in any order (sorted by h)."""
+         exact_tol: float = 1e-12, noise_floor: float = 1e-6) -> GCIResult:
+    """Celik/Roache three-mesh analysis. ``h`` and ``phi`` in any order (sorted by h).
+
+    ``noise_floor``: if both mesh-to-mesh changes are below this fraction of |phi|, the QoI is
+    reported as ``converged`` (uncertainty = the change itself) instead of computing an order from
+    round-off or stress-recovery noise, which would produce spurious divergent / oscillatory flags."""
     h = np.asarray(h, dtype=float)
     phi = np.asarray(phi, dtype=float)
     if h.shape != (3,) or phi.shape != (3,):
@@ -85,6 +89,11 @@ def gci3(h, phi, p_theory: float | None = None, safety: float = 1.25,
     if abs(e21) <= exact_tol * scale and abs(e32) <= exact_tol * scale:
         return result(R=0.0, convergence="exact", phi_ext=f1, e_ext21=0.0, gci_fine=0.0,
                       gci_medium=0.0, gci_fine_conservative=0.0)
+    if max(abs(e21), abs(e32)) <= noise_floor * scale:
+        flags.append("converged_within_noise")
+        unc = safety * max(abs(e21), abs(e32)) / max(abs(f1), 1e-300)
+        return result(R=e21 / e32 if e32 != 0 else 0.0, convergence="converged", phi_ext=f1,
+                      e_ext21=0.0, gci_fine=unc, gci_medium=unc, gci_fine_conservative=unc)
     if abs(e32) <= exact_tol * scale or abs(e21) <= exact_tol * scale:
         flags.append("two_solutions_identical")
         return result(convergence="indeterminate")

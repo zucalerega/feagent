@@ -87,23 +87,34 @@ def convergence_study(problem: Problem, sizes: list[float] | None = None, order:
 
 
 def _judge(entry: dict, ref) -> dict:
+    """Pass/fail of one QoI. The extrapolated value is used only when the extrapolation is
+    trustworthy: monotone convergence with an observed order near theory. Otherwise (order far
+    below / above theory, oscillation) the finest-mesh value is judged instead."""
     g = entry.get("gci")
-    out = {"err_fine": None, "err_ext": None, "ref_in_gci_band": None, "passed": None}
+    out = {"err_fine": None, "err_ext": None, "ref_in_gci_band": None, "extrapolation_reliable": None,
+           "passed": None}
     if entry["expectation"] == "diverge":
         if g is not None:
             out["passed"] = g["convergence"] in ("divergent", "oscillatory_divergent") or \
                 "p_far_below_theory" in g["flags"]
         return out
+    if g is not None:
+        out["extrapolation_reliable"] = bool(
+            g.get("phi_ext") is not None and g["convergence"] in ("monotone", "exact", "converged")
+            and not {"p_far_below_theory", "p_above_theory"} & set(g["flags"]))
     if ref is None:
         return out
+
+    def rel(v):
+        return (v - ref.value) / ref.value if ref.value != 0 else v - ref.value
+
     fine = entry["values"][-1]
-    out["err_fine"] = (fine - ref.value) / ref.value if ref.value != 0 else fine - ref.value
-    if g is not None and g.get("phi_ext") is not None and g["convergence"] in ("monotone", "exact"):
-        ext = g["phi_ext"]
-        out["err_ext"] = (ext - ref.value) / ref.value if ref.value != 0 else ext - ref.value
+    out["err_fine"] = rel(fine)
+    if g is not None and g.get("phi_ext") is not None:
+        out["err_ext"] = rel(g["phi_ext"])
         band = (g["gci_fine"] or 0.0) * abs(fine)
         out["ref_in_gci_band"] = bool(abs(fine - ref.value) <= band)
-    best = out["err_ext"] if out["err_ext"] is not None else out["err_fine"]
+    best = out["err_ext"] if out["extrapolation_reliable"] else out["err_fine"]
     out["passed"] = bool(abs(best) <= ref.tolerance) if not math.isnan(best) else False
     return out
 
