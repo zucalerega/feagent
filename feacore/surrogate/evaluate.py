@@ -447,7 +447,8 @@ def plots(rep: dict, samples: list[dict], preds: dict, blob: dict, img: Path) ->
     for st in stages[:-1]:
         off += len(st)
         ax.axvline(off + 0.5, color=INK2, linewidth=0.8, linestyle=":")
-        ax.text(off + 0.7, ax.get_ylim()[1], "warm restart", fontsize=7, color=INK2, va="top")
+        ax.text(off + 1.2, ax.get_ylim()[1], "warm restart", fontsize=7, color=INK2, va="top", ha="left",
+                bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0})
     ax.set_yscale("log")
     ax.set_xlabel("epoch")
     ax.set_ylabel("MSE of standardised targets")

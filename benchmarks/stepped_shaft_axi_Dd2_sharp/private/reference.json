@@ -1,0 +1,91 @@
+{
+  "id": "stepped_shaft_axi_Dd2_sharp",
+  "expected_behavior": "singular",
+  "expectations": {
+    "peak_stress_shoulder": "diverge"
+  },
+  "references": [],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "axisymmetric",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "symmetry",
+        "group": "end_small",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "displacement",
+        "group": "axis",
+        "point": null,
+        "components": [
+          0
+        ],
+        "value": 0.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "traction",
+        "group": "end_large",
+        "point": null,
+        "components": null,
+        "value": [
+          0.0,
+          24999999.999999996
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "peak_stress_shoulder",
+        "type": "max",
+        "field": "s1",
+        "point": null,
+        "group": "shoulder_corner",
+        "component": null
+      },
+      {
+        "name": "elongation",
+        "type": "mean",
+        "field": "uy",
+        "point": null,
+        "group": "end_large",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "stepped_shaft_axi_Dd2_sharp",
+      "reference_portion": "full"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.0025,
+    0.00125,
+    0.000625
+  ]
+}

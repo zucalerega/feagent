@@ -1,0 +1,76 @@
+{
+  "id": "clevis_lug_2d_D28",
+  "expected_behavior": "stress_concentration",
+  "expectations": {},
+  "references": [],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "plane_stress",
+      "order": 2,
+      "thickness": 0.01,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "fixed",
+        "group": "base",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "pressure",
+        "group": "bore_loaded",
+        "point": null,
+        "components": null,
+        "value": "maximum(0.0, 90945681.77 * (y - 0.06) / 0.014)",
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "peak_hoop_stress",
+        "type": "max",
+        "field": "s1",
+        "point": null,
+        "group": "bore",
+        "component": null
+      },
+      {
+        "name": "lug_elongation",
+        "type": "mean",
+        "field": "uy",
+        "point": null,
+        "group": "bore_loaded",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "clevis_lug_2d_D28",
+      "reference_portion": "full",
+      "load_model": "cosine bearing pressure on the upper half bore, p0 = 2P/(pi a b)"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.004,
+    0.002,
+    0.001
+  ]
+}

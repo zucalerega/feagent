@@ -102,8 +102,85 @@ uniformly and a sequence of h is a systematic (Richardson-compatible) refinement
 
 ## Validation (reference convergence studies, skfem, P2, 3 meshes)
 
-See the table at the end of this file (filled from `convergence_study`; studies saved under
-`/tmp/parts/studies/` during development).
+`convergence_study(problem, order=2, backend="skfem")` with the default sizes (h0, h0/2, h0/4 in 2D;
+h0, h0/1.5, h0/2.25 in 3D), one core, 2026-10-31. Stresses in MPa, displacements in micrometres.
+For the shafts and notched bars the reference is the study's own converged value (so the error
+column would be 0 by construction); the independent checks are CalculiX (shafts: -0.06 to -0.08 %
+on the finest mesh) and the handbook column. The 3D shaft is judged against the axisymmetric value.
+
+| problem | QoI | coarse/medium/fine | extrapolated | p | GCI % | reference | handbook fit (fine vs fit) | verdict | study time, fine dofs |
+|---|---|---|---|---|---|---|---|---|---|
+| clevis_lug_2d_D20 | peak_hoop_stress [MPa] | 315.2/312.8/312.2 | 312.1 | 2.20 | 0.063 |  |  | monotone | 2 s, 65k |
+| clevis_lug_2d_D20 | lug_elongation [um] | 33.4/33.4/33.4 | 33.4 | 2.70 | 0.00042 |  |  | monotone | 2 s, 65k |
+| clevis_lug_2d_D28 | peak_hoop_stress [MPa] | 544.1/542.1/541.5 | 541.2 | 1.77 | 0.058 |  |  | monotone | 2 s, 76k |
+| clevis_lug_2d_D28 | lug_elongation [um] | 64.66/64.67/64.67 | 64.67 | 3.15 | 0.00019 |  |  | monotone | 2 s, 76k |
+| clevis_lug_3d_D20 | peak_hoop_stress [MPa] | 328.8/324.4/323.8 | 323.8 | 5.73 | 0.029 |  |  | monotone | 13 s, 111k |
+| clevis_lug_3d_D20 | lug_elongation [um] | 33.28/33.29/33.29 | 33.29 | 2.33 | 0.012 |  |  | monotone | 13 s, 111k |
+| l_bracket_r0 | max_vm_corner [MPa] | 196.3/250/307.1 |  |  |  |  |  | diverge seen | 39 s, 217k |
+| l_bracket_r0 | load_displacement [um] | -460.1/-461.2/-461.7 | -462.2 | 1.98 | 0.13 |  |  | monotone | 39 s, 217k |
+| l_bracket_r10 | max_vm_corner [MPa] | 121.2/121.5/121.5 | 121.5 | 11.25 | 7.2e-05 |  |  | monotone | 89 s, 350k |
+| l_bracket_r10 | load_displacement [um] | -391.4/-391.7/-391.9 | -392.1 | 1.73 | 0.061 |  |  | monotone | 89 s, 350k |
+| l_bracket_r2 | max_vm_corner [MPa] | 195.4/193/190.6 |  |  |  |  |  | divergent | 77 s, 326k |
+| l_bracket_r2 | load_displacement [um] | -449.9/-450.3/-450.5 | -450.7 | 1.97 | 0.051 |  |  | monotone | 77 s, 326k |
+| l_bracket_r5 | max_vm_corner [MPa] | 138.4/140.7/139.3 |  | 1.41 | 1.7 |  |  | oscillatory | 39 s, 228k |
+| l_bracket_r5 | load_displacement [um] | -429.3/-429.7/-429.9 | -430.1 | 1.81 | 0.061 |  |  | monotone | 39 s, 228k |
+| mounting_bracket_diag45 | max_vm_web_root [MPa] | 187.9/184.8/191.9 |  |  |  |  |  | oscillatory_divergent | 44 s, 169k |
+| mounting_bracket_diag45 | load_displacement [um] | 298.6/302.5/303.6 | 303.9 | 4.34 | 0.12 |  |  | monotone | 44 s, 169k |
+| mounting_bracket_horizontal | max_vm_web_root [MPa] | 160.7/162.4/162.7 | 162.7 | 5.94 | 0.03 |  |  | monotone | 41 s, 169k |
+| mounting_bracket_horizontal | load_displacement [um] | 265.9/269.1/269.9 | 270.2 | 4.31 | 0.11 |  |  | monotone | 41 s, 169k |
+| mounting_bracket_vertical | max_vm_web_root [MPa] | 183.1/192.4/189.8 |  | 4.01 | 0.54 |  |  | oscillatory | 43 s, 169k |
+| mounting_bracket_vertical | load_displacement [um] | 68.83/69.65/69.86 | 69.91 | 4.54 | 0.095 |  |  | monotone | 43 s, 169k |
+| notched_bar_t10_r2 | peak_stress_notch [MPa] | 487.1/478.7/476.8 | 476.1 | 2.10 | 0.16 | 476.1 (numerical) | 429.6 (+11.0 %) | pass (monotone) | 5 s, 164k |
+| notched_bar_t10_r2 | elongation [um] | 86.75/86.75/86.75 | 86.75 | 3.86 | 5.3e-06 |  |  | monotone | 5 s, 164k |
+| notched_bar_t10_r4 | peak_stress_notch [MPa] | 361.3/355.5/354.8 | 354.6 | 3.02 | 0.038 | 354.6 (numerical) | 321.9 (+10.2 %) | pass (monotone) | 5 s, 143k |
+| notched_bar_t10_r4 | elongation [um] | 87.12/87.12/87.12 | 87.12 | 3.80 | 7.9e-06 |  |  | monotone | 5 s, 143k |
+| notched_bar_t5_r2 | peak_stress_notch [MPa] | 353.9/348.5/347.6 | 347.4 | 2.61 | 0.066 | 347.4 (numerical) | 320.4 (+8.5 %) | pass (monotone) | 5 s, 157k |
+| notched_bar_t5_r2 | elongation [um] | 81.76/81.76/81.76 | 81.76 | 3.88 | 2.5e-06 |  |  | monotone | 5 s, 157k |
+| notched_bar_t5_r4 | peak_stress_notch [MPa] | 271.1/264.6/264.2 | 264.2 | 4.20 | 0.011 | 264.2 (numerical) | 245.4 (+7.7 %) | pass (monotone) | 4 s, 134k |
+| notched_bar_t5_r4 | elongation [um] | 81.9/81.9/81.9 | 81.9 | 3.95 | 4e-06 |  |  | monotone | 4 s, 134k |
+| pressure_vessel_axi_equal | hoop_stress_mid [MPa] | 65.11/65.1/65.1 | 65.1 | 1.84 | 0.0024 | 65.1 (analytical) |  | pass (monotone) | 1 s, 41k |
+| pressure_vessel_axi_equal | peak_von_mises [MPa] | 61.34/61.35/61.35 |  |  |  |  |  | divergent | 1 s, 41k |
+| pressure_vessel_axi_thin_head | hoop_stress_mid [MPa] | 65.11/65.1/65.09 | 65.09 | 1.53 | 0.0033 | 65.1 (analytical) |  | pass (monotone) | 1 s, 33k |
+| pressure_vessel_axi_thin_head | peak_von_mises [MPa] | 87.31/94.07/103.7 |  |  |  |  |  | diverge seen | 1 s, 33k |
+| stepped_shaft_3d_Dd2_rd0p2 | peak_stress_fillet [MPa] | 182.5/181.7/178.9 |  |  |  | 175.3 (numerical) | 162.9 (+9.8 %) | pass (divergent) | 40 s, 211k |
+| stepped_shaft_3d_Dd2_rd0p2 | elongation [um] | 39.05/39.05/39.05 | 39.05 | 3.64 | 0.00044 |  |  | monotone | 40 s, 211k |
+| stepped_shaft_axi_Dd1p5_rd0p05 | peak_stress_fillet [MPa] | 271.4/270/269.4 | 269 | 1.31 | 0.19 | 269 (numerical) | 226.1 (+19.1 %) | pass (monotone) | 4 s, 118k |
+| stepped_shaft_axi_Dd1p5_rd0p05 | elongation [um] | 41.14/41.14/41.14 | 41.14 | 4.03 | 8.3e-07 |  |  | monotone | 4 s, 118k |
+| stepped_shaft_axi_Dd1p5_rd0p1 | peak_stress_fillet [MPa] | 213.8/212/211.5 | 211.3 | 1.79 | 0.13 | 211.3 (numerical) | 186 (+13.7 %) | pass (monotone) | 4 s, 107k |
+| stepped_shaft_axi_Dd1p5_rd0p1 | elongation [um] | 40.96/40.96/40.96 | 40.96 | 4.03 | 6.3e-07 |  |  | monotone | 4 s, 107k |
+| stepped_shaft_axi_Dd1p5_rd0p2 | peak_stress_fillet [MPa] | 172.1/170.9/170.4 | 170.2 | 1.61 | 0.15 | 170.2 (numerical) | 155.4 (+9.7 %) | pass (monotone) | 2 s, 88k |
+| stepped_shaft_axi_Dd1p5_rd0p2 | elongation [um] | 40.59/40.59/40.59 | 40.59 | 3.76 | 1.2e-06 |  |  | monotone | 2 s, 88k |
+| stepped_shaft_axi_Dd2_rd0p05 | peak_stress_fillet [MPa] | 291.1/290.1/289.5 | 288.5 | 0.71 | 0.44 | 289.5 (numerical) | 242 (+19.6 %) | pass (monotone) | 4 s, 133k |
+| stepped_shaft_axi_Dd2_rd0p05 | elongation [um] | 39.76/39.76/39.76 | 39.76 | 3.85 | 1.4e-06 |  |  | monotone | 4 s, 133k |
+| stepped_shaft_axi_Dd2_rd0p1 | peak_stress_fillet [MPa] | 223.9/223.6/223 |  |  |  | 223 (numerical) | 196.5 (+13.5 %) | pass (divergent) | 4 s, 124k |
+| stepped_shaft_axi_Dd2_rd0p1 | elongation [um] | 39.54/39.54/39.54 | 39.54 | 3.83 | 1e-06 |  |  | monotone | 4 s, 124k |
+| stepped_shaft_axi_Dd2_rd0p2 | peak_stress_fillet [MPa] | 176.9/175.9/175.6 | 175.3 | 1.43 | 0.16 | 175.3 (numerical) | 162.9 (+7.8 %) | pass (monotone) | 3 s, 112k |
+| stepped_shaft_axi_Dd2_rd0p2 | elongation [um] | 39.05/39.05/39.05 | 39.05 | 3.79 | 1.2e-06 |  |  | monotone | 3 s, 112k |
+| stepped_shaft_axi_Dd2_sharp | peak_stress_shoulder [MPa] | 441.2/618.3/850.5 |  |  |  |  |  | diverge seen | 1 s, 59k |
+| stepped_shaft_axi_Dd2_sharp | elongation [um] | 39.95/39.96/39.96 | 39.96 | 1.10 | 0.0074 |  |  | monotone | 1 s, 59k |
+
+Reading the table:
+
+- **Traps behave as designed**: `stepped_shaft_axi_Dd2_sharp` (441 -> 618 -> 851 MPa),
+  `l_bracket_r0` (196 -> 250 -> 307 MPa) and the thin-head vessel kink (87 -> 94 -> 104 MPa) diverge,
+  while the displacement QoIs of the same parts converge with p near 2-4.
+- **2D / axisymmetric peaks converge cleanly** (GCI 0.01-0.4 %). Observed orders for peak stresses
+  are 0.7-2.6 rather than 2: the peaks sit next to the fillet tangent lines, where the boundary
+  curvature jumps, and "max over nodes" adds a sampling error.
+- **3D peak stresses are noisy**: max-over-nodes of the recovered stress on a curved fillet jumps by
+  1-4 % between meshes (mounting bracket vertical / 45 deg, L-bracket r = 5, 3D shaft), so the GCI
+  reports oscillatory or divergent for QoIs that are physically smooth. The 3D shaft's fine value is
+  2.0 % above the axisymmetric reference; on the medium 3D mesh skfem's nodal max is 3.6 % above it
+  and CalculiX's 1.9 %, so the excess is partly resolution and partly the L2-recovery overshoot at
+  the hottest node (to reproduce: mesh `stepped_shaft_3d_Dd2_rd0p2` at h0/1.5 and solve it with
+  both backends). `l_bracket_r2` is still pre-asymptotic (195 -> 193 -> 191 MPa at fillet cells
+  r/3 .. r/7). Read the 3D reference peak stresses as uncertain by ~3 %; the displacement QoIs of the
+  same parts converge at p ~ 2-4 with GCI ~0.1 %.
+- The mounting bracket's hottest web-root point (vertical and 45-degree loads) is where the fillet
+  wraps around the web's square vertical end edges; the stress drops ~10 % within one element of it,
+  which is why that QoI is the noisiest.
+- `pressure_vessel_axi_equal` `peak_von_mises` changes by 3 kPa on 61.35 MPa (6e-5) between meshes:
+  converged, but above the verification noise floor (1e-6), so it shows up as "divergent".
 
 ## Tests
 

@@ -1,0 +1,88 @@
+{
+  "id": "nafems_t4",
+  "expected_behavior": "smooth",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "T_E",
+      "value": 18.25,
+      "kind": "published",
+      "source": "NAFEMS, \"The Standard NAFEMS Benchmarks\", publication TNSB Rev. 3 (October 1990), test T4, target T(E) = 18.25 degC at E = (0.6, 0.2); reproduced in COMSOL 'Steady-State 2D Heat Transfer with Conduction' (https://doc.comsol.com/6.4/doc/com.comsol.help.models.mph.heat_convection_2d/heat_convection_2d.html) and the Abaqus Benchmarks Manual 4.3.4 (T4, target 18.3 degC)",
+      "tolerance": 0.01,
+      "notes": "COMSOL's 9x15 quadratic mesh gives 18.265 degC."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "heat",
+      "formulation": "2d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "solid": {
+        "E": 0.0,
+        "nu": 0.0,
+        "alpha": 0.0,
+        "k": 52.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "temperature",
+        "group": "bottom",
+        "point": null,
+        "components": null,
+        "value": 100.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "convection",
+        "group": "right",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": 750.0,
+        "T_inf": 0.0
+      },
+      {
+        "type": "convection",
+        "group": "top",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": 750.0,
+        "T_inf": 0.0
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "T_E",
+        "type": "point",
+        "field": "T",
+        "point": [
+          0.6,
+          0.2
+        ],
+        "group": null,
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "nafems_t4",
+      "units": "SI (m, W, degC)"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.05,
+    0.025,
+    0.0125
+  ]
+}
