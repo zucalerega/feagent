@@ -16,6 +16,7 @@ import pkgutil
 from feacore.problems.base import Problem
 
 _REGISTRY: dict[str, Problem] = {}
+_ERRORS: dict[str, str] = {}   # module -> import error (modules being edited must not break the rest)
 _DISCOVERED = False
 _SKIP = {"base", "registry", "store"}
 
@@ -27,17 +28,28 @@ def register(problem: Problem) -> Problem:
     return problem
 
 
-def discover() -> None:
+def discover(strict: bool = False) -> dict[str, str]:
+    """Import every problem module once. Import errors are collected (and warned about) instead
+    of raised, unless ``strict``. Returns {module: error} for modules that failed."""
     global _DISCOVERED
-    if _DISCOVERED:
-        return
+    if _DISCOVERED and not strict:
+        return dict(_ERRORS)
+    import warnings
+
     import feacore.problems as pkg
 
-    for mod in pkgutil.walk_packages(pkg.__path__, prefix="feacore.problems."):
+    for mod in pkgutil.walk_packages(pkg.__path__, prefix="feacore.problems.", onerror=lambda name: None):
         if mod.name.rsplit(".", 1)[-1] in _SKIP:
             continue
-        importlib.import_module(mod.name)
+        try:
+            importlib.import_module(mod.name)
+        except Exception as e:  # noqa: BLE001
+            if strict:
+                raise
+            _ERRORS[mod.name] = f"{type(e).__name__}: {e}"
+            warnings.warn(f"problem module {mod.name} failed to import: {e}", stacklevel=2)
     _DISCOVERED = True
+    return dict(_ERRORS)
 
 
 def get(problem_id: str) -> Problem:

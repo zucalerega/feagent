@@ -20,6 +20,9 @@ Conventions
 
 Boundary conditions (``BC.type``)
 ---------------------------------
+``group`` is normally a facet group (edges in 2D, faces in 3D). Dirichlet types (fixed,
+displacement, temperature) may also use lower-dimensional groups (points in 2D; curves or
+points in 3D), constraining every node on them.
 elasticity:
   fixed         all displacement components = 0 on ``group`` (or the node nearest ``point``)
   displacement  prescribed ``components`` (0=x, 1=y, 2=z) = ``value`` (scalar for all listed
@@ -113,7 +116,7 @@ class Region:
 @dataclass
 class BC:
     type: str
-    group: str | None = None            # facet physical group
+    group: str | None = None            # facet group (Dirichlet: any lower-dim group)
     point: list[float] | None = None    # alternative to group: node nearest to this point
     components: list[int] | None = None
     value: Value | None = None
