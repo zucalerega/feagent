@@ -81,8 +81,9 @@ function key(a, b, c) { if (a > b) [a, b] = [b, a]; if (b > c) [b, c] = [c, b]; 
 const palette = DATA.groups.map((_, i) => new THREE.Color().setHSL(((i * 0.618034) % 1), 0.55, 0.62));
 
 const NPE = DATA.npe || 4, nt = T.length / NPE;
-// faces: corners (outward) + the midside nodes of edges ab, bc, ca (gmsh tet10 numbering)
-const FACES = [[0,2,1,6,5,4],[0,1,3,4,9,7],[0,3,2,7,8,6],[1,2,3,5,8,9]];
+// faces: corners (outward) + the midside nodes of edges ab, bc, ca. Node numbering is meshio's
+// (VTK): 4=(0,1) 5=(1,2) 6=(0,2) 7=(0,3) 8=(1,3) 9=(2,3); gmsh's own files swap 8 and 9.
+const FACES = [[0,2,1,6,5,4],[0,1,3,4,8,7],[0,3,2,7,9,6],[1,2,3,5,9,8]];
 const SUB = NPE === 10 ? 4 : 1;
 const cent = new Float32Array(nt * 3);
 for (let e = 0; e < nt; e++) for (let d = 0; d < 3; d++)
