@@ -26,7 +26,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from ace import config
+from ace import config, ui_bridge
 from ace.agent import run_agent
 from ace.checks import check_run, load_calibration
 from ace.cost import BudgetExceeded, CostLog
@@ -51,13 +51,14 @@ def _worker(job: dict) -> dict:
     usage: list = []   # filled call by call, so a crash halfway still reports its tokens
     try:
         return run_agent(job["problem_id"], job["run_id"], job["generation"], job["playbook_text"],
-                         Path(job["workdir"]), make_llm(job["mock"]), usage=usage)
+                         Path(job["workdir"]), make_llm(job["mock"]), usage=usage, ui=job.get("ui"))
     except Exception:  # noqa: BLE001  one broken run must not kill the generation
         return _error_run(job, traceback.format_exc(), usage)
 
 
-def run_generation(jobs: list[dict], concurrency: int, cost: CostLog) -> list[dict]:
-    """Run jobs with at most `concurrency` in flight; stop starting new ones once over budget."""
+def run_generation(jobs: list[dict], concurrency: int, cost: CostLog, on_done=None) -> list[dict]:
+    """Run jobs with at most `concurrency` in flight; stop starting new ones once over budget.
+    `on_done(run)`, if given, is called here as each run finishes (e.g. by ace.ui_bridge)."""
     runs, pending, todo = [], {}, list(jobs)
     new_pool = lambda: ProcessPoolExecutor(concurrency, mp_context=mp.get_context("spawn"))  # noqa: E731
     pool = new_pool()
@@ -83,6 +84,8 @@ def run_generation(jobs: list[dict], concurrency: int, cost: CostLog) -> list[di
                     run = _error_run(job, f"worker process failed: {e!r} (token usage unknown)", [])
                 cost.add(run["usage"])
                 runs.append(run)
+                if on_done is not None:
+                    on_done(run)
                 status = "ERROR" if run.get("error") else f"{run['turns']} turns"
                 print(f"  run {run['run_id']} done ({status}), spent ${cost.total:.2f}", flush=True)
     finally:
@@ -177,6 +180,8 @@ def main(argv=None) -> int:
     ap.add_argument("--playbook", type=Path, help="start from this playbook JSON instead of empty")
     ap.add_argument("--out", type=Path, help="output dir (default ace_runs/<timestamp>)")
     ap.add_argument("--mock", action="store_true", help="canned LLM responses, no API calls")
+    ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
+                    "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
 
     train = [p for p in args.problems.split(",") if p]
@@ -189,6 +194,7 @@ def main(argv=None) -> int:
     calibration = load_calibration(train + holdout)
     rows, gen_notes = [], []
     print(f"output: {out}")
+    ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
 
     try:
         for gen in range(args.generations):
@@ -202,9 +208,11 @@ def main(argv=None) -> int:
             # Interleaved (run 0 of every problem, then run 1, ...) so that if the budget stops a
             # generation early, every problem still has a similar number of runs.
             jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-{i}", "generation": gen,
-                     "playbook_text": text, "workdir": str(gdir / "work" / f"{pid}-{i}"), "mock": args.mock}
+                     "playbook_text": text, "workdir": str(gdir / "work" / f"{pid}-{i}"), "mock": args.mock,
+                     "ui": ui}
                     for i in range(args.runs_per_problem) for pid in train + holdout]
-            runs = run_generation(jobs, args.concurrency, cost)
+            runs = run_generation(jobs, args.concurrency, cost,
+                                  on_done=lambda r: ui_bridge.record_agent_run(ui, r, calibration))
             if runs and all(r.get("error") for r in runs):
                 print(runs[0]["error"])
                 raise SystemExit("every run failed; see the error above")
