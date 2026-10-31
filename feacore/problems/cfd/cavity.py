@@ -34,12 +34,16 @@ from feacore.problems.registry import register
 
 _SRC = f"{GHIA}, Re = 100 column; table values as transcribed in {GHIA_COPY}"
 
-# (QoI name, field, point, Ghia value, table)
+# (QoI name, field, point, Ghia value, table, tolerance, converged value of the fixed solver)
+# Tolerances: Ghia's Re = 100 values are smaller in magnitude than mesh-converged solutions by
+# 1.5 % (u) to 3.5 % (v_min) (fixed solver, Richardson-extrapolated 32/64/128 study, GCI <= 0.1 %;
+# the same direction as the fine-grid finite-volume values of Sahin & Owens 2003). The tolerance is
+# that table error plus ~1.5 % for the agent's own discretization error.
 _GHIA_POINTS = (
-    ("u_vcl_min", "ux", (0.5, 58 / 128), -0.21090, "Table I (u on x = 0.5), y = 0.4531"),
-    ("v_hcl_max", "uy", (30 / 128, 0.5), 0.17527, "Table II (v on y = 0.5), x = 0.2344"),
-    ("v_hcl_min", "uy", (103 / 128, 0.5), -0.24533, "Table II (v on y = 0.5), x = 0.8047"),
-    ("u_centre", "ux", (0.5, 0.5), -0.20581, "Table I (u on x = 0.5), y = 0.5000"),
+    ("u_vcl_min", "ux", (0.5, 58 / 128), -0.21090, "Table I (u on x = 0.5), y = 0.4531", 0.03, -0.21401),
+    ("v_hcl_max", "uy", (30 / 128, 0.5), 0.17527, "Table II (v on y = 0.5), x = 0.2344", 0.04, 0.17952),
+    ("v_hcl_min", "uy", (103 / 128, 0.5), -0.24533, "Table II (v on y = 0.5), x = 0.8047", 0.05, -0.25382),
+    ("u_centre", "ux", (0.5, 0.5), -0.20581, "Table I (u on x = 0.5), y = 0.5000", 0.03, -0.20914),
 )
 
 
@@ -64,7 +68,7 @@ class LidDrivenCavityRe100(FlowProblem):
         p = self.params
         L, U = p["L"], p["U"]
         lines = []
-        for name, f, xy, _, _ in _GHIA_POINTS:
+        for name, f, xy, *_ in _GHIA_POINTS:
             x, y = self._scaled(xy)
             comp = "u_x (horizontal velocity)" if f == "ux" else "u_y (vertical velocity)"
             lines.append(f"  {name:<10} {comp} at ({x:.7g}, {y:.7g}) [m/s]")
@@ -104,7 +108,7 @@ class LidDrivenCavityRe100(FlowProblem):
         transfinite_all(2)
 
     def qois(self) -> list[QoI]:
-        return [QoI(name, "point", field=f, point=self._scaled(xy)) for name, f, xy, _, _ in _GHIA_POINTS]
+        return [QoI(name, "point", field=f, point=self._scaled(xy)) for name, f, xy, *_ in _GHIA_POINTS]
 
     def case(self, mesh_path, order: int = 2):
         bcs = [BC("wall", group="lid", value=[self.params["U"], 0.0]),
@@ -114,13 +118,16 @@ class LidDrivenCavityRe100(FlowProblem):
     def references(self) -> list[Reference]:
         U = self.params["U"]
         refs = []
-        for name, _, xy, v, table in _GHIA_POINTS:
+        for name, _, xy, v, table, tol, conv in _GHIA_POINTS:
             refs.append(Reference(
-                name, v * U, "published_numerical", f"{_SRC}; {table}", tolerance=0.02,
-                notes=("Ghia et al.: finite-difference stream function-vorticity multigrid solution on a uniform "
-                       "grid (129 x 129 for Re = 100, from memory); grid-point values (multiples of 1/128) to 5 "
-                       "decimals. The tolerance allows for the table's own discretization error; see "
-                       "docs/benchmarks_cfd.md for the converged values of the fixed solver.")))
+                name, v * U, "published_numerical", f"{_SRC}; {table}", tolerance=tol,
+                notes=(f"Ghia et al.: finite-difference stream function-vorticity multigrid solution on a uniform "
+                       f"grid (129 x 129 for Re = 100, from memory); grid-point values to 5 decimals. The table "
+                       f"is {abs(conv - v) / abs(v):.1%} smaller in magnitude than the mesh-converged value "
+                       f"{conv} of the fixed solver (OpenFOAM, Richardson-extrapolated 32/64/128 study, GCI "
+                       f"<= 0.1 %), consistent with fine-grid literature (Sahin & Owens 2003); the tolerance "
+                       f"covers that table error plus the agent's discretization error. "
+                       f"See docs/benchmarks_cfd.md.")))
         return refs
 
 
