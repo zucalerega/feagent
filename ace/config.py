@@ -24,20 +24,17 @@ PRICES = {
 
 # --------------------------------------------------------------------------- tasks
 # One scored QoI per problem. node_cap is a hard limit on mesh nodes (mid-side nodes of
-# quadratic elements count). Caps were picked so the best uniform mesh (linear or quadratic) at
-# the cap is roughly 4-9% off; the agent has to place nodes well to beat that.
-# The references of the notched bar and stepped shaft come from the team's own converged FE
-# studies, so no model can recall them (it could recall the NAFEMS and Lame answers).
+# quadratic elements count). Caps were picked so a uniform linear mesh at the cap is roughly 5%
+# off. The baseline is the best uniform mesh of either order (ace/calibration.json).
+# These are the easy, well-known benchmarks: they show that agents can use the harness to solve
+# a problem. Their published answers are known to the model (see ace/README.md).
 TASKS = {
-    "notched_bar_t5_r2": {"qoi": "peak_stress_notch", "node_cap": 1500},
-    "stepped_shaft_axi_Dd2_rd0p1": {"qoi": "peak_stress_fillet", "node_cap": 800},
-    "notched_bar_t10_r4": {"qoi": "peak_stress_notch", "node_cap": 1500},
-    "plate_hole_finite_width_d03": {"qoi": "s_peak", "node_cap": 1500},
+    "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 120},
+    "nafems_le10": {"qoi": "syy_D", "node_cap": 1300},
+    "nafems_le1": {"qoi": "syy_D", "node_cap": 250},
 }
-TRAIN = ["notched_bar_t5_r2", "stepped_shaft_axi_Dd2_rd0p1"]
-# Evaluated every generation, never reflected on: the same family with a different notch (near
-# transfer) and a different shape whose reference is a handbook value (far transfer).
-HOLDOUT = ["notched_bar_t10_r4", "plate_hole_finite_width_d03"]
+TRAIN = ["lame_cylinder_plane_strain", "nafems_le10"]
+HOLDOUT = ["nafems_le1"]          # evaluated every generation, never reflected on
 
 # --------------------------------------------------------------------------- agent limits
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)
@@ -62,6 +59,16 @@ SECTIONS = {  # section -> bullet id prefix
 TOP_N_BULLETS = 30                # only the best N bullets (helpful - harmful) go in the prompt
 DEDUP_THRESHOLD = 85              # rapidfuzz token_set_ratio at/above which two bullets are "the same"
 PRUNE_MARGIN = 2                  # drop a bullet when harmful >= helpful + PRUNE_MARGIN
+
+# --------------------------------------------------------------------------- attribution (experimental)
+# ace/attribution.py is not wired into the loop yet (being evaluated). Plan: hide each bullet
+# from each run with probability HIDE_P (seeded by run id) and regress score on what was shown.
+HIDE_P = 0.5
+BOOTSTRAP = 2000                  # bootstrap resamples for confidence intervals
+CI = 0.90                         # confidence level of the reported intervals
+# Retire a bullet when its effect's upper bound is below 0 (confidently harmful) once it has been
+# both shown and hidden at least MIN_ARM runs each.
+MIN_ARM = 6
 
 # --------------------------------------------------------------------------- loop defaults
 RUNS_PER_PROBLEM = 6              # more runs = scores you can tell apart from noise

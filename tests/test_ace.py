@@ -188,3 +188,23 @@ def test_budget_stops_cleanly(tmp_path):
           "--budget-usd", "0.01", "--out", str(tmp_path)])
     assert (tmp_path / "summary.md").exists()
     assert not (tmp_path / "playbook_gen1.json").exists()      # stopped before any update
+
+
+# --------------------------------------------------------------------------- attribution (not wired in yet)
+
+
+def test_attribution_recovers_planted_effects():
+    import numpy as np
+    from ace.attribution import estimate
+    rng = np.random.default_rng(0)
+    true = {"good-0001": 0.4, "bad-0001": -0.4, "null-0001": 0.0}
+    rows = []
+    for g in (1, 2, 3):
+        for p, base in (("A", 0.5), ("B", 1.5), ("H", 1.0)):
+            for i in range(8):
+                shown = [b for b in true if rng.random() >= 0.5]
+                rows.append({"run_id": f"{g}{p}{i}", "gen": g, "problem": p, "offered": list(true), "shown": shown,
+                             "cited": [], "score": base + sum(true[b] for b in shown) + rng.normal(0, 0.3)})
+    est = estimate(rows, train=["A", "B"], n_boot=300)
+    assert est["good-0001"]["lo"] > 0 and est["bad-0001"]["hi"] < 0
+    assert est["null-0001"]["lo"] < 0 < est["null-0001"]["hi"]
