@@ -20,15 +20,37 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
-- Nothing implemented yet.
 - `improver-loop` branch: improver side of the loop.
+- `benchmarks` branch: benchmark suites and the deterministic evaluation harness (`feabench`).
+  - `benchmarks/`: verification (10 CAD tasks with exact/published/converged references),
+    SimJEB (integrated, data blocked by the network policy here), code_aster reference library,
+    CalculiX solver-acceptance suite. See `benchmarks/README.md`.
+  - `feabench evaluate <case> <submission_dir>` scores a submission. `docs/eval-design.md`
+    explains the scoring; `docs/decisions.md` logs the defaults chosen.
+
+## Decided (provisional, see docs/decisions.md)
+
+- **Problems and scoring.** Cases are `benchmarks/*/<case>/task` (STEP + task.json + task.md);
+  hidden references are in `reference/`. Score: S = G·A·(1−0.2(1−E)):
+  - G: gates (solver ok, materials, geometry volume, load path);
+  - A: log-scaled accuracy credit per QoI;
+  - E: token/time efficiency.
+  Agents are ranked by within-case Bradley-Terry ratings.
+- **Fixed solver:** CalculiX ccx 2.21 (`apt install calculix-ccx`).
+- **Submission:** a directory with `model.inp` (ccx deck, task units: mm, N, MPa, tonne, s). The
+  harness adds output requests and measures QoIs on the agent's own mesh.
+- **Evaluator output:** the harness produces all numbers (`evaluation.json`). The evaluator agent
+  adds a failure taxonomy and transferable lessons, and never puts reference values into improver
+  summaries.
 
 ## Open questions
 
-- What are the CAD design problems, and how is a solution scored?
-- Which MCP tools does the agent get (geometry / mesh / BCs)?
+- Which MCP tools does the agent get (geometry / mesh / BCs)? Its "solve" step should emit the
+  submission directory above, and the agent harness should log `agent_cost`: tokens from
+  `usage`, wall time, tool calls.
 - What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
-- What does the evaluator output look like (schema for rankings + summary)?
+- Held-out split (proposal: NAFEMS LE1 + angle bracket, 20 % of SimJEB) and per-case reference costs.
+- Access to dataverse.harvard.edu (SimJEB) must be allowed in the environment's network settings.
 
 ## Conventions
 
