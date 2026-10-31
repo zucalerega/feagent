@@ -19,8 +19,8 @@ Chief engineer ─▶ Geometry builder ─▶ Skins mesher ─┐
 | Skins, Spars, Ribs meshers | per part: automesh, name interface/load faces by query, size for ≥ 2 quadratic elements through the thickness, iterate until every gate passes; Sculptured re-checks their `report.json` after each turn | `RUN/skins/`, `RUN/spars/`, `RUN/ribs/` |
 | Integrator | assembly spec from the meshers' sizing, conformal mesh, two load cases through `feacore.adapters.mesh_harness` and `feacore.cli` (CPU and cuDSS) | `RUN/integrator/` |
 | Verifier | equilibrium, box-beam theory tip deflection (within 10 %), 3-mesh GCI (under 5 %) | `RUN/verifier/` |
-| GPU engineer | cuDSS in the venv, CPU vs GPU benchmark and the 8 GB ceiling; stretch: a rib as a superelement (Schur complement) vs the monolithic solve | `RUN/gpu/` |
-| Visualization engineer | OpenUSD stage of the assembly (gate status per part, von Mises, deformed shape), GPU renders, GLB + three.js viewer on port 8830 | `RUN/viz/` |
+| GPU engineer | cuDSS on the DGX Spark (never the laptop GPU), laptop CPU vs Spark GPU benchmark under the Spark's memory cap; stretch: a rib as a superelement (Schur complement) vs the monolithic solve | `RUN/gpu/` |
+| Visualization engineer | OpenUSD stage of the assembly (gate status per part, von Mises, deformed shape), renders on the Spark, GLB + three.js viewer on port 8830 | `RUN/viz/` |
 
 `RUN` is `runs/wingbox-<date>/` in this repo (git-ignored). Every agent gets the `feagent-mcp` component (the
 mesh harness's MCP server). [`starter/`](starter/) holds the OpenUSD export and EGL rendering spike the

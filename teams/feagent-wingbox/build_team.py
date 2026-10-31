@@ -25,7 +25,7 @@ CONTEXT = f"""TEAM: FEAgent wingbox, stage 1 of a whole-aircraft analysis run by
 virtual twins: many component analyses in parallel, one integrated answer, GPU solve and GPU visualization).
 
 RUN = {RUN} (shared run folder; write only under RUN/<your role>/ unless your job says otherwise).
-REPO = {REPO} (read CLAUDE.md first). Python: `uv run ...` from REPO. Never commit or push; never edit files
+REPO = {REPO} (read CLAUDE.md first). Python: `uv run ...` from REPO, always with CUDA_VISIBLE_DEVICES="" on this laptop. Never commit or push; never edit files
 outside RUN except where your job says so.
 
 The system you drive:
@@ -36,8 +36,15 @@ The system you drive:
 - Fixed solver `feacore`: `uv run python -m feacore.adapters.mesh_harness <out_dir> --out case.json`, then
   `uv run python -m feacore.cli case.json --out result.json --vtu result.vtu --linear-solver auto` (auto = cuDSS
   on a CUDA GPU when nvmath-python is installed, else CPU). Verification: feacore/verification (gci3, analyze).
-- This machine: 22 CPU cores, 30 GB RAM, NVIDIA RTX 4060 Laptop GPU (8 GB). Expect one direct solve to fit
-  roughly 0.3-0.5 M DOFs on the GPU; keep stage-1 meshes under about 400 k DOFs.
+- This laptop: 22 CPU cores, 30 GB RAM. NEVER use the laptop's GPU (user rule): every local command runs with
+  CUDA_VISIBLE_DEVICES="" and local solves use --linear-solver pardiso (measured: 480 k DOFs in 20 s; SciPy
+  SuperLU is far slower). Keep stage-1 meshes under 400 k DOFs.
+- GPU work runs on the team's DGX Spark (GB10, aarch64, 121 GB memory shared by CPU and GPU) over SSH:
+  `ssh dell@100.115.140.105`. Read ~/AGENTS.md there first and obey it: no sudo, do not touch the running vLLM
+  container `llm` (the team's local language model), and run every job under a memory cap so the box can never
+  run out of memory (an out-of-memory GB10 freezes until power-cycled): see ~/feagent-setup.md there for the
+  FEAgent environment and the cap wrapper. Copy inputs with scp into ~/runs/<run name>/ on the Spark and copy
+  results back into RUN.
 
 Units mm, N, MPa. Material: aluminium 7075-T6, E = 71700, nu = 0.33 (unless the Chief's plan says otherwise).
 The interface control document (ICD) is RUN/plan/icd.md, owned by the Chief: follow it; ask the Chief to change it.
@@ -58,7 +65,7 @@ ROLES = {
    - Interfaces: for every pair of touching parts, the contact face and the query that selects it.
    - Load cases: LC1 root clamped (all faces on y = 0 fixed), 20 kN upward (+z) total on the tip rib's outer
      face; LC2 the same root, 0.02 MPa upward pressure on the lower skin's outer face (lift).
-   - Mesh budget: the assembly under about 400 k DOFs (order 2) for the 8 GB GPU.
+   - Mesh budget: the assembly under about 400 k DOFs (order 2): fits the laptop CPU solve and the Spark memory cap.
    - Acceptance: every mesh gate passes; the Verifier's checks pass (equilibrium, beam-theory tip deflection
      within 10 %, a 3-mesh GCI under 5 % on tip deflection and strain energy).
 3. Hand the ICD to the Geometry builder and the GPU engineer. Track every agent (team_status); keep
@@ -101,8 +108,8 @@ RUN/ribs/sizing.md (sizes, refinements, order, queries, DOFs, gates) for the Int
    the tip face) and keep the assembly under the ICD's DOF budget. Iterate `uv run feagent check` until every
    gate passes (connectivity must report one component).
 2. Solve: adapter to case.json, then `feacore.cli` with --linear-solver auto, writing RUN/integrator/lc1/result.json
-   and result.vtu. If the GPU engineer has cuDSS working, run it with --linear-solver cudss and with scipy, and
-   record both times. Repeat for LC2 (pressure: add `pressure: [{group, value}]` with value -0.02, i.e. pulling
+   and result.vtu. Solve locally with --linear-solver pardiso (CUDA_VISIBLE_DEVICES=""); if the GPU engineer has cuDSS
+   working on the Spark, also solve there with --linear-solver cudss and record both times. Repeat for LC2 (pressure: add `pressure: [{group, value}]` with value -0.02, i.e. pulling
    outward is negative; check the sign against the adapter docstring and the reactions).
 3. Write RUN/integrator/results.md: DOFs, solve times, reactions per component vs the applied load, tip
    deflection (mean u_z on the tip face), peak von Mises and its location. Hand it to the Verifier and the
@@ -119,12 +126,13 @@ RUN/ribs/sizing.md (sizes, refinements, order, queries, DOFs, gates) for the Int
    Chief the verdict; send the Integrator anything to fix."""),
     "gpu": ("GPU engineer", "gpu", 96, 1072, """You are the GPU engineer. The harness and UI stay on the CPU; the
 solve and the visualization use the GPU.
-1. Make cuDSS work in REPO's venv: install the GPU extra with pip into the venv (scripts/setup_gpu_box.sh shows
-   the packages, e.g. `uv pip install --python .venv/bin/python "nvmath-python[cu12]" cupy-cuda12x`; use cu13 if
-   the driver needs it). Run `uv run python scripts/gpu_check.py`; record the output in RUN/gpu/check.md.
-2. Benchmark the fixed solver CPU vs GPU on the Integrator's case (and a scaling series of the same wingbox at
-   --scale 1.69, 1.3, 1.0, 0.8 until the 8 GB GPU runs out): DOFs, assembly time, solve time, peak GPU memory,
-   and the largest case that fits. Write RUN/gpu/benchmark.md with a table and tell the Integrator which
+1. All GPU work is on the DGX Spark (see the context below), never on this laptop. On the Spark, read ~/AGENTS.md
+   and ~/feagent-setup.md, check `free -g` and `docker ps`, and run `scripts/gpu_check.py` in the FEAgent
+   environment under the memory cap; record the output in RUN/gpu/check.md. feacore silently falls back to SciPy
+   when cuDSS runs out of memory, so check which solver actually ran.
+   2. Benchmark the fixed solver on the Integrator's case: laptop CPU (pardiso) vs the Spark's GPU (cudss), and a
+   scaling series of the same wingbox at --scale 1.69, 1.3, 1.0, 0.8 on the Spark until the memory cap stops it: DOFs, assembly time, solve time, peak GPU memory,
+   PARDISO vs cuDSS vs SciPy, and the largest case that fits. Write RUN/gpu/benchmark.md with a table and tell the Integrator which
    --linear-solver to use.
 3. Stretch, only after 1-2: prototype the component (superelement) path on two parts: static condensation of one
    rib onto its interface nodes with cuDSS (Schur complement), assembled with the rest, compared to the monolithic
@@ -138,10 +146,12 @@ venv with pip (`uv pip install --python .venv/bin/python usd-core`).
    each with its gate status, DOFs and owner agent as metadata, coloured by status (pass / warn / fail).
 2. When the Integrator has results, add von Mises and displacement magnitude as vertex primvars from
    result.vtu, plus a deformed-shape variant (displacement scaled so the tip moves about 5 % of the span).
-3. Render on the GPU (`run_render.sh nvidia ...`): iso view, top view and a close-up of the peak stress, to
-   RUN/viz/*.png; record render times. Export wingbox.glb and viewer.html and serve them on port 8830
-   (`python -m http.server 8830` in RUN/viz/); give the Chief the URL and the images.
-4. Write RUN/viz/README.md: files, sizes, render times GPU vs CPU, and what it would take to show 10 M+ triangles
+3. Render on the Spark's GPU, never the laptop's: copy the stage and the starter scripts to the Spark and run
+   them there in the FEAgent environment under the memory cap (EGL on the GB10 is untested: try it, and fall
+   back to CPU rendering with `run_render.sh cpu` if it fails). Iso view, top view and a close-up of the peak
+   stress, copied back to RUN/viz/*.png; record render times. Export wingbox.glb and viewer.html and serve them
+   from this laptop on port 8830 (`python -m http.server 8830` in RUN/viz/); give the Chief the URL and images.
+   4. Write RUN/viz/README.md: files, sizes, render times GPU vs CPU, and what it would take to show 10 M+ triangles
    (decimation, level of detail, instancing)."""),
 }
 
