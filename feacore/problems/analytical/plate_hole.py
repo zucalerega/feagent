@@ -47,7 +47,7 @@ class PlateHoleFiniteWidth(ExactProblem):
     expected_behavior = "stress_concentration"
     # h0 = size at the hole edge on the coarsest mesh; far-field size = far * h
     default_params = {"W": 0.2, "d_over_W": 0.3, "length_over_W": 4.0, "sigma0": 100e6, **STEEL,
-                      "thickness": 0.01, "h0": 0.004, "far": 4.0}
+                      "thickness": 0.002, "h0": 0.004, "far": 4.0}
 
     @property
     def r(self) -> float:

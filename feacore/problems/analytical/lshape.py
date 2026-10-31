@@ -155,7 +155,7 @@ class LBracketReentrant(ExactProblem):
     formulation = "plane_stress"
     expected_behavior = "singular"
     material_name = "aluminium"
-    default_params = {"b": 0.04, "H": 0.12, "L": 0.12, "F": 1000.0, **ALUMINIUM, "thickness": 0.01, "h0": 0.01}
+    default_params = {"b": 0.04, "H": 0.12, "L": 0.12, "F": 200.0, **ALUMINIUM, "thickness": 0.002, "h0": 0.01}
 
     def description(self) -> str:
         p = self.params

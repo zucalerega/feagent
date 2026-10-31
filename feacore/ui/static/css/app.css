@@ -144,8 +144,9 @@ button.chip.on { background: var(--accent-wash); border-color: rgba(42, 120, 214
 .flag span { color: var(--ink-2); }
 
 /* ------------------------------------------------------------------ forms */
-label.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
-label.field .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.field .section-title { margin: 0; }
+.field .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
 input[type=text], input[type=number], input[type=search], select, textarea {
   font-family: inherit; font-size: 15.5px; color: var(--ink);
   border: 1px solid var(--axis); border-radius: 8px; padding: 8px 11px; background: #fff; min-width: 0;

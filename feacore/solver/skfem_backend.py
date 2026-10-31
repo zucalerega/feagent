@@ -761,6 +761,20 @@ class SkfemResult(Result):
         meas = float(np.sum(c * b.dx))
         return integ, meas
 
+    def evaluate_all(self) -> dict[str, float]:
+        """Like ``Result.evaluate_all`` but a QoI that cannot be evaluated (point outside the mesh,
+        unknown group, ...) gives NaN plus a warning instead of failing the whole result."""
+        out = {}
+        for q in self.case.qois:
+            try:
+                out[q.name] = float(self.evaluate(q))
+            except (CaseError, ValueError) as e:
+                out[q.name] = float("nan")
+                msg = f"qoi {q.name!r} could not be evaluated: {e}"
+                if msg not in self.info.warnings:
+                    self.info.warnings.append(msg)
+        return out
+
     def evaluate(self, qoi: QoI) -> float:
         md = self.model
         t = qoi.type

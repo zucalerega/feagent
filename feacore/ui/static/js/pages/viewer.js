@@ -73,7 +73,7 @@ async function renderRun(el, rid) {
 
   const { MeshView, webglAvailable } = await import('../mesh3d.js');
   if (!webglAvailable()) { main.append(h('div', { class: 'center-msg' }, 'WebGL is not available in this browser.')); return; }
-  const view = new MeshView(main, { dim: data.dim, padRight: 190 });
+  const view = new MeshView(main, { dim: data.dim, padRight: 190, padTop: 96 });
   const geom = { points: decode(data.points), triangles: decode(data.triangles), edges: decode(data.edges), displacement: decode(data.displacement) };
   view.setField(geom);
   let values = decode(data.values), cur = data;
@@ -90,6 +90,10 @@ async function renderRun(el, rid) {
     if (vstate.range === 'custom' && isFinite(vstate.lo) && isFinite(vstate.hi) && vstate.hi > vstate.lo) return [vstate.lo, vstate.hi];
     const r = cur.range || [0, 1];
     if (vstate.range === 'symmetric') { const m = Math.max(Math.abs(r[0]), Math.abs(r[1])); return [-m, m]; }
+    if (vstate.range === 'robust') {
+      const v = Array.from(values).filter(Number.isFinite).sort((a, b) => a - b);
+      if (v.length > 10) { const lo = v[Math.floor(0.01 * (v.length - 1))], hi = v[Math.ceil(0.99 * (v.length - 1))]; if (hi > lo) return [lo, hi]; }
+    }
     return r[0] === r[1] ? [r[0] - 1, r[1] + 1] : r;
   };
   const cmapName = () => vstate.cmap === 'auto' ? defaultMap(vstate.field, cur.range) : vstate.cmap;
@@ -121,7 +125,7 @@ async function renderRun(el, rid) {
   const bandsChk = h('input', { type: 'checkbox', checked: vstate.bands > 0, onchange: e => { vstate.bands = e.target.checked ? 12 : 0; paint(); } });
   const edgesChk = h('input', { type: 'checkbox', checked: vstate.edges, onchange: e => { vstate.edges = e.target.checked; view.setEdgesVisible(vstate.edges); } });
   const rangeSel = h('select', { onchange: e => { vstate.range = e.target.value; drawRangeInputs(); paint(); } },
-    [['auto', 'Auto (data min / max)'], ['symmetric', 'Symmetric about 0'], ['custom', 'Custom']].map(([v, l]) => h('option', { value: v, selected: vstate.range === v }, l)));
+    [['auto', 'Auto (data min / max)'], ['robust', 'Robust (1st \u2013 99th percentile)'], ['symmetric', 'Symmetric about 0'], ['custom', 'Custom']].map(([v, l]) => h('option', { value: v, selected: vstate.range === v }, l)));
   const rangeInputs = h('div', { class: 'row', style: { gap: '8px' } });
   const drawRangeInputs = () => {
     clear(rangeInputs);

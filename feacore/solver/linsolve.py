@@ -251,8 +251,9 @@ def _solve_cudss(K, f, report: LinearSolveReport, symmetric: bool):
 
     A = sp.csr_matrix(K, dtype=np.float64)
     A.sort_indices()
-    A.indptr = A.indptr.astype(np.int32)   # cuDSS needs 32-bit indices
-    A.indices = A.indices.astype(np.int32)
+    itype = np.int32 if A.nnz < 2**31 - 1 else np.int64   # nvmath 1.0 accepts int32 / int64 (unbatched)
+    A.indptr = A.indptr.astype(itype)
+    A.indices = A.indices.astype(itype)
     b = np.asfortranarray(np.asarray(f, dtype=np.float64))
     mtype = DirectSolverMatrixType.SPD if symmetric else DirectSolverMatrixType.GENERAL
     options = DirectSolverOptions(sparse_system_type=mtype,

@@ -165,8 +165,8 @@ class LBracket(PartProblem):
         if self.sharp:
             fc = threshold(0.25 * h, h, 0.0, 3.0 * h0, curves=self._corner_curves())
         else:
-            kf = min(0.5, r / (2.0 * h0))
-            fc = threshold(kf * h, h, 0.5 * r, 0.5 * r + 2.5 * h0, surfaces=self._fillet_faces())
+            kf = min(0.35, r / (3.0 * h0))
+            fc = threshold(kf * h, h, 0.25 * r, 0.25 * r + 2.0 * h0, surfaces=self._fillet_faces())
         fh = threshold(0.6 * h, h, 0.0, 2.0 * h0, surfaces=self._hole_faces())
         finish_sizing([fc, fh], h)
 

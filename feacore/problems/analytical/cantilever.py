@@ -38,7 +38,7 @@ class TimoshenkoCantilever(ExactProblem):
     physics = "elasticity"
     formulation = "plane_stress"
     expected_behavior = "smooth"
-    default_params = {"L": 1.0, "D": 0.2, "P": 100e3, **STEEL, "thickness": 0.1, "h0": 0.05}
+    default_params = {"L": 1.0, "D": 0.2, "P": 10e3, **STEEL, "thickness": 0.01, "h0": 0.05}
 
     @property
     def I(self) -> float:  # noqa: E743

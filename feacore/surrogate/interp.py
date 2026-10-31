@@ -1,9 +1,10 @@
 """Point location and interpolation of nodal fields on tri3 / tri6 meshes (numpy / scipy).
 
-Cells are located with straight-sided corner triangles (barycentric coordinates); tri6 values are
-interpolated with the quadratic Lagrange shape functions in those coordinates, tri3 linearly.
-Points outside every candidate cell (e.g. marginally outside a curved boundary) are evaluated in
-the nearest candidate with clamped barycentric coordinates.
+Cells are located with straight-sided corner triangles (barycentric coordinates). tri6 cells are
+isoparametric: the reference coordinates are refined by Newton iterations of the quadratic
+geometry map, then the values are interpolated with the quadratic Lagrange shape functions;
+tri3 linearly. Points outside every candidate cell (e.g. marginally outside a curved boundary)
+are evaluated in the nearest candidate with clamped reference coordinates.
 """
 
 from __future__ import annotations
@@ -47,7 +48,29 @@ class TriInterpolator:
         return np.stack([l0 * (2 * l0 - 1), l1 * (2 * l1 - 1), l2 * (2 * l2 - 1),
                          4 * l0 * l1, 4 * l1 * l2, 4 * l2 * l0], axis=1)
 
+    def _newton(self, q: np.ndarray, cell: np.ndarray, lam: np.ndarray, iters: int = 8) -> np.ndarray:
+        """Reference coordinates of q in curved (quadratic) cells by Newton on x(xi, eta)."""
+        X = self.points[self.cells[cell]]                                  # (n, 6, 2)
+        xi = lam[:, 1:3].copy()
+        for _ in range(iters):
+            l0, l1, l2 = 1.0 - xi[:, 0] - xi[:, 1], xi[:, 0], xi[:, 1]
+            N = self.shape(np.stack([l0, l1, l2], axis=1))
+            dxi = np.stack([-(4 * l0 - 1), 4 * l1 - 1, np.zeros_like(l0), 4 * (l0 - l1), 4 * l2, -4 * l2], axis=1)
+            deta = np.stack([-(4 * l0 - 1), np.zeros_like(l0), 4 * l2 - 1, -4 * l1, 4 * l1, 4 * (l0 - l2)], axis=1)
+            J = np.stack([np.einsum("nk,nkd->nd", dxi, X), np.einsum("nk,nkd->nd", deta, X)], axis=2)
+            r = q - np.einsum("nk,nkd->nd", N, X)
+            step = np.linalg.solve(J, r[:, :, None])[:, :, 0]
+            xi += step
+            if np.abs(step).max() < 1e-13:
+                break
+        lam = np.stack([1.0 - xi[:, 0] - xi[:, 1], xi[:, 0], xi[:, 1]], axis=1)
+        lam = np.clip(lam, 0.0, None)
+        return lam / lam.sum(axis=1, keepdims=True)
+
     def __call__(self, values: np.ndarray, q: np.ndarray) -> np.ndarray:
+        q = np.atleast_2d(np.asarray(q, dtype=float))[:, :2]
         cell, lam, _ = self.locate(q)
+        if self.quadratic:
+            lam = self._newton(q, cell, lam)
         N = self.shape(lam)
         return (np.asarray(values)[self.cells[cell]] * N).sum(axis=1)

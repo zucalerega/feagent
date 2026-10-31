@@ -56,6 +56,10 @@ FLAG_INFO = {
                              "QoI definition)."),
     "insufficient_levels": ("info", "Fewer than three meshes",
                             "Richardson extrapolation and the GCI need at least three meshes."),
+    "converged_plateau": ("info", "Converged to a plateau",
+                          "Successive meshes change the value by less than 0.1%: too little to measure a convergence "
+                          "rate (round-off, geometry and quadrature errors dominate). Treat the value as "
+                          "mesh-converged; the uncertainty shown is the fine-medium difference instead of a GCI."),
     "expected_divergent": ("info", "Expected to diverge",
                            "The problem is designed so that this quantity does not converge (a singular point). "
                            "Divergence here is the correct answer."),
@@ -64,6 +68,7 @@ FLAG_INFO = {
 VERDICTS = {
     "converged": ("good", "Converged"),
     "exact": ("good", "Exact on every mesh"),
+    "plateau": ("good", "Converged (plateau)"),
     "converging": ("warning", "Converging, not asymptotic"),
     "slow": ("serious", "Converging slowly"),
     "oscillating": ("warning", "Oscillating"),
@@ -73,6 +78,21 @@ VERDICTS = {
     "insufficient": ("info", "Need three meshes"),
     "undetermined": ("warning", "Undetermined"),
 }
+
+
+PLATEAU_REL = 1e-3  # successive relative changes below this: converged, rate not measurable
+
+
+def _plateau(values: list[float]) -> float | None:
+    """|fine - medium| when the last two successive relative changes are all < PLATEAU_REL."""
+    v = [float(x) for x in values if x is not None]
+    if len(v) < 3:
+        return None
+    scale = max(abs(x) for x in v[-3:])
+    if scale == 0:
+        return None
+    changes = [abs(v[-1] - v[-2]), abs(v[-2] - v[-3])]
+    return changes[0] if max(changes) < PLATEAU_REL * scale else None
 
 
 def explain(flag: str) -> dict:
@@ -98,7 +118,11 @@ def interpret_entry(entry: dict) -> dict:
     else:
         conv = g.get("convergence")
         stress = is_stress_like(entry.get("type"), entry.get("field"))
-        if stress and (conv in ("divergent", "oscillatory_divergent") or "p_far_below_theory" in flags):
+        plateau = _plateau(entry.get("values", [])) if conv not in ("monotone", "exact") or g.get("p") is None else None
+        if plateau is not None:
+            flags = [f for f in flags if f not in ("divergent", "oscillatory", "order_undefined")]
+            flags.append("converged_plateau")
+        elif stress and (conv in ("divergent", "oscillatory_divergent") or "p_far_below_theory" in flags):
             flags.append("singular_suspected")
         if expectation == "diverge":
             diverged = conv in ("divergent", "oscillatory_divergent") or "p_far_below_theory" in flags
@@ -106,6 +130,8 @@ def interpret_entry(entry: dict) -> dict:
             flags.append("expected_divergent")
         elif conv == "exact":
             verdict = "exact"
+        elif plateau is not None:
+            verdict = "plateau"
         elif conv in ("divergent", "oscillatory_divergent"):
             verdict = "diverging"
         elif conv == "oscillatory":
@@ -123,13 +149,20 @@ def interpret_entry(entry: dict) -> dict:
             verdict = "undetermined"
     flags = list(dict.fromkeys(flags))
     status, label = VERDICTS[verdict]
+    explanations = [explain(f) for f in flags]
+    if verdict == "expected_divergence":  # the singularity is the designed answer, not an alarm
+        for e in explanations:
+            if e["flag"] in ("divergent", "singular_suspected", "p_far_below_theory"):
+                e["severity"] = "info"
     out = {"verdict": verdict, "status": status, "label": label, "flags": flags,
-           "explanations": [explain(f) for f in flags]}
+           "explanations": explanations}
     vals = [v for v in entry.get("values", []) if v is not None]
     fine = vals[-1] if vals else None
     out["fine"] = fine
     if g and g.get("gci_fine") is not None and fine is not None:
         out["band_abs"] = abs(g["gci_fine"] * fine)
+    elif verdict == "plateau":
+        out["band_abs"] = _plateau(entry.get("values", []))
     else:
         out["band_abs"] = None
     out["phi_ext"] = g.get("phi_ext") if g else None
@@ -158,6 +191,9 @@ def _summary_sentence(entry: dict, out: dict) -> str:
         return s + "."
     if v == "exact":
         return "The value is identical on all meshes (the discretization represents it exactly)."
+    if v == "plateau":
+        return (f"Converged: the last meshes differ by less than {100 * PLATEAU_REL:.1g}% "
+                f"(fine-mesh value {_fmt(out['fine'], 6)}); the convergence rate is below measurement resolution.")
     if v == "diverging":
         return "Successive differences grow: the value does not converge under refinement."
     if v == "oscillating":
@@ -277,7 +313,7 @@ def consensus(problem_id: str, submissions: list[dict], references: list[dict] |
             e = next((e for e in (s.get("analysis") or {}).get("qois", []) if e["name"] == name), None)
             if e is None:
                 continue
-            it = e.get("interpretation") or interpret_entry(e)
+            it = interpret_entry(e)  # recomputed: stored records follow the current rules
             g = e.get("gci") or {}
             row = {
                 "submission_id": s.get("submission_id"),

@@ -7,7 +7,7 @@ four-term polynomial fits Kt = C1 + C2 x + C3 x^2 + C4 x^3 published with Peters
 (Pilkey & Pilkey, *Peterson's Stress Concentration Factors*, 3rd ed., Wiley 2008) and
 reproduced in Young & Budynas, *Roark's Formulas for Stress and Strain*, 7th ed., Table 17.1.
 Each fit has two ranges of the depth / radius ratio that meet at 2.0; the two coefficient
-sets agree there to < 1 % (shoulder fillet) and < 1.5 % (U-notches), which is a useful check
+sets agree there to < 1 % (shoulder fillet; U-notches for 2t/H <= 0.4), a useful check
 on the transcription (see ``tests/test_problems_parts.py``).
 """
 

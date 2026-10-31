@@ -7,6 +7,7 @@ handlers only read and write the run store. See docs/ui.md for the API reference
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import importlib.metadata
 import importlib.util
@@ -234,7 +235,7 @@ def _run_summary(r: dict) -> dict:
 
 def _study_summary(s: dict) -> dict:
     res = s.get("result") or {}
-    interp = s.get("interpretation") or {}
+    interp = analysis.interpret_study(res) if res else (s.get("interpretation") or {})
     prog = s.get("progress") or {}
     return {
         "study_id": s.get("study_id"), "created_at": s.get("created_at"), "finished_at": s.get("finished_at"),
@@ -651,10 +652,13 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
             except KeyError:
                 pass
         st["runs"] = runs_
+        if st.get("result"):  # always with the current interpretation rules
+            st["interpretation"] = analysis.interpret_study(st["result"])
         try:
             p = _problems_api().get(st["problem_id"])
             st["references"] = analysis.reference_dicts(p)
             st["problem_title"] = p.title
+            st["qoi_defs"] = _safe(lambda: {q.name: dataclasses.asdict(q) for q in p.qois()}, {})
         except KeyError:
             st["references"] = []
         if st.get("status") == "queued":

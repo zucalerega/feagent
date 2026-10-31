@@ -21,6 +21,8 @@ from feacore.problems.parts._common import (
     MM, STEEL, PartProblem, add_group, finish_sizing, fmt_mm, kt_opposite_u_notches_tension,
     material, threshold,
 )
+from feacore.problems.parts._numerical_refs import SOURCE as NUM_SOURCE
+from feacore.problems.parts._numerical_refs import numerical_reference
 from feacore.problems.registry import register
 
 KT_SOURCE = (
@@ -170,16 +172,33 @@ class NotchedBar(PartProblem):
             meta={"problem": self.id, "reference_portion": "full"},
         )
 
-    def references(self) -> list[Reference]:
+    def handbook_reference(self) -> Reference:
+        """Peterson / Pilkey curve-fit value (not the judged reference: see references())."""
         p = self.params
         kt = self.kt()
-        return [Reference(
+        return Reference(
             qoi="peak_stress_notch", value=kt * self.nominal_stress(), kind="handbook",
             source=KT_SOURCE, tolerance=0.05,
             notes=(f"2t/H = {2 * p['notch_depth'] / p['width']:.3g}, t/r = "
                    f"{p['notch_depth'] / p['notch_radius']:.3g}: Kt = {kt:.4f} on the net-section "
-                   f"sigma_nom = {self.nominal_stress() / 1e6:.2f} MPa. Long bar (L/H = 4), so the "
-                   "short-bar length effect is negligible."),
+                   f"sigma_nom = {self.nominal_stress() / 1e6:.2f} MPa."),
+        )
+
+    def references(self) -> list[Reference]:
+        hb = self.handbook_reference()
+        num = numerical_reference(self.id, "peak_stress_notch")
+        if num is None:
+            return [hb]
+        diff = (num["value"] - hb.value) / hb.value
+        ccx = f"; CalculiX on the finest mesh {num['ccx_fine'] / 1e6:.2f} MPa" if num.get("ccx_fine") else ""
+        return [Reference(
+            qoi="peak_stress_notch", value=num["value"], kind="converged_numerical",
+            source=NUM_SOURCE + f" Study of {self.id}{ccx}.", tolerance=0.02,
+            notes=(f"Uncertainty ~{num['unc'] * 100:.2g} %. Handbook (Peterson / Pilkey fit, {hb.notes}) "
+                   f"gives {hb.value / 1e6:.1f} MPa, {diff * 100:.1f} % below this value; the fit is close "
+                   "to Neuber's nomogram, which body-force solutions (Nisitani & Noda) show to "
+                   "underestimate opposite-notch Kt by ~10 %. Long bar (L/H = 4): no short-bar effect. "
+                   f"Kt(FE) = {num['value'] / self.nominal_stress():.3f}."),
         )]
 
 

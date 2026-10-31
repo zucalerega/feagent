@@ -702,6 +702,7 @@ class MMSProblem:
     features: list = field(default_factory=list)
     description: str = ""
     expr_sizes: dict = field(default_factory=dict)
+    layout: dict = field(default_factory=dict)          # group -> BC kind used to build it
 
     @functools.cached_property
     def _exact_np(self) -> dict:
@@ -926,7 +927,8 @@ def elasticity_mms(name: str, formulation: str, domain: Domain, u: Sequence, bcs
                       exact_sym=exact, u_fields=u_fields, s_fields=s_fields, thickness=thickness,
                       T_ref=T_ref, energy_exact=energy, energy_physical=energy_phys,
                       reactions_exact=reactions, features=sorted(features),
-                      description=description, expr_sizes=sizes)
+                      description=description, expr_sizes=sizes,
+                      layout={g: _bc_kind(v)[0] for g, v in bcs.items()})
 
 
 # --------------------------------------------------------------------------- heat
@@ -1333,6 +1335,47 @@ def _finest_order(h, e, floor):
     return None, None
 
 
+def clamped_free_exponent(formulation: str, nu: float, omega: float = math.pi / 2) -> float:
+    """Leading exponent lambda of u ~ r^lambda at a wedge of angle omega with one face clamped
+    and one traction-loaded (Williams 1952): kappa sin^2(lambda omega) = (kappa+1)^2/4 -
+    lambda^2 sin^2(omega), kappa = 3 - 4 nu (plane strain, axisymmetric, 3D edges) or
+    (3 - nu)/(1 + nu) (plane stress). lambda ~ 0.711 for nu = 0.3, omega = 90 deg."""
+    from scipy.optimize import brentq
+
+    kap = (3 - nu) / (1 + nu) if formulation == "plane_stress" else 3 - 4 * nu
+    f = lambda lam: kap * math.sin(lam * omega) ** 2 - (kap + 1) ** 2 / 4 + lam**2 * math.sin(omega) ** 2  # noqa: E731
+    return brentq(f, 0.5, 0.99)
+
+
+def _adjacent(dom: Domain) -> list[tuple[str, str]]:
+    g = list(dom.boundaries)
+    if dom.kind == "box" and dom.dim == 2:
+        return [("left", "bottom"), ("bottom", "right"), ("right", "top"), ("top", "left")]
+    if dom.kind == "box":
+        return [(a, b) for i, a in enumerate(g) for b in g[i + 1:] if a[0] != b[0]]
+    ring = [("inner", "bottom"), ("bottom", "outer"), ("outer", "left"), ("left", "inner")]
+    if dom.kind == "annulus3d":
+        ring += [(zf, s_) for zf in ("z0", "z1") for s_ in ("inner", "outer", "bottom", "left")]
+    return ring
+
+
+def energy_order_theory(problem: MMSProblem, order: int) -> float:
+    """2k for smooth problems. A 90-degree corner (edge in 3D) where a Dirichlet face meets a
+    traction / pressure face gives the dual problem an r^lambda singularity, which caps the
+    strain-energy order at k + 1 + lambda (< 2k for P2). The primal u / stress orders are not
+    affected (the exact solution is smooth)."""
+    if problem.physics != "elasticity":
+        return 2.0 * order
+    D_, N_ = {"dirichlet", "fixed"}, {"traction", "pressure", "force", "free"}
+    lay = problem.layout
+    dn = any((lay.get(a) in D_ and lay.get(b) in N_) or (lay.get(a) in N_ and lay.get(b) in D_)
+             for a, b in _adjacent(problem.domain))
+    if not dn:
+        return 2.0 * order
+    lam = clamped_free_exponent(problem.formulation, problem.material.nu)
+    return min(2.0 * order, order + 1.0 + lam)
+
+
 def default_levels(dim: int, order: int) -> tuple[float, int]:
     return (H0_3D, LEVELS_3D[order]) if dim == 3 else (H0_2D, LEVELS_2D)
 
@@ -1401,7 +1444,7 @@ def run_convergence(problem: MMSProblem, order: int, backend: str = "skfem",
                   f"t={t_solve:.2f}s", flush=True)
     hs = [l["h_rep"] for l in levels]
     k = order
-    theory = {"u": k + 1.0, "s": float(k), "W": 2.0 * k}
+    theory = {"u": k + 1.0, "s": float(k), "W": energy_order_theory(problem, k)}
     floors = {"u": 1e-10, "s": 1e-10, "W": 1e-11}
     out = {"problem": problem.name, "physics": problem.physics, "formulation": problem.formulation,
            "domain": dom.name, "order": order, "geom_order": geom_order, "backend": backend,

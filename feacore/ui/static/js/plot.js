@@ -61,6 +61,17 @@ function axisLabels(ticks) {
   return { labels: scaled.map(v => (Math.abs(v) < step * 1e-9 ? 0 : v).toFixed(dec)), exp };
 }
 
+/** Keep ticks whose labels do not overlap (estimated 7.4 px per character at 13 px). */
+function spaced(ticks, X, label, gap = 10) {
+  const out = [];
+  let lastR = -Infinity;
+  for (const t of [...ticks].sort((a, b) => X(a) - X(b))) {
+    const w = String(label(t)).length * 7.4;
+    if (X(t) - w / 2 >= lastR + gap) { out.push(t); lastR = X(t) + w / 2; }
+  }
+  return out;
+}
+
 const tickLabel = v => {
   const a = Math.abs(v);
   if (a >= 1e-3 && a < 1e4) return String(+v.toPrecision(3));
@@ -122,7 +133,7 @@ export function convergenceChart(opts) {
     g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: C.grid, 'stroke-width': 1 }));
     g.append(s('text', { x: m.l - 10, y: Y(t) + 4.5, 'text-anchor': 'end', class: 'tick' }, labels[i]));
   });
-  const xt = logTicks(x0, x1, 7);
+  const xt = spaced(logTicks(x0, x1, 9), X, tickLabel);
   xt.forEach(t => {
     g.append(s('line', { x1: X(t), x2: X(t), y1: m.t, y2: H - m.b, stroke: C.grid, 'stroke-width': 1 }));
     g.append(s('text', { x: X(t), y: H - m.b + 20, 'text-anchor': 'middle', class: 'tick' }, tickLabel(t)));
@@ -203,7 +214,7 @@ export function orderChart(opts) {
     g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: C.grid }));
     g.append(s('text', { x: m.l - 10, y: Y(t) + 4.5, 'text-anchor': 'end', class: 'tick' }, tickLabel(t)));
   });
-  logTicks(x0, x1, 7).forEach(t => {
+  spaced(logTicks(x0, x1, 9), X, tickLabel).forEach(t => {
     g.append(s('line', { x1: X(t), x2: X(t), y1: m.t, y2: H - m.b, stroke: C.grid }));
     g.append(s('text', { x: X(t), y: H - m.b + 20, 'text-anchor': 'middle', class: 'tick' }, tickLabel(t)));
   });

@@ -535,6 +535,12 @@ def test_info_probe_errors_vtu_cli(meshdir, tmp_path):
     assert np.isfinite(r.probe("ux", [[2.0, 0.5], [2.0 + 1e-6, 0.5], [0.0, 0.0]])).all()
     with pytest.raises(ValueError):
         r.probe("ux", [[3.0, 0.5]])
+    with pytest.raises(ValueError):
+        r.evaluate(QoI(name="bad", type="point", field="ux", point=[3.0, 0.5]))
+    r.case.qois.append(QoI(name="bad", type="point", field="ux", point=[3.0, 0.5]))
+    v = r.evaluate_all()
+    assert math.isnan(v["bad"]) and np.isfinite(v["ux_max"]) and any("'bad'" in w for w in r.info.warnings)
+    r.case.qois.pop()
     with pytest.raises(ValueError, match="available"):
         solve(_case(mesh, bcs=[BC(type="fixed", group="nope"), BC(type="fixed", group="left")]))
     with pytest.raises(CaseError):

@@ -38,10 +38,13 @@ async function renderList(el) {
     oninput: e => { search = e.target.value; draw(); } });
   const tagRow = h('div', { class: 'chips' });
   const tags = Object.entries(data.tags).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  let showAll = false;
   const drawTags = () => {
     clear(tagRow);
-    tags.forEach(([t, n]) => tagRow.append(h('button', { class: `chip${selected.has(t) ? ' on' : ''}`, onclick: () => { selected.has(t) ? selected.delete(t) : selected.add(t); drawTags(); draw(); } },
+    const shown = showAll ? tags : tags.filter(([t], i) => i < 18 || selected.has(t));
+    shown.forEach(([t, n]) => tagRow.append(h('button', { class: `chip${selected.has(t) ? ' on' : ''}`, onclick: () => { selected.has(t) ? selected.delete(t) : selected.add(t); drawTags(); draw(); } },
       t.replace(/_/g, ' '), h('span', { class: 'count' }, n))));
+    if (tags.length > 18) tagRow.append(h('button', { class: 'chip', onclick: () => { showAll = !showAll; drawTags(); } }, showAll ? 'fewer tags' : `+ ${tags.length - 18} more tags`));
     if (selected.size) tagRow.append(h('button', { class: 'chip', onclick: () => { selected.clear(); drawTags(); draw(); } }, 'clear filters ✕'));
   };
   filters.append(h('div', { class: 'search' }, input, count), tagRow);

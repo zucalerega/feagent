@@ -7,8 +7,6 @@ verify geometry, boundary conditions and target values (see ``docs/benchmarks_na
 
 from __future__ import annotations
 
-import math
-
 import gmsh
 
 from feacore.geometry.gmsh_tools import add_group, in_box
@@ -67,10 +65,6 @@ def group(dim: int, tags, name: str) -> int:
     return add_group(dim, tags, name)
 
 
-def mpa(v: float) -> str:
-    return f"{v / 1e6:g} MPa"
-
-
 class FinerP1Studies:
     """Mixin for 2D problems: the P1 reference study starts one level finer (h0/2, h0/4, h0/8).
     P1 point stresses / temperatures are still pre-asymptotic on the coarsest P2 study mesh
@@ -79,6 +73,3 @@ class FinerP1Studies:
     def study_sizes(self, order: int = 2) -> list[float]:
         sizes = super().study_sizes(order)
         return [h / 2 for h in sizes] if order == 1 else sizes
-
-
-SQRT_HALF = math.sqrt(0.5)
