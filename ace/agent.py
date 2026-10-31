@@ -1,7 +1,7 @@
 """The Generator: a minimal tool-use FEA / CFD agent.
 
-It sees a problem statement, four tools (inspect_geometry, mesh, solve, submit) and a system
-prompt = BASE_PROMPT + the current playbook. One call to run_agent = one run; it returns a
+It sees a problem statement, six tools (inspect_geometry, mesh, solve, view, compare, submit) and
+a system prompt = BASE_PROMPT + the current playbook. One call to run_agent = one run; it returns a
 JSON-able run record (trace, meshes, solves, submitted solve, cited bullet IDs, token usage) for
 the checks and the Reflector. Flow problems (physics "flow") get BASE_PROMPT_FLOW and TOOLS_FLOW:
 the same four tools, with a finite-volume mesh (no element order; optional quads in 2D) and a flow
@@ -10,13 +10,14 @@ setup (fluid, convection scheme, flow BCs).
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from pathlib import Path
 
-from ace import fea, ui_bridge
+from ace import fea, geometry_info, solve_feedback, ui_bridge
 from ace.checks import tolerance
-from ace.config import MAX_SOLVES, MAX_TURNS, SCORE, TASKS
+from ace.config import MAX_SOLVES, MAX_TURNS, MIN_QUALITY, SCORE, TASKS
 
 # Deliberately short and non-expert: the playbook is where expertise should accumulate.
 # Keep it identical across runs (no problem-specific text) so prompt caching works.
@@ -37,6 +38,26 @@ submitted solve counts, so extra solves on other meshes cost nothing. Judge accu
 own meshes and solves; do not rely on reference values or closed-form estimates you remember,
 because the problem may differ from any textbook case.
 
+Tools, and how a careful engineer uses them:
+- inspect_geometry: the named groups (faces f<tag>), each face's type, area, centroid and neighbours,
+  the CAD edges (curve tags) with their dihedral angles, the re-entrant (concave) edges, which are
+  likely stress singularities, the smallest features, and a short plain-words summary. Read it first:
+  find the loaded and supported faces and the re-entrant edges near them.
+- mesh: a global size h plus local refinements at a face group, a CAD edge (curve tag), a point or a
+  box. Put the small elements where the stress changes fast (re-entrant edges, fillets, small holes,
+  edges of loaded or supported faces), not everywhere. It reports nodes, element quality, the mean
+  element size near each group, and curved cells that folded: those are straightened automatically
+  ("repaired_cells"); "folded_cells" must be 0 for a valid solve.
+- solve: besides the solve number, feedback without any reference: every quantity the statement
+  defines, support reactions vs the applied loads (equilibrium), the largest displacement and von
+  Mises stress and where, and an error estimate (ZZ: the global relative energy-norm error and the 5
+  hotspots holding most of it, with the nearest face and re-entrant edge and the local element size).
+  Use the hotspots to decide the next mesh: refine where the estimated error is, coarsen elsewhere.
+- view: a picture of a solve's mesh, stress or estimated error from a chosen direction.
+- compare: how much two solves' stress fields differ, overall and in the 5 regions that differ most.
+  Two meshes that agree closely are evidence of convergence; regions where they differ need refinement.
+  view and compare do not use up solves.
+
 Playbook: lessons learned from earlier runs, each with an ID. Every tool call has a `using`
 argument: list there the IDs of the playbook lessons that shaped that call (empty if none).
 """
@@ -56,16 +77,22 @@ USING = {"type": "array", "items": {"type": "string"},
 TOOLS = [
     {
         "name": "inspect_geometry",
-        "description": "List the named groups (points/curves/surfaces/volumes) with bounding boxes "
-                       "and sizes (length/area/volume). BCs and refinements refer to these names.",
+        "description": "The geometry: named groups (points/curves/surfaces/volumes) with bounding boxes "
+                       "and sizes (BCs and refinements refer to these names); faces (type, area, centroid, "
+                       "normal if planar, adjacent faces, whether the statement names it); CAD edges (tag, "
+                       "length, its two faces, dihedral angle, concave = re-entrant); the re-entrant and "
+                       "sharp edges; the smallest feature size; and a plain-words summary (hints).",
         "input_schema": {"type": "object", "properties": {"using": USING}},
     },
     {
         "name": "mesh",
-        "description": "Mesh the geometry. Replaces the current mesh. Returns node count and the "
-                       "minimum element quality (0 = degenerate, 1 = perfect). Quadratic (order 2) "
-                       "meshes have mid-side nodes, which count toward the node cap. Node counts "
-                       "change in steps, so tiny changes to h may give the same mesh.",
+        "description": "Mesh the geometry. Replaces the current mesh. Returns node count, element "
+                       "quality (min / 1st percentile / median; 0 = degenerate, 1 = perfect), the mean "
+                       "element size near each named group, and for order 2: curved cells that folded "
+                       "and were straightened (repaired_cells), cells still folded (folded_cells, must be "
+                       "0) and the minimum Jacobian ratio. Quadratic (order 2) meshes have mid-side nodes, "
+                       "which count toward the node cap. Node counts change in steps, so tiny changes to "
+                       "h may give the same mesh.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -73,13 +100,17 @@ TOOLS = [
                 "order": {"type": "integer", "enum": [1, 2], "description": "element order"},
                 "refinements": {
                     "type": "array",
-                    "description": "local refinement: element size `size` at a named `group` or a "
-                                   "`point` [x, y] / [x, y, z], growing linearly to h at distance `radius`",
+                    "description": "local refinement: element size `size` at ONE of: a named `group`, "
+                                   "a CAD `edge` (curve tag from inspect_geometry), a `point` [x, y] / "
+                                   "[x, y, z], growing linearly to h at distance `radius`; or inside a `box` "
+                                   "[xmin, ymin, zmin, xmax, ymax, zmax] (radius ignored)",
                     "items": {
                         "type": "object",
                         "properties": {
                             "group": {"type": "string"},
+                            "edge": {"type": "integer"},
                             "point": {"type": "array", "items": {"type": "number"}},
+                            "box": {"type": "array", "items": {"type": "number"}},
                             "size": {"type": "number"},
                             "radius": {"type": "number"},
                         },
@@ -94,7 +125,10 @@ TOOLS = [
     {
         "name": "solve",
         "description": "Solve on the current mesh with the fixed linear-elastic solver and return the "
-                       "scored quantity and the solve number. " + BC_HELP,
+                       "scored quantity, the solve number and `feedback`: the statement's quantities, "
+                       "reactions vs applied loads, max displacement and von Mises stress with locations, "
+                       "and a ZZ error estimate (global relative energy-norm error, top 5 hotspots). "
+                       + BC_HELP,
         "input_schema": {
             "type": "object",
             "properties": {
@@ -141,6 +175,36 @@ TOOLS = [
         },
     },
     {
+        "name": "view",
+        "description": "Look at a picture (PNG) of a solve: its mesh, von Mises stress, or ZZ estimated "
+                       "error, seen from a direction (iso = oblique 3D view, or along an axis).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "solve": {"type": "integer", "description": "solve number, as returned by solve"},
+                "kind": {"type": "string", "enum": ["mesh", "stress", "error"]},
+                "view": {"type": "string", "enum": ["iso", "x", "y", "z", "-x", "-y", "-z"]},
+                "using": USING,
+            },
+            "required": ["solve", "kind", "using"],
+        },
+    },
+    {
+        "name": "compare",
+        "description": "Compare the stress fields of two solves (e.g. a coarse and a finer mesh): their "
+                       "relative energy-norm-like difference over the part and the 5 regions where they "
+                       "differ most. Convergence evidence without a reference.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "solve_a": {"type": "integer"},
+                "solve_b": {"type": "integer"},
+                "using": USING,
+            },
+            "required": ["solve_a", "solve_b", "using"],
+        },
+    },
+    {
         "name": "submit",
         "description": "Choose which of your successful solves is scored, and end the run.",
         "input_schema": {
@@ -154,10 +218,36 @@ TOOLS = [
     },
 ]
 
-BASE_PROMPT_FLOW = BASE_PROMPT.replace(
-    "You set up and run linear-elastic finite-element analyses using tools.",
-    "You set up and run steady incompressible laminar flow (CFD) analyses with a finite-volume solver "
-    "using tools.").replace("degrees of\nfreedom, DOFs", "degrees of\nfreedom, DOFs = cells x unknowns per cell")
+TOOLS_TEXT_FLOW = """\
+Tools, and how a careful engineer uses them:
+- inspect_geometry: the named groups, each face's type, area, centroid and neighbours, the CAD edges
+  (curve tags) and the smallest features. Read it first: find the inlets, outlets and walls.
+- mesh: a global cell size h plus local refinements at a group, a CAD edge (curve tag), a point or a
+  box. Put the small cells where the velocity changes fast (near walls and corners, around bodies,
+  where the flow develops), not everywhere. In 2D, quads=true gives quad-dominant cells. It reports
+  nodes, cell quality and the mean cell size near each group.
+- solve: the fixed steady laminar flow solver. It returns the solve number and, as for any solve,
+  no reference values. Two solves of the same setup on different meshes that agree closely are your
+  evidence of convergence.
+
+"""
+
+
+def _flow_prompt(base: str) -> str:
+    """BASE_PROMPT for flow: the CFD role line, DOFs per cell, and TOOLS_TEXT_FLOW instead of the
+    elasticity tools section. Fails loudly if BASE_PROMPT changes shape."""
+    head, tools_start, rest = base.partition("Tools, and how a careful engineer uses them:")
+    _, playbook, tail = rest.partition("Playbook:")
+    role = "You set up and run linear-elastic finite-element analyses using tools."
+    dofs = "degrees of\nfreedom, DOFs"
+    assert tools_start and playbook and role in head and dofs in head, "BASE_PROMPT changed: update _flow_prompt"
+    head = head.replace(role, "You set up and run steady incompressible laminar flow (CFD) analyses with a "
+                              "finite-volume solver using tools.")
+    head = head.replace(dofs, "degrees of\nfreedom, DOFs = cells x unknowns per cell")
+    return head + TOOLS_TEXT_FLOW + playbook + tail
+
+
+BASE_PROMPT_FLOW = _flow_prompt(BASE_PROMPT)
 
 BC_HELP_FLOW = (
     "BC types: velocity_inlet (`value` = velocity vector [u_x, u_y(, u_z)] in m/s, each entry a number or "
@@ -169,8 +259,10 @@ BC_HELP_FLOW = (
     "pressure level is arbitrary (only differences are meaningful)."
 )
 
+_BY_NAME = {t["name"]: t for t in TOOLS}
+# Flow tasks have no view / compare: solve_feedback reads elastic stress fields only.
 TOOLS_FLOW = [
-    TOOLS[0],
+    _BY_NAME["inspect_geometry"],
     {
         "name": "mesh",
         "description": "Mesh the geometry with straight-sided finite-volume cells (triangles / tetrahedra; "
@@ -182,7 +274,7 @@ TOOLS_FLOW = [
             "properties": {
                 "h": {"type": "number", "description": "global cell size"},
                 "quads": {"type": "boolean", "description": "2D only: recombine triangles into quads (default false)"},
-                "refinements": TOOLS[1]["input_schema"]["properties"]["refinements"],
+                "refinements": _BY_NAME["mesh"]["input_schema"]["properties"]["refinements"],
                 "using": USING,
             },
             "required": ["h", "using"],
@@ -224,7 +316,7 @@ TOOLS_FLOW = [
             "required": ["formulation", "fluid", "bcs", "using"],
         },
     },
-    TOOLS[3],
+    _BY_NAME["submit"],
 ]
 
 # Checkpoint bookkeeping kept in the run record but not shown to the agent.
@@ -292,7 +384,8 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
         f"Problem id: {problem_id}\n\n{problem.description()}\n\n"
         f"{scored}"
         f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
-        f"target). You may call solve at most {max_solves} times."
+        f"target), and its minimum element quality (quality.min) must be at least {MIN_QUALITY}. You may call solve "
+        f"at most {max_solves} times."
     )
 
 
@@ -319,12 +412,15 @@ class Tools:
         self.meshes: list[dict] = []
         self.solves: list[dict] = []
         self.submitted: int | None = None   # index into self.solves
+        self.results: dict = {}             # solve number -> feacore Result (in memory only, never in the record)
+        self.n_views = 0
         self.ui = ui                        # ace.ui_bridge context of this run; None = off
 
     def call(self, name: str, args: dict) -> tuple[dict, bool]:
         """Returns (result, is_error)."""
         if name == "inspect_geometry":
-            return fea.geometry_summary(self.problem), False
+            # The old group list (names BCs refer to) plus the face/edge description.
+            return {**fea.geometry_summary(self.problem), **geometry_info.describe(self.problem)}, False
         if name == "mesh":
             return self._mesh(args)
         if name == "solve":
@@ -336,6 +432,11 @@ class Tools:
                 return {"error": f"solve {n!r} is not a successful solve; successful solves: {ok}"}, True
             self.submitted = n - 1
             return {"submitted": n, "message": "run finished"}, False
+        if name in ("view", "compare"):
+            try:
+                return self._view(args) if name == "view" else self._compare(args)
+            except Exception as e:  # noqa: BLE001  a plotting/sampling failure is the agent's information, not a crash
+                return {"error": f"{name} failed: {type(e).__name__}: {e}"}, True
         return {"error": f"unknown tool {name!r}"}, True
 
     def _mesh(self, args: dict) -> tuple[dict, bool]:
@@ -351,6 +452,17 @@ class Tools:
             return out, True
         cap = self.task["node_cap"]
         out.update(node_cap=cap, within_cap=m["nodes"] <= cap)
+        if m.get("repaired_cells"):
+            out["message"] = (f"{m['repaired_cells']} curved (order 2) cells were folded or nearly folded and were "
+                              f"straightened to keep the mesh valid; this is automatic and fine")
+        if m["min_quality"] < MIN_QUALITY:
+            # The scoring gate (ace.checks): a solve on this mesh cannot be scored.
+            out["warning_quality"] = (f"min element quality {m['min_quality']} is below the gate {MIN_QUALITY}: a run "
+                                      f"submitted on this mesh is invalid. Change h or the refinement sizes/radii a "
+                                      f"little (smoother size transitions help)")
+        if m.get("folded_cells"):
+            out["warning"] = (f"{m['folded_cells']} cells are still folded (inverted): a solve on this mesh is invalid. "
+                              f"Change h or the refinement sizes near curved faces, or use order 1")
         if m["nodes"] > cap:
             # Node count scales like (1/size)^dim, so this factor on all sizes roughly hits the cap.
             # Suggest concrete values based on the sizes actually USED (requests below the size
@@ -374,12 +486,59 @@ class Tools:
         if len(self.solves) >= self.max_solves:
             return {"error": f"solve limit ({self.max_solves}) reached; call submit"}, True
         setup = {k: v for k, v in args.items() if k != "using"}
-        feacore_result = []   # filled with the feacore Result if the solve succeeds (for ui_bridge)
-        result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"], on_result=feacore_result.append)
+        result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"], keep_result=True)
+        res = result.pop("_result", None)    # the feacore Result: kept in memory, never serialised
         self.solves.append({"mesh": mesh, "mesh_index": len(self.meshes) - 1, "setup": setup, "result": result})
-        ui_bridge.record_solve(self.ui, self, feacore_result[0] if feacore_result else None)
-        return {**{k: v for k, v in result.items() if k not in HIDDEN_KEYS}, "solve": len(self.solves), "nodes": mesh["nodes"],
-                "solves_left": self.max_solves - len(self.solves)}, not result["ok"]
+        n = len(self.solves)
+        ui_bridge.record_solve(self.ui, self, res)
+        out = {**{k: v for k, v in result.items() if k not in HIDDEN_KEYS}, "solve": n, "nodes": mesh["nodes"],
+               "solves_left": self.max_solves - n}
+        if res is not None and not fea.is_flow(self.problem):   # solve_feedback is elasticity-only
+            self.results[n] = res
+            try:
+                out["feedback"] = solve_feedback.feedback(self.problem, mesh, setup, res)
+            except Exception as e:  # noqa: BLE001  the solve itself stands; say why there is no feedback
+                out["feedback"] = {"error": f"feedback failed: {type(e).__name__}: {e}"}
+        return out, not result["ok"]
+
+    def _result_of(self, n) -> tuple:
+        """(feacore Result of solve n, None) or (None, an error for the agent)."""
+        if n not in self.results:
+            return None, ({"error": f"solve {n!r} is not a successful solve; successful solves: "
+                                    f"{sorted(self.results)}"}, True)
+        return self.results[n], None
+
+    def _view(self, args: dict) -> tuple[dict, bool]:
+        n, kind, view = args.get("solve"), args.get("kind", "stress"), args.get("view", "iso")
+        res, err = self._result_of(n)
+        if err:
+            return err
+        self.n_views += 1
+        png = self.workdir / f"view_{self.n_views}_solve{n}_{kind}_{view.replace('-', 'm')}.png"
+        path = solve_feedback.render(self.problem, self.solves[n - 1]["mesh"], res, kind, view, png)
+        # tool_loop attaches the PNG at "image" as an image block; the record keeps only the path.
+        return {"solve": n, "kind": kind, "view": view, "image": str(path)}, False
+
+    def _compare(self, args: dict) -> tuple[dict, bool]:
+        a, b = args.get("solve_a"), args.get("solve_b")
+        ra, err = self._result_of(a)
+        if err:
+            return err
+        rb, err = self._result_of(b)
+        if err:
+            return err
+        return {"solve_a": a, "solve_b": b, **solve_feedback.compare(self.problem, ra, rb)}, False
+
+
+def tool_result_content(out: dict):
+    """A tool result as Anthropic tool_result content: its JSON text, plus the PNG at out["image"]
+    (from the view tool) as an image block. The trace keeps `out` itself, i.e. the path, not the bytes."""
+    text = json.dumps(out)
+    if not (isinstance(out, dict) and out.get("image")):
+        return text
+    data = base64.b64encode(Path(out["image"]).read_bytes()).decode()
+    return [{"type": "text", "text": text},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}}]
 
 
 def _block_to_trace(block) -> dict | None:
@@ -431,7 +590,7 @@ def tool_loop(llm, system: str, first_message: str, tool_specs: list[dict], call
             trace.append({"type": "tool_result", "id": b.id, "name": b.name, "result": out,
                           "is_error": is_err, "turn": turn})
             results.append({"type": "tool_result", "tool_use_id": b.id,
-                            "content": json.dumps(out), "is_error": is_err})
+                            "content": tool_result_content(out), "is_error": is_err})
         messages.append({"role": "user", "content": results})
         if finished():
             stop = "submitted"

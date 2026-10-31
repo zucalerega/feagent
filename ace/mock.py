@@ -1,6 +1,7 @@
 """--mock: canned LLM responses so the whole loop runs end to end for free (and in tests).
 
-The mock generator follows a fixed script (inspect -> mesh -> solve -> finish) with seeded
+The mock generator follows a fixed script (inspect -> mesh -> solve -> view -> finer mesh ->
+solve -> compare -> submit the finer solve) with seeded
 randomness (element order, mesh size, occasionally a wrong load sign) so runs differ. It reads
 the playbook in its system prompt: a bullet mentioning quadratic/order 2 makes it use order 2,
 which is enough to see scores move across generations. It uses the reference setup to solve,
@@ -28,6 +29,12 @@ def _usage(inp: int, out: int):
     return NS(input_tokens=inp, output_tokens=out, cache_creation_input_tokens=0, cache_read_input_tokens=0)
 
 
+def _result_json(block: dict) -> dict:
+    """A tool_result's JSON: its content is the JSON text, or a list [text, image] (the view tool)."""
+    c = block["content"]
+    return json.loads(c if isinstance(c, str) else next(b["text"] for b in c if b["type"] == "text"))
+
+
 def _response(content: list, stop: str, role: str):
     return NS(content=content, stop_reason=stop, usage=_usage(1500, 200), model=MODELS[role])
 
@@ -46,7 +53,10 @@ class MockLLM:
         rng = random.Random(zlib.crc32(f"{run_id}-{turn}".encode()))
         playbook_ids = BULLET_ID.findall(system)
         knows_p2 = re.search(r"quadratic|order 2|order=2", system, re.I) is not None
-        last = json.loads(messages[-1]["content"][-1]["content"]) if turn else {}
+        last = _result_json(messages[-1]["content"][-1]) if turn else {}
+        calls = [b for m in messages if m["role"] == "assistant" for b in m["content"] if b.type == "tool_use"]
+        prev = calls[-1].name if calls else None
+        first_mesh = next((c.input for c in calls if c.name == "mesh"), None)
 
         using = playbook_ids[:2]
 
@@ -63,12 +73,17 @@ class MockLLM:
             if last.get("within_cap") is False:          # over the cap: same element choice, coarser
                 same = {"quads": last.get("quads", False)} if flow else {"order": last["order"]}
                 return tool("mesh", {"h": last["h_used"] * 1.3, **same}), self._rec(run_id)
-            h = problem.params["h0"] * rng.uniform(0.6, 2.0)   # around the problem's own size
+            h = self._h0(problem_id) * rng.uniform(0.6, 2.0)   # around the problem's own size
             if flow:                                     # finite volumes: no element order
                 return tool("mesh", {"h": h, "quads": problem.dim == 2 and rng.random() < 0.5}), self._rec(run_id)
             order = 2 if knows_p2 else rng.choice([1, 2])
             return tool("mesh", {"h": h, "order": order}), self._rec(run_id)
-        if "value" not in last and "error" not in last:   # meshed and within cap: solve
+        if prev == "view":                               # second, finer mesh for a convergence check
+            return tool("mesh", {"h": first_mesh["h"] * 0.8, "order": first_mesh["order"]}), self._rec(run_id)
+        if prev == "compare":
+            # the finer solve (compare reached means solves 1 and 2 both succeeded, even if compare failed)
+            return tool("submit", {"solve": last.get("solve_b", 2)}), self._rec(run_id)
+        if prev == "mesh" and last.get("ok"):            # meshed and within cap: solve
             setup = reference_setup(problem)
             if flow:   # a second-order lesson in the playbook -> the second-order convection scheme
                 setup["convection"] = "linearUpwind" if knows_p2 else rng.choice(["upwind", "linearUpwind"])
@@ -78,9 +93,25 @@ class MockLLM:
                             and all(isinstance(v, (int, float)) for v in bc["value"]):
                         bc["value"] = [-v for v in bc["value"]]
             return tool("solve", setup), self._rec(run_id)
-        if "solve" in last and last.get("ok"):
-            return tool("submit", {"solve": last["solve"]}), self._rec(run_id)
+        if prev == "solve" and last.get("ok"):
+            if flow:                                     # flow tasks have no view / compare: submit
+                return tool("submit", {"solve": last["solve"]}), self._rec(run_id)
+            if last["solve"] == 1:
+                return tool("view", {"solve": 1, "kind": "stress", "view": "iso"}), self._rec(run_id)
+            return tool("compare", {"solve_a": 1, "solve_b": last["solve"]}), self._rec(run_id)
         return _response([NS(type="text", text="Done.")], "end_turn", "generator"), self._rec(run_id)
+
+    @staticmethod
+    def _h0(problem_id: str) -> float:
+        """The problem's own mesh size; gold CAD parts have none, so 1/15 of the bounding-box diagonal."""
+        import math
+
+        from ace import fea
+        p = fea.get_problem(problem_id)
+        if "h0" in p.params:
+            return p.params["h0"]
+        b = fea.geometry_summary(p)["bbox"]
+        return math.dist(b[:3], b[3:]) / 15
 
     def _big_turn(self, system: str, messages: list, tools: list, run_id: str):
         """The single-agent baseline (ace/single_loop.py): every task in one conversation, each tool
