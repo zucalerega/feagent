@@ -25,6 +25,7 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   benchmarks and UI (`feacore/`), and the diagnostics (`feacore/diagnostics/`). One root
   `pyproject.toml` ships both packages.
 - `mesh-harness` branch: Alexander's ongoing harness work; merged into `main` as it lands.
+- `make_problem.py`: prints a unique, seeded problem statement per (agent number, call number).
 - `improver-loop` branch: improver side of the loop.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
@@ -42,7 +43,7 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   - the SimJEB loader (needs `dataverse.harvard.edu` allowed);
   - the scoring proposal in `docs/eval-design.md`.
   Next: port the verification cases and QoIs to `feacore` Problems.
-- `gold-benchmarks` branch (Jaime): the gold-benchmark generator `feacore.goldgen`. It takes ABC
+- `gold-benchmarks` branch (Jaime, merged into `main`): the gold-benchmark generator `feacore.goldgen`. It takes ABC
   CAD parts, generates BC sets, meshes nested tet10 levels L0-L2 and keeps the QoIs that the GCI
   certifies; it runs on an H100 and packs its output into numbered archives
   (`goldgen-l2_0000.tgz`, ...). `benchmarks/gold/` holds the imported sets (see FEA core). Its
