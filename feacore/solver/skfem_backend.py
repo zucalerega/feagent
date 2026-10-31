@@ -24,16 +24,15 @@ from __future__ import annotations
 
 import math
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-import scipy.sparse as sp
 from skfem import (Basis, BilinearForm, ElementTetP1, ElementTetP2, ElementTriP1, ElementTriP2,
                    ElementVector, FacetBasis, Functional, LinearForm)
 from skfem.helpers import ddot, dot, grad, sym_grad, trace
 
-from feacore.case import (DISPLACEMENT_LIKE, ELASTICITY_FIELDS, HEAT_FIELDS, Case, CaseError, QoI,
-                          as_field)
+from feacore.case import ELASTICITY_FIELDS, HEAT_FIELDS, Case, CaseError, QoI, as_field
 from feacore.solver import _skfem_assembly as fast
 from feacore.solver._skfem_locate import Locator
 from feacore.solver._skfem_mesh import MeshData, MeshError, read_mesh
@@ -55,7 +54,11 @@ _STRESS_COMPS = {
 
 
 class SolverError(RuntimeError):
-    pass
+    """The solve failed numerically."""
+
+
+class InsufficientConstraints(CaseError):
+    """The Dirichlet BCs leave a rigid-body mode free (a setup error: the stiffness is singular)."""
 
 
 # --------------------------------------------------------------------------- forms
@@ -609,7 +612,7 @@ def _check_rigid_modes(md: _Model, D: np.ndarray, has_robin: bool = False) -> No
             return
         null = vt[rank:]  # combinations of modes that the constraints do not touch
         free = [names[int(np.argmax(np.abs(v)))] for v in null]
-    raise SolverError(f"insufficient constraints: the model can move as a rigid body ({', '.join(free)}). "
+    raise InsufficientConstraints(f"insufficient constraints: the model can move as a rigid body ({', '.join(free)}). "
                       f"Add Dirichlet BCs (fixed / displacement / symmetry"
                       f"{' / temperature or convection' if md.physics == 'heat' else ''}) that remove it.")
 
@@ -641,6 +644,9 @@ def solve(case: Case, **options) -> "SkfemResult":
                           f"probably singular (insufficient constraints / rigid-body modes)")
     md.warnings.append("info: " + rep.describe())
     md.warnings += [f"linear solver: {n}" for n in rep.notes]
+    if rep.iterative:
+        md.warnings.append(f"linear solver is ITERATIVE ({rep.detail}, rtol={rep.tolerance:g}): the solution "
+                           f"carries an algebraic error on top of the discretisation error")
     if md.physics == "elasticity":
         rec = _recover_elasticity(md, x, solver_opts)
     else:
@@ -760,6 +766,24 @@ class SkfemResult(Result):
         integ = float(np.sum(vals * c * b.dx))
         meas = float(np.sum(c * b.dx))
         return integ, meas
+
+    def evaluate_all(self) -> dict[str, float]:
+        """Like ``Result.evaluate_all`` but a QoI that cannot be evaluated (point outside the mesh,
+        unknown group, ...) gives NaN plus a warning instead of failing the whole result."""
+        out = {}
+        for q in self.case.qois:
+            try:
+                out[q.name] = float(self.evaluate(q))
+            except (CaseError, ValueError) as e:
+                out[q.name] = float("nan")
+                msg = f"qoi {q.name!r} could not be evaluated: {e}"
+                if msg not in self.info.warnings:
+                    self.info.warnings.append(msg)
+        return out
+
+    def summary(self) -> dict:
+        qois = self.evaluate_all()  # first: it may append warnings to info
+        return {"info": asdict(self.info), "qois": qois, "meta": self.case.meta}
 
     def evaluate(self, qoi: QoI) -> float:
         md = self.model

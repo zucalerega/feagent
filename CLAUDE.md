@@ -39,6 +39,16 @@ Decisions:
 - **Cross-check solver** = CalculiX (`backend="ccx"`), independent of the fixed solver. On the same
   case and mesh the two agree to about 1e-5 (displacements, reactions, energies) and about 1e-3 for
   boundary point stresses (different stress recovery). A bigger disagreement means a setup or solver bug.
+  The ccx backend runs plane stress on an internal thin section, so CalculiX's 3D-slab expansion no
+  longer distorts thick plates. It refuses (NotImplementedError) axisymmetric order 1 (CAX3) and
+  quadratic tets / CAX6 with curved interior edges, where CalculiX's own elements aren't exact. gmsh
+  meshes only curve boundary edges, so they're accepted with a warning. Axisymmetric ccx results are
+  good to about 1e-4 relative.
+- **Mesh sequences for GCI:** independently remeshed unstructured sequences (what agents produce)
+  scatter the observed order by a few tenths, so treat a 3-mesh GCI from them as approximate and use
+  4+ meshes (the least-squares fit in `analyze`) when it matters. Nested refinement
+  (`convergence_study(..., nested=True)`, i.e. gmsh `mesh.refine()` splitting) gives clean orders for
+  global norms. Point QoIs can still be irregular on nested meshes.
 - **Neural surrogate** (`backend="nn"`, optional, GPU): fast but unverified. It is never the reference;
   the verification layer judges it like any other submission.
 - **Solver input contract** = a case JSON (`feacore/case.py`: analysis, materials, BCs, loads, QoIs)
@@ -62,6 +72,21 @@ Decisions:
   CalculiX, a Python >= 3.12 venv, and GPU extras when `nvidia-smi` works). Brev walkthrough (shell,
   GPU check, validation, UI tunnel on port 8000): `docs/brev.md`. Check the GPU solve with
   `python scripts/gpu_check.py` before relying on cuDSS.
+
+- **UI + solver service:** `python -m feacore.ui --host 0.0.0.0 --port 8000` (`docs/ui.md`). The
+  harness can call `POST /api/solve` (multipart case JSON + .msh) or write run, study and submission
+  records with `feacore.runstore.RunStore` (`record_result`, `create_submission`). Records live under
+  `runs/` (`FEACORE_RUNS_DIR`) and are never committed. A submission is one agent's runs on 3+ of its own
+  meshes; the consensus view uses the median and MAD of each submission's best estimate. For display
+  only, the UI calls a QoI converged when both mesh-to-mesh changes are under 0.1%, even if `gci3`
+  can't assign an order. Verdicts still come from `feacore.verification`.
+- Known solver/verification limits (from the benchmark runs):
+  - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
+    backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
+    tolerance, or use averaged / integrated QoIs.
+  - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
+    or thermal-load interfaces. Don't use point stresses right at an interface.
+  - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
 
 ## NVIDIA compute (hackathon)
 

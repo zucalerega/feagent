@@ -1,0 +1,101 @@
+{
+  "id": "notched_bar_t10_r4",
+  "expected_behavior": "stress_concentration",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "peak_stress_notch",
+      "value": 354640000.0,
+      "kind": "converged_numerical",
+      "source": "feacore reference convergence study: scikit-fem P2 isoparametric (3 meshes, h0/h = 1, 2, 4, local refinement at the stress raiser), Richardson extrapolation (Celik et al. 2008); cross-checked with CalculiX on the finest mesh. Study of notched_bar_t10_r4; CalculiX on the finest mesh, which models plane stress as a 5 mm slab and so includes a through-thickness effect at the notch root: 359.55 MPa.",
+      "tolerance": 0.02,
+      "notes": "Uncertainty ~0.038 %. Handbook (Peterson / Pilkey fit, 2t/H = 0.4, t/r = 2.5: Kt = 2.4145 on the net-section sigma_nom = 133.33 MPa.) gives 321.9 MPa, 10.2 % below this value; the fit is close to Neuber's nomogram, which body-force solutions (Nisitani & Noda) show to underestimate opposite-notch Kt by ~10 %. Long bar (L/H = 4): no short-bar effect. Kt(FE) = 2.660."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "plane_stress",
+      "order": 2,
+      "thickness": 0.005,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "symmetry",
+        "group": "end_left",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "displacement",
+        "group": null,
+        "point": [
+          -0.1,
+          0.0
+        ],
+        "components": [
+          1
+        ],
+        "value": 0.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "traction",
+        "group": "end_right",
+        "point": null,
+        "components": null,
+        "value": [
+          80000000.0,
+          0.0
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "peak_stress_notch",
+        "type": "max",
+        "field": "s1",
+        "point": null,
+        "group": "notch_roots",
+        "component": null
+      },
+      {
+        "name": "elongation",
+        "type": "mean",
+        "field": "ux",
+        "point": null,
+        "group": "end_right",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "notched_bar_t10_r4",
+      "reference_portion": "full"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.004,
+    0.002,
+    0.001
+  ]
+}

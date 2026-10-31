@@ -76,7 +76,8 @@ def test_auto_and_env_var(system, monkeypatch):
     A, b = system
     monkeypatch.delenv(linsolve.ENV_VAR, raising=False)
     _, rep = solve_linear(A, b, return_report=True)
-    expected = "cudss" if available_methods()["cudss"] else "pardiso" if available_methods()["pardiso"] else "scipy"
+    gpu = available_methods()["cudss"] and A.shape[0] >= linsolve.cudss_min_n()
+    expected = "cudss" if gpu else "pardiso" if available_methods()["pardiso"] else "scipy"
     assert rep.method == expected
     monkeypatch.setenv(linsolve.ENV_VAR, "scipy")
     _, rep = solve_linear(A, b, method="auto", return_report=True)

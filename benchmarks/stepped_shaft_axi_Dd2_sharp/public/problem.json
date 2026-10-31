@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "stepped_shaft_axi_Dd2_sharp",
+  "title": "Stepped shaft in tension, D/d = 2, sharp shoulder (r = 0) (axisymmetric)",
+  "family": "stepped_shaft",
+  "tags": [
+    "part",
+    "axisymmetric",
+    "tension",
+    "stepped_shaft",
+    "sharp_corner",
+    "singular_trap"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "axisymmetric",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "d": 0.02,
+    "D_over_d": 2.0,
+    "r_over_d": 0.0,
+    "L_small_over_d": 3.0,
+    "L_large_over_D": 1.5,
+    "force": 31415.92653589793,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "h0": 0.0025
+  },
+  "description": "Stepped round bar (shaft) with a shoulder, in axial tension. Axisymmetric problem.\nGeometry file (STEP): the meridional half-section of the solid of revolution, drawn in the xy-plane: x is the radius (x >= 0, axis of revolution x = 0) and y is the axial coordinate z.\nPurpose: a turned steel tension rod whose diameter steps from d = 20 mm to D = 40 mm. The step is SHARP as drawn (no fillet): the small cylinder meets the flat annular shoulder face in the plane z = 60 mm at a 90-degree inside corner. The small-diameter section runs from the end face at z = 0 to the shoulder; the large-diameter section runs from the shoulder plane to the end face at z = 120 mm.\nMaterial: steel, linear elastic and isotropic, E = 200 GPa, Poisson's ratio 0.3.\nLoad: a total axial tensile force P = 31.416 kN, applied as a uniform axial traction (pulling outward) on the large end face z = 120 mm. The nominal stress on the small diameter, 4P/(pi d^2), is 100 MPa.\nAnalysis: linear static, small displacements. Model it as axisymmetric.\nSupports: the small end face z = 0 is supported axially only: zero axial displacement, free to contract radially (a frictionless support).\nReport (in an axisymmetric model, x = r and y = z):\n  peak_stress_shoulder: the maximum value of the maximum principal stress s1 on the small-cylinder surface and the shoulder face, i.e. at the inside corner where they meet [Pa]; report it, and say whether you trust it;\n  elongation: the average axial displacement of the large end face (z = 120 mm) [m].",
+  "qois": [
+    {
+      "name": "peak_stress_shoulder",
+      "type": "max",
+      "field": "s1",
+      "point": null,
+      "group": "shoulder_corner",
+      "component": null
+    },
+    {
+      "name": "elongation",
+      "type": "mean",
+      "field": "uy",
+      "point": null,
+      "group": "end_large",
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

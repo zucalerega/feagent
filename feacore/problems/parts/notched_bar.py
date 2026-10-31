@@ -1,8 +1,9 @@
 """Flat bar with two opposite U-notches in tension (plane stress).
 
-Reference: Kt from the Peterson / Pilkey curve fit for opposite U-shaped notches in a finite
-width flat bar in tension (``_common.kt_opposite_u_notches_tension``) times the net-section
-nominal stress P / ((H - 2t) b).
+Reference: the converged FE peak notch-root stress (``_numerical_refs``). The Peterson / Pilkey
+curve fit for opposite U-shaped notches in a finite-width flat bar in tension
+(``_common.kt_opposite_u_notches_tension``) times the net-section nominal stress P / ((H - 2t) b)
+is 8-11 % lower; it is kept in the reference notes and in ``handbook_reference()``.
 
 Variants: notch depth t in {5, 10} mm x root radius r in {2, 4} mm on a 50 mm wide, 5 mm thick
 steel bar. The reference mesh is the full bar (2D is cheap); agents may use the two symmetry
@@ -21,6 +22,8 @@ from feacore.problems.parts._common import (
     MM, STEEL, PartProblem, add_group, finish_sizing, fmt_mm, kt_opposite_u_notches_tension,
     material, threshold,
 )
+from feacore.problems.parts._numerical_refs import SOURCE as NUM_SOURCE
+from feacore.problems.parts._numerical_refs import numerical_reference
 from feacore.problems.registry import register
 
 KT_SOURCE = (
@@ -56,7 +59,7 @@ class NotchedBar(PartProblem):
         p = self.params
         if p["notch_depth"] < p["notch_radius"]:
             raise ValueError("U-notch needs depth >= radius")
-        self.tags = ("part", "2d", "plane_stress", "notch", "tension", "stress_concentration", "handbook")
+        self.tags = ("part", "2d", "plane_stress", "notch", "tension", "stress_concentration")
         self.title = (f"Flat bar with opposite U-notches in tension, t = {fmt_mm(p['notch_depth'])}, "
                       f"r = {fmt_mm(p['notch_radius'])}")
 
@@ -170,16 +173,35 @@ class NotchedBar(PartProblem):
             meta={"problem": self.id, "reference_portion": "full"},
         )
 
-    def references(self) -> list[Reference]:
+    def handbook_reference(self) -> Reference:
+        """Peterson / Pilkey curve-fit value (not the judged reference: see references())."""
         p = self.params
         kt = self.kt()
-        return [Reference(
+        return Reference(
             qoi="peak_stress_notch", value=kt * self.nominal_stress(), kind="handbook",
             source=KT_SOURCE, tolerance=0.05,
             notes=(f"2t/H = {2 * p['notch_depth'] / p['width']:.3g}, t/r = "
                    f"{p['notch_depth'] / p['notch_radius']:.3g}: Kt = {kt:.4f} on the net-section "
-                   f"sigma_nom = {self.nominal_stress() / 1e6:.2f} MPa. Long bar (L/H = 4), so the "
-                   "short-bar length effect is negligible."),
+                   f"sigma_nom = {self.nominal_stress() / 1e6:.2f} MPa."),
+        )
+
+    def references(self) -> list[Reference]:
+        hb = self.handbook_reference()
+        num = numerical_reference(self.id, "peak_stress_notch")
+        if num is None:
+            return [hb]
+        diff = (num["value"] - hb.value) / hb.value
+        ccx = (f"; CalculiX on the finest mesh, which models plane stress as a {self.params['thickness'] * 1e3:g} mm "
+               f"slab and so includes a through-thickness effect at the notch root: "
+               f"{num['ccx_fine'] / 1e6:.2f} MPa" if num.get("ccx_fine") else "")
+        return [Reference(
+            qoi="peak_stress_notch", value=num["value"], kind="converged_numerical",
+            source=NUM_SOURCE + f" Study of {self.id}{ccx}.", tolerance=0.02,
+            notes=(f"Uncertainty ~{num['unc'] * 100:.2g} %. Handbook (Peterson / Pilkey fit, {hb.notes}) "
+                   f"gives {hb.value / 1e6:.1f} MPa, {diff * 100:.1f} % below this value; the fit is close "
+                   "to Neuber's nomogram, which body-force solutions (Nisitani & Noda) show to "
+                   "underestimate opposite-notch Kt by ~10 %. Long bar (L/H = 4): no short-bar effect. "
+                   f"Kt(FE) = {num['value'] / self.nominal_stress():.3f}."),
         )]
 
 

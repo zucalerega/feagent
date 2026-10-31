@@ -10,7 +10,9 @@ requires-python = ">=3.10"
 dependencies = ["numpy", "scipy", "scikit-fem>=10", "meshio>=5.3", "gmsh>=4.11"]
 
 [project.optional-dependencies]
-dev = ["pytest", "matplotlib", "sympy"]
+dev = ["pytest", "matplotlib", "sympy", "httpx"]
+ui = ["fastapi", "uvicorn", "python-multipart"]
+gpu = ["nvmath-python", "cupy-cuda12x"]
 ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib"]
 
 [tool.setuptools.packages.find]
@@ -18,3 +20,4 @@ include = ["feacore*", "ace*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: longer convergence / 3D checks (deselect with -m 'not slow')"]

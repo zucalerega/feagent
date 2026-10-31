@@ -7,7 +7,7 @@ four-term polynomial fits Kt = C1 + C2 x + C3 x^2 + C4 x^3 published with Peters
 (Pilkey & Pilkey, *Peterson's Stress Concentration Factors*, 3rd ed., Wiley 2008) and
 reproduced in Young & Budynas, *Roark's Formulas for Stress and Strain*, 7th ed., Table 17.1.
 Each fit has two ranges of the depth / radius ratio that meet at 2.0; the two coefficient
-sets agree there to < 1 % (shoulder fillet) and < 1.5 % (U-notches), which is a useful check
+sets agree there to < 1 % (shoulder fillet; U-notches for 2t/H <= 0.4), a useful check
 on the transcription (see ``tests/test_problems_parts.py``).
 """
 
@@ -39,11 +39,6 @@ def fmt_mm(x_m: float) -> str:
     v = x_m / MM
     s = f"{v:.3f}".rstrip("0").rstrip(".")
     return f"{s} mm"
-
-
-def fmt_si(x: float, unit: str, scale: float = 1.0, digits: int = 4) -> str:
-    v = x / scale
-    return f"{v:.{digits}g} {unit}"
 
 
 # --------------------------------------------------------------------------- handbook fits
@@ -102,13 +97,6 @@ def lame_hoop_stress(p: float, ri: float, ro: float, r: float) -> float:
 
 
 # --------------------------------------------------------------------------- gmsh helpers
-
-TOL = 1e-7
-
-
-def faces_of_type(kind: str, dim: int = 2) -> list[int]:
-    return [t for _, t in gmsh.model.getEntities(dim) if gmsh.model.getType(dim, t) == kind]
-
 
 def com(dim: int, tag: int) -> tuple[float, float, float]:
     return gmsh.model.occ.getCenterOfMass(dim, tag)
@@ -172,15 +160,9 @@ class PartProblem(Problem):
             gmsh.write(str(path))
         return path
 
-    # convenience
-    @property
-    def p(self) -> dict:
-        return self.params
-
 
 __all__ = [
-    "AL6061", "MM", "PartProblem", "STEEL", "TOL", "add_group", "bbox", "com",
-    "entities_on_plane", "faces_of_type", "finish_sizing", "fmt_mm", "fmt_si",
-    "kt_opposite_u_notches_tension", "kt_shoulder_fillet_round_bar_tension", "lame_hoop_stress",
-    "material", "threshold",
+    "AL6061", "MM", "PartProblem", "STEEL", "add_group", "bbox", "com", "entities_on_plane",
+    "finish_sizing", "fmt_mm", "kt_opposite_u_notches_tension", "kt_shoulder_fillet_round_bar_tension",
+    "lame_hoop_stress", "material", "threshold",
 ]

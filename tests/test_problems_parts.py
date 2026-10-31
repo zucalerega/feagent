@@ -152,10 +152,10 @@ def test_kt_fits_are_continuous_and_match_limits():
         lo = kt_shoulder_fillet_round_bar_tension(D, d, h / (2.0 - 1e-9))
         hi = kt_shoulder_fillet_round_bar_tension(D, d, h / (2.0 + 1e-9))
         assert lo == pytest.approx(hi, rel=0.01)
-    for H in (10.0, 5.0, 2.5):
+    for H in (10.0, 5.0):  # 2t/H = 0.2, 0.4 as in the variants (the fit's ranges drift apart for deeper notches)
         lo = kt_opposite_u_notches_tension(H, 1.0, 1.0 / (2.0 - 1e-9))
         hi = kt_opposite_u_notches_tension(H, 1.0, 1.0 / (2.0 + 1e-9))
-        assert lo == pytest.approx(hi, rel=0.015)
+        assert lo == pytest.approx(hi, rel=0.01)
     # shallow semicircular edge notch -> 3.065 (semi-infinite plate)
     assert kt_opposite_u_notches_tension(1e6, 1.0, 1.0) == pytest.approx(3.065, rel=0.01)
     # monotone in r: sharper fillet -> higher Kt

@@ -15,7 +15,8 @@ iterative tolerance that would contaminate a Richardson / GCI study):
   cudss    NVIDIA cuDSS on a CUDA GPU via nvmath-python
            (``pip install nvmath-python[cu12]`` or ``[cu13]``):
            ``nvmath.sparse.advanced.direct_solver`` with ``DirectSolverMatrixType.SPD``.
-  auto     cudss if a CUDA GPU and nvmath are available, else pardiso if installed, else scipy.
+  auto     cudss if a CUDA GPU and nvmath are available (and n >= FEACORE_CUDSS_MIN_N, default
+           20000: smaller systems are faster on the CPU), else pardiso if installed, else scipy.
   cg       (opt-in, iterative) preconditioned CG: pyamg smoothed aggregation if installed
            (with ``near_nullspace`` = rigid-body modes when given), else Jacobi. Relative
            tolerance 1e-10 by default. Not used unless asked for explicitly.
@@ -131,14 +132,30 @@ def _cuda_device_count() -> int:
         return 0
 
 
+_HAVE_CUDSS: bool | None = None
+
+
 def _have_cudss() -> bool:
-    if _cuda_device_count() < 1:
-        return False
+    global _HAVE_CUDSS
+    if _HAVE_CUDSS is None:
+        ok = _cuda_device_count() >= 1
+        if ok:
+            try:
+                from nvmath.sparse.advanced import direct_solver  # noqa: F401
+            except Exception:
+                ok = False
+        _HAVE_CUDSS = ok
+    return _HAVE_CUDSS
+
+
+def cudss_min_n() -> int:
+    """``auto`` sends systems smaller than this to the CPU (CUDA start-up and transfers cost
+    more than they save there). Env var ``FEACORE_CUDSS_MIN_N``, default 20000. Both paths are
+    direct solves, so this changes timing only, not answers."""
     try:
-        from nvmath.sparse.advanced import direct_solver  # noqa: F401
-    except Exception:
-        return False
-    return True
+        return int(os.environ.get("FEACORE_CUDSS_MIN_N", "20000"))
+    except ValueError:
+        return 20000
 
 
 def available_methods() -> dict[str, bool]:
@@ -163,8 +180,10 @@ def resolve_method(method: str | None = None) -> str:
     return m
 
 
-def _auto() -> str:
+def _auto(n: int | None = None) -> str:
     for m in DIRECT_METHODS:
+        if m == "cudss" and n is not None and n < cudss_min_n():
+            continue
         if _usable(m):
             return m
     return "scipy"
@@ -251,8 +270,9 @@ def _solve_cudss(K, f, report: LinearSolveReport, symmetric: bool):
 
     A = sp.csr_matrix(K, dtype=np.float64)
     A.sort_indices()
-    A.indptr = A.indptr.astype(np.int32)   # cuDSS needs 32-bit indices
-    A.indices = A.indices.astype(np.int32)
+    itype = np.int32 if A.nnz < 2**31 - 1 else np.int64   # nvmath 1.0 accepts int32 / int64 (unbatched)
+    A.indptr = A.indptr.astype(itype)
+    A.indices = A.indices.astype(itype)
     b = np.asfortranarray(np.asarray(f, dtype=np.float64))
     mtype = DirectSolverMatrixType.SPD if symmetric else DirectSolverMatrixType.GENERAL
     options = DirectSolverOptions(sparse_system_type=mtype,
@@ -317,12 +337,12 @@ def solve_linear(K, f, method: str | None = "auto", *, symmetric: bool | None = 
 
     m = requested
     if m == "auto":
-        m = _auto()
+        m = _auto(K.shape[0])
     elif not _usable(m):
         if strict:
             raise LinearSolverError(f"linear solver {m!r} is not available here "
                                     f"(available: {[k for k, v in available_methods().items() if v]})")
-        fb = _auto()
+        fb = _auto(K.shape[0])
         report.notes.append(f"requested linear solver {m!r} unavailable; fell back to {fb!r}")
         m = fb
     if symmetric is None:
@@ -361,5 +381,5 @@ def solve_linear(K, f, method: str | None = "auto", *, symmetric: bool | None = 
     return (x, report) if return_report else x
 
 
-__all__ = ["solve_linear", "available_methods", "resolve_method", "LinearSolveReport",
+__all__ = ["solve_linear", "available_methods", "resolve_method", "cudss_min_n", "LinearSolveReport",
            "LinearSolverError", "METHODS", "ENV_VAR"]

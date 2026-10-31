@@ -100,6 +100,7 @@ def _mid_value(dim: int, tag: int):
 class _LE11Base(Problem):
     family = "nafems_le11"
     physics = "elasticity"
+    units = "SI (m, N, Pa, degC)"
     expected_behavior = "thermal"
 
     def expected_order(self, qoi: QoI, order: int) -> float | None:

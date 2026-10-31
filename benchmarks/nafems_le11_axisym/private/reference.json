@@ -1,0 +1,89 @@
+{
+  "id": "nafems_le11_axisym",
+  "expected_behavior": "thermal",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "szz_A",
+      "value": -105000000.0,
+      "kind": "published",
+      "source": "NAFEMS, \"The Standard NAFEMS Benchmarks\", publication TNSB Rev. 3 (October 1990), test LE11, output direct stress sigma_zz at A, target -105 MPa (refined axisymmetric); data sheet reproduced at https://github.com/seamplex/feenox/blob/main/doc/nafems-le11-problem.png; FeenoX examples/nafems-le11.fee reports -105.04 MPa",
+      "tolerance": 0.02,
+      "notes": "Axial stress at A = (r 1, z 0), the inner edge of the bottom face."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "axisymmetric",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 210000000000.0,
+        "nu": 0.3,
+        "alpha": 0.00023,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "displacement",
+        "group": "edge_AB_bottom",
+        "point": null,
+        "components": [
+          1
+        ],
+        "value": 0.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "displacement",
+        "group": "edge_HI_top",
+        "point": null,
+        "components": [
+          1
+        ],
+        "value": 0.0,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [
+      {
+        "type": "temperature",
+        "value": "x + y",
+        "group": "*"
+      }
+    ],
+    "regions": [],
+    "qois": [
+      {
+        "name": "szz_A",
+        "type": "point",
+        "field": "syy",
+        "point": [
+          1.0,
+          0.0
+        ],
+        "group": null,
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "nafems_le11_axisym",
+      "units": "SI (m, N, Pa, degC)"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.1,
+    0.05,
+    0.025
+  ]
+}

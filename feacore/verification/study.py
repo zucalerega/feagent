@@ -30,8 +30,17 @@ def default_expected_order(qoi: QoI, order: int) -> float | None:
 
 def convergence_study(problem: Problem, sizes: list[float] | None = None, order: int = 2,
                       backend: str = "skfem", geom_order: int | None = None,
-                      workdir: str | Path | None = None, verbose: bool = False) -> dict:
+                      workdir: str | Path | None = None, verbose: bool = False,
+                      nested: bool = False) -> dict:
+    """Solve on a mesh sequence and analyse every QoI.
+
+    ``nested=False``: an independent mesh per size (what agents produce). ``nested=True``: mesh once
+    at the coarsest size and split it uniformly (ratio 2 per level, len(sizes) levels). Nested
+    sequences give much cleaner observed orders; independently remeshed unstructured sequences
+    scatter p by a few tenths. Note that each 3D split multiplies the cell count by 8."""
     sizes = sorted(sizes or problem.study_sizes(order), reverse=True)  # coarse -> fine
+    if nested:
+        sizes = [sizes[0] / 2**i for i in range(len(sizes))]
     geom_order = order if geom_order is None else geom_order
     tmp = None
     if workdir is None:
@@ -43,7 +52,11 @@ def convergence_study(problem: Problem, sizes: list[float] | None = None, order:
     try:
         for i, h in enumerate(sizes):
             t0 = time.perf_counter()
-            mesh_path = problem.mesh(workdir / f"{problem.id}_m{i}.msh", h, geom_order=geom_order)
+            if nested:
+                mesh_path = problem.mesh(workdir / f"{problem.id}_m{i}.msh", sizes[0],
+                                         geom_order=geom_order, refine_steps=i)
+            else:
+                mesh_path = problem.mesh(workdir / f"{problem.id}_m{i}.msh", h, geom_order=geom_order)
             t_mesh = time.perf_counter() - t0
             res = solve(problem.case(mesh_path, order=order), backend=backend)
             values = res.evaluate_all()
@@ -79,6 +92,7 @@ def convergence_study(problem: Problem, sizes: list[float] | None = None, order:
         "order": order,
         "geom_order": geom_order,
         "sizes": sizes,
+        "nested": nested,
         "h_rep": h_rep,
         "runs": runs,
         "qois": qoi_results,
@@ -87,23 +101,34 @@ def convergence_study(problem: Problem, sizes: list[float] | None = None, order:
 
 
 def _judge(entry: dict, ref) -> dict:
+    """Pass/fail of one QoI. The extrapolated value is used only when the extrapolation is
+    trustworthy: monotone convergence with an observed order near theory. Otherwise (order far
+    below / above theory, oscillation) the finest-mesh value is judged instead."""
     g = entry.get("gci")
-    out = {"err_fine": None, "err_ext": None, "ref_in_gci_band": None, "passed": None}
+    out = {"err_fine": None, "err_ext": None, "ref_in_gci_band": None, "extrapolation_reliable": None,
+           "passed": None}
     if entry["expectation"] == "diverge":
         if g is not None:
             out["passed"] = g["convergence"] in ("divergent", "oscillatory_divergent") or \
                 "p_far_below_theory" in g["flags"]
         return out
+    if g is not None:
+        out["extrapolation_reliable"] = bool(
+            g.get("phi_ext") is not None and g["convergence"] in ("monotone", "exact", "converged")
+            and not {"p_far_below_theory", "p_above_theory"} & set(g["flags"]))
     if ref is None:
         return out
+
+    def rel(v):
+        return (v - ref.value) / ref.value if ref.value != 0 else v - ref.value
+
     fine = entry["values"][-1]
-    out["err_fine"] = (fine - ref.value) / ref.value if ref.value != 0 else fine - ref.value
-    if g is not None and g.get("phi_ext") is not None and g["convergence"] in ("monotone", "exact"):
-        ext = g["phi_ext"]
-        out["err_ext"] = (ext - ref.value) / ref.value if ref.value != 0 else ext - ref.value
+    out["err_fine"] = rel(fine)
+    if g is not None and g.get("phi_ext") is not None:
+        out["err_ext"] = rel(g["phi_ext"])
         band = (g["gci_fine"] or 0.0) * abs(fine)
         out["ref_in_gci_band"] = bool(abs(fine - ref.value) <= band)
-    best = out["err_ext"] if out["err_ext"] is not None else out["err_fine"]
+    best = out["err_ext"] if out["extrapolation_reliable"] else out["err_fine"]
     out["passed"] = bool(abs(best) <= ref.tolerance) if not math.isnan(best) else False
     return out
 

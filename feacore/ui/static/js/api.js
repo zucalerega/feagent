@@ -72,7 +72,7 @@ export function fmt(x, sig = 5) {
   if (x === null || x === undefined || typeof x !== 'number' || !isFinite(x)) return '–';
   if (x === 0) return '0';
   const ax = Math.abs(x);
-  if (ax >= 1e-2 && ax < 1e5) {
+  if (ax >= 1e-3 && ax < 1e5) {
     const s = x.toPrecision(sig);
     if (!s.includes('e')) return trimZeros(s);
   }

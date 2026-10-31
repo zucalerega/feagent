@@ -9,6 +9,13 @@ a dim-3 group ``domain``), ``manifest.json`` (its MeshResult, incl. ``mesh_path`
 ``force`` is a total force spread uniformly over the group's area, which is exactly feacore's
 ``force`` BC. Units are whatever the part uses (the harness parts are mm / N / MPa).
 
+Optional richer keys (feacore BC types; the harness spec can add them when it needs them):
+
+    symmetry: [group, ...]                                  # zero normal displacement (axis-aligned planes)
+    pressure: [{group, value}]                              # traction = -value * outward normal
+    traction: [{group, value: [tx, ty, tz]}]                # force per area
+    displacement: [{group, components: [0, 2], value: 0.0}]  # prescribed components (0=x, 1=y, 2=z)
+
     python -m feacore.adapters.mesh_harness path/to/out_dir --out case.json [--order 2]
 """
 
@@ -52,20 +59,25 @@ def case_from_mesh_harness(out_dir: str | Path, order: int | None = None,
     if fea is None:
         decl = report.get("bcs") or report.get("solve") or {}
         fea = decl.get("fea") if isinstance(decl, dict) and "fea" in decl else decl
-    if not fea or "fixed" not in fea:
+    if not fea or not any(k in fea for k in ("fixed", "symmetry", "displacement")):
         raise ValueError(f"no FEA boundary-condition declaration (bcs.fea) found in {out_dir}")
     mesh_path = Path(mesh or manifest.get("mesh_path") or out_dir / "mesh.msh")
     if not mesh_path.is_absolute() and not mesh_path.is_file():
         mesh_path = out_dir / mesh_path
     order = int(order or manifest.get("order") or 2)
-    fixed = list(fea["fixed"])
+    fixed = list(fea.get("fixed", []))
     loads = [{"group": ld["group"], "force": [float(f) for f in ld["force"]]} for ld in fea.get("loads", [])]
+    extra = [BC("symmetry", group=g) for g in fea.get("symmetry", [])]
+    extra += [BC("pressure", group=d["group"], value=d["value"]) for d in fea.get("pressure", [])]
+    extra += [BC("traction", group=d["group"], value=list(d["value"])) for d in fea.get("traction", [])]
+    extra += [BC("displacement", group=d["group"], components=list(d["components"]), value=d["value"])
+              for d in fea.get("displacement", [])]
     return Case(
         mesh=str(mesh_path.resolve()),
         analysis=Analysis(physics="elasticity", formulation="3d", order=order),
         materials={"material": Material(E=float(fea.get("E", 210000.0)), nu=float(fea.get("nu", 0.3)))},
         bcs=[BC("fixed", group=g) for g in fixed]
-        + [BC("force", group=ld["group"], value=ld["force"]) for ld in loads],
+        + [BC("force", group=ld["group"], value=ld["force"]) for ld in loads] + extra,
         qois=default_qois(fixed, loads),
         meta={"source": "mesh-harness", "out_dir": str(out_dir.resolve()),
               "spec_path": manifest.get("spec_path")},

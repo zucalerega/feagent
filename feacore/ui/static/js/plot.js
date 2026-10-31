@@ -61,6 +61,17 @@ function axisLabels(ticks) {
   return { labels: scaled.map(v => (Math.abs(v) < step * 1e-9 ? 0 : v).toFixed(dec)), exp };
 }
 
+/** Keep ticks whose labels do not overlap (estimated 7.4 px per character at 13 px). */
+function spaced(ticks, X, label, gap = 10) {
+  const out = [];
+  let lastR = -Infinity;
+  for (const t of [...ticks].sort((a, b) => X(a) - X(b))) {
+    const w = String(label(t)).length * 7.4;
+    if (X(t) - w / 2 >= lastR + gap) { out.push(t); lastR = X(t) + w / 2; }
+  }
+  return out;
+}
+
 const tickLabel = v => {
   const a = Math.abs(v);
   if (a >= 1e-3 && a < 1e4) return String(+v.toPrecision(3));
@@ -122,7 +133,7 @@ export function convergenceChart(opts) {
     g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: C.grid, 'stroke-width': 1 }));
     g.append(s('text', { x: m.l - 10, y: Y(t) + 4.5, 'text-anchor': 'end', class: 'tick' }, labels[i]));
   });
-  const xt = logTicks(x0, x1, 7);
+  const xt = spaced(logTicks(x0, x1, 9), X, tickLabel);
   xt.forEach(t => {
     g.append(s('line', { x1: X(t), x2: X(t), y1: m.t, y2: H - m.b, stroke: C.grid, 'stroke-width': 1 }));
     g.append(s('text', { x: X(t), y: H - m.b + 20, 'text-anchor': 'middle', class: 'tick' }, tickLabel(t)));
@@ -152,9 +163,11 @@ export function convergenceChart(opts) {
   }
   // Richardson extrapolation + model curve
   if (showExt) {
-    g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(opts.phiExt), y2: Y(opts.phiExt), stroke: C.s1, 'stroke-width': 1.5, 'stroke-dasharray': '6 5' }));
-    g.append(s('text', { x: m.l + 6, y: Y(opts.phiExt) + (opts.phiExt >= pts[0].value ? -8 : 17), class: 'label-strong' }, `Richardson h→0: ${fmt(opts.phiExt, 6)}`));
-    if (isFinite(opts.p) && opts.p > 0) {
+    const extCol = opts.extReliable === false ? C.muted : C.s1;
+    g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(opts.phiExt), y2: Y(opts.phiExt), stroke: extCol, 'stroke-width': 1.5, 'stroke-dasharray': '6 5' }));
+    g.append(s('text', { x: m.l + 6, y: Y(opts.phiExt) + (opts.phiExt >= pts[0].value ? -8 : 17), class: 'label-strong' },
+      `Richardson h→0${opts.extReliable === false ? ' (unreliable)' : ''}: ${fmt(opts.phiExt, 6)}`));
+    if (isFinite(opts.p) && opts.p > 0 && opts.extReliable !== false) {
       const f1 = pts[0].value, h1 = pts[0].h;
       const d = [];
       const n = 60;
@@ -203,7 +216,7 @@ export function orderChart(opts) {
     g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: C.grid }));
     g.append(s('text', { x: m.l - 10, y: Y(t) + 4.5, 'text-anchor': 'end', class: 'tick' }, tickLabel(t)));
   });
-  logTicks(x0, x1, 7).forEach(t => {
+  spaced(logTicks(x0, x1, 9), X, tickLabel).forEach(t => {
     g.append(s('line', { x1: X(t), x2: X(t), y1: m.t, y2: H - m.b, stroke: C.grid }));
     g.append(s('text', { x: X(t), y: H - m.b + 20, 'text-anchor': 'middle', class: 'tick' }, tickLabel(t)));
   });
@@ -233,7 +246,7 @@ export function orderChart(opts) {
 export function forestChart(opts) {
   const rows = opts.rows || [];
   const rowH = 38, m = { l: 210, r: 34, t: 30, b: 54 };
-  const W = 980, H = m.t + m.b + Math.max(1, rows.length) * rowH;
+  const W = opts.width || 980, H = m.t + m.b + Math.max(1, rows.length) * rowH;
   const svg = frame(W, H);
   const vals = [];
   rows.forEach(r => [r.value, r.lo, r.hi, r.ext].forEach(v => isFinite(v) && vals.push(v)));

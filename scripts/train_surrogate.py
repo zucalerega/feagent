@@ -41,6 +41,7 @@ def main(argv=None) -> int:
     ap.add_argument("--threads", type=int, default=None, help="torch CPU threads (use 2 on the shared dev box)")
     ap.add_argument("--amp", action="store_true", help="bf16 autocast on CUDA")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--init", metavar="CKPT", default=None, help="warm start from a checkpoint (same architecture)")
     ap.add_argument("--calibrate-only", metavar="CKPT", default=None,
                     help="only (re)fit the latent-space OOD model of an existing checkpoint")
     args = ap.parse_args(argv)
@@ -64,7 +65,7 @@ def main(argv=None) -> int:
                 lr_min=args.lr_min, weight_decay=args.weight_decay, hidden=args.hidden, layers=args.layers,
                 global_context=not args.no_global, model_type=args.model_type, val_frac=args.val_frac,
                 test_frac=args.test_frac, max_train=args.max_train, max_minutes=args.max_minutes, seed=args.seed,
-                threads=args.threads, amp=args.amp)
+                threads=args.threads, amp=args.amp, init=args.init)
     print(json.dumps(res, indent=2))
     return 0
 

@@ -56,6 +56,17 @@ FLAG_INFO = {
                              "QoI definition)."),
     "insufficient_levels": ("info", "Fewer than three meshes",
                             "Richardson extrapolation and the GCI need at least three meshes."),
+    "converged_plateau": ("info", "Converged to a plateau",
+                          "Successive meshes change the value by less than 0.1%: too little to measure a convergence "
+                          "rate (round-off, geometry and quadrature errors dominate). Treat the value as "
+                          "mesh-converged; the uncertainty shown is the fine-medium difference instead of a GCI."),
+    "converged_within_noise": ("good", "Converged within round-off",
+                               "The meshes agree to better than one part in a million: the value is converged and "
+                               "the convergence rate is meaningless at this level (round-off / recovery noise)."),
+    "extrapolation_unreliable": ("warning", "Extrapolation unreliable",
+                                 "The observed order is far from the theoretical one (or the values oscillate), so the "
+                                 "Richardson-extrapolated value is not trusted. The finest-mesh value is used for the "
+                                 "verdict, and the error band is only indicative."),
     "expected_divergent": ("info", "Expected to diverge",
                            "The problem is designed so that this quantity does not converge (a singular point). "
                            "Divergence here is the correct answer."),
@@ -64,6 +75,8 @@ FLAG_INFO = {
 VERDICTS = {
     "converged": ("good", "Converged"),
     "exact": ("good", "Exact on every mesh"),
+    "plateau": ("good", "Converged (plateau)"),
+    "converged_noise": ("good", "Converged"),
     "converging": ("warning", "Converging, not asymptotic"),
     "slow": ("serious", "Converging slowly"),
     "oscillating": ("warning", "Oscillating"),
@@ -75,6 +88,21 @@ VERDICTS = {
 }
 
 
+PLATEAU_REL = 1e-3  # successive relative changes below this: converged, rate not measurable
+
+
+def _plateau(values: list[float]) -> float | None:
+    """|fine - medium| when the last two successive relative changes are all < PLATEAU_REL."""
+    v = [float(x) for x in values if x is not None]
+    if len(v) < 3:
+        return None
+    scale = max(abs(x) for x in v[-3:])
+    if scale == 0:
+        return None
+    changes = [abs(v[-1] - v[-2]), abs(v[-2] - v[-3])]
+    return changes[0] if max(changes) < PLATEAU_REL * scale else None
+
+
 def explain(flag: str) -> dict:
     sev, title, text = FLAG_INFO.get(flag, ("info", flag.replace("_", " "), ""))
     return {"flag": flag, "severity": sev, "title": title, "text": text}
@@ -84,6 +112,15 @@ def is_stress_like(qtype: str | None, field: str | None) -> bool:
     return field in STRESS_LIKE and qtype in ("point", "max", "min", "max_abs")
 
 
+def extrapolation_reliable(g: dict | None) -> bool | None:
+    """Same rule as ``feacore.verification.study._judge``: monotone (or exact / converged within
+    noise) convergence with an observed order near theory."""
+    if not g:
+        return None
+    return bool(g.get("phi_ext") is not None and g.get("convergence") in ("monotone", "exact", "converged")
+                and not {"p_far_below_theory", "p_above_theory"} & set(g.get("flags", [])))
+
+
 def interpret_entry(entry: dict) -> dict:
     """Verdict, derived flags and explanations for one QoI entry (a ``convergence_study``
     ``qois[i]`` dict or an ``analyze_submission`` entry)."""
@@ -91,6 +128,7 @@ def interpret_entry(entry: dict) -> dict:
     expectation = entry.get("expectation", "converge")
     flags = list(g.get("flags", [])) if g else []
     n = len([v for v in entry.get("values", []) if v is not None])
+    reliable = None
     if not g:
         if n < 3:
             flags.append("insufficient_levels")
@@ -98,7 +136,16 @@ def interpret_entry(entry: dict) -> dict:
     else:
         conv = g.get("convergence")
         stress = is_stress_like(entry.get("type"), entry.get("field"))
-        if stress and (conv in ("divergent", "oscillatory_divergent") or "p_far_below_theory" in flags):
+        reliable = entry.get("extrapolation_reliable")
+        if reliable is None:
+            reliable = extrapolation_reliable(g)
+        plateau = None
+        if conv not in ("monotone", "exact", "converged") or g.get("p") is None and conv == "monotone":
+            plateau = _plateau(entry.get("values", []))
+        if plateau is not None:
+            flags = [f for f in flags if f not in ("divergent", "oscillatory", "order_undefined")]
+            flags.append("converged_plateau")
+        elif stress and (conv in ("divergent", "oscillatory_divergent") or "p_far_below_theory" in flags):
             flags.append("singular_suspected")
         if expectation == "diverge":
             diverged = conv in ("divergent", "oscillatory_divergent") or "p_far_below_theory" in flags
@@ -106,6 +153,10 @@ def interpret_entry(entry: dict) -> dict:
             flags.append("expected_divergent")
         elif conv == "exact":
             verdict = "exact"
+        elif conv == "converged":
+            verdict = "converged_noise"
+        elif plateau is not None:
+            verdict = "plateau"
         elif conv in ("divergent", "oscillatory_divergent"):
             verdict = "diverging"
         elif conv == "oscillatory":
@@ -121,15 +172,25 @@ def interpret_entry(entry: dict) -> dict:
                 verdict = "converged"
         else:
             verdict = "undetermined"
+        if reliable is False and g.get("phi_ext") is not None and verdict not in (
+                "expected_divergence", "unexpected_convergence", "plateau"):
+            flags.append("extrapolation_unreliable")
     flags = list(dict.fromkeys(flags))
     status, label = VERDICTS[verdict]
+    explanations = [explain(f) for f in flags]
+    if verdict == "expected_divergence":  # the singularity is the designed answer, not an alarm
+        for e in explanations:
+            if e["flag"] in ("divergent", "singular_suspected", "p_far_below_theory"):
+                e["severity"] = "info"
     out = {"verdict": verdict, "status": status, "label": label, "flags": flags,
-           "explanations": [explain(f) for f in flags]}
+           "explanations": explanations, "extrapolation_reliable": reliable}
     vals = [v for v in entry.get("values", []) if v is not None]
     fine = vals[-1] if vals else None
     out["fine"] = fine
     if g and g.get("gci_fine") is not None and fine is not None:
         out["band_abs"] = abs(g["gci_fine"] * fine)
+    elif verdict == "plateau":
+        out["band_abs"] = _plateau(entry.get("values", []))
     else:
         out["band_abs"] = None
     out["phi_ext"] = g.get("phi_ext") if g else None
@@ -151,13 +212,20 @@ def _summary_sentence(entry: dict, out: dict) -> str:
     if v == "insufficient":
         return "Fewer than three meshes: no Richardson / GCI estimate."
     if v in ("converged", "converging", "slow"):
-        s = (f"Observed order p = {_fmt(out['p'], 3)} (theory {_fmt(out['p_theory'], 2)}); "
-             f"extrapolated value {_fmt(out['phi_ext'], 6)}")
+        ext = (f"extrapolated value {_fmt(out['phi_ext'], 6)}" if out.get("extrapolation_reliable") is not False
+               else f"extrapolation unreliable, finest-mesh value {_fmt(out['fine'], 6)} is used")
+        s = f"Observed order p = {_fmt(out['p'], 3)} (theory {_fmt(out['p_theory'], 2)}); {ext}"
         if g.get("gci_fine") is not None:
             s += f"; fine-mesh uncertainty (GCI) {100 * g['gci_fine']:.2g}%"
         return s + "."
     if v == "exact":
         return "The value is identical on all meshes (the discretization represents it exactly)."
+    if v == "converged_noise":
+        return (f"Converged within round-off: the meshes agree to better than 1e-6 "
+                f"(finest-mesh value {_fmt(out['fine'], 7)}).")
+    if v == "plateau":
+        return (f"Converged: the last meshes differ by less than {100 * PLATEAU_REL:.1g}% "
+                f"(fine-mesh value {_fmt(out['fine'], 6)}); the convergence rate is below measurement resolution.")
     if v == "diverging":
         return "Successive differences grow: the value does not converge under refinement."
     if v == "oscillating":
@@ -252,8 +320,10 @@ def analyze_submission(problem_id: str | None, levels: list[dict], order: int | 
 
 
 def _best_estimate(interp: dict) -> float | None:
-    """Extrapolated value when the convergence is trustworthy, else the fine-mesh value."""
-    if interp.get("verdict") in ("converged", "converging", "exact") and interp.get("phi_ext") is not None:
+    """Extrapolated value when the convergence and extrapolation are trustworthy, else the
+    fine-mesh value (the same rule the reference judge uses)."""
+    if (interp.get("verdict") in ("converged", "converging", "exact", "converged_noise")
+            and interp.get("extrapolation_reliable") and interp.get("phi_ext") is not None):
         return interp["phi_ext"]
     return interp.get("fine")
 
@@ -277,7 +347,7 @@ def consensus(problem_id: str, submissions: list[dict], references: list[dict] |
             e = next((e for e in (s.get("analysis") or {}).get("qois", []) if e["name"] == name), None)
             if e is None:
                 continue
-            it = e.get("interpretation") or interpret_entry(e)
+            it = interpret_entry(e)  # recomputed: stored records follow the current rules
             g = e.get("gci") or {}
             row = {
                 "submission_id": s.get("submission_id"),
@@ -297,6 +367,7 @@ def consensus(problem_id: str, submissions: list[dict], references: list[dict] |
                 "label": it.get("label"),
                 "flags": list(it.get("flags", [])),
                 "best": _best_estimate(it),
+                "extrapolation_reliable": it.get("extrapolation_reliable"),
                 "values": e.get("values"),
                 "h": e.get("h"),
                 "run_ids": e.get("run_ids"),
@@ -343,6 +414,7 @@ def consensus(problem_id: str, submissions: list[dict], references: list[dict] |
                             "order": res.get("order"), "source": st.get("source", "validation"),
                             "fine": it["fine"], "band_abs": it["band_abs"], "phi_ext": it["phi_ext"],
                             "p": it["p"], "verdict": it["verdict"], "label": it["label"],
+                            "extrapolation_reliable": it.get("extrapolation_reliable"),
                             "status": it["status"], "flags": it["flags"]})
         qois.append({"name": name, "reference": ref, "tolerance": tol, "consensus": cons,
                      "submissions": rows, "reference_studies": studies})

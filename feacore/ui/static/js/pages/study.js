@@ -50,7 +50,7 @@ async function renderForm(el) {
   const sizesPreview = h('div', { class: 'small secondary', style: { marginTop: '8px' } });
   let defaults = null, pdim = 2;
   const preview = () => {
-    const sizes = currentSizes();
+    const sizes = state.mode === 'default' ? null : currentSizes();
     sizesPreview.textContent = sizes ? `Mesh sizes h: ${sizes.map(v => fmt(v, 4)).join(' → ')}` : '';
   };
   const currentSizes = () => {
@@ -207,16 +207,17 @@ function qoiCard(q, it, hrep, runs, st) {
     tip: `<b>mesh ${i + 1}</b><br>h = ${fmt(hrep[i], 4)}<br>${q.name} = ${fmt(v, 7)}<br><span class="t-muted">${fmtInt(runs[i] && runs[i].info.n_dofs)} dofs · ${fmtInt(runs[i] && runs[i].info.n_cells)} cells</span>`,
   }));
   const fine = q.values[q.values.length - 1];
-  const band = g && g.gci_fine !== null && g.gci_fine !== undefined ? [fine - Math.abs(g.gci_fine * fine), fine + Math.abs(g.gci_fine * fine)] : null;
+  const band = it.band_abs !== null && it.band_abs !== undefined ? [fine - it.band_abs, fine + it.band_abs] : null;
+  const bandLabel = it.verdict === 'plateau' ? 'fine \u2013 medium difference' : 'GCI band of the finest mesh';
   const yTitle = q.name;
   const chart = convergenceChart({
-    points: pts, phiExt: g && g.phi_ext !== null ? g.phi_ext : NaN, p: g ? g.p : NaN, band,
+    points: pts, phiExt: g && g.phi_ext !== null ? g.phi_ext : NaN, p: g ? g.p : NaN, band, extReliable: it.extrapolation_reliable,
     hFine: Math.min(...hrep), reference: ref ? { value: ref.value, tol: ref.tolerance } : null, yTitle,
   });
   const legend = h('div', { class: 'legend' },
     h('span', { class: 'key' }, h('span', { class: 'mk', style: { background: '#2a78d6' } }), 'FE solution per mesh'),
     g && g.phi_ext !== null ? h('span', { class: 'key' }, h('span', { class: 'ln dash', style: { borderColor: '#2a78d6' } }), 'Richardson extrapolation (h→0)') : null,
-    band ? h('span', { class: 'key' }, h('span', { class: 'box', style: { background: 'rgba(42,120,214,0.22)' } }), 'GCI band of the finest mesh') : null,
+    band ? h('span', { class: 'key' }, h('span', { class: 'box', style: { background: 'rgba(42,120,214,0.22)' } }), bandLabel) : null,
     ref ? h('span', { class: 'key' }, h('span', { class: 'ln', style: { borderColor: '#0b0b0b' } }), `reference ± ${fmtPct(ref.tolerance, 2)}`) : null);
   // order plot: true error when a reference exists, else the Richardson error estimate
   let ord = null;
@@ -230,7 +231,7 @@ function qoiCard(q, it, hrep, runs, st) {
 
   const stats = h('div', { class: 'stat-row' },
     stat('finest mesh', fmt(fine, 6)),
-    g && g.phi_ext !== null ? stat('extrapolated (h→0)', fmt(g.phi_ext, 6)) : null,
+    g && g.phi_ext !== null ? stat(it.extrapolation_reliable === false ? 'extrapolated (unreliable)' : 'extrapolated (h→0)', fmt(g.phi_ext, 6)) : null,
     g && g.gci_fine !== null ? stat('GCI (fine)', fmtPct(g.gci_fine, 2)) : null);
   const refStats = ref ? h('div', { class: 'stat-row' },
     stat('reference', fmt(ref.value, 6), 'sm'),
@@ -251,7 +252,7 @@ function qoiCard(q, it, hrep, runs, st) {
         kv('asymptotic ratio (≈ 1)', fmt(g.asymptotic_ratio, 4)), q.fit ? kv(`power-law fit (${q.fit.n} meshes)`, `φ₀ = ${fmt(q.fit.phi0, 6)}, p = ${fmt(q.fit.p, 3)}`) : null)) : null));
   return h('div', { class: 'card' },
     h('div', { class: 'qoi-head' }, h('h3', { class: 'mono' }, q.name), statusChip(it.status, it.label, true)),
-    h('div', { class: 'qoi-sub' }, qoiDesc(q), q.expectation === 'diverge' ? ' · expected to diverge (singular quantity)' : ''),
+    h('div', { class: 'qoi-sub' }, qoiDesc((st.qoi_defs || {})[q.name] || q), q.expectation === 'diverge' ? ' · expected to diverge (singular quantity)' : ''),
     h('div', { class: 'qoi-card' }, left, right));
 }
 

@@ -12,3 +12,6 @@ __pycache__/
 spooles.out
 .venv/
 ace_runs/
+runs/
+models/*
+!models/.gitignore

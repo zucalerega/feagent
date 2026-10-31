@@ -20,7 +20,9 @@ from __future__ import annotations
 
 from feacore.case import BC, QoI
 from feacore.geometry.gmsh_tools import add_group
-from feacore.problems.analytical._common import STEEL, ExactProblem, group_entities, plate_with_quarter_hole, refine_near
+from feacore.problems.analytical._common import (
+    STEEL, ExactProblem, group_entities, plate_with_quarter_hole, refine_near,
+)
 from feacore.problems.base import Reference
 from feacore.problems.registry import register
 
@@ -47,7 +49,7 @@ class PlateHoleFiniteWidth(ExactProblem):
     expected_behavior = "stress_concentration"
     # h0 = size at the hole edge on the coarsest mesh; far-field size = far * h
     default_params = {"W": 0.2, "d_over_W": 0.3, "length_over_W": 4.0, "sigma0": 100e6, **STEEL,
-                      "thickness": 0.01, "h0": 0.004, "far": 4.0}
+                      "thickness": 0.002, "h0": 0.004, "far": 4.0}
 
     @property
     def r(self) -> float:

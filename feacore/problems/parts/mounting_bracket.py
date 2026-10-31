@@ -8,8 +8,9 @@ total force spread uniformly (per area) over the load-hole bore (the ``force`` B
 bolt-hole bores are fixed. The reference mesh is the half x >= 0 with a symmetry plane (the
 part and all three loads are symmetric about x = 0); the STEP is the full bracket.
 
-QoIs: max von Mises on the fillet surfaces (away from the fixed bores, whose edges are weakly
-singular) and the mean displacement magnitude of the load-hole bore. No handbook reference;
+QoIs: max von Mises on the web-root fillet surfaces (away from the fixed bores, whose edges are
+weakly singular, and from the sharp gusset toe / top) and the mean displacement magnitude of
+the load-hole bore. No handbook reference;
 the GCI consensus is the check.
 """
 
@@ -93,9 +94,12 @@ class MountingBracket(PartProblem):
             f"along y at that centre.\n"
             f"Gusset: a triangular rib {fmt_mm(p['gusset_t'])} thick (x from {fmt_mm(-p['gusset_t'] / 2)} "
             f"to {fmt_mm(p['gusset_t'] / 2)}) behind the web on the -y side, joining the base over "
-            f"{fmt_mm(p['gusset_len'])} in y and the web over {fmt_mm(p['gusset_h'])} in z. All "
-            f"web/base, gusset/base and gusset/web junctions are blended by fillets of radius "
-            f"{fmt_mm(p['fillet_r'])}.\n"
+            f"{fmt_mm(p['gusset_len'])} in y and the web over {fmt_mm(p['gusset_h'])} in z; its "
+            f"sloping free edge runs straight from the toe (y = {fmt_mm(-p['web_t'] / 2 - p['gusset_len'])}"
+            f", on the base) to the top (z = {fmt_mm(p['base_t'] + p['gusset_h'])}, on the web), and "
+            f"the toe and top are left sharp. The inside edges along the root of the web (both faces "
+            f"and both ends of the web, on the base) and along both sides of the gusset (on the base "
+            f"and on the web) are blended by fillets of radius {fmt_mm(p['fillet_r'])}.\n"
             f"Material: aluminium 6061-T6, linear elastic and isotropic, E = {p['E'] / 1e9:g} GPa, "
             f"Poisson's ratio {p['nu']:g}.\n"
             "Supports: the four bolt-hole bores are fixed (all displacement components zero), "
@@ -105,8 +109,10 @@ class MountingBracket(PartProblem):
             "bore area, the same vector at every point of the bore).\n"
             "Analysis: linear static, small displacements.\n"
             "Report:\n"
-            "  max_vm_fillets: the maximum von Mises stress on the fillet surfaces (the blends at the "
-            "web/base, gusset/base and gusset/web junctions) [Pa];\n"
+            "  max_vm_web_root: the maximum von Mises stress on the web-root fillet surfaces (the blends "
+            "between the web and the base along both faces and both ends of the web, including the "
+            "corner blends where the gusset fillets join them; not the gusset/base and gusset/web "
+            "fillets themselves) [Pa];\n"
             "  load_displacement: the average displacement magnitude |u| over the load-hole bore [m]."
         )
 
@@ -127,6 +133,8 @@ class MountingBracket(PartProblem):
             if abs(x0 - x1) < e and abs(abs(x0) - gt / 2) < e and abs(y0 + wt / 2) < e and abs(y1 + wt / 2) < e \
                     and z0 > bt - e and z1 < bt + gh + e:
                 out.add(c)  # gusset / web
+            if on_base and abs(x0 - x1) < e and abs(abs(x0) - ww / 2) < e and abs(y0 + wt / 2) < e and abs(y1 - wt / 2) < e:
+                out.add(c)  # web end face / base
         return sorted(out)
 
     def _shape(self, full: bool) -> None:
@@ -195,28 +203,30 @@ class MountingBracket(PartProblem):
             if t in skip or gmsh.model.getType(2, t) == "Plane":
                 continue
             x, y, z = com(2, t)
-            if z < p["base_t"] + max(p["gusset_h"], p["fillet_r"]) + 1e-6 and abs(y) < p["web_t"] / 2 + p["gusset_len"] + 1e-6:
+            # web-root blends only: the gusset/base and gusset/web blends run out into the sharp
+            # (re-entrant) gusset toe and top edges, which are weakly singular
+            if z < p["base_t"] + 2 * p["fillet_r"] and abs(y) < p["web_t"] / 2 + 2 * p["fillet_r"]:
                 out.append(t)
         return out
 
     def _groups(self, full: bool) -> None:
         add_group(2, self._bolt_faces(), "bolt_holes")
         add_group(2, self._load_hole_faces(), "load_hole")
-        add_group(2, self._fillet_faces(), "fillets")
+        add_group(2, self._fillet_faces(), "web_root_fillets")
         if not full:
             add_group(2, entities_on_plane(2, 0, 0.0), "sym_x0")
         add_group(3, [self._vol], "bracket")
 
     def apply_sizing(self, h: float) -> None:
         h0 = self.params["h0"]
-        ff = threshold(0.4 * h, h, 0.0, 2.0 * h0, surfaces=self._fillet_faces())
+        ff = threshold(0.25 * h, h, 0.0, 1.5 * h0, surfaces=self._fillet_faces())
         fl = threshold(0.4 * h, h, 0.0, 2.0 * h0, surfaces=self._load_hole_faces())
         fb = threshold(0.6 * h, h, 0.0, 1.5 * h0, surfaces=self._bolt_faces())
         finish_sizing([ff, fl, fb], h)
 
     # ---- analysis
     def qois(self) -> list[QoI]:
-        return [QoI(name="max_vm_fillets", type="max", field="von_mises", group="fillets"),
+        return [QoI(name="max_vm_web_root", type="max", field="von_mises", group="web_root_fillets"),
                 QoI(name="load_displacement", type="mean", field="u_mag", group="load_hole")]
 
     def case(self, mesh_path: str | Path, order: int = 2) -> Case:

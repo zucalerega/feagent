@@ -40,7 +40,8 @@ def _analytical():
 PROBLEMS = _analytical()
 BY_ID = {p.id: p for p in PROBLEMS}
 IDS = sorted(BY_ID)
-EXACT_IDS = [p.id for p in PROBLEMS if p.exact("T" if p.physics == "heat" else "ux", np.array([[0.13, 0.17, 0.11][: p.dim]])) is not None]
+EXACT_IDS = [p.id for p in PROBLEMS
+             if p.exact("T" if p.physics == "heat" else "ux", np.array([[0.13, 0.17, 0.11][: p.dim]])) is not None]
 
 
 def _referenced_groups(case: Case) -> set[str]:

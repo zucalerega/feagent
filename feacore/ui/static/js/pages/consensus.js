@@ -64,7 +64,8 @@ async function renderProblem(el, pid) {
     el.append(h('div', { class: 'card empty' }, h('h2', {}, 'No submissions for this problem yet'),
       h('p', {}, 'Reference studies of the fixed solver are shown below once they exist.'), h('pre', { class: 'code' }, submissionExample().replaceAll('PROBLEM', pid))));
   }
-  for (const q of d.qois) el.append(qoiBlock(q));
+  const width = Math.max(720, el.clientWidth - 48);
+  for (const q of d.qois) el.append(qoiBlock(q, width));
 }
 
 const tile = (label, value, sub) => h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), h('div', { class: 'sub' }, sub));
@@ -74,24 +75,26 @@ function rowStatus(r) {
   return r.status;
 }
 
-function qoiBlock(q) {
+function qoiBlock(q, width) {
   const ref = q.reference;
   const cons = q.consensus;
   const rows = [];
   for (const s of q.reference_studies) {
     rows.push({ kind: 'study', label: s.source === 'validation' ? `validation · ${s.backend} P${s.order}` : `fixed solver · ${s.backend} P${s.order}`,
-      value: s.fine, lo: s.band_abs !== null ? s.fine - s.band_abs : NaN, hi: s.band_abs !== null ? s.fine + s.band_abs : NaN, ext: s.phi_ext ?? NaN,
+      value: s.fine, lo: s.band_abs !== null ? s.fine - s.band_abs : NaN, hi: s.band_abs !== null ? s.fine + s.band_abs : NaN,
+      ext: s.extrapolation_reliable ? (s.phi_ext ?? NaN) : NaN,
       status: s.status, tip: `<b>reference study</b> ${s.study_id || ''}<br>finest mesh ${fmt(s.fine, 6)}${s.band_abs !== null ? ` ± ${fmt(s.band_abs, 3)}` : ''}<br>extrapolated ${fmt(s.phi_ext, 6)}<br>${s.label}` });
   }
   const subs = [...q.submissions].sort((a, b) => (a.agent_id || '').localeCompare(b.agent_id || ''));
   for (const r of subs) {
     rows.push({ kind: 'submission', label: r.agent_id || r.submission_id, value: r.fine,
-      lo: r.band_abs !== null ? r.fine - r.band_abs : NaN, hi: r.band_abs !== null ? r.fine + r.band_abs : NaN, ext: r.phi_ext ?? NaN,
+      lo: r.band_abs !== null ? r.fine - r.band_abs : NaN, hi: r.band_abs !== null ? r.fine + r.band_abs : NaN,
+      ext: r.extrapolation_reliable ? (r.phi_ext ?? NaN) : NaN,
       status: rowStatus(r),
       tip: `<b>${r.agent_id || ''}</b> <span class="t-muted">${r.submission_id}</span><br>finest mesh (${r.n_levels} meshes): ${fmt(r.fine, 6)}${r.band_abs !== null ? ` ± ${fmt(r.band_abs, 3)} (GCI)` : ''}<br>extrapolated: ${fmt(r.phi_ext, 6)} · p = ${fmt(r.p, 3)}<br>${r.label}${r.flags.length ? `<br><span class="t-muted">${r.flags.join(', ')}</span>` : ''}` });
   }
   const chart = forestChart({ rows, reference: ref ? { value: ref.value, tol: ref.tolerance } : null,
-    consensus: cons ? { value: cons.median, lo: cons.median - cons.sigma_robust, hi: cons.median + cons.sigma_robust } : null, xTitle: q.name });
+    consensus: cons ? { value: cons.median, lo: cons.median - cons.sigma_robust, hi: cons.median + cons.sigma_robust } : null, xTitle: q.name, width });
   const legend = h('div', { class: 'legend' },
     h('span', { class: 'key' }, h('span', { class: 'mk', style: { background: '#2a78d6' } }), 'finest-mesh value ± GCI band'),
     h('span', { class: 'key' }, h('span', { class: 'dia', style: { borderColor: '#eb6834' } }), 'Richardson extrapolated'),
@@ -109,7 +112,8 @@ function qoiBlock(q) {
     h('tbody', {}, subs.map(r => h('tr', {},
       h('td', {}, h('div', { style: { fontWeight: 600 } }, r.agent_id || '–'), h('div', { class: 'mono small muted' }, `${r.submission_id} · ${timeAgo(r.created_at)}`)),
       h('td', { class: 'num' }, r.n_levels), h('td', { class: 'num' }, fmt(r.fine, 6)), h('td', { class: 'num' }, r.gci_fine !== null ? fmtPct(r.gci_fine, 2) : '–'),
-      h('td', { class: 'num' }, fmt(r.phi_ext, 6)), h('td', { class: 'num' }, `${fmt(r.p, 3)} (${fmt(r.p_theory, 2)})`),
+      h('td', { class: 'num' }, fmt(r.phi_ext, 6), r.phi_ext !== null && r.extrapolation_reliable === false ? h('div', { class: 'small muted' }, 'unreliable') : null),
+      h('td', { class: 'num' }, `${fmt(r.p, 3)} (${fmt(r.p_theory, 2)})`),
       h('td', {}, statusChip(rowStatus(r), r.flags.includes('outlier_vs_consensus') && r.status === 'good' ? `${r.label}, but an outlier` : r.label)),
       ref ? h('td', { class: 'num' }, fmtSigned(r.err_ref_best, 2)) : null,
       h('td', {}, h('div', { class: 'chips' }, r.explanations.map(e => h('span', { class: 'chip', title: `${e.title}: ${e.text}` }, h('span', { class: `dot ${e.severity === 'info' ? '' : e.severity}` }), e.title))))))))

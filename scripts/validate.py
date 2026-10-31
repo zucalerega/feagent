@@ -23,16 +23,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run_one(pid: str, backend: str, order: int, out_root: str) -> dict:
+def _run_one(pid: str, backend: str, order: int, out_root: str, nested: bool = False) -> dict:
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     from feacore.problems.registry import get
     from feacore.verification.study import convergence_study, save_study
 
     t0 = time.perf_counter()
     try:
-        study = convergence_study(get(pid), order=order, backend=backend)
+        study = convergence_study(get(pid), order=order, backend=backend, nested=nested)
         study["wall_time"] = time.perf_counter() - t0
-        save_study(study, Path(out_root) / pid / "private" / f"validation_{backend}_p{order}.json")
+        tag = "_nested" if nested else ""
+        save_study(study, Path(out_root) / pid / "private" / f"validation_{backend}_p{order}{tag}.json")
         return study
     except Exception as e:  # noqa: BLE001 - report every failure, keep going
         return {"problem": pid, "backend": backend, "order": order, "error": f"{type(e).__name__}: {e}",
@@ -89,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=str(ROOT / "benchmarks"))
     ap.add_argument("--report", default=None)
     ap.add_argument("--strict", action="store_true", help="exit 1 if any judged QoI fails")
+    ap.add_argument("--nested", action="store_true", help="nested (split) refinement instead of remeshing")
     args = ap.parse_args(argv)
 
     from feacore.problems.registry import all_problems, discover
@@ -100,14 +102,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"validating {len(ids)} problems with {args.backend} p{args.order} on {args.jobs} processes")
     studies = []
     with ProcessPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(_run_one, pid, args.backend, args.order, args.out): pid for pid in ids}
+        futs = {pool.submit(_run_one, pid, args.backend, args.order, args.out, args.nested): pid for pid in ids}
         for f in as_completed(futs):
             s = f.result()
             studies.append(s)
             status = "ERROR " + s["error"] if "error" in s else ("pass" if s.get("passed") else
                                                                  "no verdict" if s.get("passed") is None else "FAIL")
             print(f"  {s['problem']:40s} {s.get('wall_time', 0):7.1f}s  {status}")
-    report = Path(args.report or ROOT / "docs" / f"validation_report_{args.backend}_p{args.order}.md")
+    tag = "_nested" if args.nested else ""
+    report = Path(args.report or ROOT / "docs" / f"validation_report_{args.backend}_p{args.order}{tag}.md")
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(report_markdown(studies, args.backend, args.order))
     (report.with_suffix(".json")).write_text(json.dumps(

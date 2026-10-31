@@ -1,0 +1,163 @@
+{
+  "id": "timoshenko_cantilever",
+  "expected_behavior": "smooth",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "tip_deflection",
+      "value": -0.00256875,
+      "kind": "analytical",
+      "source": "S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 3 'Bending of a cantilever loaded at the end'; displacement field as in C.E. Augarde & A.J. Deeks, Finite Elem. Anal. Des. 44 (2008) 595-601; uy(L,0) = -P L (8L^2 + (4+5nu) D^2)/(24 E I)",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "sxx_top_mid",
+      "value": 74999999.99999999,
+      "kind": "analytical",
+      "source": "S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 3 'Bending of a cantilever loaded at the end'; displacement field as in C.E. Augarde & A.J. Deeks, Finite Elem. Anal. Des. 44 (2008) 595-601; sxx = P (L - x) y / I",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "ux_tip_top",
+      "value": 0.0003749999999999999,
+      "kind": "analytical",
+      "source": "S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 3 'Bending of a cantilever loaded at the end'; displacement field as in C.E. Augarde & A.J. Deeks, Finite Elem. Anal. Des. 44 (2008) 595-601; ux(L, D/2) = P D L^2 / (4 E I)",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "vm_max",
+      "value": 149999999.99999997,
+      "kind": "analytical",
+      "source": "S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 3 'Bending of a cantilever loaded at the end'; displacement field as in C.E. Augarde & A.J. Deeks, Finite Elem. Anal. Des. 44 (2008) 595-601; max von Mises = |sxx| = P L D / (2 I) at the root fibres (0, +-D/2), where sxy = 0",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "strain_energy",
+      "value": 12.889999999999997,
+      "kind": "analytical",
+      "source": "S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 3 'Bending of a cantilever loaded at the end'; displacement field as in C.E. Augarde & A.J. Deeks, Finite Elem. Anal. Des. 44 (2008) 595-601; U = t/2 int (sxx^2/E + sxy^2/G) dA = P^2 L^3/(6EI) + 3 P^2 L/(5 G t D)",
+      "tolerance": 0.01,
+      "notes": ""
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "plane_stress",
+      "order": 2,
+      "thickness": 0.01,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "displacement",
+        "group": "root",
+        "point": null,
+        "components": [
+          0,
+          1
+        ],
+        "value": [
+          "0.0028749999999999995*y*(y**2 - 0.010000000000000002)",
+          "-0.0011249999999999997*y**2"
+        ],
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "traction",
+        "group": "tip",
+        "point": null,
+        "components": null,
+        "value": [
+          0.0,
+          "-749999999.9999998*(0.010000000000000002 - y**2)"
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [
+      {
+        "group": "domain",
+        "material": "steel"
+      }
+    ],
+    "qois": [
+      {
+        "name": "tip_deflection",
+        "type": "point",
+        "field": "uy",
+        "point": [
+          1.0,
+          0.0
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "sxx_top_mid",
+        "type": "point",
+        "field": "sxx",
+        "point": [
+          0.5,
+          0.1
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "ux_tip_top",
+        "type": "point",
+        "field": "ux",
+        "point": [
+          1.0,
+          0.1
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "vm_max",
+        "type": "max",
+        "field": "von_mises",
+        "point": null,
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "strain_energy",
+        "type": "strain_energy",
+        "field": null,
+        "point": null,
+        "group": null,
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "timoshenko_cantilever",
+      "setup": "reference"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.05,
+    0.025,
+    0.0125
+  ]
+}

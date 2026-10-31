@@ -38,10 +38,13 @@ async function renderList(el) {
     oninput: e => { search = e.target.value; draw(); } });
   const tagRow = h('div', { class: 'chips' });
   const tags = Object.entries(data.tags).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  let showAll = false;
   const drawTags = () => {
     clear(tagRow);
-    tags.forEach(([t, n]) => tagRow.append(h('button', { class: `chip${selected.has(t) ? ' on' : ''}`, onclick: () => { selected.has(t) ? selected.delete(t) : selected.add(t); drawTags(); draw(); } },
+    const shown = showAll ? tags : tags.filter(([t], i) => i < 18 || selected.has(t));
+    shown.forEach(([t, n]) => tagRow.append(h('button', { class: `chip${selected.has(t) ? ' on' : ''}`, onclick: () => { selected.has(t) ? selected.delete(t) : selected.add(t); drawTags(); draw(); } },
       t.replace(/_/g, ' '), h('span', { class: 'count' }, n))));
+    if (tags.length > 18) tagRow.append(h('button', { class: 'chip', onclick: () => { showAll = !showAll; drawTags(); } }, showAll ? 'fewer tags' : `+ ${tags.length - 18} more tags`));
     if (selected.size) tagRow.append(h('button', { class: 'chip', onclick: () => { selected.clear(); drawTags(); draw(); } }, 'clear filters ✕'));
   };
   filters.append(h('div', { class: 'search' }, input, count), tagRow);
@@ -124,12 +127,12 @@ async function renderDetail(el, id) {
 
   // geometry preview
   const vp = h('div', { class: 'viewport' });
-  const legend = h('div', { class: 'legend-overlay' });
+  const legend = h('div', { class: 'chips', style: { marginTop: '10px' } });
   const note = h('div', { class: 'overlay-note' }, st.dim === 2 ? 'drag: pan · wheel: zoom' : 'drag: rotate · right-drag: pan · wheel: zoom');
   const msg = h('div', { class: 'center-msg' }, h('span', {}, h('span', { class: 'spinner' }), ' generating geometry preview (gmsh, worker process)…'));
-  const wrap = h('div', { class: 'viewport-wrap' }, vp, legend, note, msg);
+  const wrap = h('div', { class: 'viewport-wrap' }, vp, note, msg);
   right.append(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('div', { class: 'section-title', style: { margin: 0 } }, 'Geometry (CAD) and named groups'),
-    h('span', { class: 'small muted', id: 'geo-stats' }, '')), wrap));
+    h('span', { class: 'small muted', id: 'geo-stats' }, '')), wrap, legend));
 
   // evaluator view
   const refs = ev.references || [];
@@ -183,7 +186,7 @@ async function loadGeometry(id, vp, legendEl, msg, dim) {
   if (!webglAvailable()) { msg.textContent = 'WebGL is not available in this browser.'; return; }
   msg.remove();
   if (viewer) viewer.dispose();
-  viewer = new MeshView(vp, { dim: g.dim });
+  viewer = new MeshView(vp, { dim: g.dim, margin: 1.1 });
   const legend = viewer.setGeometry({
     dim: g.dim, points: decode(g.points), triangles: decode(g.triangles), triEntity: decode(g.tri_entity),
     lines: decode(g.lines), lineEntity: decode(g.line_entity), groups: g.groups, entityGroups: g.entity_groups,

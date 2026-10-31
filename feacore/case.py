@@ -10,7 +10,9 @@ Conventions
   groups. Every cell must belong to a physical group of the mesh dimension (gmsh
   drops unassigned elements when any physical group exists). BCs, loads, regions and
   QoIs refer to groups by name. Linear (tri3/tet4) or quadratic (tri6/tet10) cells;
-  quadratic cells are treated as curved (isoparametric) geometry.
+  quadratic cells are treated as curved (isoparametric) geometry. ``analysis.order = 1`` on a
+  quadratic mesh drops the midside nodes (straight-sided); order 2 on a linear mesh is straight-sided P2.
+* Axisymmetric: u_r = 0 is imposed automatically on nodes on the axis (x = 0).
 * 2D meshes lie in the xy-plane. Axisymmetric: x = r >= 0, y = z, axis at x = 0.
 * Units are whatever the case uses consistently (the problems use SI: m, N, Pa, K).
 * Plane formulations: forces, reactions and energies are for the given
@@ -346,7 +348,10 @@ def eval_expr(expr: str, x, y, z=None) -> np.ndarray:
     y = np.asarray(y, dtype=float)
     z = np.zeros_like(x) if z is None else np.asarray(z, dtype=float)
     env = {"x": x, "y": y, "z": z, **_FUNCS, **_CONSTS}
-    out = eval(_compile(expr), {"__builtins__": {}}, env)  # noqa: S307 - AST-whitelisted above
+    # errstate: a numpy floating-point warning (e.g. 1/x at r = 0) would otherwise go through the
+    # warnings machinery, which needs __import__ and fails under the empty builtins below.
+    with np.errstate(all="ignore"):
+        out = eval(_compile(expr), {"__builtins__": {}}, env)  # noqa: S307 - AST-whitelisted above
     return np.broadcast_to(np.asarray(out, dtype=float), x.shape).copy()
 
 

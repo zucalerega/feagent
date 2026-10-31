@@ -20,8 +20,6 @@ and is zero-normal on both symmetry lines, so no rigid-body offset is needed.
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from feacore.case import BC, QoI
@@ -94,7 +92,7 @@ class KirschExactTraction(ExactProblem):
     physics = "elasticity"
     formulation = "plane_stress"
     expected_behavior = "stress_concentration"
-    default_params = {"a": 0.05, "L": 0.25, "sigma0": 100e6, **STEEL, "thickness": 0.01, "h0": 0.04}
+    default_params = {"a": 0.05, "L": 0.25, "sigma0": 100e6, **STEEL, "thickness": 0.002, "h0": 0.04}
 
     def description(self) -> str:
         p = self.params

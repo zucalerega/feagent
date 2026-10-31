@@ -51,7 +51,7 @@ class _LameCylinder(ExactProblem):
 
     def _radial(self, r: np.ndarray):
         p = self.params
-        a, b, E, nu = p["a"], p["b"], p["E"], p["nu"]
+        b, E, nu = p["b"], p["E"], p["nu"]
         K = self._K()
         srr = K * (1 - b**2 / r**2)
         stt = K * (1 + b**2 / r**2)

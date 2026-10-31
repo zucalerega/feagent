@@ -20,10 +20,12 @@ function linearRGB(hex) {
 }
 
 export class MeshView {
-  constructor(container, { dim = 3, padRight = 0 } = {}) {
+  constructor(container, { dim = 3, padRight = 0, padTop = 0, margin = 1.06 } = {}) {
     this.container = container;
+    this.margin = margin;
     this.dim = dim;
     this.padRight = padRight;
+    this.padTop = padTop;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setClearColor(0x000000, 0);
@@ -58,6 +60,7 @@ export class MeshView {
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();
+    (window.__feacoreViews ||= new Set()).add(this);  // debugging / headless tests
   }
 
   // ---------------------------------------------------------------- basics
@@ -79,7 +82,7 @@ export class MeshView {
     } else {
       this.camera.aspect = w / h;
     }
-    if (this.padRight) this.camera.setViewOffset(w, h, this.padRight / 2, 0, w, h);
+    if (this.padRight || this.padTop) this.camera.setViewOffset(w, h, this.padRight / 2, -this.padTop / 2, w, h);
     this.camera.updateProjectionMatrix();
     this.render();
   }
@@ -102,6 +105,7 @@ export class MeshView {
   }
 
   dispose() {
+    window.__feacoreViews?.delete(this);
     this.ro.disconnect();
     if (this._frame) cancelAnimationFrame(this._frame);
     this.clear();
@@ -116,23 +120,49 @@ export class MeshView {
     const c = this.bbox.getCenter(new THREE.Vector3());
     const size = this.bbox.getSize(new THREE.Vector3());
     const [w, h] = this.size();
-    const effW = Math.max(50, w - this.padRight);
+    const effW = Math.max(50, w - this.padRight), effH = Math.max(50, h - this.padTop);
     if (this.dim === 2) {
-      let hw = Math.max(size.x, 1e-12) / 2 * 1.12, hh = Math.max(size.y, 1e-12) / 2 * 1.12;
-      if (hw / hh > effW / h) hh = hw * h / effW; else hw = hh * effW / h;
+      let hw = Math.max(size.x, 1e-12) / 2 * this.margin * 1.04, hh = Math.max(size.y, 1e-12) / 2 * this.margin * 1.04;
+      if (hw / hh > effW / effH) hh = hw * effH / effW; else hw = hh * effW / effH;
+      hh = hh * h / effH;                       // frustum covers the full canvas
       hw = hh * w / h;
       Object.assign(this.camera, { left: -hw, right: hw, top: hh, bottom: -hh, zoom: 1 });
       this.camera.position.set(c.x, c.y, c.z + Math.max(size.x, size.y) * 10 + 1);
       this.controls.target.set(c.x, c.y, c.z);
     } else {
-      const r = Math.max(size.length() / 2, 1e-12);
-      const fov = THREE.MathUtils.degToRad(this.camera.fov);
-      const fovEff = Math.min(fov, 2 * Math.atan(Math.tan(fov / 2) * effW / h));
-      const dist = r / Math.sin(fovEff / 2) * 1.02;
+      // centre on the projected extent of the model's points, then back off until all fit
       const dir = (VIEWS[view] || ISO).clone();
+      const up = view === 'z' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+      const right = new THREE.Vector3().crossVectors(dir.clone().negate(), up).normalize();
+      const upv = new THREE.Vector3().crossVectors(right, dir.clone().negate()).normalize();
+      const ty = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * effH / h;
+      const tx = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * effW / h;
+      const P = this.fitPoints;
+      const n = P ? P.length / 3 : 0;
+      const step = Math.max(1, Math.floor(n / 6000));
+      const pts = [];
+      if (n) for (let i = 0; i < n; i += step) pts.push(new THREE.Vector3(P[3 * i] - c.x, P[3 * i + 1] - c.y, P[3 * i + 2] - c.z));
+      else { const b = this.bbox; for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) pts.push(new THREE.Vector3(x, y, z).sub(c)); }
+      const A = pts.map(d => d.dot(right)), B = pts.map(d => d.dot(upv)), Z = pts.map(d => d.dot(dir));
+      // start from the orthographic centring, then iterate in perspective (near parts look bigger)
+      let da = (Math.min(...A) + Math.max(...A)) / 2, db = (Math.min(...B) + Math.max(...B)) / 2, dist = 0;
+      const distFor = () => { let D = 0; for (let i = 0; i < A.length; i++) D = Math.max(D, Z[i] + Math.abs(A[i] - da) / tx, Z[i] + Math.abs(B[i] - db) / ty); return D * this.margin; };
+      for (let it = 0; it < 6; it++) {
+        dist = distFor();
+        let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity, zm = 0;
+        for (let i = 0; i < A.length; i++) {
+          const depth = dist - Z[i];
+          const u = (A[i] - da) / depth, v = (B[i] - db) / depth;
+          u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); zm += depth;
+        }
+        zm /= A.length;
+        da += (u0 + u1) / 2 * zm;
+        db += (v0 + v1) / 2 * zm;
+      }
+      dist = Math.max(distFor(), 1e-9);
+      c.addScaledVector(right, da).addScaledVector(upv, db);
       this.camera.position.copy(c).addScaledVector(dir, dist);
-      this.camera.up.set(0, 0, 1);
-      if (view === 'z') this.camera.up.set(0, 1, 0);
+      this.camera.up.copy(up);
       this.camera.near = dist / 500;
       this.camera.far = dist * 50;
       this.controls.target.copy(c);
@@ -166,6 +196,7 @@ export class MeshView {
     geom.computeBoundingBox();
     this.bbox = geom.boundingBox.clone();
     this.baseBox = this.bbox.clone();
+    this.fitPoints = points;
   }
 
   /** Colour by values (Float32Array n) in [lo, hi]. */
@@ -241,6 +272,7 @@ export class MeshView {
     const box = new THREE.Box3();
     for (let i = 0; i < P.length; i += 3) box.expandByPoint(new THREE.Vector3(P[i], P[i + 1], P[i + 2]));
     this.bbox = box;
+    this.fitPoints = P;
     return this.legend;
   }
 

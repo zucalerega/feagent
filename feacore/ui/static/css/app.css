@@ -144,8 +144,9 @@ button.chip.on { background: var(--accent-wash); border-color: rgba(42, 120, 214
 .flag span { color: var(--ink-2); }
 
 /* ------------------------------------------------------------------ forms */
-label.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
-label.field .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.field .section-title { margin: 0; }
+.field .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
 input[type=text], input[type=number], input[type=search], select, textarea {
   font-family: inherit; font-size: 15.5px; color: var(--ink);
   border: 1px solid var(--axis); border-radius: 8px; padding: 8px 11px; background: #fff; min-width: 0;
@@ -255,7 +256,7 @@ table.kv td { padding: 4px 0; font-variant-numeric: tabular-nums; }
 .colorbar .ticks { position: relative; width: 96px; height: 340px; font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .colorbar .ticks span { position: absolute; left: 0; transform: translateY(-50%); white-space: nowrap; }
 .colorbar .cb-foot { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; font-variant-numeric: tabular-nums; }
-.view-info { position: absolute; left: 18px; top: 16px; background: rgba(252, 252, 251, 0.9); border: 1px solid var(--grid); border-radius: 10px; padding: 10px 14px; font-size: 14px; max-width: 520px; }
+.view-info { position: absolute; left: 18px; top: 16px; background: rgba(252, 252, 251, 0.9); border: 1px solid var(--grid); border-radius: 10px; padding: 10px 14px; font-size: 14px; max-width: min(760px, calc(100% - 260px)); }
 .view-info .t { font-weight: 650; font-size: 16px; }
 .view-buttons { position: absolute; left: 18px; bottom: 16px; display: flex; gap: 6px; }
 .side-section { display: flex; flex-direction: column; gap: 8px; }

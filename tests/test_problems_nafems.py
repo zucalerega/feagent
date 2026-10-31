@@ -202,8 +202,9 @@ def test_reference_study_2d_p2(pid, tmp_path):
     study = _study(pid, 2, tmp_path)
     assert study["passed"] is True
     for q in study["qois"]:
-        assert q["gci"]["convergence"] == "monotone"
+        assert q["gci"]["convergence"] in ("monotone", "converged")
         assert "p_far_below_theory" not in q["gci"]["flags"]
+        assert q.get("extrapolation_reliable", True)
 
 
 @slow

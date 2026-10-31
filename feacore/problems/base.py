@@ -104,8 +104,10 @@ class Problem(ABC):
         return [h0, h0 / r, h0 / r**2]
 
     # ------------------------------------------------------------- provided
-    def mesh(self, path: str | Path, h: float, geom_order: int = 2) -> Path:
-        """Reference mesh at characteristic size h (validation only; agents mesh themselves)."""
+    def mesh(self, path: str | Path, h: float, geom_order: int = 2, refine_steps: int = 0) -> Path:
+        """Reference mesh at characteristic size h (validation only; agents mesh themselves).
+        ``refine_steps`` > 0 splits every element that many times after meshing (nested
+        refinement, ratio 2 per step; new boundary nodes are snapped to the CAD geometry)."""
         import gmsh
 
         path = Path(path)
@@ -115,6 +117,8 @@ class Problem(ABC):
             ensure_domain_group(self.dim)
             self.apply_sizing(h)
             gmsh.model.mesh.generate(self.dim)
+            for _ in range(refine_steps):
+                gmsh.model.mesh.refine()
             if geom_order >= 2:
                 gmsh.model.mesh.setOrder(2)
             gmsh.write(str(path))

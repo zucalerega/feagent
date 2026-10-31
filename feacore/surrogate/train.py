@@ -120,7 +120,7 @@ def train(data: str | Path, out: str | Path, device: str = "cpu", epochs: int = 
           lr: float = 1e-3, lr_min: float = 1e-5, weight_decay: float = 1e-5, hidden: int = 64, layers: int = 10,
           global_context: bool = True, model_type: str = "mgn", val_frac: float = 0.1, test_frac: float = 0.1,
           max_train: int | None = None, max_minutes: float | None = None, seed: int = 0, threads: int | None = None,
-          amp: bool = False, log_every: int = 1, verbose: bool = True) -> dict:
+          amp: bool = False, log_every: int = 1, verbose: bool = True, init: str | Path | None = None) -> dict:
     t_start = time.perf_counter()
     if threads:
         torch.set_num_threads(threads)
@@ -150,6 +150,16 @@ def train(data: str | Path, out: str | Path, device: str = "cpu", epochs: int = 
               "out": len(TARGETS), "hidden": hidden, "layers": layers, "global_context": global_context}
     model = Surrogate(config)
     model.set_stats(stats)
+    if init is not None:  # warm start (same architecture); keeps the checkpoint's normalisation
+        from feacore.surrogate.model import load_checkpoint
+
+        prev, prev_blob = load_checkpoint(init, device="cpu")
+        if prev.config != config:
+            raise ValueError(f"--init checkpoint config {prev.config} differs from {config}")
+        model.load_state_dict(prev.state_dict())
+        stats = prev_blob["stats"]
+        if verbose:
+            print(f"warm start from {init}", flush=True)
     model.to(dev).train()
     n_params = sum(p.numel() for p in model.parameters())
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)

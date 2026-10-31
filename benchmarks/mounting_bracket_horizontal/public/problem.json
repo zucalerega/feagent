@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "mounting_bracket_horizontal",
+  "title": "Bolted mounting bracket with gusset, horizontal load",
+  "family": "mounting_bracket",
+  "tags": [
+    "part",
+    "3d",
+    "bolted",
+    "fillet",
+    "gusset",
+    "bracket",
+    "multi_load_case",
+    "stress_concentration",
+    "load_horizontal"
+  ],
+  "dim": 3,
+  "physics": "elasticity",
+  "formulation": "3d",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "base_x": 0.1,
+    "base_y": 0.07,
+    "base_t": 0.008,
+    "bolt_d": 0.009000000000000001,
+    "bolt_x": 0.038,
+    "bolt_y": 0.025,
+    "web_w": 0.05,
+    "web_t": 0.008,
+    "web_h": 0.042,
+    "load_hole_d": 0.014,
+    "gusset_t": 0.008,
+    "gusset_len": 0.03,
+    "gusset_h": 0.03,
+    "fillet_r": 0.004,
+    "load_case": "horizontal",
+    "E": 69000000000.0,
+    "nu": 0.33,
+    "h0": 0.006
+  },
+  "description": "Bolted aluminium mounting bracket with an upright web and a stiffening gusset. 3D solid.\nGeometry file (STEP): the full bracket in mm-scale dimensions written in metres.\nBase plate: 100 mm x 70 mm x 8 mm (x from -50 mm to 50 mm, y from -35 mm to 35 mm, z from 0 to 8 mm), with four through bolt holes of diameter 9 mm at (x, y) = (+-38 mm, +-25 mm).\nUpright web: a 8 mm thick plate in the x-z plane (y from -4 mm to 4 mm), 50 mm wide (x from -25 mm to 25 mm), rising from the base to a semicircular top of radius 25 mm centred at (x, z) = (0, 50 mm). The load hole, diameter 14 mm, passes through the web along y at that centre.\nGusset: a triangular rib 8 mm thick (x from -4 mm to 4 mm) behind the web on the -y side, joining the base over 30 mm in y and the web over 30 mm in z; its sloping free edge runs straight from the toe (y = -34 mm, on the base) to the top (z = 38 mm, on the web), and the toe and top are left sharp. The inside edges along the root of the web (both faces and both ends of the web, on the base) and along both sides of the gusset (on the base and on the web) are blended by fillets of radius 4 mm.\nMaterial: aluminium 6061-T6, linear elastic and isotropic, E = 69 GPa, Poisson's ratio 0.33.\nSupports: the four bolt-hole bores are fixed (all displacement components zero), representing the bolts. The underside of the base is otherwise free (no contact).\nLoad (horizontal): a total force of 3 kN acting horizontally in +y, normal to the web, pulling the web away from the gusset, applied to the bracket through the load-hole bore as a uniform traction (the total force divided by the bore area, the same vector at every point of the bore).\nAnalysis: linear static, small displacements.\nReport:\n  max_vm_web_root: the maximum von Mises stress on the web-root fillet surfaces (the blends between the web and the base along both faces and both ends of the web, including the corner blends where the gusset fillets join them; not the gusset/base and gusset/web fillets themselves) [Pa];\n  load_displacement: the average displacement magnitude |u| over the load-hole bore [m].",
+  "qois": [
+    {
+      "name": "max_vm_web_root",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": "web_root_fillets",
+      "component": null
+    },
+    {
+      "name": "load_displacement",
+      "type": "mean",
+      "field": "u_mag",
+      "point": null,
+      "group": "load_hole",
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}
