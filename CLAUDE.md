@@ -23,6 +23,12 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `improver-loop` branch: improver side of the loop.
 - `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
   gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
+- `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
+  deterministic failure-mode flags (precheck before solving + post-solve checks), reference-free accuracy
+  (ZZ estimate, refinement study of the agent's own setup, P1-vs-P2) and the speed / accuracy score
+  (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py`: agent prompt for a
+  NAFEMS benchmark and reply-vs-reference scoring (LE10 first, with `benchmarks/nafems_le10/public/mesh.msh`).
+  The only solver change is `qp_stress_elasticity` split out of `_recover_elasticity` (same results).
 - `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
   parts and a UI (package `feacore/`, see below). The scikit-fem solver works (all formulations, BCs,
   heat, QoIs, CLI). The CalculiX cross-check, benchmarks, test parts, UI and surrogate are in progress.
