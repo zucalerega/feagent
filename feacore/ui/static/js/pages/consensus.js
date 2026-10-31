@@ -48,9 +48,9 @@ async function renderProblem(el, pid) {
   try { d = await api(`/api/consensus/${encodeURIComponent(pid)}`); } catch (e) { clear(el).append(errorBox(e)); return; }
   clear(el);
   el.append(h('div', { class: 'page-head' }, h('div', {},
-    h('div', { class: 'secondary small' }, h('a', { href: '#/consensus' }, '← Consensus'), ' · ', h('a', { href: `#/benchmarks/${encodeURIComponent(pid)}` }, 'problem')),
-    h('h1', {}, d.title || pid), h('div', { class: 'chips', style: { marginTop: '6px' } }, h('span', { class: 'badge mono' }, pid),
-      h('span', { class: 'badge' }, `${d.n_submissions} submissions`), h('span', { class: 'badge' }, `${d.agents.length} agents`)))));
+    h('div', { class: 'secondary small' }, h('a', { href: '#/runs?tab=consensus' }, '← Consensus'), ' · ', h('a', { href: `#/benchmarks/${encodeURIComponent(pid)}` }, 'problem'), ' · ', h('a', { href: '#/swarm' }, 'swarm')),
+    h('h1', {}, d.title || pid),
+    h('div', { class: 'meta-line' }, `${pid} · ${d.n_submissions} submission${d.n_submissions === 1 ? '' : 's'} from ${d.agents.length} agent${d.agents.length === 1 ? '' : 's'}`))));
   const rows = d.qois.flatMap(q => q.submissions);
   const conv = rows.filter(r => ['converged', 'exact', 'expected_divergence'].includes(r.verdict)).length;
   const flagged = rows.filter(r => r.flags.some(f => ['divergent', 'singular_suspected'].includes(f))).length;

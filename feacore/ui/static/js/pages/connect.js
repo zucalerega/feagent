@@ -13,7 +13,8 @@ export async function render(el) {
   const PH = needs ? 'H = {"Authorization": f"Bearer {TOKEN}"}\n' : 'H = {}\n';
 
   el.append(h('div', { class: 'page-head' }, h('div', {}, h('h1', {}, 'Connect a script or an agent'),
-    h('p', { class: 'lede' }, 'Everything the UI does goes through the HTTP API below, so a harness, a notebook or a teammate’s laptop can solve cases and submit runs with nothing installed but curl or Python.'))));
+    h('p', { class: 'lede' }, 'Everything the UI does goes through the HTTP API below, so a harness, a notebook or a teammate’s laptop can solve cases and submit runs with nothing installed but curl or Python.')),
+    h('a', { class: 'btn ghost', href: '#/health' }, 'System health')));
 
   // ---- URL + token
   const masked = h('code', { class: 'mono', style: { cursor: 'pointer', fontSize: '15px' }, title: 'click to show / hide' }, tok ? '•'.repeat(12) : '(none stored)');
