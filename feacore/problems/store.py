@@ -31,13 +31,27 @@ def export_problem(problem: Problem, root: str | Path = DEFAULT_ROOT, order: int
     return out
 
 
-def export_all(root: str | Path = DEFAULT_ROOT, problems: list[Problem] | None = None) -> Path:
+def write_index(root: str | Path, problems: list[Problem]) -> Path:
     root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    index = [{"id": p.id, "title": p.title, "family": p.family, "tags": list(p.tags), "dim": p.dim,
+              "physics": p.physics, "formulation": p.formulation} for p in problems]
+    path = root / "index.json"
+    path.write_text(json.dumps(index, indent=2))
+    return path
+
+
+def export_all(root: str | Path = DEFAULT_ROOT, problems: list[Problem] | None = None
+               ) -> tuple[list[Problem], dict[str, str]]:
+    """Export problems (default: all registered) and write index.json for the ones that succeeded.
+    Returns (exported, {problem_id: error})."""
     problems = problems if problems is not None else all_problems()
-    index = []
+    done, failed = [], {}
     for p in problems:
-        export_problem(p, root)
-        index.append({"id": p.id, "title": p.title, "family": p.family, "tags": list(p.tags),
-                      "dim": p.dim, "physics": p.physics, "formulation": p.formulation})
-    (root / "index.json").write_text(json.dumps(index, indent=2))
-    return root
+        try:
+            export_problem(p, root)
+            done.append(p)
+        except Exception as e:  # noqa: BLE001 - one broken problem must not block the rest
+            failed[p.id] = f"{type(e).__name__}: {e}"
+    write_index(root, done)
+    return done, failed
