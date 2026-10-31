@@ -14,8 +14,19 @@ from ace.checks import check_run, reference_setup, tolerance
 PID = "cooks_membrane"
 
 
+@pytest.fixture(scope="module", autouse=True)
+def private_caches(tmp_path_factory):
+    """Point the error and oracle caches at a temporary directory, so these tests never write into
+    the shared ace/field_refs caches that real runs read."""
+    d = tmp_path_factory.mktemp("caches")
+    old = field_error.ERRORS_CACHE, stages.ORACLE_CACHE
+    field_error.ERRORS_CACHE, stages.ORACLE_CACHE = d / "errors", d / "oracles"
+    yield d
+    field_error.ERRORS_CACHE, stages.ORACLE_CACHE = old
+
+
 @pytest.fixture(scope="module")
-def run(tmp_path_factory):
+def run(tmp_path_factory, private_caches):
     """A small Cook's membrane run with the fields the loop adds (checks, oracles, stages)."""
     p = fea.get_problem(PID)
     req = {"h": p.params["h0"], "order": 2, "refinements": []}

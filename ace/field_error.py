@@ -37,6 +37,7 @@ from ace.checks import reference_setup
 # Per problem: <id>.npz (integration points + fine reference stresses), <id>_coarse.npz (coarser
 # reference stresses at the same points), <id>_points.json (probe points), <id>_auto.json (automesher).
 CACHE = Path(os.environ.get("ACE_FIELD_REFS") or Path(__file__).with_name("field_refs"))
+ERRORS_CACHE: Path | None = None    # where errors_of_setup caches results (None: CACHE / "errors"); tests override
 
 # Element sizes are the problem's default h0 divided by these divisors.
 #   QUAD_DIVISOR: the mesh carrying the integration points (moderate, so probing a run stays fast)
@@ -310,9 +311,10 @@ def _errors_cache_file(problem_id: str, mesh: dict, setup: dict) -> Path | None:
     ref = CACHE / f"{problem_id}.npz"
     if not ref.exists():
         reference(problem_id)                 # build it first, so its mtime is the one used below
-    key = json.dumps([problem_id, sha, mesh.get("order"), setup, PROBE_POINTS, PROBE_DISCLOSED, ref.stat().st_mtime_ns],
-                     sort_keys=True, default=str)
-    return CACHE / "errors" / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
+    points = probe_points(problem_id)       # the check points themselves: a rebuilt file means new entries
+    key = json.dumps([problem_id, sha, mesh.get("order"), setup, PROBE_POINTS, PROBE_DISCLOSED, ref.stat().st_mtime_ns,
+                      points["points"]], sort_keys=True, default=str)
+    return (ERRORS_CACHE or CACHE / "errors") / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
 
 
 def field_error(run: dict) -> dict | None:

@@ -154,12 +154,12 @@ def _teacher_worker(job: dict) -> dict:
     return {**res, "diagnosis": diag.model_dump() if diag else None, "usage": usage, "error": None}
 
 
-def diagnose_all(tasks: list[tuple], memory, gdir, out, mock, cost, gen) -> list:
+def diagnose_all(tasks: list[tuple], memory, gdir, out, mock, cost, gen, concurrency: int = 4) -> list:
     """One teacher session per training problem, all at once. tasks: [(pid, runs)]. Saves each
     diagnosis, its tool log and reruns; returns [(pid, Diagnosis)] for those that submitted one."""
     jobs = [{"pid": pid, "runs": pruns, "memory": memory, "target_err": tolerance(pid), "mock": mock,
              "workdir": str(gdir / "diagnoser" / pid)} for pid, pruns in tasks]
-    with ProcessPoolExecutor(max(1, len(jobs)), mp_context=mp.get_context("spawn")) as pool:
+    with ProcessPoolExecutor(max(1, min(len(jobs), concurrency)), mp_context=mp.get_context("spawn")) as pool:
         futs = [pool.submit(_teacher_worker, j) for j in jobs]
         results = []
         for j, f in zip(jobs, futs):
@@ -370,6 +370,8 @@ def main(argv=None) -> int:
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()
     private = args.memory == "shared+private"
+    if args.teacher != "rerun" and config.SCORE != "field":
+        raise SystemExit("--teacher inspect/both needs field scoring (ACE_SCORE=field): its tools read the field error")
     if args.split and not (private and len(train) > 1):
         raise SystemExit("--split needs --memory shared+private and at least two --problems")
     if (peers or args.personas) and not private:
@@ -464,7 +466,8 @@ def main(argv=None) -> int:
             by_task = {pid: [r for r in runs if r["problem_id"] == pid and not r.get("error")] for pid in train}
             by_task = {pid: pruns for pid, pruns in by_task.items() if pruns}
             if config.REFLECTOR_MODE == "diagnoser":   # one teacher session per problem, in parallel
-                for pid, refl in diagnose_all(list(by_task.items()), mem or playbook, gdir, out, args.mock, cost, gen):
+                for pid, refl in diagnose_all(list(by_task.items()), mem or playbook, gdir, out, args.mock, cost, gen,
+                                              args.concurrency):
                     reflections.append((pid, refl, [r["run_id"] for r in by_task[pid]]))
                 cost.check()
             else:

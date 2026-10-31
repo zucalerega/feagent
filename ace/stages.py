@@ -57,6 +57,8 @@ def run_oracles(run: dict, target_err: float) -> dict | None:
 # everything evaluate() reads. Cached values come back through JSON: numpy floats as floats, tuples
 # as lists, which is also what the run record on disk holds. Opt out with ACE_NO_ORACLE_CACHE=1.
 ORACLE_CACHE = Path(__file__).with_name("field_refs") / "oracles"
+# Part of the key: a change to the oracle code makes new cache entries instead of serving old results.
+_ORACLE_CODE = hashlib.sha256(Path(oracles.__file__).read_bytes()).hexdigest()[:16]
 
 
 def _mesh_hash(mesh: dict) -> str | None:
@@ -71,7 +73,7 @@ def _oracle_cache_file(problem_id, mesh, request, setup, value, target_err) -> P
     h = _mesh_hash(mesh)
     if h is None:
         return None
-    key = json.dumps([problem_id, h, request, setup, value, target_err, SCORE],
+    key = json.dumps([problem_id, h, request, setup, value, target_err, SCORE, _ORACLE_CODE],
                      sort_keys=True, default=str)
     return ORACLE_CACHE / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
 

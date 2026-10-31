@@ -220,6 +220,7 @@ def system_prompt(mode: str | None = None) -> str:
             text = text.replace(old, new)
     elif mode == "both":
         old = list(INSPECT_STEPS)[-1]
+        assert old in text
         text = text.replace(old, BOTH_LIMITS)
     return text
 
