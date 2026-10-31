@@ -65,7 +65,7 @@ def check_rigid_body(res, rep: Report) -> None:
         if Rc.shape[0] == 0:
             free = list(names)
         else:
-            _, s, Vt = np.linalg.svd(Rc, full_matrices=True)
+            _, s, Vt = np.linalg.svd(Rc, full_matrices=Rc.shape[0] < Rc.shape[1])   # no n x n U
             s = np.concatenate([s, np.zeros(len(names) - len(s))])
             null = Vt[s < 1e-8 * max(s.max(), 1e-300)]
             free = sorted({names[int(np.argmax(np.abs(v)))] for v in null})
