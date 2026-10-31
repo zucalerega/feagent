@@ -24,7 +24,11 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
   `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
   `--statement requirements` (branch `ace-requirements`) gives agents engineering requirements
-  instead of boundary conditions (`ace/requirements.py`, `ace/requirements_data/`).
+  instead of boundary conditions (`ace/requirements.py`, `ace/requirements_data/`). `--evidence`
+  feeds physical test data (machine exports) into the loop, also mid-run, for agents and teachers
+  to learn from (`ace/evidence.py`); `--evidence-score` scores against the test. The printed pull test
+  of gold part abc_00000003 is the problem `abc_00000003_pull` (`feacore/problems/physical.py`).
+  `feacore` gained main's `point_difference` QoI (same code) for extensometer readings.
 - `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
   gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:

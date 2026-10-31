@@ -34,7 +34,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolE
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from ace import config, process_brief, ui_bridge
+from ace import config, evidence, process_brief, ui_bridge
 from ace.agent import run_agent
 from ace.checkpoint import checkpoint
 from ace.checks import check_run, score_population, tolerance
@@ -625,6 +625,11 @@ def main(argv=None) -> int:
                     help="what agents are told: the problem statement with its boundary conditions, or the "
                          "problem's engineering requirements (ace/requirements.py), from which they set the "
                          "boundary conditions themselves")
+    ap.add_argument("--evidence", type=Path, action="append", default=[],
+                    help="physical test data (ace/evidence.py): a test spec JSON or a directory of them; repeat for "
+                         "more. Files dropped into <out>/evidence/ during the run are picked up at the next generation")
+    ap.add_argument("--evidence-score", action="store_true",
+                    help="score runs on problems with test data against the test instead of the problem's reference")
     ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
                     "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
@@ -639,6 +644,11 @@ def main(argv=None) -> int:
     holdout = [p for p in args.holdout.split(",") if p]
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
+    # Physical test data (ace.evidence): processed into <out>/evidence_active/, which the spawned agents,
+    # scorers and teachers read; set before any pool exists.
+    os.environ[evidence.ACTIVE_ENV] = str((out / "evidence_active").resolve())
+    os.environ[evidence.SCORE_ENV] = "1" if args.evidence_score else "0"
+    (out / "evidence").mkdir(exist_ok=True)
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()
@@ -701,6 +711,14 @@ def main(argv=None) -> int:
                 break
             gdir = out / f"gen{gen}"
             (gdir / "runs").mkdir(parents=True, exist_ok=True)
+            # Physical test data, also when it arrives mid-run (after the population has settled): every
+            # agent, scorer and teacher of this generation sees it.
+            for pid in evidence.refresh(out, args.evidence, all_runs, gen):
+                if args.evidence_score and all_runs[pid]:     # earlier runs: re-checked against the test
+                    for r in all_runs[pid]:
+                        if not r.get("error"):
+                            r["checks"] = check_run(pid, r)
+                    score_population(all_runs[pid])
             playbook.save(out / f"playbook_gen{gen}.json")
             if private:
                 mem.save(out, gen)

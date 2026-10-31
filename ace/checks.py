@@ -183,6 +183,15 @@ def check_run(problem_id: str, run: dict) -> dict:
         errs = errors_of_setup(problem_id, final["mesh"], final["setup"])
         rel_err = errs["error"]
         out.update(field_error=errs["field"], probe_error=errs["points"], point_errors=errs["point_errors"])
+    from ace import evidence
+    ev = evidence.load_active(problem_id)     # physical test data for this problem (ace.evidence)
+    if ev is not None:
+        out["evidence"] = evidence.predict_run(problem_id, run, ev["combined"])
+        if evidence.scoring_on() and out["evidence"] is not None:
+            # scored against the test: its error, with a tolerance no tighter than 2 sigma of the test
+            out["reference_rel_error"] = rel_err
+            rel_err = abs(out["evidence"]["rel_err"])
+            out["tolerance"] = max(out["tolerance"], 2 * ev["combined"]["u_rel_total"])
     info = final["result"].get("info") or {}
     ncomp = 3 if problem.dim == 3 else 2
     out.update({

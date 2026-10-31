@@ -795,6 +795,8 @@ class SkfemResult(Result):
         return {"info": asdict(self.info), "qois": qois, "meta": self.case.meta}
 
     def evaluate(self, qoi: QoI) -> float:
+        if qoi.type == "point_difference":   # backend-independent, see Result.evaluate_qoi
+            return Result.evaluate_qoi(self, qoi)
         md = self.model
         t = qoi.type
         if t == "point":

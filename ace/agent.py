@@ -209,6 +209,9 @@ def task_prompt(problem_id: str) -> str:
         statement = f"{requirements.TASK_PREFACE}\n\n{requirements.agent_text(problem_id)}"
     else:
         shown_id, statement = problem_id, problem.description()
+    from ace import evidence
+    if test := evidence.agent_section(problem_id):    # physical test data, when the loop has some
+        statement += "\n\n" + test
     return (
         f"Problem id: {shown_id}\n\n{statement}\n\n"
         f"{scored}"
@@ -296,9 +299,16 @@ class Tools:
         setup = {k: v for k, v in args.items() if k != "using"}
         feacore_result = []   # filled with the feacore Result if the solve succeeds (for ui_bridge)
         result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"], on_result=feacore_result.append)
-        self.solves.append({"mesh": mesh, "mesh_index": len(self.meshes) - 1, "setup": setup, "result": result})
+        from ace import evidence
+        check = evidence.solve_check(self.problem_id, feacore_result[0] if feacore_result else None)
+        self.solves.append({"mesh": mesh, "mesh_index": len(self.meshes) - 1, "setup": setup, "result": result,
+                            **({"test_check": check} if check else {})})
         ui_bridge.record_solve(self.ui, self, feacore_result[0] if feacore_result else None)
-        return {**{k: v for k, v in result.items() if k not in HIDDEN_KEYS}, "solve": len(self.solves), "nodes": mesh["nodes"],
+        shown = {k: v for k, v in result.items() if k not in HIDDEN_KEYS}
+        if check:   # this solve's prediction of the physical test's measurement
+            shown["test_check"] = {"prediction_vs_test": f"{check['rel_err']:+.2%}", "sigma": round(check["sigma"], 2),
+                                   "within_test_uncertainty": check["consistent"]}
+        return {**shown, "solve": len(self.solves), "nodes": mesh["nodes"],
                 "solves_left": MAX_SOLVES - len(self.solves)}, not result["ok"]
 
 

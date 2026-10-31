@@ -51,6 +51,9 @@ TASKS = {
     "cooks_membrane": {"qoi": "uy_C", "node_cap": 20000},         # tapered panel in shear (classic, not NAFEMS)
     # easy sanity problem (planted-failure tests use it; not in the loop)
     "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 20000},
+    # printed gold part abc_00000003 pulled on the Instron (feacore/problems/physical.py); scored on the
+    # video-extensometer elongation; physical test data can be fed in with run_loop --evidence
+    "abc_00000003_pull": {"qoi": "ext_marks", "node_cap": 60000},
 }
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on

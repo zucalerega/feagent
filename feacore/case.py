@@ -47,6 +47,7 @@ heat:       source (volumetric heat source / Poisson right-hand side)
 Quantities of interest (``QoI.type``)
 -------------------------------------
   point          ``field`` at ``point`` (stresses use the solver's recovered, continuous field)
+  point_difference  ``field(point) - field(point2)``, e.g. a pressure drop between two probes
   max/min/max_abs extreme of the recovered nodal ``field`` over ``group`` (None = whole mesh)
   reaction       support force on the body: (K u - f) summed over the group's constrained DOFs,
                  ``component`` (heat: heat flow into the body through the group)
@@ -80,7 +81,8 @@ LOAD_TYPES = {
     "elasticity": ("body_force", "temperature"),
     "heat": ("source",),
 }
-QOI_TYPES = ("point", "max", "min", "max_abs", "reaction", "integral", "mean", "strain_energy")
+QOI_TYPES = ("point", "point_difference", "max", "min", "max_abs", "reaction", "integral", "mean",
+             "strain_energy")
 
 # Fields a backend must be able to probe. In 2D, uz, syz and sxz are 0; szz is the out-of-plane
 # stress (0 in plane stress). Axisymmetric: sxx = s_rr, syy = s_zz (axial), sxy = s_rz, and the
@@ -144,6 +146,7 @@ class QoI:
     point: list[float] | None = None
     group: str | None = None
     component: int | None = None
+    point2: list[float] | None = None   # point_difference: value = field(point) - field(point2)
 
 
 @dataclass
@@ -293,8 +296,12 @@ class Case:
             if q.type not in QOI_TYPES:
                 errs.append(f"{tag}: type must be one of {QOI_TYPES}")
                 continue
-            if q.type in ("point", "max", "min", "max_abs", "integral", "mean") and q.field not in fields:
+            if q.type in ("point", "point_difference", "max", "min", "max_abs", "integral", "mean") \
+                    and q.field not in fields:
                 errs.append(f"{tag}: field must be one of {fields}")
+            if q.type == "point_difference" and (q.point is None or q.point2 is None
+                                                 or len(q.point) not in (2, 3) or len(q.point2) not in (2, 3)):
+                errs.append(f"{tag}: point_difference needs point and point2 ([x, y(, z)])")
             if q.type == "point" and (q.point is None or len(q.point) not in (2, 3)):
                 errs.append(f"{tag}: point [x, y(, z)] required")
             if q.type == "reaction" and (q.group is None or q.component not in range(ncomp)):
