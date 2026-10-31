@@ -28,7 +28,9 @@ Options (``failure`` dict; all but criterion / limit optional):
   max_increment     bound of ccx's automatic increments inside a block (ramp fraction; default
                     1 / increments); max_increment_near the same once failure is near (default
                     1 / near_increments). Every converged ccx increment is an output increment.
-  max_remove        cells removed per block at most (8), see below
+  max_remove        cells removed per block at most (8), see below. A cell whose removal alone does not
+                    converge is kept ("stuck") for STUCK_BLOCKS blocks while other candidates go; if no
+                    removal converges the block runs without removal.
   stop_force_ratio  0.01
   path_groups       groups that must stay connected (default: the Dirichlet groups)
   max_blocks        5000
@@ -56,6 +58,7 @@ from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_series, p
 from feacore.solver._ccx_nl import CcxNonlinearResult
 
 ALIVE, FAILED, DETACHED = 0, 1, 2
+STUCK_TRIES, STUCK_BLOCKS = 5, 5    # single-cell alternatives tried; blocks a stuck cell waits
 
 
 def _split_deck(inp: str):
@@ -162,14 +165,16 @@ def _attempts(max_remove: int):
     while cap >= 1:
         out.append((cap, 0.25))
         cap //= 2
-    return out
+    return out + [(1, 0.25)] * STUCK_TRIES + [(0, 1.0)]    # other single cells, then no removal
 
 
-def _plan(state, agg_peeq, limit, cap, topo):
+def _plan(state, agg_peeq, limit, cap, topo, exclude=()):
     """Cells to remove at the start of the next block: the (up to ``cap``) cells over the limit with the
-    highest PEEQ, then hinge contacts / unsupported fragments. -> (new state, removal, joined, deferred)."""
+    highest PEEQ, except ``exclude`` (stuck cells), then hinge contacts / unsupported fragments.
+    -> (new state, removal, joined, deferred = candidates left for later blocks)."""
     st = state.copy()
     cand = np.nonzero((st == ALIVE) & (agg_peeq >= limit))[0]
+    cand = cand[~np.isin(cand, list(exclude))]
     cand = cand[np.argsort(-agg_peeq[cand], kind="stable")]
     take = cand[:cap]
     st[take] = FAILED
@@ -207,7 +212,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     removed_at = np.full(model.n_elems, -1)
     agg_peeq = np.zeros(model.n_elems)
     frozen_U = np.zeros((model.n_nodes, 3))
-    history = []
+    history, stuck, prev_cap = [], {}, None
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
     while t < 1.0 - 1e-12 and k < max_blocks:
         pk = agg_peeq[state == ALIVE].max(initial=0.0)
@@ -217,7 +222,10 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         dt = float(np.clip(peeq_step * limit / rate, 1.0 / n_fine, hi)) if rate > 0 else hi
         run, errors, plan, tried = None, [], None, set()
         for attempt, (cap, scale) in enumerate(_attempts(max_remove)):
-            plan = _plan(state, agg_peeq, limit, cap, topo)
+            if run is None and attempt and cap == 1 and len(plan[1]) and prev_cap == 1:
+                stuck[int(plan[1][0])] = k + STUCK_BLOCKS     # its removal does not converge: keep it for now
+            prev_cap = cap
+            plan = _plan(state, agg_peeq, limit, cap, topo, {c for c, u in stuck.items() if u > k})
             key = (tuple(plan[1].tolist()), scale)
             if key in tried:                            # same removal and increment as an earlier attempt
                 continue
@@ -259,6 +267,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         for i, inc in enumerate(res.increments):
             rec = _record(res, i, inc, k, attempt, state, agg, limit, driven, frozen_U, history)
             rec["removed_in_block"], rec["deferred"] = int(len(removal)), int(deferred)
+            rec["stuck"] = int(sum(1 for c, u in stuck.items() if u > k and state[c] == ALIVE))
             if series_dir:
                 _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg)
             peak = max(peak, rec["force"])
