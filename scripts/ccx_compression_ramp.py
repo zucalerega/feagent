@@ -186,6 +186,27 @@ def test_reference() -> dict:
             "peak_mm": float(x[ipk])}
 
 
+def nearest_faces(points_mm: list, tol_mm: float = 0.05) -> list[list[str]]:
+    """CAD faces (f<tag>, as the problem's groups) within tol_mm of each point, else the nearest one."""
+    import gmsh
+    from feacore.problems.physical import _gold_step
+    gmsh.initialize()
+    try:
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.model.occ.importShapes(str(_gold_step("abc_00000065_bc0")))
+        gmsh.model.occ.synchronize()
+        faces = [t for _, t in gmsh.model.getEntities(2)]
+        out = []
+        for p in points_mm:
+            q = np.asarray(p, float) / 1000.0
+            d = sorted((float(np.linalg.norm(np.array(gmsh.model.getClosestPoint(2, f, q.tolist())[0]) - q)) * 1e3, f)
+                       for f in faces)
+            out.append([f"f{f}" for dist, f in d if dist <= tol_mm] or [f"f{d[0][1]} ({d[0][0]:.2f} mm)"])
+        return out
+    finally:
+        gmsh.finalize()
+
+
 def compare(runs: list[dict]) -> dict:
     import matplotlib
     matplotlib.use("Agg")
@@ -213,6 +234,10 @@ def compare(runs: list[dict]) -> dict:
         for key in ("first_yield", "at_test_peak_load", "last"):
             if key in r:
                 s[key] = r[key]
+        spots = [(k, f) for k in ("first_yield", "at_test_peak_load", "last") for f in ("peeq_max", "s1_max_MPa")
+                 if f in r.get(k, {})]
+        for (k, f), faces in zip(spots, nearest_faces([r[k][f]["at_mm"] for k, f in spots])):
+            s[k][f]["faces"] = faces
         summary["runs"][r["name"]] = s
         with open(OUT_DIR / f"curve_{r['name']}.csv", "w", newline="") as f:
             w = csv.writer(f)
@@ -270,7 +295,9 @@ def main(argv=None) -> int:
             for f in futs:
                 r = f.result()
                 print(f"{r['name']}: converged {r['converged']}, {len(r['history'])} increments, {r['wall_s']} s")
-    runs = [json.loads((a.work / f"{n}.json").read_text()) for n in names if (a.work / f"{n}.json").exists()]
+    # every finished run in the work dir (both platens), so one plot holds them all
+    runs = [json.loads(f.read_text()) for f in sorted(a.work.glob("*_s*.json"))
+            if f.stem.rsplit("_", 1)[-1] in ("slide", "stick")]
     s = compare(runs)
     print(json.dumps(s, indent=1, default=float))
     return 0
