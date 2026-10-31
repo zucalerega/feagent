@@ -1,0 +1,66 @@
+{
+  "id": "abc_00000003_bc6",
+  "title": "Gold benchmark abc_00000003_bc6",
+  "family": "abc_00000003",
+  "tags": [
+    "gold",
+    "3d",
+    "abc"
+  ],
+  "dim": 3,
+  "physics": "elasticity",
+  "formulation": "3d",
+  "units": "SI (m, N, Pa)",
+  "description": "Static linear-elastic analysis of the part in geometry.step (third-party CAD 00000003_1ffb81a71e5b402e966b9341_step_002.step, rescaled to SI metres; bounding-box diagonal 100.0 mm).\nMaterial: isotropic linear elastic steel, E = 210 GPa, Poisson's ratio 0.3. No gravity.\nFaces are named f<tag> by their OCC face tag in this STEP file; positions below are in mm.\nClamped (all displacements zero): face f20 (centroid (0.00, 0.00, 27.56) mm, area 5091.2 mm^2).\nUniform pressure 14.2 MPa pushing into the part on face f16 (centroid (-27.19, -0.00, 30.59) mm, area 736.6 mm^2).\nTotal force (635.5, -1017.9, 0.0) N spread uniformly over planar face f21 (outward normal (0.000, -0.000, -1.000), centroid (-0.00, 0.00, 55.12) mm, area 678.8 mm^2).\nAll other faces are free.\nReport: strain_energy (J); u_max = maximum displacement magnitude (m); vm_mean = volume-average von Mises stress (Pa); u_mean_<face> = mean displacement magnitude over each loaded face (m); with several supports, the support reactions R<x|y|z>_<face> (N).",
+  "qois": [
+    {
+      "name": "strain_energy",
+      "type": "strain_energy",
+      "field": null,
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "u_max",
+      "type": "max",
+      "field": "u_mag",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "u_mean_f16",
+      "type": "mean",
+      "field": "u_mag",
+      "point": null,
+      "group": "f16",
+      "component": null
+    },
+    {
+      "name": "u_mean_f21",
+      "type": "mean",
+      "field": "u_mag",
+      "point": null,
+      "group": "f21",
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

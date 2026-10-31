@@ -26,14 +26,28 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
   gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
-  deterministic failure-mode flags (precheck before solving + post-solve checks), reference-free accuracy
-  (ZZ estimate, refinement study of the agent's own setup, P1-vs-P2) and the speed / accuracy score
-  (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py`: agent prompt for a
-  NAFEMS benchmark and reply-vs-reference scoring (LE10 first, with `benchmarks/nafems_le10/public/mesh.msh`).
-  The only solver change is `qp_stress_elasticity` split out of `_recover_elasticity` (same results).
-- `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
-  parts and a UI (package `feacore/`, see below). The scikit-fem solver works (all formulations, BCs,
-  heat, QoIs, CLI). The CalculiX cross-check, benchmarks, test parts, UI and surrogate are in progress.
+  deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
+  accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy
+  score (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py` give the agent
+  prompt for a NAFEMS benchmark and score the reply against the reference. LE10 comes first, with
+  `benchmarks/nafems_le10/public/mesh.msh`.
+- `cfd-openfoam` branch (PR #3): OpenFOAM backend and CFD benchmarks, in progress.
+- `benchmarks` branch (PR #13): `feabench/` plus `benchmarks/{verification,code_aster,calculix,simjeb}`
+  and `docs/eval-design.md`. It was built before `feacore` landed, and its ccx-deck evaluator and
+  `model.inp` contract are superseded by the decisions below (skfem, case JSON + `.msh`).
+  Still useful:
+  - code_aster reference values with locations;
+  - the CalculiX deck corpus;
+  - the SimJEB loader (needs `dataverse.harvard.edu` allowed);
+  - the scoring proposal in `docs/eval-design.md`.
+  Next: port the verification cases and QoIs to `feacore` Problems.
+- `gold-benchmarks` branch (Jaime): the gold-benchmark generator `feacore.goldgen`. It takes ABC
+  CAD parts, generates BC sets, meshes nested tet10 levels L0-L2 and keeps the QoIs that the GCI
+  certifies; it runs on an H100 and packs its output into numbered archives
+  (`goldgen-l2_0000.tgz`, ...). `benchmarks/gold/` holds the imported sets (see FEA core). Its
+  solver fixes for curved tet10 are ported to main byte-identical: a robust inverse isoparametric
+  map, curved-cell validity judged by the Jacobian, and a reduced SVD in the rigid-body checks.
+  Without them skfem rejects some of these meshes.
 
 ## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
 
@@ -70,6 +84,15 @@ Decisions:
   exported to `benchmarks/<id>/public/` (statement + STEP: give these to agents) and
   `benchmarks/<id>/private/` (reference values, reference setup, validation studies: evaluator only,
   never give these to agents).
+- **Gold benchmarks** (`benchmarks/gold/`, `feacore/problems/gold.py`, `benchmarks/gold/README.md`):
+  - Import generator archives with `python scripts/gold.py import ARCHIVE`. It checks every set,
+    stores one STEP blob per part, and lists the meshes with their sha256 in `index.json`.
+  - Each set registers as a `GoldProblem` (tag `gold`, family = part id) read straight from its
+    files. The UI and the ACE loop see it with no export step, and `export_all` skips it.
+  - Groups are `f<tag>` (the STEP's OCC face tags) and `solid`.
+  - The study meshes (`benchmarks/gold/_meshes/`) are not in git.
+  - `scripts/gold.py verify` re-solves a stored level against the study. `scripts/gold.py render`
+    records runs for the UI viewer, and `--png` writes images.
 - **Verification** = Richardson extrapolation / Grid Convergence Index (Celik et al. 2008),
   `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to

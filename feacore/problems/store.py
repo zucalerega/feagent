@@ -46,6 +46,7 @@ def export_all(root: str | Path = DEFAULT_ROOT, problems: list[Problem] | None =
     """Export problems (default: all registered) and write index.json for the ones that succeeded.
     Returns (exported, {problem_id: error})."""
     problems = problems if problems is not None else all_problems()
+    problems = [p for p in problems if not getattr(p, "stored", False)]   # data-backed (gold): already files
     done, failed = [], {}
     for p in problems:
         try:
