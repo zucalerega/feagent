@@ -1,9 +1,11 @@
-"""The Generator: a minimal tool-use FEA agent.
+"""The Generator: a minimal tool-use FEA / CFD agent.
 
 It sees a problem statement, four tools (inspect_geometry, mesh, solve, submit) and a system
 prompt = BASE_PROMPT + the current playbook. One call to run_agent = one run; it returns a
 JSON-able run record (trace, meshes, solves, submitted solve, cited bullet IDs, token usage) for
-the checks and the Reflector.
+the checks and the Reflector. Flow problems (physics "flow") get BASE_PROMPT_FLOW and TOOLS_FLOW:
+the same four tools, with a finite-volume mesh (no element order; optional quads in 2D) and a flow
+setup (fluid, convection scheme, flow BCs).
 """
 
 from __future__ import annotations
@@ -152,6 +154,79 @@ TOOLS = [
     },
 ]
 
+BASE_PROMPT_FLOW = BASE_PROMPT.replace(
+    "You set up and run linear-elastic finite-element analyses using tools.",
+    "You set up and run steady incompressible laminar flow (CFD) analyses with a finite-volume solver "
+    "using tools.").replace("degrees of\nfreedom, DOFs", "degrees of\nfreedom, DOFs = cells x unknowns per cell")
+
+BC_HELP_FLOW = (
+    "BC types: velocity_inlet (`value` = velocity vector [u_x, u_y(, u_z)] in m/s, each entry a number or "
+    "an expression in x, y, z such as '0.06*y*(0.01 - y)'; or one number = speed into the domain along "
+    "the normal); pressure_outlet (`value` = static pressure in Pa, number or expression); wall (no slip; "
+    "optional `value` = wall velocity vector for a moving wall, numbers or expressions); slip (no "
+    "penetration, no shear); symmetry. Each BC applies to a named boundary `group`; boundary groups "
+    "without a BC are stationary no-slip walls. A domain without a pressure_outlet is closed: its "
+    "pressure level is arbitrary (only differences are meaningful)."
+)
+
+TOOLS_FLOW = [
+    TOOLS[0],
+    {
+        "name": "mesh",
+        "description": "Mesh the geometry with straight-sided finite-volume cells (triangles / tetrahedra; "
+                       "quad-dominant in 2D with quads=true). Replaces the current mesh. Returns node count and "
+                       "the minimum cell quality (0 = degenerate, 1 = perfect). Node counts change in steps, so "
+                       "tiny changes to h may give the same mesh.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "h": {"type": "number", "description": "global cell size"},
+                "quads": {"type": "boolean", "description": "2D only: recombine triangles into quads (default false)"},
+                "refinements": TOOLS[1]["input_schema"]["properties"]["refinements"],
+                "using": USING,
+            },
+            "required": ["h", "using"],
+        },
+    },
+    {
+        "name": "solve",
+        "description": "Solve on the current mesh with the fixed steady laminar flow solver (finite volumes, "
+                       "SIMPLE) and return the scored quantity and the solve number. " + BC_HELP_FLOW,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "formulation": {"type": "string", "enum": ["2d", "3d"]},
+                "thickness": {"type": "number", "description": "2D: out-of-plane depth (forces and flow rates are per it)"},
+                "fluid": {
+                    "type": "object",
+                    "properties": {"rho": {"type": "number", "description": "density, kg/m^3"},
+                                   "mu": {"type": "number", "description": "dynamic viscosity, Pa s"}},
+                    "required": ["rho", "mu"],
+                },
+                "convection": {"type": "string", "enum": ["upwind", "linearUpwind"],
+                               "description": "convection scheme: upwind (first order, robust) or linearUpwind "
+                                              "(second order, default)"},
+                "bcs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["velocity_inlet", "pressure_outlet", "wall",
+                                                                "slip", "symmetry"]},
+                            "group": {"type": "string"},
+                            "value": {},
+                        },
+                        "required": ["type", "group"],
+                    },
+                },
+                "using": USING,
+            },
+            "required": ["formulation", "fluid", "bcs", "using"],
+        },
+    },
+    TOOLS[3],
+]
+
 # Checkpoint bookkeeping kept in the run record but not shown to the agent.
 HIDDEN_KEYS = {"path", "request", "index", "sha256", "gmsh", "info"}
 
@@ -159,8 +234,12 @@ CITATION = re.compile(r"\[using ((?:[ap]\d+-)?[a-z]+-\d{4})\]")
 BULLET_ID = re.compile(r"^(?:[ap]\d+-)?[a-z]+-\d{4}$")       # shared "mesh-0001" / "p1-mesh-0001" (task 1), private "a3-mesh-0001"
 
 
-def system_prompt(playbook_text: str) -> str:
-    return BASE_PROMPT + "\n" + (playbook_text or "(the playbook is empty)")
+def system_prompt(playbook_text: str, flow: bool = False) -> str:
+    return (BASE_PROMPT_FLOW if flow else BASE_PROMPT) + "\n" + (playbook_text or "(the playbook is empty)")
+
+
+def tools_for(problem) -> list[dict]:
+    return TOOLS_FLOW if fea.is_flow(problem) else TOOLS
 
 
 def task_prompt(problem_id: str) -> str:
@@ -168,7 +247,9 @@ def task_prompt(problem_id: str) -> str:
     problem = fea.get_problem(problem_id)
     q = fea.official_qoi(problem, task["qoi"])
     where = f" at point {q.point}" if q.point else (f" over group {q.group!r}" if q.group else "")
-    if SCORE == "field":
+    if q.point2:
+        where += f" minus its value at point {q.point2}"
+    if SCORE == "field" and not fea.is_flow(problem):
         from ace.config import AUTO_GAIN_TARGET as G
         from ace.field_error import automesher
         a = automesher(problem_id)
@@ -253,7 +334,7 @@ class Tools:
     def _mesh(self, args: dict) -> tuple[dict, bool]:
         path = self.workdir / f"mesh_{len(self.meshes)}.msh"
         m = fea.make_mesh(self.problem, path, h=args.get("h", 0), order=args.get("order", 1),
-                          refinements=args.get("refinements"))
+                          refinements=args.get("refinements"), quads=bool(args.get("quads", False)))
         # Checkpoint: the request that produced this mesh, so it can be rebuilt or varied later.
         m["request"] = {k: v for k, v in args.items() if k != "using"}
         m["index"] = len(self.meshes)
@@ -310,14 +391,15 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
     tokens of a run that crashes halfway are still counted. `ui`: ace.ui_bridge.settings(...)
     to also record each solve in the feacore run store (None = off)."""
     tools = Tools(problem_id, workdir, ui_bridge.for_run(ui, run_id, generation))
-    system = system_prompt(playbook_text)
+    system = system_prompt(playbook_text, flow=fea.is_flow(tools.problem))
+    tool_defs = tools_for(tools.problem)
     messages: list = [{"role": "user", "content": task_prompt(problem_id)}]
     trace: list[dict] = []
     usage = [] if usage is None else usage
     stop = "max_turns"
 
     for turn in range(MAX_TURNS):
-        resp, rec = llm.agent_turn(system, messages, TOOLS, run_id=run_id)
+        resp, rec = llm.agent_turn(system, messages, tool_defs, run_id=run_id)
         usage.append(rec)
         # Append the response content unchanged (thinking blocks must be passed back as-is).
         messages.append({"role": "assistant", "content": resp.content})

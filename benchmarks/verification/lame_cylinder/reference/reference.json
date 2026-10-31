@@ -1,0 +1,201 @@
+{
+ "id": "verification/lame_cylinder",
+ "volume": 117809.72450961727,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -9.9999996938383e-08,
+  -1e-07,
+  -1e-07,
+  100.0000001,
+  100.0000001,
+  20.0000001
+ ],
+ "n_cad_faces": 6,
+ "qois": [
+  {
+   "id": "ur_inner",
+   "kind": "point",
+   "field": "U",
+   "component": "r",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "point": [
+    35.35533905932738,
+    35.35533905932738,
+    10.0
+   ],
+   "reference": 0.04539682539682541,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled cylinder, plane strain; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 33",
+   "description": "radial displacement of the bore at 45 deg, mid-length [35.35533905932738, 35.35533905932738, 10.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "ur_outer",
+   "kind": "point",
+   "field": "U",
+   "component": "r",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "point": [
+    70.71067811865476,
+    70.71067811865476,
+    10.0
+   ],
+   "reference": 0.028888888888888898,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled cylinder, plane strain; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 33",
+   "description": "radial displacement of the outer surface at [70.71067811865476, 70.71067811865476, 10.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "hoop_inner",
+   "kind": "point",
+   "field": "S",
+   "component": "tt",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "point": [
+    35.35533905932738,
+    35.35533905932738,
+    10.0
+   ],
+   "reference": 166.66666666666669,
+   "tolerance": {
+    "rel": 0.015
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled cylinder, plane strain; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 33",
+   "description": "hoop stress at the bore [35.35533905932738, 35.35533905932738, 10.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "hoop_outer",
+   "kind": "point",
+   "field": "S",
+   "component": "tt",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "point": [
+    70.71067811865476,
+    70.71067811865476,
+    10.0
+   ],
+   "reference": 66.66666666666667,
+   "tolerance": {
+    "rel": 0.015
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled cylinder, plane strain; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 33",
+   "description": "hoop stress at the outer surface [70.71067811865476, 70.71067811865476, 10.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "axial_mid",
+   "kind": "point",
+   "field": "S",
+   "component": "zz",
+   "point": [
+    53.033008588991066,
+    53.033008588991066,
+    10.0
+   ],
+   "reference": 20.0,
+   "tolerance": {
+    "rel": 0.015
+   },
+   "reference_type": "analytical",
+   "provenance": "Lame thick-walled cylinder, plane strain; e.g. Timoshenko & Goodier, Theory of Elasticity, 3rd ed., sec. 33",
+   "description": "axial (plane-strain) stress mid-wall [53.033008588991066, 53.033008588991066, 10.0]",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "reaction_x",
+   "kind": "reaction",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "component": "x",
+   "reference": -100000.0,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "gate": true,
+   "reference_type": "analytical",
+   "provenance": "statics: pressure resultant on the quarter bore",
+   "description": "sum of x-reactions on x=0",
+   "weight": 1.0
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 1,
+  "reference_n_dof": 2208,
+  "reference_solver_cpu_s": 0.068889
+ }
+}

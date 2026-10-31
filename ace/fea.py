@@ -1,5 +1,11 @@
 """Plain-Python FEA plumbing behind the agent's tools: geometry summary, meshing, solving.
 
+Two physics: linear elasticity (skfem backend) and steady incompressible flow (physics "flow",
+openfoam backend). For flow the cells are always linear finite volumes (2D: counter-clockwise in the
+xy-plane, optionally quads); the agent's "order" choice is the convection scheme instead
+(upwind = 1, linearUpwind = 2), and the solver controls (laminar, iteration cap, residual target)
+come from the problem, not the agent.
+
 No LLM here. gmsh is process-global, so call these from one thread per process
 (run_loop runs each agent run in its own process).
 """
@@ -16,11 +22,19 @@ from feacore.case import BC, Analysis, Case, CaseError, Load, Material
 from feacore.geometry.gmsh_tools import distance_threshold_field, ensure_domain_group, gmsh_session
 from feacore.problems import registry
 from feacore.problems.base import Problem
+from feacore.problems.cfd._common import orient_ccw_2d
 from feacore.solver import solve
+
+
+CONVECTION = {"upwind": 1, "linearUpwind": 2}       # flow: scheme name -> analysis.order
 
 
 def get_problem(problem_id: str) -> Problem:
     return registry.get(problem_id)
+
+
+def is_flow(problem: Problem) -> bool:
+    return problem.physics == "flow"
 
 
 def official_qoi(problem: Problem, qoi_name: str):
@@ -73,10 +87,11 @@ def _size_floor(problem: Problem, bbox: list[float]) -> float:
 
 
 def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
-              refinements: list[dict] | None = None) -> dict:
+              refinements: list[dict] | None = None, quads: bool = False) -> dict:
     """Mesh the problem's geometry.
 
-    h: global element size. order: 1 (linear) or 2 (quadratic, curved).
+    h: global element size. order: 1 (linear) or 2 (quadratic, curved); flow meshes are always
+    linear. quads (2D flow only): recombine the triangles into quad-dominant cells.
     refinements: [{"group": name | "point": [x, y(, z)], "size": s, "radius": r}]
       element size s at the group or point, growing linearly to h at distance r
       (same meaning for groups and points).
@@ -85,6 +100,11 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
     refinements = refinements or []
     if order not in (1, 2):
         return {"ok": False, "error": "order must be 1 or 2"}
+    flow = is_flow(problem)
+    if flow:
+        order = 1                           # finite volumes: straight-sided cells
+    if quads and not (flow and problem.dim == 2):
+        return {"ok": False, "error": "quads is only available for 2D flow meshes"}
     with gmsh_session(problem.id):
         problem.build_geometry()
         ensure_domain_group(problem.dim)
@@ -130,11 +150,15 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
         gmsh.option.setNumber("Mesh.MeshSizeMax", h)
         for opt in ("MeshSizeFromPoints", "MeshSizeFromCurvature", "MeshSizeExtendFromBoundary"):
             gmsh.option.setNumber(f"Mesh.{opt}", 0)
+        if quads:
+            gmsh.option.setNumber("Mesh.RecombineAll", 1)
 
         try:
             gmsh.model.mesh.generate(problem.dim)
         except Exception as e:  # noqa: BLE001  gmsh raises plain Exception
             return {"ok": False, "error": f"gmsh failed: {e}"}
+        if flow and problem.dim == 2:
+            orient_ccw_2d()                 # the openfoam backend extrudes +z: cells must be counter-clockwise
 
         # Quality is measured on the straight-sided mesh, before curving to order 2.
         _, elem_tags, _ = gmsh.model.mesh.getElements(problem.dim)
@@ -152,6 +176,7 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
         "nodes": n_nodes,
         "elements": len(tags),
         "order": order,
+        **({"quads": bool(quads)} if flow else {}),
         "min_quality": round(float(min(q)), 4) if len(q) else None,
         "h_used": h,                       # after clamping to the size floor
         "sizes_used": sizes_used,          # refinement sizes after clamping, in request order
@@ -168,6 +193,8 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
 def build_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> Case:
     """Agent's setup dict -> feacore Case. The mesh, FE order and the scored QoI are ours."""
     bc_keys = {"type", "group", "point", "components", "value"}
+    if is_flow(problem):
+        return _build_flow_case(problem, mesh, setup, qoi_name, bc_keys)
     mat = setup.get("material") or {}
     return Case(
         mesh=mesh["path"],
@@ -182,12 +209,30 @@ def build_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> Case
     )
 
 
+def _build_flow_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str, bc_keys: set) -> Case:
+    """Flow setup: {formulation, thickness, fluid: {rho, mu}, convection, bcs}. The solver controls
+    (laminar, iteration cap, residual target) are the problem's: the agent does not tune the solver."""
+    fluid = setup.get("fluid") or {}
+    conv = setup.get("convection", "linearUpwind")
+    if conv not in CONVECTION:
+        raise CaseError(f"convection must be one of {sorted(CONVECTION)}, got {conv!r}")
+    options = problem.options() if hasattr(problem, "options") else {"turbulence": "laminar"}
+    return Case(
+        mesh=mesh["path"],
+        analysis=Analysis(physics="flow", formulation=setup.get("formulation", ""), order=CONVECTION[conv],
+                          thickness=float(setup.get("thickness", 1.0)), options=dict(options)),
+        materials={"fluid": Material(rho=float(fluid.get("rho", 0.0)), mu=float(fluid.get("mu", 0.0)))},
+        bcs=[BC(**{k: v for k, v in bc.items() if k in bc_keys}) for bc in setup.get("bcs", [])],
+        qois=[official_qoi(problem, qoi_name)],
+    )
+
+
 def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_result=None) -> dict:
     """Solve with the fixed solver and evaluate the scored QoI ourselves. `on_result`, if
     given, receives the feacore Result of a successful solve (for ace.ui_bridge)."""
     try:
         case = build_case(problem, mesh, setup, qoi_name)
-        result = solve(case, backend="skfem")
+        result = solve(case, backend="openfoam" if is_flow(problem) else "skfem")
         value = float(result.evaluate_all()[qoi_name])
     except (CaseError, TypeError, ValueError, KeyError) as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}

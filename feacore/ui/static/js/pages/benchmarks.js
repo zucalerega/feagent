@@ -1,6 +1,6 @@
 // Benchmarks library: tag filter + cards; detail view with statement, 3D geometry preview and the
 // evaluator view (references, expectations, reference studies).
-import { api, h, clear, fmt, fmtPct, loading, errorBox, statusChip, qoiDesc, timeAgo, decode } from '../api.js';
+import { api, postJSON, h, clear, fmt, fmtPct, loading, errorBox, statusChip, qoiDesc, timeAgo, decode } from '../api.js';
 
 const BEHAVIOR = {
   smooth: ['good', 'smooth'],
@@ -23,10 +23,11 @@ async function renderList(el) {
   try { data = await api('/api/problems'); } catch (e) { clear(el).append(errorBox(e)); return; }
   clear(el);
   el.append(h('div', { class: 'page-head' },
-    h('div', {}, h('h1', {}, 'Benchmark library'),
-      h('p', { class: 'lede' }, 'CAD design problems the agents are assigned to. Each has an agent-facing statement and an evaluator-only reference (exact, handbook or published values) used to judge every submission.'))));
+    h('div', {}, h('h1', {}, 'Benchmarks'),
+      h('p', { class: 'lede' }, 'The CAD design problems agents are assigned to. Each has an agent-facing statement and an evaluator-only reference used to judge every submission.')),
+    h('a', { class: 'btn primary', href: '#/batch' }, 'Run benchmarks')));
   if (!data.problems.length && !data.total) {
-    el.append(h('div', { class: 'card empty' }, h('h2', {}, 'No problems registered yet'),
+    el.append(h('div', { class: 'card empty-state' }, h('h2', {}, 'No problems registered yet'),
       h('p', {}, 'Problems are auto-discovered from feacore/problems/. They will appear here as soon as they register.'),
       importErrors(data)));
     return;
@@ -41,10 +42,10 @@ async function renderList(el) {
   let showAll = false;
   const drawTags = () => {
     clear(tagRow);
-    const shown = showAll ? tags : tags.filter(([t], i) => i < 18 || selected.has(t));
+    const shown = showAll ? tags : tags.filter(([t], i) => i < 10 || selected.has(t));
     shown.forEach(([t, n]) => tagRow.append(h('button', { class: `chip${selected.has(t) ? ' on' : ''}`, onclick: () => { selected.has(t) ? selected.delete(t) : selected.add(t); drawTags(); draw(); } },
       t.replace(/_/g, ' '), h('span', { class: 'count' }, n))));
-    if (tags.length > 18) tagRow.append(h('button', { class: 'chip', onclick: () => { showAll = !showAll; drawTags(); } }, showAll ? 'fewer tags' : `+ ${tags.length - 18} more tags`));
+    if (tags.length > 10) tagRow.append(h('button', { class: 'chip', onclick: () => { showAll = !showAll; drawTags(); } }, showAll ? 'fewer tags' : `+ ${tags.length - 10} more`));
     if (selected.size) tagRow.append(h('button', { class: 'chip', onclick: () => { selected.clear(); drawTags(); draw(); } }, 'clear filters ✕'));
   };
   filters.append(h('div', { class: 'search' }, input, count), tagRow);
@@ -68,19 +69,16 @@ function behaviorChip(b) {
 }
 
 function card(p) {
+  const [st, label] = BEHAVIOR[p.expected_behavior] || ['info', (p.expected_behavior || '').replace(/_/g, ' ')];
   return h('a', { class: 'card pcard', href: `#/benchmarks/${encodeURIComponent(p.id)}` },
     h('div', { class: 'title' }, p.title || p.id),
     h('div', { class: 'id' }, p.id),
-    h('div', { class: 'meta' },
-      h('span', { class: 'badge' }, `${p.dim}D`),
-      h('span', { class: 'badge' }, `${p.physics} · ${p.formulation.replace(/_/g, ' ')}`),
-      behaviorChip(p.expected_behavior)),
-    h('div', { class: 'chips' }, p.tags.filter(t => !['2d', '3d'].includes(t)).slice(0, 6).map(t => h('span', { class: 'chip' }, t.replace(/_/g, ' ')))),
+    h('div', { class: 'meta-line' }, `${p.dim}D · ${p.physics} · ${p.formulation.replace(/_/g, ' ')}`),
     h('div', { class: 'foot' },
+      h('span', { class: 'nowrap' }, h('span', { class: `dot ${st}`, style: { marginRight: '6px' } }), label),
       h('span', {}, `${p.n_qois} QoI${p.n_qois === 1 ? '' : 's'}`),
-      h('span', {}, `${p.n_references} reference${p.n_references === 1 ? '' : 's'}`),
-      p.n_studies ? h('span', {}, `${p.n_studies} stud${p.n_studies === 1 ? 'y' : 'ies'}`) : null,
-      p.n_submissions ? h('span', {}, `${p.n_submissions} submission${p.n_submissions === 1 ? '' : 's'}`) : null));
+      h('span', {}, p.n_references ? `${p.n_references} reference${p.n_references === 1 ? '' : 's'}` : 'no reference'),
+      p.n_studies ? h('span', {}, `${p.n_studies} stud${p.n_studies === 1 ? 'y' : 'ies'}`) : null));
 }
 
 function importErrors(data) {
@@ -102,15 +100,20 @@ async function renderDetail(el, id) {
   const ev = d.evaluator || {};
   el.append(h('div', { class: 'page-head' },
     h('div', {},
-      h('div', { class: 'secondary small' }, h('a', { href: '#/benchmarks' }, '← Benchmark library')),
+      h('div', { class: 'secondary small' }, h('a', { href: '#/benchmarks' }, '← Benchmarks')),
       h('h1', {}, st.title || id),
-      h('div', { class: 'chips', style: { marginTop: '6px' } },
-        h('span', { class: 'badge mono' }, id), h('span', { class: 'badge' }, `${st.dim}D`),
-        h('span', { class: 'badge' }, `${st.physics} · ${(st.formulation || '').replace(/_/g, ' ')}`),
-        behaviorChip(ev.expected_behavior), ...(st.tags || []).map(t => h('span', { class: 'chip' }, t.replace(/_/g, ' '))))),
+      h('div', { class: 'meta-line', style: { display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' } },
+        h('span', { class: 'mono' }, id), h('span', {}, `${st.dim}D · ${st.physics} · ${(st.formulation || '').replace(/_/g, ' ')}`),
+        behaviorChip(ev.expected_behavior)),
+      (st.tags || []).length ? h('div', { class: 'small muted', style: { marginTop: '4px' } }, (st.tags || []).map(t => t.replace(/_/g, ' ')).join(' · ')) : null),
     h('div', { class: 'row' },
-      h('a', { class: 'btn primary', href: `#/study?problem=${encodeURIComponent(id)}` }, 'Run convergence study'),
-      h('a', { class: 'btn', href: `#/consensus/${encodeURIComponent(id)}` }, `Consensus (${d.n_submissions})`))));
+      h('button', { class: 'btn primary', title: 'reference study now: skfem, P2, the problem\u2019s default mesh sizes', onclick: async e => {
+        e.target.disabled = true;
+        try { const st = await postJSON('/api/studies', { problem_id: id, backend: 'skfem', order: 2 }); location.hash = `#/study/${st.study_id}`; }
+        catch (err) { e.target.disabled = false; alert(err.message); }
+      } }, 'Run with defaults'),
+      h('a', { class: 'btn', href: `#/study?problem=${encodeURIComponent(id)}` }, 'Custom study\u2026'),
+      h('a', { class: 'btn ghost', href: `#/consensus/${encodeURIComponent(id)}` }, `Consensus (${d.n_submissions})`))));
 
   const left = h('div', { class: 'stack' });
   const right = h('div', { class: 'stack' });
@@ -140,15 +143,15 @@ async function renderDetail(el, id) {
     h('div', { class: 'card-head' }, h('h2', {}, 'Evaluator view'), h('span', { class: 'badge' }, 'private: never shown to agents')),
     refs.length ? h('table', { class: 'data' },
       h('thead', {}, h('tr', {}, h('th', {}, 'QoI'), h('th', { class: 'num' }, 'reference'), h('th', {}, 'kind'), h('th', { class: 'num' }, 'tolerance'))),
-      h('tbody', {}, refs.map(r => [
-        h('tr', {}, h('td', { class: 'mono' }, r.qoi), h('td', { class: 'num' }, fmt(r.value, 6)), h('td', {}, r.kind.replace(/_/g, ' ')), h('td', { class: 'num' }, `±${fmtPct(r.tolerance, 2)}`)),
-        h('tr', { class: 'dim' }, h('td', { colspan: 4 }, h('div', { class: 'ref-src' }, r.source, r.notes ? ` — ${r.notes}` : '')))])))
+      h('tbody', {}, refs.map(r => h('tr', {}, h('td', { class: 'mono' }, r.qoi), h('td', { class: 'num' }, fmt(r.value, 6)), h('td', {}, r.kind.replace(/_/g, ' ')), h('td', { class: 'num' }, `\u00b1${fmtPct(r.tolerance, 2)}`)))))
       : h('p', { class: 'muted' }, 'No reference values: this problem is judged on self-consistency (convergence) and agreement between agents.'),
     expectations(ev),
     h('table', { class: 'kv', style: { marginTop: '12px' } }, h('tbody', {},
       h('tr', {}, h('th', {}, 'expected behaviour'), h('td', {}, (ev.expected_behavior || '').replace(/_/g, ' '))),
       h('tr', {}, h('th', {}, 'reference study sizes h'), h('td', {}, Array.isArray(ev.study_sizes) ? ev.study_sizes.map(v => fmt(v, 4)).join(', ') : '–')))),
-    ev.reference_case ? h('details', { style: { marginTop: '12px' } }, h('summary', {}, 'Reference setup (case JSON)'), h('pre', { class: 'code' }, JSON.stringify(ev.reference_case, null, 2))) : null));
+    refs.length ? h('details', { class: 'more' }, h('summary', {}, 'Sources and notes'),
+      h('div', { class: 'stack', style: { marginTop: '10px' } }, refs.map(r => h('div', { class: 'ref-src' }, h('b', { class: 'mono' }, r.qoi), ': ', r.source, r.notes ? ` \u2014 ${r.notes}` : '')))) : null,
+    ev.reference_case ? h('details', { class: 'more' }, h('summary', {}, 'Reference setup (case JSON)'), h('pre', { class: 'code' }, JSON.stringify(ev.reference_case, null, 2))) : null));
 
   // studies
   const studies = [...(ev.validation_studies || []).map(v => ({ ...v, source: 'validation' })), ...(d.studies || [])];

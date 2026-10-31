@@ -1,0 +1,173 @@
+{
+ "case": "verification/euler_buckling",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 10.0,
+   "n_nodes": 1804,
+   "n_dof": 5412,
+   "solver_cpu_s": 0.285362,
+   "solver_wall_s": 0.24229682099939964,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "lambda1": {
+     "value": 2.703041,
+     "error": 0.0009064474766827471,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 2,
+   "h": 6.0,
+   "n_nodes": 2927,
+   "n_dof": 8781,
+   "solver_cpu_s": 0.548226,
+   "solver_wall_s": 0.4639335410001877,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "lambda1": {
+     "value": 2.701934,
+     "error": 0.0004965375132909841,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 4.0,
+   "n_nodes": 7411,
+   "n_dof": 22233,
+   "solver_cpu_s": 1.600862,
+   "solver_wall_s": 1.2294026299996403,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "lambda1": {
+     "value": 2.701233,
+     "error": 0.00023696489871318253,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 3.0,
+   "n_nodes": 16265,
+   "n_dof": 48795,
+   "solver_cpu_s": 5.70928,
+   "solver_wall_s": 4.149608282000372,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "lambda1": {
+     "value": 2.700907,
+     "error": 0.00011625067281810016,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 2.2,
+   "n_nodes": 37317,
+   "n_dof": 111951,
+   "solver_cpu_s": 16.401101,
+   "solver_wall_s": 11.708578558000227,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "lambda1": {
+     "value": 2.700741,
+     "error": 5.478269276110511e-05,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "lambda1": {
+   "q_fine": 2.700741,
+   "monotone": true,
+   "value": 2.7005930542404366,
+   "order": 2.7180066065072293,
+   "uncertainty": 0.00018493219945396407,
+   "method": "richardson"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   5412,
+   8781,
+   22233,
+   48795,
+   111951
+  ],
+  "accuracy": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.29,
+   0.55,
+   1.6,
+   5.71,
+   16.4
+  ]
+ }
+}

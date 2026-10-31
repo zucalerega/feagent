@@ -1,0 +1,614 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# CAS_TEST__: SSLV04M
+# ----------------------------------------------------------------------
+# SSLV04 M               COMMANDES                            19/08/91
+# CYLINDRE CREUX EN CONTRAINTES PLANES
+# SOUS PRESSION INTERNE (60 MPA)
+#
+# MODELISATION : ELEMENTS MECANIQUE 3D (PYRAM13+QUAD8)
+# MAILLAGE     : GIBI > ASTER
+# ----------------------------------------------------------------------
+# GROUPES DE NOEUDS ET MAILLES :
+# GRNO: A B E F    BORDAB
+# GRMA: BORDEF  CYLINT  CYL
+# ----------------------------------------------------------------------
+#
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+M = LIRE_MAILLAGE(FORMAT="MED")
+
+M = DEFI_GROUP(reuse=M, MAILLAGE=M, CREA_GROUP_NO=_F(GROUP_MA="BORDAB"))
+
+MO = AFFE_MODELE(
+    MAILLAGE=M,
+    AFFE=_F(GROUP_MA=("BORDEF", "CYLINT", "CYL"), PHENOMENE="MECANIQUE", MODELISATION="3D"),
+)
+
+M = MODI_MAILLAGE(reuse=M, MAILLAGE=M, ORIE_PEAU=_F(GROUP_MA_PEAU="CYLINT"))
+
+MA = DEFI_MATERIAU(ELAS=_F(E=200000.0, NU=0.3, ALPHA=0.0))
+
+CM = AFFE_MATERIAU(MAILLAGE=M, AFFE=_F(TOUT="OUI", MATER=MA))
+
+CH = AFFE_CHAR_MECA(
+    MODELE=MO,
+    FACE_IMPO=_F(GROUP_MA="BORDEF", DNOR=0.0),
+    DDL_IMPO=(_F(GROUP_NO="F", DZ=0.0), _F(GROUP_NO="BORDAB", DY=0.0)),
+    PRES_REP=_F(GROUP_MA="CYLINT", PRES=60.0),
+)
+
+RESU = MECA_STATIQUE(MODELE=MO, CHAM_MATER=CM, EXCIT=_F(CHARGE=CH))
+
+RESU = CALC_CHAMP(reuse=RESU, RESULTAT=RESU, NUME_ORDRE=1, DEFORMATION=("EPSI_ELNO"))
+
+
+RESU = CALC_CHAMP(reuse=RESU, RESULTAT=RESU, NUME_ORDRE=1, CONTRAINTE=("SIGM_ELNO"))
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DX",
+            VALE_CALC=5.900392020278427e-05,
+            VALE_REFE=5.8999999999999998e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DY",
+            VALE_CALC=0.0,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DX",
+            VALE_CALC=4.0000067333497e-05,
+            VALE_REFE=4.0000000000000003e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DY",
+            VALE_CALC=0.0,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DX",
+            VALE_CALC=4.172205539856469e-05,
+            VALE_REFE=4.1719299999999999e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DY",
+            VALE_CALC=4.172210893911662e-05,
+            VALE_REFE=4.1719299999999999e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DX",
+            VALE_CALC=2.8284371787612e-05,
+            VALE_REFE=2.82843e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            NOM_CMP="DY",
+            VALE_CALC=2.8284296505264e-05,
+            VALE_REFE=2.82843e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXX",
+            VALE_CALC=-0.00045018774514515153,
+            VALE_REFE=-4.5e-4,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M6",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPYY",
+            VALE_CALC=0.0005907786686353901,
+            VALE_REFE=5.90e-4,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M6",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPZZ",
+            VALE_CALC=-5.999686842049e-05,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+            GROUP_MA="M6",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXY",
+            VALE_CALC=-5.933729715298e-07,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+            GROUP_MA="M6",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXX",
+            VALE_CALC=-6.0209578967894154e-05,
+            VALE_REFE=-6.0e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M58",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPYY",
+            VALE_CALC=0.00020023855642355606,
+            VALE_REFE=2.0e-4,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M58",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPZZ",
+            VALE_CALC=-5.999584485667e-05,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+            GROUP_MA="M58",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXY",
+            VALE_CALC=8.1769950454075e-08,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+            GROUP_MA="M58",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXX",
+            VALE_CALC=6.909447078597678e-05,
+            VALE_REFE=7.0e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.5e-2,
+            GROUP_MA="M546",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPYY",
+            VALE_CALC=7.150013473715422e-05,
+            VALE_REFE=7.0e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=0.022,
+            GROUP_MA="M546",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPZZ",
+            VALE_CALC=-5.9998534680978e-05,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+            GROUP_MA="M546",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXY",
+            VALE_CALC=-0.0005204865106455955,
+            VALE_REFE=-5.20e-4,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-2,
+            CRITERE="RELATIF",
+            GROUP_MA="M546",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXX",
+            VALE_CALC=7.013132718838115e-05,
+            VALE_REFE=7.0e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M599",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPYY",
+            VALE_CALC=6.991873425974592e-05,
+            VALE_REFE=7.0e-05,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M599",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPZZ",
+            VALE_CALC=-6.0001666204409e-05,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-4,
+            CRITERE="ABSOLU",
+            GROUP_MA="M599",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="EPSI_ELNO",
+            NOM_CMP="EPXY",
+            VALE_CALC=-0.00012985477238712534,
+            VALE_REFE=-1.30e-4,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-2,
+            CRITERE="RELATIF",
+            GROUP_MA="M599",
+        ),
+    )
+)
+
+# -----------------------------------------------------------------
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXX",
+            VALE_CALC=-59.91962167658127,
+            VALE_REFE=-60,
+            REFERENCE="ANALYTIQUE",
+            PRECISION=1.0e-2,
+            CRITERE="RELATIF",
+            GROUP_MA="M6",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIYY",
+            VALE_CALC=100.229057366579,
+            VALE_REFE=100.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M6",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIZZ",
+            VALE_CALC=0.16403380825119315,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=0.2,
+            GROUP_MA="M6",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="A",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXY",
+            VALE_CALC=-0.1851134458040653,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=0.2,
+            GROUP_MA="M6",
+        ),
+    )
+)
+
+# -----------------------------------------------------------------
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXX",
+            VALE_CALC=-0.02890354613400775,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=0.10000000000000001,
+            GROUP_MA="M58",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIYY",
+            VALE_CALC=40.040040360242934,
+            VALE_REFE=40.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.1999999999999999e-3,
+            GROUP_MA="M58",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIZZ",
+            VALE_CALC=0.0033337979064564276,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=0.10000000000000001,
+            GROUP_MA="M58",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="B",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXY",
+            VALE_CALC=0.010288552299807796,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=0.10000000000000001,
+            GROUP_MA="M58",
+        ),
+    )
+)
+
+# -----------------------------------------------------------------
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXX",
+            VALE_CALC=19.970178557770048,
+            VALE_REFE=20.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M546",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIYY",
+            VALE_CALC=20.34028070410503,
+            VALE_REFE=20.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=2.0e-2,
+            GROUP_MA="M546",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIZZ",
+            VALE_CALC=0.1640006311439317,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=0.2,
+            GROUP_MA="M546",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="E",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXY",
+            VALE_CALC=-80.07484779163008,
+            VALE_REFE=-80.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.1999999999999999e-3,
+            GROUP_MA="M546",
+        ),
+    )
+)
+
+# -----------------------------------------------------------------
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXX",
+            VALE_CALC=20.024827155720565,
+            VALE_REFE=20.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M599",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIYY",
+            VALE_CALC=19.992120551315146,
+            VALE_REFE=20.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+            GROUP_MA="M599",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIZZ",
+            VALE_CALC=0.003085175499309154,
+            VALE_REFE=0.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-2,
+            GROUP_MA="M599",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            GROUP_NO="F",
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            NOM_CMP="SIXY",
+            VALE_CALC=-19.97765729032698,
+            VALE_REFE=-20.0,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            PRECISION=1.2e-3,
+            GROUP_MA="M599",
+        ),
+    )
+)
+
+# -----------------------------------------------------------------
+FIN()
+#

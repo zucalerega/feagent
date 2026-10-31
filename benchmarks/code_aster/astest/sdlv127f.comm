@@ -1,0 +1,890 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# Fichier de commande onde plane inclinee (sur un par.ede de 200 par 400)
+
+DEBUT(CODE="OUI")
+
+mail = LIRE_MAILLAGE()
+
+# parametre du sol et determination des parametre du modele d'interaction sol-structure
+Esol = 30000000000
+Nusol = 0.25
+Msol = 2450.0
+
+
+# parametres proches de 1 pour le calcul des raideurs et amortisseurs
+alpha = 0.8
+beta = 1.1
+
+# distance entre le barrage et le bord de la fondation (en ordre de grandeur)
+rb = 100
+lcara = ((1 + alpha) * 2) * rb
+
+# parametres materiaux du modele
+
+sol = DEFI_MATERIAU(ELAS=_F(E=Esol, NU=Nusol, RHO=Msol))
+
+sol2 = DEFI_MATERIAU(ELAS=_F(E=Esol, NU=Nusol, RHO=Msol, LONG_CARA=lcara, COEF_AMOR=beta))
+
+# ------------------------------------------------------------
+# Définition des modèles
+# ------------------------------------------------------------
+
+
+# ------------------------------------------------------------
+# Définition des chargements sur les bords
+# ------------------------------------------------------------
+
+from math import *
+
+# Coordonnées du point de départ de l'onde.
+z0 = -200.0
+x0 = 0.0
+y0 = 0.0
+
+
+z1 = 0.0
+x1 = 0.0
+y1 = 0.0
+
+# Angle d'incidence par rapport à la verticale de propagation de l'onde (0=vertical)
+a = 21
+
+a2 = radians(a)
+cosa = cos(a2)
+sina = sin(a2)
+
+# Sollicitation en acceleration
+
+LINST = DEFI_LIST_REEL(DEBUT=0.0, INTERVALLE=_F(JUSQU_A=0.2, PAS=0.002))
+
+acce_0 = (
+    DEFI_FONCTION(
+        NOM_RESU="ACCE",
+        NOM_PARA="INST",
+        PROL_GAUCHE="CONSTANT",
+        PROL_DROITE="CONSTANT",
+        VALE=(
+            0,
+            0,
+            0.014,
+            0,
+            0.016,
+            0.0117113321616078,
+            0.018,
+            0.0234226643232156,
+            0.02,
+            0.0468453286464312,
+            0.022,
+            0.0936906572928623,
+            0.024,
+            0.187381314585725,
+            0.026,
+            0.368124552684678,
+            0.028,
+            0.535826794978997,
+            0.03,
+            0.684547105928689,
+            0.032,
+            0.809016994374947,
+            0.034,
+            0.90482705246602,
+            0.036,
+            0.968583161128631,
+            0.038,
+            0.998026728428272,
+            0.04,
+            0.992114701314478,
+            0.042,
+            0.951056516295154,
+            0.044,
+            0.876306680043864,
+            0.046,
+            0.770513242775789,
+            0.048,
+            0.63742398974869,
+            0.05,
+            0.481753674101716,
+            0.052,
+            0.309016994374948,
+            0.054,
+            0.125333233564304,
+            0.056,
+            -0.0627905195293133,
+            0.058,
+            -0.248689887164854,
+            0.06,
+            -0.425779291565073,
+            0.062,
+            -0.587785252292473,
+            0.064,
+            -0.728968627421412,
+            0.066,
+            -0.844327925502015,
+            0.068,
+            -0.929776485888251,
+            0.07,
+            -0.982287250728689,
+            0.072,
+            -1,
+            0.074,
+            -0.982287250728689,
+            0.076,
+            -0.929776485888252,
+            0.078,
+            -0.844327925502016,
+            0.08,
+            -0.728968627421412,
+            0.082,
+            -0.587785252292473,
+            0.084,
+            -0.425779291565073,
+            0.086,
+            -0.248689887164854,
+            0.088,
+            -0.124344943582427,
+            0.09,
+            -0.0621724717912136,
+            0.092,
+            -0.0310862358956068,
+            0.094,
+            -0.0155431179478034,
+            0.096,
+            0,
+        ),
+    ),
+)
+
+acce_1 = CALC_FONCTION(COMB=_F(FONCTION=acce_0, COEF=1.0), LIST_PARA=LINST)
+
+
+vite_1 = CALC_FONCTION(INTEGRE=_F(FONCTION=acce_1))
+depl_1 = CALC_FONCTION(INTEGRE=_F(FONCTION=vite_1))
+
+CHMAT = AFFE_MATERIAU(
+    MAILLAGE=mail,
+    AFFE=(_F(GROUP_MA=("VOLG", "VOLD"), MATER=sol), _F(GROUP_MA=("SULA", "SUB"), MATER=sol)),
+)
+
+# ------------------------------------------------------------
+# Définition des modèles
+# ------------------------------------------------------------
+
+# Modèle avec surface libre
+MODELE = AFFE_MODELE(
+    MAILLAGE=mail,
+    AFFE=(
+        _F(GROUP_MA=("VOLG", "VOLD"), PHENOMENE="MECANIQUE", MODELISATION="3D"),
+        _F(GROUP_MA=("SUG", "SUD", "SUB"), PHENOMENE="MECANIQUE", MODELISATION="3D_ABSO"),
+    ),
+)
+
+LIAISON = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    LIAISON_GROUP=(
+        _F(
+            GROUP_NO_1="SUF",
+            GROUP_NO_2="SUT",
+            DDL_1=("DX",),
+            DDL_2=("DX",),
+            COEF_MULT_1=1.0,
+            COEF_MULT_2=-1.0,
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO_1="SUF",
+            GROUP_NO_2="SUT",
+            DDL_1=("DY",),
+            DDL_2=("DY",),
+            COEF_MULT_1=1.0,
+            COEF_MULT_2=-1.0,
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO_1="SUF",
+            GROUP_NO_2="SUT",
+            DDL_1=("DZ",),
+            DDL_2=("DZ",),
+            COEF_MULT_1=1.0,
+            COEF_MULT_2=-1.0,
+            COEF_IMPO=0.0,
+        ),
+    ),
+)
+
+ASSEMBLAGE(
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    CHARGE=LIAISON,
+    # CARA_ELEM=ELEM,
+    NUME_DDL=CO("NUMEDDL"),
+    MATR_ASSE=(
+        _F(MATRICE=CO("RIGI"), OPTION="RIGI_MECA"),
+        _F(MATRICE=CO("MASSE"), OPTION="MASS_MECA"),
+        _F(MATRICE=CO("AMOR"), OPTION="AMOR_MECA"),
+    ),
+)
+
+# Chargement P incident
+ONDEP = AFFE_CHAR_MECA_F(
+    MODELE=MODELE,
+    ONDE_PLANE=_F(
+        DIRECTION=(sina, 0.000, cosa),
+        TYPE_ONDE="P",
+        FONC_SIGNAL=vite_1,
+        COOR_SOURCE=(x0, y0, z0),
+        COOR_REFLECHI=(x1, y1, z1),
+        DEPL_IMPO=depl_1,
+        GROUP_MA=("SUB", "SUD", "SUG"),
+    ),
+)
+
+# onde SV
+# ONDESV = AFFE_CHAR_MECA_F(
+#     MODELE=MODELE,
+#     ONDE_PLANE=_F(
+#         DIRECTION=(sina, 0.000, cosa),
+#         TYPE_ONDE="SV",
+#         FONC_SIGNAL=vite_1,
+#         COOR_SOURCE=(x0, y0, z0),
+#         COOR_REFLECHI=(x1, y1, z1),
+#         DEPL_IMPO=depl_1,
+#         GROUP_MA=("SUG", "SUD", "SUB"),
+#     ),
+# )
+
+# Résultats avec ondes réfléchies
+ResuP = DYNA_VIBRA(
+    BASE_CALCUL="PHYS",
+    TYPE_CALCUL="TRAN",
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    MATR_MASS=MASSE,
+    MATR_RIGI=RIGI,
+    MATR_AMOR=AMOR,
+    SCHEMA_TEMPS=_F(SCHEMA="NEWMARK"),
+    INCREMENT=_F(LIST_INST=LINST),
+    ARCHIVAGE=_F(LIST_INST=LINST),
+    EXCIT=(_F(CHARGE=ONDEP),),
+)
+
+accxc = CALC_FONCTION(COMB=_F(FONCTION=acce_1, COEF=1.0), LIST_PARA=LINST)
+
+
+azNGH = RECU_FONCTION(
+    RESULTAT=ResuP,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMH = RECU_FONCTION(
+    RESULTAT=ResuP,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDH = RECU_FONCTION(
+    RESULTAT=ResuP,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNGB = RECU_FONCTION(
+    RESULTAT=ResuP,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMB = RECU_FONCTION(
+    RESULTAT=ResuP,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDB = RECU_FONCTION(
+    RESULTAT=ResuP,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+Poin1 = (0.0, 0.0, -200.0)
+DirZ0 = (0.0, 0.0, 1.0)
+# Alpha=45.
+Alpha = 30.0
+
+mail = MODI_MAILLAGE(
+    reuse=mail, MAILLAGE=mail, ROTATION=(_F(POIN_1=Poin1, DIR=DirZ0, ANGLE=Alpha),)
+)
+
+DXN = FORMULE(NOM_PARA=("DX", "DY", "DZ", "INST"), VALE="DX*0.866025-DY*0.5")
+DYN = FORMULE(NOM_PARA=("DX", "DY", "DZ", "INST"), VALE="DX*0.5+DY*0.866025")
+DZN = FORMULE(NOM_PARA=("DX", "DY", "DZ", "INST"), VALE="DZ")
+
+RESUFP = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="DYNA_TRANS",
+    CONV_RESU=_F(
+        COEF=1.0,
+        NOM_CHAM_INIT="ACCE",
+        RESU_INIT=ResuP,
+        MATR_RIGI=RIGI,
+        FONC_DX=DXN,
+        FONC_DY=DYN,
+        FONC_DZ=DZN,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+    ),
+)
+
+azNGH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNGB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+IMPR_FONCTION(
+    FORMAT="XMGRACE",  #'TABLEAU',
+    UNITE=29,
+    COURBE=(
+        _F(FONCTION=azNGH_0),
+        _F(FONCTION=azNMH_0),
+        _F(FONCTION=azNDH_0),
+        _F(FONCTION=azNGB_0),
+        _F(FONCTION=azNMB_0),
+        _F(FONCTION=azNDB_0),
+    ),
+)
+
+b = 30.0
+
+b1 = radians(b)
+cosb = cos(b1)
+sinb = sin(b1)
+
+axNGH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNMH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNDH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNGB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNMB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNDB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+TEST_FONCTION(
+    VALEUR=(
+        _F(
+            VALE_CALC=0.30883747,
+            VALE_REFE=0.35836795 * cosb,
+            PRECISION=6.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.038,
+            FONCTION=axNGB_0,
+        ),
+        _F(
+            VALE_CALC=0.30925335,
+            VALE_REFE=0.35836795 * cosb,
+            PRECISION=6.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.058,
+            FONCTION=axNMB_0,
+        ),
+        _F(
+            VALE_CALC=0.31203003,
+            VALE_REFE=0.35836795 * cosb,
+            PRECISION=6.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.076,
+            FONCTION=axNDB_0,
+        ),
+        _F(
+            VALE_CALC=0.72150220,
+            VALE_REFE=0.35836795 * cosb * 2.0,
+            PRECISION=17.0e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.088,
+            FONCTION=axNGH_0,
+        ),
+        _F(
+            VALE_CALC=0.69672050,
+            VALE_REFE=0.35836795 * cosb * 2.0,
+            PRECISION=13.0e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.106,
+            FONCTION=axNMH_0,
+        ),
+        _F(
+            VALE_CALC=0.69112291,
+            VALE_REFE=0.35836795 * cosb * 2.0,
+            PRECISION=12.0e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.126,
+            FONCTION=axNDH_0,
+        ),
+    )
+)
+
+ayNGH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DY",
+)
+
+ayNMH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DY",
+)
+
+ayNDH_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DY",
+)
+
+ayNGB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DY",
+)
+
+ayNMB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DY",
+)
+
+ayNDB_0 = RECU_FONCTION(
+    RESULTAT=RESUFP,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DY",
+)
+
+TEST_FONCTION(
+    VALEUR=(
+        _F(
+            VALE_CALC=0.17830748,
+            VALE_REFE=0.35836795 * sinb,
+            PRECISION=6.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.038,
+            FONCTION=ayNGB_0,
+        ),
+        _F(
+            VALE_CALC=0.17854759,
+            VALE_REFE=0.35836795 * sinb,
+            PRECISION=6.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.058,
+            FONCTION=ayNMB_0,
+        ),
+        _F(
+            VALE_CALC=0.18015071,
+            VALE_REFE=0.35836795 * sinb,
+            PRECISION=6.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.076,
+            FONCTION=ayNDB_0,
+        ),
+        _F(
+            VALE_CALC=0.41655968,
+            VALE_REFE=0.35836795 * sinb * 2.0,
+            PRECISION=17.0e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.088,
+            FONCTION=ayNGH_0,
+        ),
+        _F(
+            VALE_CALC=0.40225196,
+            VALE_REFE=0.35836795 * sinb * 2.0,
+            PRECISION=13.0e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.106,
+            FONCTION=ayNMH_0,
+        ),
+        _F(
+            VALE_CALC=0.39902018,
+            VALE_REFE=0.35836795 * sinb * 2.0,
+            PRECISION=12.0e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.126,
+            FONCTION=ayNDH_0,
+        ),
+    )
+)
+
+C0 = DEFI_CONSTANTE(VALE=0.0)
+C1 = DEFI_CONSTANTE(VALE=1.0)
+
+DX0 = CALC_FONCTION(
+    COMB=(_F(FONCTION=C0, COEF=1.0), _F(FONCTION=axNGB_0, COEF=-1.0)),
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+)
+
+DX1 = CALC_FONCTION(
+    COMB=(_F(FONCTION=C1, COEF=1.0), _F(FONCTION=axNGB_0, COEF=-1.0)),
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+)
+
+DXN = DEFI_NAPPE(
+    NOM_PARA="DX",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+    PARA=(0.0, 1.0),
+    FONCTION=(DX0, DX1),
+)
+
+DY0 = CALC_FONCTION(
+    COMB=(_F(FONCTION=C0, COEF=1.0), _F(FONCTION=ayNGB_0, COEF=-1.0)),
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+)
+
+DY1 = CALC_FONCTION(
+    COMB=(_F(FONCTION=C1, COEF=1.0), _F(FONCTION=ayNGB_0, COEF=-1.0)),
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+)
+
+DYN = DEFI_NAPPE(
+    NOM_PARA="DY",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+    PARA=(0.0, 1.0),
+    FONCTION=(DY0, DY1),
+)
+
+DZ0 = CALC_FONCTION(
+    COMB=(_F(FONCTION=C0, COEF=1.0), _F(FONCTION=azNGB_0, COEF=-1.0)),
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+)
+
+DZ1 = CALC_FONCTION(
+    COMB=(_F(FONCTION=C1, COEF=1.0), _F(FONCTION=azNGB_0, COEF=-1.0)),
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+)
+
+DZN = DEFI_NAPPE(
+    NOM_PARA="DZ",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+    PARA=(0.0, 1.0),
+    FONCTION=(DZ0, DZ1),
+)
+
+RESUFA = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="DYNA_TRANS",
+    CONV_RESU=_F(
+        COEF=1.0,
+        NOM_CHAM_INIT="ACCE",
+        RESU_INIT=RESUFP,
+        MATR_RIGI=RIGI,
+        FONC_DX=DXN,
+        FONC_DY=DYN,
+        FONC_DZ=DZN,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+    ),
+)
+
+azNGH_1 = RECU_FONCTION(
+    RESULTAT=RESUFA,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMH_1 = RECU_FONCTION(
+    RESULTAT=RESUFA,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDH_1 = RECU_FONCTION(
+    RESULTAT=RESUFA,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNGB_1 = RECU_FONCTION(
+    RESULTAT=RESUFA,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMB_1 = RECU_FONCTION(
+    RESULTAT=RESUFA,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDB_1 = RECU_FONCTION(
+    RESULTAT=RESUFA,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+TEST_FONCTION(
+    VALEUR=(
+        _F(VALE_CALC=1.43690923, VALE_PARA=0.064, FONCTION=azNMB_1),
+        _F(VALE_CALC=1.83138983, VALE_PARA=0.074, FONCTION=azNDB_1),
+        _F(VALE_CALC=2.16740838, VALE_PARA=0.082, FONCTION=azNGH_1),
+        _F(VALE_CALC=1.82538143, VALE_PARA=0.106, FONCTION=azNMH_1),
+        _F(VALE_CALC=1.58582057, VALE_PARA=0.120, FONCTION=azNDH_1),
+    )
+)
+
+FIN()

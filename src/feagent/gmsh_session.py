@@ -12,6 +12,7 @@ import gmsh
 from .errors import CadLoadError
 
 SUPPORTED_EXTENSIONS = (".step", ".stp", ".iges", ".igs", ".brep")
+_FORMATS_HINT = "Supported formats: " + ", ".join(SUPPORTED_EXTENSIONS)
 
 
 @contextmanager
@@ -49,30 +50,37 @@ def gmsh_messages(level: str = "Error") -> list[str]:
 
 
 def load_cad(path: str | Path, heal: bool = False) -> list[tuple[int, int]]:
-    p = Path(path)
-    hint = "Supported formats: " + ", ".join(SUPPORTED_EXTENSIONS)
-    if not p.is_file():
-        raise CadLoadError(f"CAD file not found: {p}", hint="Check the path. " + hint)
-    if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
-        raise CadLoadError(f"Unsupported CAD format '{p.suffix}': {p}", hint=hint)
+    """Import a CAD file (mm), fragment multi-body parts, optionally heal; return volumes."""
+    p = _checked_cad_path(Path(path))
     gmsh.option.setString("Geometry.OCCTargetUnit", "MM")
-    occ = gmsh.model.occ
     try:
-        occ.importShapes(str(p), highestDimOnly=True)
-        occ.synchronize()
-        vols = gmsh.model.getEntities(3)
-        if heal:
-            occ.healShapes()
-            occ.synchronize()
-            vols = gmsh.model.getEntities(3)
-        if len(vols) > 1:
-            occ.fragment(vols, [])
-            occ.synchronize()
-        if heal:
-            occ.removeAllDuplicates()
-        occ.synchronize()
+        _import_shapes(p, heal)
     except Exception as e:
         errs = "; ".join(gmsh_messages("Error"))
         raise CadLoadError(f"Failed to import {p.name}: {e} {errs}".strip(),
-                           hint="The file may be corrupt or empty. " + hint) from e
+                           hint="The file may be corrupt or empty. " + _FORMATS_HINT) from e
     return gmsh.model.getEntities(3)
+
+
+def _checked_cad_path(p: Path) -> Path:
+    if not p.is_file():
+        raise CadLoadError(f"CAD file not found: {p}", hint="Check the path. " + _FORMATS_HINT)
+    if p.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        raise CadLoadError(f"Unsupported CAD format '{p.suffix}': {p}", hint=_FORMATS_HINT)
+    return p
+
+
+def _import_shapes(p: Path, heal: bool) -> None:
+    occ = gmsh.model.occ
+    occ.importShapes(str(p), highestDimOnly=True)
+    occ.synchronize()
+    if heal:
+        occ.healShapes()
+        occ.synchronize()
+    vols = gmsh.model.getEntities(3)
+    if len(vols) > 1:
+        occ.fragment(vols, [])
+        occ.synchronize()
+    if heal:
+        occ.removeAllDuplicates()
+    occ.synchronize()

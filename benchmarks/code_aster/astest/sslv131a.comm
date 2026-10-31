@@ -1,0 +1,816 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+#
+
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="EXCEPTION"), DEBUG=_F(SDVERI="OUI"))
+
+MA = LIRE_MAILLAGE(FORMAT="ASTER")
+
+DEFI_GROUP(reuse=MA, MAILLAGE=MA, CREA_GROUP_MA=_F(NOM="TOUT", TOUT="OUI"))
+
+# ================================
+
+# MATERIAU ISOTROPE TRANSVERSE  =
+
+# ================================
+
+
+MATISTR = DEFI_MATERIAU(ELAS_ISTR=_F(E_L=11000.0, E_N=8000.0, NU_LN=0.15, NU_LT=0.18, G_LN=7000.0))
+
+CHMATIST = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MATISTR))
+
+MOD3D = AFFE_MODELE(MAILLAGE=MA, AFFE=_F(GROUP_MA="TET1", MODELISATION="3D", PHENOMENE="MECANIQUE"))
+
+CHAMORIE = DEFI_REPERE(
+    MODELE=MOD3D, DEFI=_F(GROUP_MA="TET1", SYST_COOR="CARTESIEN", ANGL_NAUT=(30.0, 20.0, 10.0))
+)
+
+CAREL3D = AFFE_CARA_ELEM(MODELE=MOD3D, MASSIF=_F(TOUT="OUI", CHAM_ORIE=CHAMORIE))
+
+CHAR3D = AFFE_CHAR_MECA(
+    MODELE=MOD3D,
+    DDL_IMPO=(
+        _F(GROUP_NO="A", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="B", DX=9.0, DY=14.0, DZ=18.0),
+        _F(GROUP_NO="C", DX=13.0, DY=21.0, DZ=26.0),
+        _F(GROUP_NO="D", DX=5.0, DY=8.0, DZ=11.0),
+    ),
+)
+
+
+LISTE = DEFI_LIST_REEL(DEBUT=0.0, INTERVALLE=_F(JUSQU_A=1.0, NOMBRE=5))
+
+
+FONC = DEFI_FONCTION(NOM_PARA="INST", VALE=(0.0, 0.0, 1.0, 1.0))
+
+MEST1 = STAT_NON_LINE(
+    MODELE=MOD3D,
+    CHAM_MATER=CHMATIST,
+    CARA_ELEM=CAREL3D,
+    EXCIT=_F(CHARGE=CHAR3D, FONC_MULT=FONC),
+    NEWTON=_F(PREDICTION="TANGENTE"),
+    COMPORTEMENT=_F(RELATION="ELAS"),
+    INCREMENT=_F(LIST_INST=LISTE),
+)
+
+IMPR_RESU(RESU=_F(RESULTAT=MEST1, NUME_ORDRE=1, NOM_CHAM="SIEF_ELGA"))
+
+
+CALC_CHAMP(
+    reuse=MEST1,
+    RESULTAT=MEST1,
+    CONTRAINTE=("SIGM_ELNO"),
+    DEFORMATION=("EPSI_ELGA"),
+    ENERGIE=("ENEL_ELGA", "ENEL_ELNO"),
+)
+
+
+CALC_CHAMP(reuse=MEST1, RESULTAT=MEST1, ENERGIE="ENEL_NOEU")
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=MEST1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="C",
+            NOM_CMP="DY",
+            VALE_CALC=21.000000000,
+            VALE_REFE=21.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXY",
+            VALE_CALC=3.000000000,
+            VALE_REFE=3.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXZ",
+            VALE_CALC=4.000000000,
+            VALE_REFE=4.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPYZ",
+            VALE_CALC=6.000000000,
+            VALE_REFE=6.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXX",
+            VALE_CALC=4.33107606e04,
+            VALE_REFE=4.3310760637599997e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYY",
+            VALE_CALC=7.27987102e04,
+            VALE_REFE=7.2798710183599993e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIZZ",
+            VALE_CALC=6.24593558e04,
+            VALE_REFE=6.2459355764699998e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXY",
+            VALE_CALC=3.95679810e04,
+            VALE_REFE=3.95679809905e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXZ",
+            VALE_CALC=3.10785972e04,
+            VALE_REFE=3.1078597227400001e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYZ",
+            VALE_CALC=8.40493010e04,
+            VALE_REFE=8.4049300968800002e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=MEST1,
+            NOM_CHAM="SIGM_ELNO",
+            GROUP_NO="C",
+            NOM_CMP="SIXX",
+            VALE_CALC=4.33107606e04,
+            VALE_REFE=4.3310760637599997e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST1,
+            NOM_CHAM="ENEL_ELGA",
+            NOM_CMP="TOTALE",
+            VALE_CALC=1.19122942e06,
+            VALE_REFE=1.19122941897e6,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=5,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=MEST1,
+            NOM_CHAM="ENEL_ELNO",
+            GROUP_NO="A",
+            NOM_CMP="TOTALE",
+            VALE_CALC=1.19122942e06,
+            VALE_REFE=1.19122941897e6,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+            GROUP_MA="TET1",
+        ),
+    )
+)
+
+# =======================
+
+# MATERIAU ORTHOTROPE  =
+
+# =======================
+
+MATORTH = DEFI_MATERIAU(
+    ELAS_ORTH=_F(
+        E_L=11000.0,
+        E_T=5000.0,
+        E_N=8000.0,
+        NU_TN=0.11,
+        NU_LN=0.15,
+        NU_LT=0.396,
+        G_TN=13000.0,
+        G_LN=7000.0,
+        G_LT=10500.0,
+    )
+)
+
+CHMATORT = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MATORTH))
+
+LISTE2 = DEFI_LIST_REEL(DEBUT=0.0, INTERVALLE=_F(JUSQU_A=1.0, NOMBRE=1))
+
+MEST2 = STAT_NON_LINE(
+    MODELE=MOD3D,
+    CHAM_MATER=CHMATORT,
+    CARA_ELEM=CAREL3D,
+    EXCIT=_F(CHARGE=CHAR3D),
+    COMPORTEMENT=_F(RELATION="ELAS"),
+    INCREMENT=_F(LIST_INST=LISTE2),
+)
+
+CALC_CHAMP(
+    reuse=MEST2, RESULTAT=MEST2, DEFORMATION=("EPSI_ELGA"), ENERGIE=("ENEL_ELGA", "ENEL_ELNO")
+)
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=MEST2,
+            NOM_CHAM="DEPL",
+            GROUP_NO="C",
+            NOM_CMP="DY",
+            VALE_CALC=21.000000000,
+            VALE_REFE=21.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXY",
+            VALE_CALC=3.000000000,
+            VALE_REFE=3.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXZ",
+            VALE_CALC=4.000000000,
+            VALE_REFE=4.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPYZ",
+            VALE_CALC=6.000000000,
+            VALE_REFE=6.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXX",
+            VALE_CALC=601.875405719,
+            VALE_REFE=601.87540022300004,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYY",
+            VALE_CALC=8.00536651e04,
+            VALE_REFE=8.0053665130599999e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIZZ",
+            VALE_CALC=7.85966068e04,
+            VALE_REFE=7.8596606758199996e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXY",
+            VALE_CALC=8.39482633e04,
+            VALE_REFE=8.3948263250200005e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXZ",
+            VALE_CALC=1.73390930e04,
+            VALE_REFE=1.7339093049800002e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYZ",
+            VALE_CALC=1.26571710e05,
+            VALE_REFE=1.26571710097e5,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST2,
+            NOM_CHAM="ENEL_ELGA",
+            NOM_CMP="TOTALE",
+            VALE_CALC=1.55645558e06,
+            VALE_REFE=1.5564555844099999e6,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=MEST2,
+            NOM_CHAM="ENEL_ELNO",
+            GROUP_NO="A",
+            NOM_CMP="TOTALE",
+            VALE_CALC=1.55645558e06,
+            VALE_REFE=1.5564555844099999e6,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+            GROUP_MA="TET1",
+        ),
+    )
+)
+
+# PRISE EN COMPTE DE DEFORMATIONS THERMIQUES ORTHOTROPIQUES
+
+MATORTH2 = DEFI_MATERIAU(
+    ELAS_ORTH=_F(
+        E_L=11000.0,
+        E_T=5000.0,
+        E_N=8000.0,
+        NU_TN=0.11,
+        NU_LN=0.15,
+        NU_LT=0.396,
+        G_TN=13000.0,
+        G_LN=7000.0,
+        G_LT=10500.0,
+        ALPHA_L=1.0e-3,
+        ALPHA_T=1.5e-3,
+        ALPHA_N=2.0e-3,
+    )
+)
+
+
+CHT0 = CREA_CHAMP(
+    OPERATION="AFFE",
+    TYPE_CHAM="NOEU_TEMP_R",
+    MAILLAGE=MA,
+    AFFE=_F(TOUT="OUI", NOM_CMP="TEMP", VALE=0.0),
+)
+
+CHT1 = CREA_CHAMP(
+    OPERATION="AFFE",
+    TYPE_CHAM="NOEU_TEMP_R",
+    MAILLAGE=MA,
+    AFFE=_F(TOUT="OUI", NOM_CMP="TEMP", VALE=100.0),
+)
+
+TEMPE = CREA_RESU(
+    OPERATION="AFFE",
+    TYPE_RESU="EVOL_THER",
+    AFFE=(_F(NOM_CHAM="TEMP", INST=0.0, CHAM_GD=CHT0), _F(NOM_CHAM="TEMP", INST=1.0, CHAM_GD=CHT1)),
+)
+
+CHAR3D2 = AFFE_CHAR_MECA(
+    MODELE=MOD3D,
+    DDL_IMPO=(
+        _F(GROUP_NO="A", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="B", DX=9.0, DY=14.0, DZ=18.0),
+        _F(GROUP_NO="C", DX=13.0, DY=21.0, DZ=26.0),
+        _F(GROUP_NO="D", DX=5.0, DY=8.0, DZ=11.0),
+    ),
+)
+
+CHAR3D3 = AFFE_CHAR_MECA(
+    MODELE=MOD3D,
+    DDL_IMPO=(
+        _F(GROUP_NO="A", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="B", DX=9.0, DY=14.0, DZ=18.0),
+        _F(GROUP_NO="C", DX=13.0, DY=21.0, DZ=26.0),
+        _F(GROUP_NO="D", DX=5.0, DY=8.0, DZ=11.0),
+    ),
+)
+
+CHM3D2 = AFFE_MATERIAU(
+    MAILLAGE=MA,
+    AFFE=_F(TOUT="OUI", MATER=MATORTH2),
+    AFFE_VARC=_F(TOUT="OUI", EVOL=TEMPE, VALE_REF=0.0, NOM_VARC="TEMP", NOM_CHAM="TEMP"),
+)
+
+CHM3D3 = AFFE_MATERIAU(
+    MAILLAGE=MA,
+    AFFE=_F(TOUT="OUI", MATER=MATORTH2),
+    AFFE_VARC=_F(TOUT="OUI", VALE_REF=0.0, CHAM_GD=CHT1, NOM_VARC="TEMP"),
+)
+
+MEST3 = STAT_NON_LINE(
+    MODELE=MOD3D,
+    CHAM_MATER=CHM3D2,
+    CARA_ELEM=CAREL3D,
+    EXCIT=_F(CHARGE=CHAR3D2),
+    COMPORTEMENT=_F(RELATION="ELAS"),
+    INCREMENT=_F(LIST_INST=LISTE2),
+)
+
+MEST3 = CALC_CHAMP(reuse=MEST3, RESULTAT=MEST3, DEFORMATION=("EPSI_ELGA"))
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=MEST3,
+            NOM_CHAM="DEPL",
+            GROUP_NO="C",
+            NOM_CMP="DY",
+            VALE_CALC=21.000000000,
+            VALE_REFE=21.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXY",
+            VALE_CALC=3.000000000,
+            VALE_REFE=3.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXZ",
+            VALE_CALC=4.000000000,
+            VALE_REFE=4.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPYZ",
+            VALE_CALC=6.000000000,
+            VALE_REFE=6.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXX",
+            VALE_CALC=-1.22620137e03,
+            VALE_REFE=-1226.2013655799999,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYY",
+            VALE_CALC=7.85970638e04,
+            VALE_REFE=7.8597063836500005e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIZZ",
+            VALE_CALC=7.65857922e04,
+            VALE_REFE=7.6585792228100006e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXY",
+            VALE_CALC=8.37109069e04,
+            VALE_REFE=8.3710906928099997e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXZ",
+            VALE_CALC=1.72557030e04,
+            VALE_REFE=1.72557029869e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST3,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYZ",
+            VALE_CALC=1.26657367e05,
+            VALE_REFE=1.26657366971e5,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+    )
+)
+
+MEST4 = MECA_STATIQUE(MODELE=MOD3D, CHAM_MATER=CHM3D3, CARA_ELEM=CAREL3D, EXCIT=_F(CHARGE=CHAR3D3))
+
+MEST4 = CALC_CHAMP(reuse=MEST4, RESULTAT=MEST4, DEFORMATION=("EPSI_ELGA"))
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            RESULTAT=MEST4,
+            NOM_CHAM="DEPL",
+            GROUP_NO="C",
+            NOM_CMP="DY",
+            VALE_CALC=21.000000000,
+            VALE_REFE=21.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXY",
+            VALE_CALC=3.000000000,
+            VALE_REFE=3.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPXZ",
+            VALE_CALC=4.000000000,
+            VALE_REFE=4.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="EPSI_ELGA",
+            NOM_CMP="EPYZ",
+            VALE_CALC=6.000000000,
+            VALE_REFE=6.0,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXX",
+            VALE_CALC=-1.22620137e03,
+            VALE_REFE=-1226.2013655799999,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYY",
+            VALE_CALC=7.85970638e04,
+            VALE_REFE=7.8597063836500005e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIZZ",
+            VALE_CALC=7.65857922e04,
+            VALE_REFE=7.6585792228100006e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXY",
+            VALE_CALC=8.37109069e04,
+            VALE_REFE=8.3710906928099997e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXZ",
+            VALE_CALC=1.72557030e04,
+            VALE_REFE=1.72557029869e4,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=MEST4,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIYZ",
+            VALE_CALC=1.26657367e05,
+            VALE_REFE=1.26657366971e5,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-08,
+            GROUP_MA="TET1",
+        ),
+    )
+)
+
+FIN()
+#

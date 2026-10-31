@@ -10,7 +10,7 @@ loads, interpolation at probe points, and QoI integrals.
 
 Files: `feacore/solver/ccx_backend.py` (deck + result), `_ccx_mesh.py` (gmsh → CalculiX
 model), `_ccx_fem.py` (shape functions, quadrature, point location), `_ccx_io.py` (run,
-`.frd` / `.dat` parsers). Tests: `tests/test_solver_ccx.py` (38 tests, about 3 s).
+`.frd` / `.dat` parsers). Tests: `tests/test_solver_ccx.py` (42 tests, about 3 s).
 
 Options: `workdir` (keep the run there), `keep=True`, `ccx` (executable; also `$FEACORE_CCX`),
 `threads` (default `$OMP_NUM_THREADS` or 1), `timeout`. Scratch runs go under
@@ -24,7 +24,7 @@ on failure; the `CcxError` message names it.
 | plane_stress / plane_strain / axisymmetric / 3d, order 1 / 2 | CPS3/CPS6 (thin internal section, see below), CPE3/CPE6, CAX6 (CAX3 refused), C3D4/C3D10; thickness on `*SOLID SECTION` |
 | heat 2d / axisymmetric / 3d | same element types, `*HEAT TRANSFER, STEADY STATE`, `*CONDUCTIVITY` |
 | materials + regions | one `*MATERIAL` + `*SOLID SECTION` per material; each cell takes the first matching region (as `Case.material_for`) |
-| fixed / displacement / symmetry / temperature | `*BOUNDARY` per node and dof (expressions evaluated at nodes). Later BCs override earlier ones on the same node/dof. `point` = nearest node. Symmetry: the normal is the axis along which the group's coordinates do not vary (otherwise `CaseError`) |
+| fixed / displacement / symmetry / temperature | `*BOUNDARY` per node and dof (expressions evaluated at nodes). Later BCs override earlier ones on the same node/dof. `point` = nearest node. `where` (expression in x, y, z; axisymmetric x = r, y = z) keeps the group's nodes where it is nonzero, midside nodes included; selecting no node raises `CaseError`. Symmetry: the normal is the axis along which the group's coordinates do not vary (otherwise `CaseError`) |
 | pressure (constant) | `*DLOAD elem, Pk` on the element faces of the group |
 | pressure (expression; also any CAX3 pressure), traction, force | consistent nodal loads ∫N·t dA (exact quadrature on the isoparametric faces, ×thickness or ×2πr) → `*CLOAD` |
 | body_force (constant) | `*DLOAD elset, BX/BY/BZ` (force per volume) |

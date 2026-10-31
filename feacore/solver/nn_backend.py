@@ -110,6 +110,8 @@ class NNResult(Result):
         return self._interp(vals, pts[:, :2])
 
     def evaluate(self, qoi: QoI) -> float:
+        if qoi.type == "point_difference":   # backend-independent, see Result.evaluate_qoi
+            return Result.evaluate_qoi(self, qoi)
         if qoi.type == "point":
             return float(self.probe(qoi.field, [qoi.point])[0])
         if qoi.type in ("max", "min", "max_abs"):

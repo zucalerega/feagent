@@ -7,9 +7,8 @@ from pathlib import Path
 import gmsh
 import numpy as np
 
+from . import gmsh_util as gu
 from .gmsh_session import gmsh_session
-
-_TET = {4: 4, 11: 4}  # gmsh element type -> corner count (tet4, tet10)
 
 
 @dataclass
@@ -25,54 +24,46 @@ class MeshData:
 
 
 def read_msh(path: str | Path) -> MeshData:
+    """Read nodes, linear tet corners, surface-group triangles and volume groups."""
     with gmsh_session():
         gmsh.open(str(path))
-        ntags, coords, _ = gmsh.model.mesh.getNodes()
-        coords = np.asarray(coords).reshape(-1, 3)
-        idx = np.full(int(ntags.max()) + 1, -1, dtype=np.int64) if len(ntags) else np.zeros(1, np.int64)
-        idx[ntags] = np.arange(len(ntags))
+        _, points, lookup = gu.node_table()
+        tets, tet_tags, tet_volume, order = _read_tets(lookup)
+        tris, tri_face, volume_groups = _read_groups(lookup)
+    return MeshData(points=points, tets=tets, tet_tags=tet_tags, tet_volume=tet_volume,
+                    tris=tris, tri_face=tri_face, volume_groups=volume_groups, order=order)
 
-        tets, tags, vol = [], [], []
-        order = 1
-        for _, vt in gmsh.model.getEntities(3):
-            types, etags, enodes = gmsh.model.mesh.getElements(3, vt)
-            for t, et, en in zip(types, etags, enodes):
-                if t not in _TET:
-                    continue
-                if t == 11:
-                    order = 2
-                nn = gmsh.model.mesh.getElementProperties(t)[3]
-                arr = idx[np.asarray(en).reshape(-1, nn)[:, :4]]
-                tets.append(arr)
-                tags.append(np.asarray(et))
-                vol.append(np.full(len(et), vt))
 
-        def cat(parts, shape, dt):
-            return np.concatenate(parts).astype(dt) if parts else np.zeros(shape, dt)
+def _cat(parts: list[np.ndarray], shape: tuple[int, ...]) -> np.ndarray:
+    return np.concatenate(parts).astype(np.int64) if parts else np.zeros(shape, np.int64)
 
-        tris: dict[str, np.ndarray] = {}
-        tri_face: dict[str, np.ndarray] = {}
-        vgroups: dict[str, list[int]] = {}
-        for dim, pg in gmsh.model.getPhysicalGroups():
-            name = gmsh.model.getPhysicalName(dim, pg)
-            ents = [int(e) for e in gmsh.model.getEntitiesForPhysicalGroup(dim, pg)]
-            if dim == 3:
-                vgroups[name] = ents
-            elif dim == 2:
-                tp, fp = [], []
-                for e in ents:
-                    types, _, enodes = gmsh.model.mesh.getElements(2, e)
-                    for t, en in zip(types, enodes):
-                        if t not in (2, 9):
-                            continue
-                        nn = gmsh.model.mesh.getElementProperties(t)[3]
-                        a = idx[np.asarray(en).reshape(-1, nn)[:, :3]]
-                        tp.append(a)
-                        fp.append(np.full(len(a), e))
-                tris[name] = cat(tp, (0, 3), np.int64)
-                tri_face[name] = cat(fp, (0,), np.int64)
-        return MeshData(
-            points=coords, tets=cat(tets, (0, 4), np.int64),
-            tet_tags=cat(tags, (0,), np.int64), tet_volume=cat(vol, (0,), np.int64),
-            tris=tris, tri_face=tri_face, volume_groups=vgroups, order=order,
-        )
+
+def _read_tets(lookup: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """(corner rows, element tags, owning volume per tet, element order)."""
+    rows, tags, vols, order = [], [], [], 1
+    for vt in gu.entity_tags(3):
+        for etype, etags, nodes in gu.element_blocks(3, vt, gu.TET_TYPES):
+            order = 2 if etype == 11 else order
+            rows.append(lookup[nodes[:, :4]])
+            tags.append(etags)
+            vols.append(np.full(len(etags), vt))
+    return _cat(rows, (0, 4)), _cat(tags, (0,)), _cat(vols, (0,)), order
+
+
+def _read_groups(lookup: np.ndarray) -> tuple[dict, dict, dict]:
+    """Surface groups -> (triangle corner rows, CAD face per triangle); volume groups -> tags."""
+    tris: dict[str, np.ndarray] = {}
+    tri_face: dict[str, np.ndarray] = {}
+    volume_groups: dict[str, list[int]] = {}
+    for dim, name, ents in gu.physical_groups():
+        if dim == 3:
+            volume_groups[name] = ents
+        elif dim == 2:
+            tris[name], tri_face[name] = _group_triangles(ents, lookup)
+    return tris, tri_face, volume_groups
+
+
+def _group_triangles(faces: list[int], lookup: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    rows = [gu.corner_rows(2, f, gu.TRI_TYPES, 3, lookup) for f in faces]
+    owner = [np.full(len(r), f) for f, r in zip(faces, rows)]
+    return _cat(rows, (0, 3)), _cat(owner, (0,))

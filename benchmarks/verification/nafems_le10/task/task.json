@@ -1,0 +1,213 @@
+{
+ "id": "verification/nafems_le10",
+ "title": "NAFEMS LE10: thick elliptic plate under pressure",
+ "description": "NAFEMS standard benchmark LE10 (in mm). Quarter of an elliptic annular plate, 600 mm thick (z from -300 to +300). Inner boundary: ellipse (x/2000)^2 + (y/1000)^2 = 1; outer boundary: ellipse (x/3250)^2 + (y/2750)^2 = 1. Uniform normal pressure of 1 MPa on the upper face z=+300. Boundary conditions: uy=0 on the face y=0 (DCD'C'); ux=0 on the face x=0 (ABA'B'); ux=uy=0 on the outer elliptic face (BCB'C'); uz=0 on the line EE' where the outer face meets the mid-plane z=0 (the CAD face is split along that line).",
+ "units": {
+  "length": "mm",
+  "force": "N",
+  "stress": "MPa",
+  "mass": "tonne",
+  "time": "s",
+  "density": "tonne/mm^3",
+  "acceleration": "mm/s^2"
+ },
+ "geometry": {
+  "file": "geometry.step",
+  "format": "step",
+  "length_unit": "mm"
+ },
+ "analysis": {
+  "type": "static"
+ },
+ "materials": [
+  {
+   "name": "steel",
+   "E": 210000.0,
+   "nu": 0.3,
+   "applies_to": "all"
+  }
+ ],
+ "boundary_conditions": [
+  {
+   "id": "sym_y",
+   "type": "symmetry",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "label": "face y=0"
+   },
+   "description": "uy = 0"
+  },
+  {
+   "id": "sym_x",
+   "type": "symmetry",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "label": "face x=0"
+   },
+   "description": "ux = 0"
+  },
+  {
+   "id": "outer",
+   "type": "displacement",
+   "region": {
+    "type": "elliptic_cylinder",
+    "center": [
+     0,
+     0
+    ],
+    "semi_axes": [
+     3250.0,
+     2750.0
+    ],
+    "label": "outer elliptic face BCB'C'"
+   },
+   "values": {
+    "x": 0.0,
+    "y": 0.0
+   },
+   "description": "ux = uy = 0"
+  },
+  {
+   "id": "line_EE",
+   "type": "displacement",
+   "region": {
+    "type": "and",
+    "regions": [
+     {
+      "type": "elliptic_cylinder",
+      "center": [
+       0,
+       0
+      ],
+      "semi_axes": [
+       3250.0,
+       2750.0
+      ],
+      "label": "outer elliptic face BCB'C'"
+     },
+     {
+      "type": "plane",
+      "point": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ]
+     }
+    ],
+    "label": "line EE' (outer face at z=0)"
+   },
+   "values": {
+    "z": 0.0
+   },
+   "description": "uz = 0"
+  }
+ ],
+ "loads": [
+  {
+   "id": "pressure",
+   "type": "pressure",
+   "value": 1.0,
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     300.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "label": "upper face z=+300"
+   },
+   "description": "1 MPa normal pressure (pushing down)"
+  }
+ ],
+ "solver": {
+  "name": "calculix",
+  "version": "2.21",
+  "deck": "model.inp"
+ },
+ "evaluated_quantities": [
+  {
+   "id": "syy_D",
+   "kind": "point",
+   "description": "sigma_yy at point D = (2000, 0, 300)",
+   "point": [
+    2000.0,
+    0.0,
+    300.0
+   ],
+   "field": "S",
+   "component": "yy"
+  },
+  {
+   "id": "reaction_z",
+   "kind": "reaction",
+   "description": "sum of z-reactions on line EE'",
+   "component": "z",
+   "region": {
+    "type": "and",
+    "regions": [
+     {
+      "type": "elliptic_cylinder",
+      "center": [
+       0,
+       0
+      ],
+      "semi_axes": [
+       3250.0,
+       2750.0
+      ],
+      "label": "outer elliptic face BCB'C'"
+     },
+     {
+      "type": "plane",
+      "point": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [
+  "published",
+  "nafems",
+  "pressure",
+  "mixed_bcs"
+ ]
+}

@@ -263,6 +263,19 @@ class _Model:
             return np.unique(sb.dofs.nodal_dofs[:, g.index].ravel())
         raise CaseError(f"unsupported group kind {g.kind}")  # pragma: no cover
 
+    def where_filter(self, S: np.ndarray, bc, i_bc: int) -> np.ndarray:
+        """Keep the nodes S of a Dirichlet BC's group where ``bc.where`` is nonzero (evaluated at the
+        node coordinates; axisymmetric x = r, y = z). Selecting nothing is a CaseError."""
+        if not bc.where:
+            return S
+        v = _eval(bc.where, self.sb.doflocs[:, S])
+        keep = np.isfinite(v) & (v != 0)
+        if not keep.any():
+            raise CaseError(f"bcs[{i_bc}] {bc.type} on group {bc.group!r}: where {bc.where!r} selects none of "
+                            f"the group's {len(S)} nodes (check the expression and tolerance against the "
+                            f"group's coordinates)")
+        return S[keep]
+
     def nearest_sdof(self, point) -> tuple[int, float]:
         p = np.asarray(point, dtype=float)[: self.dim]
         d = np.linalg.norm(self.sb.doflocs - p[:, None], axis=0)
@@ -422,8 +435,9 @@ def _assemble_elasticity(md: _Model):
             else:
                 S = md.sdofs_of(bc.group)
                 gname = bc.group
-            if len(S) == 0:
-                raise CaseError(f"bcs[{i_bc}] {bc.type}: group {bc.group!r} has no nodes")
+                if len(S) == 0:
+                    raise CaseError(f"bcs[{i_bc}] {bc.type}: group {bc.group!r} has no nodes")
+                S = md.where_filter(S, bc, i_bc)
             if bc.type == "fixed":
                 for k in range(dim):
                     cons.add(md.split[k][S], 0.0, gname)
@@ -562,6 +576,7 @@ def _assemble_heat(md: _Model):
                 S, gname = np.array([s]), None
             else:
                 S, gname = md.sdofs_of(bc.group), bc.group
+                S = md.where_filter(S, bc, i_bc)
             cons.add(S, _eval(bc.value, md.sb.doflocs[:, S]), gname)
     return K, f, cons
 
@@ -782,7 +797,7 @@ class SkfemResult(Result):
         out = {}
         for q in self.case.qois:
             try:
-                out[q.name] = float(self.evaluate(q))
+                out[q.name] = float(self.evaluate_qoi(q))
             except (CaseError, ValueError) as e:
                 out[q.name] = float("nan")
                 msg = f"qoi {q.name!r} could not be evaluated: {e}"
@@ -795,6 +810,8 @@ class SkfemResult(Result):
         return {"info": asdict(self.info), "qois": qois, "meta": self.case.meta}
 
     def evaluate(self, qoi: QoI) -> float:
+        if qoi.type == "point_difference":   # backend-independent, see Result.evaluate_qoi
+            return Result.evaluate_qoi(self, qoi)
         md = self.model
         t = qoi.type
         if t == "point":
@@ -810,9 +827,10 @@ class SkfemResult(Result):
             if md.physics == "heat" and k != 0:
                 raise CaseError("heat reaction (heat flow into the body) has only component 0")
             idx = md.split[k][S]
-            if not np.isin(idx, self.dirichlet_dofs).any():
+            idx = idx[np.isin(idx, self.dirichlet_dofs)]  # constrained DOFs only (e.g. a where-filtered BC)
+            if len(idx) == 0:
                 msg = (f"reaction QoI {qoi.name!r}: group {qoi.group!r} has no Dirichlet constraint on "
-                       f"component {k}, so its reaction is ~0 (did you mean a supported group?)")
+                       f"component {k}, so its reaction is 0 (did you mean a supported group?)")
                 if msg not in self.info.warnings:
                     self.info.warnings.append(msg)
             return float(self.reaction_vector[idx].sum())

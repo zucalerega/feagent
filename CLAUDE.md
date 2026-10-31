@@ -20,11 +20,21 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
+- `main` has the mesh harness (package `feagent` in `src/`: STEP → YAML mesh spec → gmsh mesh with named
+  groups, quality gates, `report.json` with the spec's `bcs:`), the fixed solver, verification,
+  benchmarks and UI (`feacore/`), and the diagnostics (`feacore/diagnostics/`). One root
+  `pyproject.toml` ships both packages.
+- `mesh-harness` branch: Alexander's ongoing harness work; merged into `main` as it lands.
 - `improver-loop` branch: improver side of the loop.
 - `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
   `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
-- `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
-  gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
+- `ace-cfd` branch (off `ace-loop`, with `main` merged in): the same ACE loop on steady laminar CFD.
+  - Run it with `python -m ace.run_loop --suite cfd`.
+  - Flow tools: finite-volume mesh with optional quads; solve with fluid, convection scheme and flow BCs on the openfoam backend.
+  - Oracles: spec compliance, gaming, known answer, and a refinement study on the openfoam backend.
+  - Two new exact benchmarks: `taylor_couette_2d` (rotating cylinder) and `square_duct_3d` (developing duct flow).
+  - The tasks are 2D only, because of the 3D unstructured-mesh bias listed under the known solver limits.
+  - Without a local OpenFOAM: `scripts/openfoam_docker.sh` (OpenFOAM v1912 in Docker, plus shims) and `FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp`.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
   accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy
@@ -75,11 +85,15 @@ Decisions:
   plus a gmsh `.msh` file whose physical groups are named. This is what the agent's MCP / mesh harness
   must produce. Run it with `feacore.solver.solve(case, backend)` or the CLI
   `python -m feacore.cli case.json --out result.json`.
-- **Mesh harness → solver:** `feacore/adapters/mesh_harness.py` turns a harness output directory
-  (`mesh.msh` + `manifest.json` + `report.json` with `bcs.fea: {fixed, loads: [{group, force}], E, nu}`)
-  into a case: `python -m feacore.adapters.mesh_harness <out_dir>`. `fixed` → `fixed` and
-  `loads[].force` → `force` (total force spread per area) map 1:1. The case schema also has pressure,
-  symmetry, prescribed displacement, thermal loads and explicit QoIs if the harness wants to declare them.
+- **Mesh harness → solver:** `feacore/adapters/mesh_harness.py` turns a harness output directory or its
+  YAML spec into a case: `python -m feacore.adapters.mesh_harness <out_dir | mesh.yaml>`. The spec's
+  `bcs.fea` maps 1:1:
+  - `fixed`, `loads: [{group, force}]` (total force spread per area);
+  - `symmetry: [group]`, `pressure: [{group, value}]`;
+  - `displacement: [{group, components, value, where}]`, where `where` filters nodes, e.g. a line on a
+    face for LE10's mid-thickness support.
+
+  `E` and `nu` give the material.
 - **Problems** (the "CAD design problems"): `feacore/problems/` (the `Problem` API + registry),
   exported to `benchmarks/<id>/public/` (statement + STEP: give these to agents) and
   `benchmarks/<id>/private/` (reference values, reference setup, validation studies: evaluator only,
@@ -109,6 +123,24 @@ Decisions:
   meshes; the consensus view uses the median and MAD of each submission's best estimate. For display
   only, the UI calls a QoI converged when both mesh-to-mesh changes are under 0.1%, even if `gci3`
   can't assign an order. Verdicts still come from `feacore.verification`.
+- **Running it for the team (Brev):** `bash scripts/serve.sh` installs the UI/solver service (systemd,
+  starts on boot) plus an auto-update timer. Every minute it fast-forwards the checked-out branch and
+  restarts the service, re-runs setup when dependencies change, and waits while jobs are running.
+  Set `FEACORE_UI_TOKEN` (or start the UI with `--token auto`) before sharing a tunnel URL. Every
+  `/api/*` call then needs the token. Teammates' scripts and agents call `POST <url>/api/solve`;
+  the UI's Connect page shows copy-paste examples. Details are in `docs/brev.md`; any account's box is set up
+  with one command (`curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash`),
+  which a Brev Launchable can also run as its setup script. Expose port 8000 via the instance's HTTP Ports.
+- The UI shows small trendless mesh-to-mesh changes (under 2%) as "scatter between meshes", not as
+  divergence. Real singularities still show as diverging.
+- **CFD (`backend="openfoam"`, physics "flow"):** OpenFOAM ESI (v1912 from Ubuntu's `openfoam`
+  package works) plus `foamlib` (the `cfd` extra). It runs 2D/3D laminar steady SIMPLEC with tight
+  residuals; forces and the probes are computed in numpy, because v1912's function objects crash.
+  Benchmarks: Poiseuille channel, lid-driven cavity Re 100, DFG 2D-1 cylinder, 3D pipe
+  (`docs/benchmarks_cfd.md`). Use quad/hex meshes for GCI: on unstructured triangles OpenFOAM's cell
+  values stop converging. Ghia's cavity table is itself 1.4-3.5% off converged solutions, so its
+  tolerances are 3-5%. Pressure drops use the `point_difference` QoI. To enable it on a box:
+  `sudo apt-get install -y openfoam && uv pip install --python .venv/bin/python foamlib`.
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
@@ -116,6 +148,11 @@ Decisions:
   - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
     or thermal-load interfaces. Don't use point stresses right at an interface.
   - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
+  - 3D flow on unstructured meshes looks biased in the openfoam backend (found on `ace-cfd`). On tets of the
+    3D pipe (4.6k nodes) the axial pressure gradient is +15 %, while the wall force is +3 % and the flow rate
+    +0.6 %. Tets split into hexes are still +12 % at 33k nodes, and the square duct on tets is +12 %. So the
+    pressure force and the wall shear do not balance. 2D triangles are as accurate as quads, and structured
+    hexes converge. Not investigated yet; until then, judge 3D flow only on structured hex meshes.
 
 ## NVIDIA compute (hackathon)
 
@@ -131,9 +168,6 @@ Decisions:
 
 - How exactly is a solution scored? (proposal above; the evaluator decides)
 - Which MCP tools does the agent get (geometry / mesh / BCs)? It must emit the case JSON + `.msh` above.
-- Merging into `main`: `mesh-harness` and `fea-solver-benchmarks` both add a root `pyproject.toml`
-  (`feagent` with uv_build, `feacore` with setuptools). Pick one root project that ships both
-  packages, or make `feacore` a sub-project.
 - What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
 - What does the evaluator output look like (schema for rankings + summary)?
 
