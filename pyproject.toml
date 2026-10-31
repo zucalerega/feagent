@@ -23,6 +23,7 @@ dependencies = [
 ui = ["fastapi", "uvicorn", "python-multipart"]
 gpu = ["nvmath-python", "cupy-cuda12x"]
 pardiso = ["pypardiso"]
+cfd = ["foamlib"]
 
 [project.scripts]
 feagent = "feagent.cli:main"

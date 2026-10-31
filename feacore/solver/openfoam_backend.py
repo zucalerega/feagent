@@ -35,7 +35,7 @@ from scipy.spatial import cKDTree
 
 from feacore.case import FLOW_FIELDS, Case, CaseError, QoI, as_field
 from feacore.solver import _foam_io as fio
-from feacore.solver._foam_env import require_openfoam, run
+from feacore.solver._foam_env import require_openfoam, run, run_monitored
 from feacore.solver._foam_fv import FvMesh
 from feacore.solver._foam_mesh import FRONT_BACK, UNASSIGNED, FoamMesh, convert
 from feacore.solver._skfem_mesh import MeshError
@@ -269,21 +269,28 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
                        int(opts["n_non_orth_correctors"]))
     fio.write_transport(cdir, nu, turbulence)
     U, P, K, W, NUT = _boundary_fields(case, fm, bcs, centres, rho, turb)
-    p0 = 0.0
     fio.write_field(cdir, "U", "volVectorField", {"length": 1, "time": -1}, [0.0, 0.0, 0.0], U)
-    fio.write_field(cdir, "p", "volScalarField", {"length": 2, "time": -2}, p0, P)
+    fio.write_field(cdir, "p", "volScalarField", {"length": 2, "time": -2}, 0.0, P)
     if turbulent:
         fio.write_field(cdir, "k", "volScalarField", {"length": 2, "time": -2}, turb["k"], K)
         fio.write_field(cdir, "omega", "volScalarField", {"time": -1}, turb["omega"], W)
         fio.write_field(cdir, "nut", "volScalarField", {"length": 2, "time": -1}, 0.0, NUT)
 
     t_solve = time.perf_counter()
-    proc = run(fe, ["simpleFoam"], cdir, timeout=timeout, check=False)
-    log = proc.stdout + "\n" + proc.stderr
+    tracker = fio.ResidualTracker()
+    state = {"stagnated": None}
+
+    def on_line(line: str) -> bool:
+        if tracker.feed(line) and len(tracker.history) % 25 == 0:
+            state["stagnated"] = tracker.stagnated(tol)
+            return state["stagnated"] is not None
+        return False
+
+    code, log, reason = run_monitored(fe, ["simpleFoam"], cdir, on_line, timeout=timeout)
     st = fio.parse_log(log)
-    if proc.returncode != 0 or st["diverged"]:
+    if code != 0 or st["diverged"]:
         tail = "\n".join(log.strip().splitlines()[-20:])
-        raise SolverError(f"simpleFoam failed (exit {proc.returncode}, {st['iterations']} iterations"
+        raise SolverError(f"simpleFoam failed (exit {code}, {st['iterations']} iterations"
                           f"{', diverged' if st['diverged'] else ''}); last lines:\n{tail}")
     t_solve = time.perf_counter() - t_solve
     times = sorted((d for d in cdir.iterdir() if d.is_dir() and _is_time(d.name) and float(d.name) > 0),
@@ -292,14 +299,28 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
         raise SolverError("simpleFoam wrote no solution")
     tdir = times[-1]
     worst = max(st["residuals"].values()) if st["residuals"] else float("nan")
-    converged = st["converged"] or (st["residuals"] and worst <= tol)
+    converged = bool(st["converged"] or (st["residuals"] and worst <= tol))
+    stagnated = state["stagnated"] if reason == "stagnated" else None
+    if reason == "timeout":
+        warnings.append(f"NOT CONVERGED: stopped by the {timeout} s timeout after {st['iterations']} iterations")
+
+    res = OpenFOAMResult(case, fm, cdir, rho, nu, closed, warnings)
+    res._load(poly, tdir)
+    if stagnated:
+        # A minor velocity component (e.g. Uy of a nearly parallel flow) has its residual normalised
+        # by its own small scale, so it stalls at a round-off floor. Rescaled by max|U| it is converged.
+        umax = float(np.linalg.norm(res.U, axis=1).max()) or 1.0
+        comps = st["components"]
+        scaled = {c: comps.get(c, 0.0) * float(np.abs(res.U[:, "xyz".index(c[1])]).max()) / umax for c in stagnated}
+        if all(v <= tol for v in scaled.values()):
+            converged = True
+            warnings.append(f"info: the residuals of {stagnated} stalled at round-off level; rescaled by max|U| "
+                            f"they are {_fmt(scaled)} <= residual_tol {tol:g}, and every other equation "
+                            f"reached residual_tol")
     if not converged:
         warnings.append(f"NOT CONVERGED: residual_tol {tol:g} not reached in {st['iterations']} iterations "
                         f"(final initial residuals {_fmt(st['residuals'])}); the iteration error may "
                         f"exceed the discretisation error: raise max_iterations or check the setup")
-
-    res = OpenFOAMResult(case, fm, cdir, rho, nu, closed, warnings)
-    res._load(poly, tdir)
     wall = time.perf_counter() - t0
     measure = fm.measure if dim == 2 else float(res.V.sum())
     info = FlowSolveInfo(

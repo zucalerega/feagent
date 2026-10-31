@@ -31,8 +31,16 @@ def _w(path: Path, content: dict) -> None:
 
 
 def _t(s: str):
-    """A multi-word OpenFOAM entry ('bounded Gauss upwind') as a foamlib tuple."""
-    return tuple(s.split())
+    """A multi-word OpenFOAM entry ('bounded Gauss limitedLinear 1') as a foamlib tuple."""
+    def tok(w):
+        try:
+            return int(w)
+        except ValueError:
+            try:
+                return float(w)
+            except ValueError:
+                return w
+    return tuple(tok(w) for w in s.split())
 
 
 # --------------------------------------------------------------------------- system / constant
@@ -206,38 +214,83 @@ _RES = re.compile(r"Solving for (\w+), Initial residual = ([-+0-9.eE]+), Final r
                   r"No Iterations (\d+)")
 
 
+class ResidualTracker:
+    """Per-iteration initial residuals from a solver log, fed line by line. The first solve of a
+    field in an iteration is the one ``residualControl`` uses."""
+
+    def __init__(self):
+        self.history: list[dict] = []
+        self._cur: dict | None = None
+
+    def feed(self, line: str) -> bool:
+        """Returns True when a new iteration starts."""
+        if line.startswith("Time = "):
+            if self._cur is not None:
+                self.history.append(self._cur)
+            self._cur = {}
+            return True
+        m = _RES.search(line)
+        if m and self._cur is not None:
+            self._cur.setdefault(m.group(1), float(m.group(2)))
+        return False
+
+    def finish(self) -> None:
+        if self._cur:
+            self.history.append(self._cur)
+        self._cur = None
+
+    @property
+    def iterations(self) -> int:
+        return len(self.history) + (1 if self._cur else 0)
+
+    def last(self) -> dict:
+        """Last complete iteration, with the vector components folded (U = max(Ux, Uy, Uz))."""
+        return fold(self.history[-1]) if self.history else {}
+
+    def stagnated(self, tol: float, window: int = 100) -> list[str] | None:
+        """Velocity components whose residual stalls above ``tol`` (round-off of a component that is
+        ~0, e.g. Uy of Poiseuille flow) while every other equation has been converged for
+        ``window`` iterations; None if that is not the situation."""
+        if len(self.history) < window:
+            return None
+        win = self.history[-window:]
+        last = win[-1]
+        bad = [f for f, r in last.items() if r > tol]
+        if not bad or any(f not in ("Ux", "Uy", "Uz") for f in bad):
+            return None
+        for it in win:
+            if any(r > tol for f, r in it.items() if f not in bad):
+                return None
+        half = window // 2
+        for f in bad:
+            a = [it.get(f, 0.0) for it in win[:half]]
+            b = [it.get(f, 0.0) for it in win[half:]]
+            if min(b) < 0.3 * min(a):        # still decreasing
+                return None
+        return bad
+
+
+def fold(res: dict) -> dict:
+    out = {k: v for k, v in res.items() if k not in ("Ux", "Uy", "Uz")}
+    comps = [res[k] for k in ("Ux", "Uy", "Uz") if k in res]
+    if comps:
+        out["U"] = max(comps)
+    return out
+
+
 def parse_log(text: str) -> dict:
     """Iterations, last initial residual per field (U = max over components, as residualControl
     does), convergence flag."""
-    iters = 0
-    cur: dict = {}
-    last: dict = {}
+    tr = ResidualTracker()
     for line in text.splitlines():
-        if line.startswith("Time = "):
-            iters += 1
-            if cur:
-                last = cur
-            cur = {}
-            continue
-        m = _RES.search(line)
-        if m:
-            fld, r0 = m.group(1), float(m.group(2))
-            if fld in ("Ux", "Uy", "Uz"):
-                cur["U"] = max(cur.get("U", 0.0), r0) if fld != "Ux" or "U" not in cur else cur["U"]
-                cur.setdefault("_" + fld, r0)
-            else:
-                cur.setdefault(fld, r0)
-    if cur:
-        last = cur
-    res = {k: v for k, v in last.items() if not k.startswith("_")}
-    comps = [last[k] for k in ("_Ux", "_Uy", "_Uz") if k in last]
-    if comps:
-        res["U"] = max(comps)
+        tr.feed(line)
+    tr.finish()
     converged = "SIMPLE solution converged in" in text
     # (the banner says "Floating point exception trapping enabled": match residuals / crashes only)
     diverged = bool(re.search(r"residual = -?(nan|inf|NaN|Inf)|Floating point exception \(core|FOAM FATAL",
                               text))
-    return {"iterations": iters, "residuals": res, "converged": converged, "diverged": diverged}
+    return {"iterations": len(tr.history), "residuals": tr.last(), "components": dict(tr.history[-1]) if tr.history else {},
+            "converged": converged, "diverged": diverged}
 
 
 def read_forces(post: Path, name: str) -> np.ndarray | None:

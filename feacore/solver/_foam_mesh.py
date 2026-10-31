@@ -257,7 +257,7 @@ def convert(path, dim: int, thickness: float, out_msh: Path) -> FoamMesh:
 
     # ---- all faces of the (input-dimension) cells -> boundary faces
     if dim == 2:
-        segs, cc, cent, area = [], [], [], 0.0
+        segs, cent, area = [], [], 0.0
         for lt, rows, _, _ in cells:
             nv = rows.shape[1]
             a = _tri_area(P, rows[:, 0], rows[:, 1], rows[:, 2])
@@ -283,7 +283,7 @@ def convert(path, dim: int, thickness: float, out_msh: Path) -> FoamMesh:
         measure = area
         centroids = np.concatenate(cent)
     else:
-        fl, cent, vol = [], [], 0.0
+        fl, cent = [], []
         for lt, rows, _, _ in cells:
             for fv in _FACES[lt]:
                 r = rows[:, fv]
@@ -293,8 +293,7 @@ def convert(path, dim: int, thickness: float, out_msh: Path) -> FoamMesh:
             cent.append(P[rows].mean(axis=1))
         allf = np.concatenate(fl)
         centroids = np.concatenate(cent)
-        vol = None
-        measure = float("nan")  # filled from OpenFOAM's cell volumes
+        measure = float("nan")  # filled from the finite-volume cell volumes
     keys = _keys(allf, len(P))
     uk, first, counts = np.unique(keys, return_index=True, return_counts=True)
     if np.any(counts > 2):

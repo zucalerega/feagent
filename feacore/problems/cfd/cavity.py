@@ -17,8 +17,13 @@ use the exact grid coordinates. The tabulated extremes along the two centrelines
 
 The table values were checked against the public transcription in PySPH
 (pysph/examples/ghia_cavity_data.py). The extremes of the continuous profiles lie within one table
-spacing of these points, where the profiles are flat, so the point values equal the line extremes to
-well under 0.1 %.
+spacing of these points, where the profiles are flat.
+
+Ghia's Re = 100 values are 1.5-3.5 % smaller in magnitude than mesh-converged solutions: the fixed
+solver's Richardson-extrapolated values (32/64/128 grids, observed order ~2, GCI <= 0.1 %) are
+u(0.5, 58/128) = -0.21401, v(30/128, 0.5) = 0.17952, v(103/128, 0.5) = -0.25382 and
+u(0.5, 0.5) = -0.20914. Fine-grid literature deviates from Ghia in the same direction (Sahin & Owens
+2003). The tolerances (3-5 %) cover that table error plus the agent's own discretization error.
 
 Mesh: uniform structured quad grid, n x n cells (32 / 64 / 128 for the reference study). The lid
 corners are singular (velocity jump), which pollutes the solution only weakly at the centrelines.

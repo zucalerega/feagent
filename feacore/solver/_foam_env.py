@@ -151,3 +151,40 @@ def run(fe: FoamEnv, args: list[str], case_dir: str | Path, log: str | None = No
         tail = "\n".join((p.stdout + "\n" + p.stderr).strip().splitlines()[-25:])
         raise FoamRunError(f"{' '.join(args)} failed (exit {p.returncode}); last lines of {logf}:\n{tail}")
     return p
+
+
+def run_monitored(fe: FoamEnv, args: list[str], case_dir: str | Path, on_line, timeout: float | None = None,
+                  log: str | None = None) -> tuple[int, str, str | None]:
+    """Run a solver that honours ``-opt-switch stopAtWriteNowSignal=<SIGUSR1>`` (appended here),
+    feeding every output line to ``on_line(line) -> bool``; a True return (or the timeout) makes
+    the solver write the current iteration and stop. Returns (exit code, output, stop reason)."""
+    import signal
+    import time as _time
+
+    case_dir = Path(case_dir)
+    env = dict(fe.env)
+    env["PWD"] = str(case_dir)
+    sig = int(signal.SIGUSR1)
+    cmd = list(args) + ["-opt-switch", f"stopAtWriteNowSignal={sig}"]
+    t0 = _time.monotonic()
+    out: list[str] = []
+    reason = None
+    with subprocess.Popen(cmd, cwd=case_dir, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, bufsize=1) as proc:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            out.append(line)
+            if reason is None:
+                stop = on_line(line)
+                if not stop and timeout is not None and _time.monotonic() - t0 > timeout:
+                    stop, reason = True, "timeout"
+                if stop:
+                    reason = reason or "stagnated"
+                    try:
+                        proc.send_signal(sig)
+                    except ProcessLookupError:
+                        pass
+        code = proc.wait()
+    text = "".join(out)
+    (case_dir / f"log.{log or args[0]}").write_text(text)
+    return code, text, reason

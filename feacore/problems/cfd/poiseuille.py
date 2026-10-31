@@ -44,6 +44,10 @@ class PoiseuilleChannel(FlowProblem):
     family = "poiseuille_channel"
     tags = ("cfd", "2d", "flow", "laminar", "analytical", "internal_flow", "expression_bc")
     expected_behavior = "smooth"
+    # The cross-stream velocity is zero to round-off, so its normalised residual stalls (~1e-7); the
+    # backend accepts such a stalled component once u_x and p reach residual_tol (a few hundred
+    # iterations here). The cap only bounds the cost if that detection ever fails.
+    max_iterations = 3000
     default_params = {"H": 0.01, "L": 0.05, "U": 0.01, "rho": 1000.0, "mu": 0.01, "h0": 0.00125}
 
     # ---- derived quantities

@@ -47,6 +47,10 @@ class PipePoiseuille3D(FlowProblem):
     dim = 3
     formulation = "3d"
     expected_behavior = "smooth"
+    # The cross-stream velocity is zero to round-off, so its normalised residual stalls (~1e-7); the
+    # backend accepts such a stalled component once u_x and p reach residual_tol (a few hundred
+    # iterations here). The cap only bounds the cost if that detection ever fails.
+    max_iterations = 3000
     default_params = {"R": 0.005, "L": 0.05, "U": 0.01, "rho": 1000.0, "mu": 0.01, "h0": 0.00125}
     # block counts at h0: per side of the central square (= per quarter of the wall), square -> wall,
     # and along the axis (axial cells 5 h0 long: the exact flow does not vary along x)
@@ -66,8 +70,11 @@ class PipePoiseuille3D(FlowProblem):
         return p["rho"] * p["U"] * 2 * p["R"] / p["mu"]
 
     def points(self) -> dict[str, list[float]]:
+        """Probe points on the axis, downstream of the first cells after the inlet: a finite-volume
+        solution with a fixed-velocity inlet (zero-gradient pressure) and long axial cells has an
+        odd-even pressure wiggle there that decays within ~3 cells."""
         L = self.params["L"]
-        return {"A": [round(0.25 * L, 12), 0.0, 0.0], "B": [round(0.75 * L, 12), 0.0, 0.0],
+        return {"A": [round(0.5 * L, 12), 0.0, 0.0], "B": [round(0.9 * L, 12), 0.0, 0.0],
                 "C": [round(0.5 * L, 12), 0.0, 0.0]}
 
     def inlet_profile(self) -> str:

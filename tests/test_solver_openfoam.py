@@ -186,3 +186,81 @@ def test_case_validation_errors(tmp_path):
     bad.bcs[2].group = "wals"
     with pytest.raises(MeshError, match="wals"):
         solve(bad, backend="openfoam")
+
+
+def test_symmetry_half_channel_matches_full(tmp_path, poiseuille):
+    """Symmetry plane at the centreline: the half channel reproduces the full one."""
+    names = lambda x, y: ("inlet" if abs(x) < 1e-12 else "outlet" if abs(x - L) < 1e-12
+                          else "walls" if abs(y) < 1e-12 else "centre")
+    mesh = _rect(tmp_path / "half.msh", L, 0.5 * H, 48, 4, names)
+    case = _channel_case(mesh)
+    case.bcs.append(BC("symmetry", group="centre"))
+    case.qois = [q for q in case.qois if q.name in ("dp", "q_in")]
+    q = solve(case, backend="openfoam").evaluate_all()
+    full = poiseuille[8][1]
+    assert q["dp"] == pytest.approx(full["dp"], rel=1e-6)
+    assert q["q_in"] == pytest.approx(0.5 * full["q_in"], rel=1e-9)
+
+
+def test_slip_walls_give_plug_flow(tmp_path):
+    mesh = _rect(tmp_path / "ch.msh", L, H, 24, 4, _channel_names)
+    case = _channel_case(mesh, inlet_value=[UM, 0.0])
+    case.bcs[2] = BC("slip", group="walls")
+    res = solve(case, backend="openfoam")
+    q = res.evaluate_all()
+    _, ux = res.nodal("ux")
+    assert np.allclose(ux, UM, rtol=1e-6)
+    assert abs(q["dp"]) < 1e-6 * RHO * UM**2
+    assert abs(q["fx_walls"]) < 1e-9
+
+
+def test_mesh_harness_cfd_adapter_tee(tmp_path):
+    """Harness spec (analysis: cfd, bcs.cfd) -> tet mesh -> flow case -> OpenFOAM, 3D."""
+    yaml = pytest.importorskip("yaml")
+    from feagent.mesher import run_mesh
+    from feagent.parts import make_part
+    from feagent.spec import load_spec
+
+    from feacore.adapters.mesh_harness_cfd import case_from_spec
+
+    step = make_part("tee", tmp_path / "tee.step")
+    spec = {"geometry": str(step), "analysis": "cfd", "size": {"global": 5.0},
+            "groups": {"inlet": {"select": {"at": "xmin"}, "expect": 1},
+                       "outlet_main": {"select": {"at": "xmax"}, "expect": 1},
+                       "outlet_branch": {"select": {"at": "ymax"}, "expect": 1}},
+            "bcs": {"cfd": {"inlet": ["inlet"], "outlet": ["outlet_main", "outlet_branch"], "velocity": 10.0}}}
+    p = tmp_path / "mesh.yaml"
+    p.write_text(yaml.safe_dump(spec))
+    assert run_mesh(load_spec(p)).ok
+    case = case_from_spec(p).check()
+    assert [(b.type, b.group) for b in case.bcs] == [
+        ("velocity_inlet", "inlet"), ("pressure_outlet", "outlet_main"), ("pressure_outlet", "outlet_branch"),
+        ("wall", "walls")]
+    res = solve(case, backend="openfoam")
+    q = res.evaluate_all()
+    assert res.info.dim == 3 and res.info.cell_type == "tetra" and res.info.converged
+    qin = q["flow_rate_inlet"]
+    assert qin < 0 and q["flow_rate_outlet_main"] > 0 and q["flow_rate_outlet_branch"] > 0
+    assert qin + q["flow_rate_outlet_main"] + q["flow_rate_outlet_branch"] == pytest.approx(0, abs=1e-7 * -qin)
+    assert -qin == pytest.approx(np.pi * 10.0**2 * 10.0, rel=0.05)    # pi R^2 U (faceted inlet)
+    assert q["pressure_drop"] > 0 and q["force_walls_x"] > 0
+
+
+@pytest.mark.slow
+def test_komega_sst_channel_runs(tmp_path):
+    """RANS wiring (k, omega, nut, wall functions): runs, conserves mass, drags the walls."""
+    mesh = _rect(tmp_path / "ch.msh", 1.0, 0.1, 50, 20, lambda x, y: "inlet" if abs(x) < 1e-12 else
+                 "outlet" if abs(x - 1.0) < 1e-12 else "walls")
+    case = Case(mesh=str(mesh),
+                analysis=Analysis(physics="flow", formulation="2d", order=2, thickness=1.0,
+                                  options={"turbulence": "kOmegaSST", "max_iterations": 400}),
+                materials={"air": Material(rho=1.2, mu=1.8e-5)},
+                bcs=[BC("velocity_inlet", group="inlet", value=[10.0, 0.0]),
+                     BC("pressure_outlet", group="outlet", value=0.0), BC("wall", group="walls")],
+                qois=[QoI("q_in", "flow_rate", group="inlet"), QoI("q_out", "flow_rate", group="outlet"),
+                      QoI("fx", "force", group="walls", component=0)])
+    res = solve(case, backend="openfoam")
+    q = res.evaluate_all()
+    assert q["q_in"] + q["q_out"] == pytest.approx(0, abs=1e-6)
+    assert q["fx"] > 0 and np.isfinite(q["fx"])
+    assert {"k", "omega", "p", "U"} <= set(res.info.residuals)
