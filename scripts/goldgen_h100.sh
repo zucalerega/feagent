@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Gold-benchmark production pilot on one H100 node: CPU cores mesh (12 gmsh processes) while solve
 # processes share the GPU (cuDSS). Screens ABC chunk 0000, then N parts x BCS BC sets x 3 levels.
-#   bash scripts/goldgen_h100.sh [NPARTS=10] [BCS=10] [MESH_WORKERS=12] [SOLVE_WORKERS=3] [CANDIDATES=300]
+#   bash scripts/goldgen_h100.sh [NPARTS=10] [BCS=10] [MESH_WORKERS=12] [SOLVE_WORKERS=3] [CANDIDATES=300] \
+#                                [SHARD=0/1] [GPU_SLOTS=4]   (RENDER=1 also writes the abc_00000003 L2 results page)
 # Output: ~/gold/ (out/ benchmarks + solves.jsonl + gpu.jsonl, run.log, L2_results.html, summary.json)
 set -euo pipefail
-NPARTS=${1:-10}; BCS=${2:-10}; MW=${3:-12}; SW=${4:-3}; NCAND=${5:-300}
+NPARTS=${1:-10}; BCS=${2:-10}; MW=${3:-12}; SW=${4:-3}; NCAND=${5:-300}; SHARD=${6:-0/1}; SLOTS=${7:-4}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 W=~/gold; mkdir -p "$W"; cd "$W"
 T0=$(date +%s)
@@ -29,11 +30,11 @@ stamp "screened"
 
 PYTHONUNBUFFERED=1 "$PY" -W ignore -m feacore.goldgen run parts.jsonl abc --out out --parts "$NPARTS" \
   --bcs "$BCS" --min-bcs 5 --levels 3 --h0-frac 0.237 --mesh-workers "$MW" --solve-workers "$SW" \
-  --linear-solver cudss 2>&1 | grep -av -E "$NOISE" | tee -a "$W/run.log"
+  --shard "$SHARD" --gpu-slots "$SLOTS" --linear-solver cudss 2>&1 | grep -av -E "$NOISE" | tee -a "$W/run.log"
 stamp "goldgen run done"
 
 L2=out/_meshes/abc_00000003/L2.msh
-if [ -f "$L2" ]; then
+if [ "${RENDER:-0}" = 1 ] && [ -f "$L2" ]; then
   PYTHONUNBUFFERED=1 "$PY" -W ignore "$REPO/scripts/view_results.py" parts.jsonl abc_00000003 "$L2" --bcs 10 \
     --out "$W/L2_results.html" --title "abc_00000003  (L2 curved Tet10, 10 BC sets, H100)" 2>&1 \
     | grep -av -E "$NOISE" | tee -a "$W/run.log"
