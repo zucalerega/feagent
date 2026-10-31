@@ -21,6 +21,8 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 ## Status
 
 - `improver-loop` branch: improver side of the loop.
+- `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
+  gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
   parts and a UI (package `feacore/`, see below). In progress: interfaces are in place, the solver
   backends and problems are being built.
@@ -39,6 +41,11 @@ Decisions:
   plus a gmsh `.msh` file whose physical groups are named. This is what the agent's MCP / mesh harness
   must produce. Run it with `feacore.solver.solve(case, backend)` or the CLI
   `python -m feacore.cli case.json --out result.json`.
+- **Mesh harness → solver:** `feacore/adapters/mesh_harness.py` turns a harness output directory
+  (`mesh.msh` + `manifest.json` + `report.json` with `bcs.fea: {fixed, loads: [{group, force}], E, nu}`)
+  into a case: `python -m feacore.adapters.mesh_harness <out_dir>`. `fixed` → `fixed` and
+  `loads[].force` → `force` (total force spread per area) map 1:1. The case schema also has pressure,
+  symmetry, prescribed displacement, thermal loads and explicit QoIs if the harness wants to declare them.
 - **Problems** (the "CAD design problems"): `feacore/problems/` (the `Problem` API + registry),
   exported to `benchmarks/<id>/public/` (statement + STEP: give these to agents) and
   `benchmarks/<id>/private/` (reference values, reference setup, validation studies: evaluator only,
@@ -54,7 +61,9 @@ Decisions:
 
 - How exactly is a solution scored? (proposal above; the evaluator decides)
 - Which MCP tools does the agent get (geometry / mesh / BCs)? It must emit the case JSON + `.msh` above.
-- There is no `main` branch yet; workstream branches currently fork from `improver-loop`.
+- Merging into `main`: `mesh-harness` and `fea-solver-benchmarks` both add a root `pyproject.toml`
+  (`feagent` with uv_build, `feacore` with setuptools). Pick one root project that ships both
+  packages, or make `feacore` a sub-project.
 - What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
 - What does the evaluator output look like (schema for rankings + summary)?
 
