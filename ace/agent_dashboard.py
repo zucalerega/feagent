@@ -45,6 +45,8 @@ def short(pid: str) -> str:
 
 
 # --------------------------------------------------------------------------- loading (cached, re-read when files change)
+# The `version` / `mtime` arguments exist only as cache keys. They must NOT start with "_":
+# st.cache_data skips hashing such parameters, so the cache would never invalidate.
 
 
 def run_dirs() -> list[str]:
@@ -55,13 +57,14 @@ def run_dirs() -> list[str]:
 def stamp(run: str) -> float:
     """Changes whenever the loop writes something new (used as a cache key)."""
     d = RUNS / run
-    files = [d / "cost.jsonl", *d.glob("gen*/groups.json"), *d.glob("gen*/runs")]
+    files = [d / "cost.jsonl", *d.glob("gen*/groups.json"), *d.glob("gen*/runs"), *d.glob("gen*/runs/*.json")]
     return max((f.stat().st_mtime for f in files if f.exists()), default=0.0)
 
 
 @st.cache_data(max_entries=20, show_spinner=False)
-def load_runs(run: str, _stamp: float) -> pd.DataFrame:
-    """One row per finished agent run."""
+def load_runs(run: str, version: float) -> pd.DataFrame:
+    """One row per finished agent run. `version` (= stamp(run)) is only a cache key: no leading
+    underscore, so st.cache_data hashes it and re-reads when the loop writes something new."""
     rows = []
     for f in (RUNS / run).glob("gen*/runs/*.json"):
         r = json.loads(f.read_text())
@@ -84,14 +87,14 @@ def load_runs(run: str, _stamp: float) -> pd.DataFrame:
 
 
 @st.cache_data(max_entries=20, show_spinner=False)
-def load_costs(run: str, _stamp: float) -> pd.DataFrame:
+def load_costs(run: str, version: float) -> pd.DataFrame:   # version: cache key, see load_runs
     f = RUNS / run / "cost.jsonl"
     rows = [json.loads(line) for line in f.read_text().splitlines() if line.strip()] if f.exists() else []
     return pd.DataFrame(rows)
 
 
 @st.cache_data(max_entries=200, show_spinner=False)
-def read_json(path: str, _mtime: float):
+def read_json(path: str, mtime: float):   # mtime: cache key (hashed), re-reads when the file changes
     return json.loads(Path(path).read_text())
 
 
@@ -103,7 +106,7 @@ def maybe_json(path: Path):
 
 
 @st.cache_data(max_entries=600, show_spinner=False)
-def mesh_png(msh: str, _mtime: float, point: tuple | None, size: tuple = (5.0, 3.6)) -> bytes:
+def mesh_png(msh: str, mtime: float, point: tuple | None, size: tuple = (5.0, 3.6)) -> bytes:
     """The mesh: edges in 2D, the surface triangles in 3D. `point` marks the problem's scored point."""
     m = meshio.read(msh)
     dim = 3 if any(c.type.startswith("tetra") for c in m.cells) else 2
@@ -172,7 +175,7 @@ STRESS_SCALE = "Turbo"
 
 
 @st.cache_data(max_entries=300, show_spinner=False)
-def surface_of(msh: str, _mtime: float) -> dict:
+def surface_of(msh: str, mtime: float) -> dict:
     """Vertices, triangles and edges to draw: the boundary triangles of a 3D mesh, or all
     triangles of a 2D mesh (at z = 0). Quadratic elements are drawn by their corner nodes."""
     m = meshio.read(msh)
@@ -215,7 +218,7 @@ def mesh_figure(pts, tris, edges=None, color=None, cmin=None, cmax=None, point=N
 
 
 @st.cache_data(max_entries=100, show_spinner="Solving the agent's setup on its mesh…")
-def run_stress(run_path: str, _mtime: float) -> np.ndarray | None:
+def run_stress(run_path: str, mtime: float) -> np.ndarray | None:
     """von Mises stress of the run's own solution at its mesh vertices (re-solves its scored setup)."""
     from ace import checkpoint as ckpt, fea, field_error as fe
     from ace.config import TASKS
