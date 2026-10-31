@@ -17,7 +17,7 @@ flock -n 9 || { echo "$(date -Is) previous pull still running"; exit 0; }
 for N in $NODES; do
   state=$(autor node get "$N" --json --quiet 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null)
   case "$state" in running*) ;; *) echo "$(date -Is) $N: ${state:-unknown}, skipped"; continue ;; esac
-  listing=$(autor run "$N" --timeout 60 -- 'cd ~/gold/batches 2>/dev/null && { sha256sum *.tgz 2>/dev/null; [ -f DONE ] && echo DONE; }')
+  listing=$(autor run "$N" --timeout 60 -- sh -c 'cd ~/gold/batches 2>/dev/null && { sha256sum *.tgz 2>/dev/null; [ -f DONE ] && echo DONE; }')
   new=0
   while read -r sha name; do
     [[ "${name:-}" == *.tgz && ${#sha} -eq 64 ]] || continue
