@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import resource
 import sys
 import threading
 import time
@@ -121,27 +120,6 @@ def cmd_mesh(a) -> int:
     return 0
 
 
-def _solve_job(job) -> dict:
-    """One BC set on all levels of its part (solve-pool worker); appends its rows to solves.jsonl."""
-    from feacore.goldgen.parts import Part
-    from feacore.goldgen.run import run_bcset
-
-    path, part_json, s, meshes, out, linear_solver = job
-    kill = Path(out) / f".kill_{s.id}"                   # test hook: simulate the OOM killer once
-    if os.environ.get("GOLDGEN_TEST_KILL") == s.id and not kill.exists():
-        kill.touch()
-        os.kill(os.getpid(), 9)
-    t0 = time.perf_counter()
-    try:
-        with open(Path(out) / "solves.jsonl", "a") as log:
-            summ = run_bcset(path, Part.from_json(part_json), s, meshes, Path(out), linear_solver, log)
-    except Exception as e:  # noqa: BLE001 - one bad BC set must not stop the run
-        summ = {"id": s.id, "result": "error", "error": f"{type(e).__name__}: {str(e)[:300]}"}
-    summ["seconds_total"] = round(time.perf_counter() - t0, 1)
-    summ["worker_maxrss_gb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6, 1)
-    return summ
-
-
 # solve-process memory on the H100 (cuDSS): ~7 GB peak RSS for ~1.1M dofs (assembly, factorisation,
 # stress recovery and diagnostics in one process), once the rigid-mode SVD stopped building an n x n
 # matrix; raised automatically when a solve measures more (CPU SuperLU needs ~70). tet10: ~4.6 dofs/cell
@@ -171,6 +149,8 @@ def _gpu_sampler(path: Path, stop: threading.Event, every: float = 10.0) -> None
 
 
 def cmd_run(a) -> int:
+    from feacore.goldgen.run import solve_job
+
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     selected = _select(a)
@@ -193,7 +173,7 @@ def cmd_run(a) -> int:
     ready: list = []                                              # (mdofs, tries, job) waiting for memory
     running: dict = {}                                            # solve future -> (mdofs, tries, job, est_gb)
     gb_per_mdof = [MEM_GB_PER_MDOF]                               # raised whenever a solve measures more
-    solve_ex = ProcessPoolExecutor(max(1, a.solve_workers))
+    solve_ex = ProcessPoolExecutor(max(1, a.solve_workers), max_tasks_per_child=1)
 
     def est(mdofs: float) -> float:
         return MEM_GB_BASE + gb_per_mdof[0] * mdofs
@@ -207,7 +187,7 @@ def cmd_run(a) -> int:
             e = est(item[0])
             if used + e <= budget or not running:                 # always admit one, however large
                 ready.remove(item)
-                running[solve_ex.submit(_solve_job, item[2])] = (*item, e)
+                running[solve_ex.submit(solve_job, item[2])] = (*item, e)
                 used += e
 
     with ProcessPoolExecutor(max(1, a.mesh_workers)) as mesh_ex:
@@ -250,7 +230,7 @@ def cmd_run(a) -> int:
                     gb_per_mdof[0] *= 1.5                         # it took more memory than we thought
                     running.clear()
                     solve_ex.shutdown(wait=False, cancel_futures=True)
-                    solve_ex = ProcessPoolExecutor(max(1, a.solve_workers))
+                    solve_ex = ProcessPoolExecutor(max(1, a.solve_workers), max_tasks_per_child=1)
                     for e_, t_, j_ in lost:
                         if t_ + 1 > 2:
                             summ = {"id": j_[2].id, "result": "error", "error": "solve worker killed twice (memory)"}

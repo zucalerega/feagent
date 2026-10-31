@@ -15,6 +15,8 @@ and one line per solve in <out>/solves.jsonl (DOFs, seconds) for the cost model.
 from __future__ import annotations
 
 import json
+import os
+import resource
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -151,3 +153,24 @@ def run_bcset(step, part: Part, bcset: BCSet, meshes: list[dict], out: Path,
                    singular=[k for k, v in study.items() if v["kind"] == "singular"],
                    dofs=[r["n_dofs"] for r in runs], seconds=[round(r["total_s"], 2) for r in runs])
     return summary
+
+
+def solve_job(job) -> dict:
+    """One BC set on all levels of its part (``goldgen run`` solve-pool worker, one per process);
+    appends its rows to solves.jsonl. Lives here, not in __main__, because spawned workers must
+    import it."""
+    path, part_json, s, meshes, out, linear_solver = job
+    kill = Path(out) / f".kill_{s.id}"                   # test hook: simulate the OOM killer once
+    if os.environ.get("GOLDGEN_TEST_KILL") == s.id and not kill.exists():
+        kill.touch()
+        os.kill(os.getpid(), 9)
+    t0 = time.perf_counter()
+    try:
+        with open(Path(out) / "solves.jsonl", "a") as log:
+            summ = run_bcset(path, Part.from_json(part_json), s, meshes, Path(out), linear_solver, log)
+    except Exception as e:  # noqa: BLE001 - one bad BC set must not stop the run
+        summ = {"id": s.id, "result": "error", "error": f"{type(e).__name__}: {str(e)[:300]}"}
+    summ["seconds_total"] = round(time.perf_counter() - t0, 1)
+    # one task per worker process (max_tasks_per_child=1), so the peak RSS is this BC set's own
+    summ["worker_maxrss_gb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6, 1)
+    return summ
