@@ -375,6 +375,7 @@ def main(argv=None) -> int:
     ap.add_argument("part_id")
     ap.add_argument("mesh")
     ap.add_argument("--bcs", type=int, default=10)
+    ap.add_argument("--only", type=int, nargs="*", help="keep only these BC-set indices (e.g. --only 2)")
     ap.add_argument("--out")
     ap.add_argument("--title")
     ap.add_argument("--open", action="store_true")
@@ -385,6 +386,8 @@ def main(argv=None) -> int:
     row = next(r for r in map(json.loads, open(a.parts)) if r.get("ok") and r["part"]["id"] == a.part_id)
     part = Part.from_json(json.dumps(row["part"]))
     sets = generate(part, a.bcs)
+    if a.only is not None:
+        sets = [s for s in sets if int(s.id.rsplit("_bc", 1)[1]) in a.only]
     data, X = load(a.mesh)
     cases = solve_cases(part, sets, a.mesh, X, np.asarray(data["offset"]), part.diag * 1000)
     title = a.title or f"{a.part_id}  ({Path(a.mesh).stem}, {len(cases)} BC sets)"
