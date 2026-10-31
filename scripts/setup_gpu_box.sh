@@ -23,6 +23,7 @@ else
   echo "   all present"
 fi
 
+export UV_NATIVE_TLS=1   # trust the system CA store (corporate / proxy CAs), like pip and curl do
 if [ "$ARCH" = "x86_64" ]; then
   # uv gives Python 3.12 regardless of the image's system Python (the mesh harness needs >= 3.12)
   if ! command -v uv >/dev/null; then
