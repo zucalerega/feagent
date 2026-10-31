@@ -35,7 +35,7 @@ class Job:
     log: Path | None = None
     on_exit: Callable[["Job"], None] | None = None
     id: str = field(default_factory=lambda: new_id("job"))
-    state: str = "queued"           # queued | running | done | failed | timeout
+    state: str = "queued"           # queued | running | done | failed | timeout | cancelled
     created: float = field(default_factory=time.time)
     started: float | None = None
     finished: float | None = None
@@ -56,7 +56,9 @@ class JobRunner:
         self.store = store
         self.workers = {
             "quick": int(quick_workers or os.environ.get("FEACORE_UI_QUICK_WORKERS", 1)),
-            "study": int(study_workers or os.environ.get("FEACORE_UI_STUDY_WORKERS", 1)),
+            # default: one study per 4 cores (1 on a small shared box, 4 on a 16-core Brev instance)
+            "study": int(study_workers or os.environ.get("FEACORE_UI_STUDY_WORKERS",
+                                                         max(1, min(4, (os.cpu_count() or 4) // 4)))),
         }
         self.timeouts = {
             "solve": float(solve_timeout or os.environ.get("FEACORE_UI_SOLVE_TIMEOUT", 1800)),
@@ -125,6 +127,20 @@ class JobRunner:
             "recent": [j.summary() for j in sorted(jobs, key=lambda j: -j.created)[:10]],
         }
 
+    def cancel(self, predicate: Callable[[Job], bool]) -> int:
+        """Cancel matching jobs: queued ones are skipped, running ones are terminated."""
+        n = 0
+        with self._lock:
+            jobs = [j for j in self.jobs.values() if predicate(j) and j.state in ("queued", "running")]
+            procs = {jid: p for jid, p in self._procs.items()}
+        for j in jobs:
+            if j.state == "queued":
+                j.state = "cancelled"
+            elif j.id in procs and procs[j.id].poll() is None:
+                procs[j.id].terminate()
+            n += 1
+        return n
+
     def queue_position(self, job: Job) -> int | None:
         if job.state != "queued":
             return None
@@ -139,6 +155,11 @@ class JobRunner:
             try:
                 job = q.get(timeout=0.5)
             except queue.Empty:
+                continue
+            if job.state == "cancelled":
+                job.finished = time.time()
+                if not job.future.done():
+                    job.future.set_result(job)
                 continue
             try:
                 self._run(job)

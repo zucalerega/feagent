@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-from feacore.case import BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field
+from feacore.case import BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field, eval_expr
 from feacore.solver._ccx_fem import Locator, _bary, interpolate, map_points, quadrature, shape
 from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_totals, parse_frd, run_ccx
 from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh  # noqa: F401
@@ -271,7 +271,16 @@ class _Deck:
                 self.warnings.append(f"{bc.type} BC at point {bc.point}: nearest node is {d[i]:.3g} away "
                                      f"(cell size ~{h:.3g})")
             return np.array([i])
-        return self.m.nodes_of(bc.group)
+        nodes = self.m.nodes_of(bc.group)
+        where = getattr(bc, "where", None)
+        if where is not None:
+            # keep the group's nodes where the expression is nonzero (axisymmetric: x = r, y = z)
+            X = self.m.X[nodes]
+            keep = np.asarray(eval_expr(where, X[:, 0], X[:, 1], X[:, 2])) != 0
+            nodes = nodes[keep]
+            if len(nodes) == 0:
+                raise CaseError(f"{bc.type} BC on group {bc.group!r}: where {where!r} selects no node")
+        return nodes
 
     def set_dirichlet(self, nodes, dof: int, values):
         values = np.broadcast_to(np.asarray(values, dtype=float), (len(nodes),))

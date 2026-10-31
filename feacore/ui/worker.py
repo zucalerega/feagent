@@ -93,16 +93,18 @@ class _ProblemProxy:
     def __getattr__(self, name):
         return getattr(self._problem, name)
 
-    def mesh(self, path, h, geom_order=2):
-        self._on_mesh(Path(path), float(h))
+    def mesh(self, path, h, geom_order=2, refine_steps=0):
+        self._on_mesh(Path(path), float(h), int(refine_steps))
+        if refine_steps:  # nested sequence: mesh once at the coarse size, then split
+            return self._problem.mesh(path, h, geom_order=geom_order, refine_steps=refine_steps)
         return self._problem.mesh(path, h, geom_order=geom_order)
 
 
 @contextmanager
-def _hook_solve(on_solved):
+def _hook_solve(on_before, on_solved):
     """Wrap the solver used by ``feacore.verification.study`` so each Result can be stored
     (fields for the viewer) while the study runs. If the study module stops using a
-    module-level ``solve``, the hook simply never fires and the study still runs."""
+    module-level ``solve``, the hooks simply never fire and the study still runs."""
     import feacore.verification.study as study_mod
 
     real = getattr(study_mod, "solve", None)
@@ -111,6 +113,10 @@ def _hook_solve(on_solved):
         return
 
     def wrapped(case, backend="skfem", **kw):
+        try:
+            on_before(case)
+        except Exception:  # noqa: BLE001 - progress reporting must never break the study
+            traceback.print_exc()
         t0 = time.perf_counter()
         res = real(case, backend=backend, **kw)
         try:
@@ -127,6 +133,8 @@ def _hook_solve(on_solved):
 
 
 def run_study(root: str, study_id: str) -> int:
+    import inspect
+
     from feacore.problems.registry import get
     from feacore.runstore import RunStore, now_iso
     from feacore.ui.analysis import interpret_study
@@ -134,49 +142,81 @@ def run_study(root: str, study_id: str) -> int:
 
     store = RunStore(root)
     st = store.get_study(study_id)
+    if st.get("status") == "cancelled":
+        return 0
     levels: list[dict] = []
-    progress = {"done": 0, "total": None, "stage": "starting", "message": "loading problem", "levels": levels}
+    t_start = time.time()
+    progress = {"done": 0, "total": None, "stage": "starting", "message": "loading problem", "levels": levels,
+                "stage_started_at": t_start, "started_at": t_start}
     store.update_study(study_id, status="running", started_at=now_iso(), progress=progress, pid=os.getpid())
     run_ids: list[str] = []
+
+    def stage(name: str, message: str, **kw) -> None:
+        progress.update(stage=name, message=message, stage_started_at=time.time(), **kw)
+        store.update_study(study_id, progress=progress)
+
     try:
         problem = get(st["problem_id"])
         order = int(st["order"])
+        nested = bool(st.get("nested"))
         sizes = st.get("sizes") or problem.study_sizes(order)
         sizes = sorted((float(h) for h in sizes), reverse=True)
+        if nested:  # same sequence convergence_study uses: coarse mesh split once per level
+            sizes = [sizes[0] / 2**i for i in range(len(sizes))]
         levels.extend({"index": i, "h": h, "status": "pending"} for i, h in enumerate(sizes))
-        progress.update(total=len(sizes), stage="meshing", message=f"{len(sizes)} levels")
+        progress.update(total=len(sizes))
         store.update_study(study_id, sizes=sizes, progress=progress)
+        n = len(sizes)
         state = {"i": None, "t0": None}
 
-        def on_mesh(path: Path, h: float):
-            i = min(range(len(sizes)), key=lambda k: abs(math.log(sizes[k] / h)))
-            state.update(i=i, t0=time.perf_counter(), mesh=path)
-            levels[i]["status"] = "meshing"
-            progress.update(stage="meshing", message=f"level {i + 1}/{len(sizes)}: meshing, h = {h:.4g}")
-            store.update_study(study_id, progress=progress)
+        def on_mesh(path: Path, h: float, refine_steps: int):
+            i = refine_steps if nested else min(range(n), key=lambda k: abs(math.log(sizes[k] / h)))
+            state.update(i=i, t0=time.perf_counter())
+            levels[i].update(status="meshing", started_at=time.time())
+            how = f"split {refine_steps}x" if refine_steps else f"h = {h:.4g}"
+            stage("meshing", f"mesh {i + 1}/{n}: meshing ({how})")
+
+        def on_before(case):
+            i = state["i"] if state["i"] is not None else len(run_ids)
+            levels[i]["status"] = "solving"
+            try:
+                size_mb = case.mesh_path().stat().st_size / 1e6
+                extra = f", mesh file {size_mb:.1f} MB"
+            except OSError:
+                extra = ""
+            stage("solving", f"mesh {i + 1}/{n}: solving ({st['backend']}, P{order}{extra})")
 
         def on_solved(case, res, dt):
             i = state["i"] if state["i"] is not None else len(run_ids)
+            info = res.info
+            levels[i]["status"] = "storing"
+            stage("storing", f"mesh {i + 1}/{n}: solved {info.n_dofs:,} dofs in {info.wall_time:.1f} s; "
+                             f"storing fields for the viewer")
             rid = store.record_result(res, mesh_path=case.mesh_path(), problem_id=st["problem_id"],
                                       study_id=study_id, level=i, h_nominal=sizes[i], copy_mesh=False,
                                       source="ui")
             run_ids.append(rid)
-            info = res.info
             levels[i].update(status="done", run_id=rid, n_cells=info.n_cells, n_dofs=info.n_dofs,
                              h_rep=info.h_rep, wall_time=info.wall_time,
                              level_time=time.perf_counter() - (state["t0"] or time.perf_counter()),
                              qois=store.get_run(rid)["qois"])
-            nxt = f"; level {i + 2} next" if i + 1 < len(sizes) else ""
-            progress.update(done=sum(l["status"] == "done" for l in levels), stage="solving",
-                            message=f"level {i + 1}/{len(sizes)} solved: {info.n_dofs} dofs in "
-                                    f"{info.wall_time:.1f} s{nxt}")
-            store.update_study(study_id, progress=progress, run_ids=run_ids)
+            nxt = f"; mesh {i + 2} next" if i + 1 < n else "; analysing"
+            progress["done"] = sum(l["status"] == "done" for l in levels)
+            stage("solved", f"mesh {i + 1}/{n} done: {info.n_dofs:,} dofs, solve {info.wall_time:.1f} s{nxt}",
+                  run_ids=run_ids)
+            store.update_study(study_id, run_ids=run_ids)
 
         workdir = store.study_dir(study_id) / "meshes"
         workdir.mkdir(parents=True, exist_ok=True)
-        with _hook_solve(on_solved):
+        kwargs = {}
+        if nested:
+            if "nested" not in inspect.signature(convergence_study).parameters:
+                raise RuntimeError("this feacore.verification has no nested refinement")
+            kwargs["nested"] = True
+        with _hook_solve(on_before, on_solved):
             result = convergence_study(_ProblemProxy(problem, on_mesh), sizes=sizes, order=order,
-                                       backend=st["backend"], geom_order=st.get("geom_order"), workdir=workdir)
+                                       backend=st["backend"], geom_order=st.get("geom_order"), workdir=workdir,
+                                       **kwargs)
         if not run_ids:  # hook did not fire: record the levels without viewer fields
             for i, r in enumerate(result.get("runs", [])):
                 rec = store.create_run(backend=st["backend"], problem_id=st["problem_id"], study_id=study_id,
@@ -184,18 +224,20 @@ def run_study(root: str, study_id: str) -> int:
                 store.update_run(rec["run_id"], info=r.get("info"), qois=r.get("qois", {}), finished_at=now_iso())
                 run_ids.append(rec["run_id"])
         result["problem"] = st["problem_id"]
-        progress.update(done=len(sizes), stage="done", message="finished")
+        progress.update(done=n, stage="done", message="finished", stage_started_at=time.time())
         store.update_study(study_id, status="succeeded", finished_at=now_iso(), result=result,
-                           interpretation=interpret_study(result), run_ids=run_ids, progress=progress)
+                           interpretation=interpret_study(result), run_ids=run_ids, progress=progress,
+                           elapsed=time.time() - t_start)
         return 0
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         for l in levels:
-            if l["status"] in ("meshing", "solving"):
+            if l["status"] in ("meshing", "solving", "storing"):
                 l["status"] = "failed"
-        progress.update(stage="failed", message=f"{type(e).__name__}: {e}")
+        progress.update(stage="failed", message=f"{type(e).__name__}: {e}", stage_started_at=time.time())
         store.update_study(study_id, status="failed", finished_at=now_iso(), error=f"{type(e).__name__}: {e}",
-                           traceback=traceback.format_exc(), progress=progress, run_ids=run_ids)
+                           traceback=traceback.format_exc(), progress=progress, run_ids=run_ids,
+                           elapsed=time.time() - t_start)
         return 1
 
 
