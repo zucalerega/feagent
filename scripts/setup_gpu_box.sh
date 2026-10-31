@@ -14,11 +14,14 @@ SUDO=$([ "$(id -u)" = 0 ] && echo "" || echo "sudo")
 echo "== arch: $ARCH"
 
 echo "== system packages (gmsh runtime libs, CalculiX)"
-$SUDO apt-get update -qq
-# gmsh's shared library links these (ldd libgmsh.so); minimal cloud images often lack libgomp1 and the GL libs
-$SUDO apt-get install -y -qq libgomp1 libglu1-mesa libgl1 libglx0 libopengl0 libx11-6 libxext6 libxfixes3 \
-  libxcursor1 libxft2 libxinerama1 libxrender1 libxi6 libfontconfig1 libfreetype6 \
-  calculix-ccx curl bzip2 git tmux python3-venv xvfb >/dev/null
+PKGS=$(grep -v '^#' "$(dirname "$0")/system_packages.txt")
+MISSING=$(for p in $PKGS; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
+if [ -n "$MISSING" ]; then
+  $SUDO apt-get update -qq
+  $SUDO apt-get install -y -qq $MISSING >/dev/null
+else
+  echo "   all present"
+fi
 
 if [ "$ARCH" = "x86_64" ]; then
   # uv gives Python 3.12 regardless of the image's system Python (the mesh harness needs >= 3.12)
@@ -75,5 +78,5 @@ echo "== done. Python: $PY"
 echo "   GPU check:  $PY scripts/gpu_check.py"
 echo "   Headless renders (mesh harness / pyvista) need a virtual display: prefix with  xvfb-run -a"
 echo "   UI:         tmux new -d -s ui '$PY -m feacore.ui --host 0.0.0.0 --port 8000'"
-echo "               then expose port 8000: Brev console > instance > Access > Using Tunnels,"
+echo "               then expose port 8000: Brev console > your instance > HTTP Ports > add port 8000,"
 echo "               or from your laptop: brev port-forward <instance> --port 8000:8000"

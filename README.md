@@ -15,6 +15,15 @@ Multiple (agent, context+harness improver) pairs that get better at CAD/FEA setu
 The solver agents never touch, the Richardson/GCI verification the evaluator scores with, and the
 benchmark problems agents are assigned. Shared decisions and conventions are in `CLAUDE.md`.
 
+Any fresh Ubuntu / Brev box (any account), one command; then expose port 8000 via the
+instance's HTTP Ports (see docs/brev.md):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash
+```
+
+Or step by step:
+
 ```bash
 bash scripts/setup_gpu_box.sh        # fresh Ubuntu / Brev / DGX Spark box (docs/brev.md)
 pip install -e ".[dev]"              # or: an existing Python >= 3.12 env with gmsh's system libs
