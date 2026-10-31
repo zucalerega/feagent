@@ -358,6 +358,13 @@ None: every case ran on every backend listed above.
    that, which is stricter than the contract's "marginally outside -> nearest cell". The MMS studies use
    a base size that avoids it.
 
+9. **Open: thin 3D quarter annular cylinder (`E-3d-annulus3d-lame`).** skfem and ccx give the *same*
+   errors to 3 digits (so the two solvers agree), but the P1 u-order stalls at 1.64, 1.69, 1.70 over four
+   nested levels (72k tets) and P2 is still pre-asymptotic (1.75, 2.96). The 2D version of the same
+   Lame problem converges at 1.98 / 3.06, and the 3D cube converges optimally. Not attributed to
+   either solver; it needs a closer look (geometry of the refined curved tet faces, or the error
+   measure near the curved faces) before it is trusted as a 3D curved-geometry check.
+
 Reproducers live in `/tmp/codever/repro_<name>/`: `case.json` + mesh + `run.py`, which compares
 skfem and ccx with the exact field.
 

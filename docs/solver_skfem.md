@@ -114,7 +114,7 @@ the hardware or on an iterative tolerance that would contaminate a GCI study.
 |---|---|
 | `scipy` | SuperLU with MMD(AᵀA+A) ordering, symmetric mode, diagonal pivoting (Cholesky-like for SPD). Always available, single-threaded |
 | `pardiso` | MKL PARDISO via `pypardiso` (`pip install pypardiso`, x86-64 only), real SPD (mtype 2) on the upper triangle. Multithreaded (`MKL_NUM_THREADS`) |
-| `cudss` | NVIDIA cuDSS via nvmath-python (`pip install nvmath-python[cu12]` or `[cu13]`): `nvmath.sparse.advanced.direct_solver(A, b, options=DirectSolverOptions(sparse_system_type=SPD), execution="cuda")` with host SciPy/NumPy operands (int32 indices) |
+| `cudss` | NVIDIA cuDSS via nvmath-python (`pip install nvmath-python[cu12]` or `[cu13]`): `nvmath.sparse.advanced.direct_solver(A, b, options=DirectSolverOptions(sparse_system_type=SPD), execution="cuda")` with host SciPy/NumPy operands (int32 indices; int64 above 2^31 nonzeros) |
 | `auto` | `cudss` if a CUDA GPU and nvmath are present and n >= `FEACORE_CUDSS_MIN_N` (default 20000; smaller systems are faster on the CPU), else `pardiso` if installed, else `scipy` |
 | `cg` | opt-in iterative (pyamg smoothed aggregation if installed, else Jacobi), rtol 1e-10, flagged `ITERATIVE` in the info line |
 
@@ -136,7 +136,7 @@ you can spare per solve when running many solves in parallel.
 ## Assembly
 
 The stiffness and mass matrices come from batched dense products over the quadrature points
-(`_skfem_assembly.py`, chunks of 4000 cells). scikit-fem's generic `BilinearForm` loops in Python over
+(`_skfem_assembly.py`, cells in batches sized to keep temporaries around 20 MB). scikit-fem's generic `BilinearForm` loops in Python over
 the 900 local basis pairs of a P2 tetrahedron. The vectorised assembly matches it to 1e-16
 (`analysis.options["assembly"] = "skfem"` selects the reference path; there is a test for it) and is
 about 15x faster for 3D P2. Loads use scikit-fem linear forms per component. Quadrature degree:
@@ -193,7 +193,8 @@ To reproduce: mesh a box (or a 2x1 rectangle) with gmsh at size h, then run `sol
 Takeaways. In 3D the direct solve dominates and SciPy SuperLU is 10-15x slower than PARDISO, so
 install `pypardiso` (x86) or use cuDSS (GPU). Multithreaded PARDISO or cuDSS on a Brev box should
 cut the "solve" column several-fold. What is left is mostly sparse-matrix construction (scipy
-COO→CSR), about 25 µs per P1 tet and 90 µs per P2 tet single-threaded. For every registered
+COO→CSR), roughly 50 µs per P1 tet and 200 µs per P2 tet (everything except the solve,
+single-threaded). For every registered
 benchmark problem at its coarsest study size, the solve takes 0.05-4 s.
 
 ## Limitations / not done

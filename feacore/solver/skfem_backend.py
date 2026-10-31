@@ -646,6 +646,9 @@ def solve(case: Case, **options) -> "SkfemResult":
                           f"probably singular (insufficient constraints / rigid-body modes)")
     md.warnings.append("info: " + rep.describe())
     md.warnings += [f"linear solver: {n}" for n in rep.notes]
+    if rep.iterative:
+        md.warnings.append(f"linear solver is ITERATIVE ({rep.detail}, rtol={rep.tolerance:g}): the solution "
+                           f"carries an algebraic error on top of the discretisation error")
     if md.physics == "elasticity":
         rec = _recover_elasticity(md, x, solver_opts)
     else:
