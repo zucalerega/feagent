@@ -6,10 +6,14 @@ highlights, shared lessons), merges duplicates, rewrites vague notes into specif
 contradictions in favour of the newest evidence, and returns the new full list ordered by
 importance. It keeps every useful specific idea; it drops only what is superseded or contradicted.
 
+Every note carries a task tag (a task id, or "general"). Notes for different tasks never contradict
+each other (both are kept, each under its task). Agents switch tasks between generations, so the tag
+is also written at the start of the content ("[task] ...") until memory stores it as a field.
+
 Notes are plain dicts here (Memory.replace_notes turns the result into bullets):
-  current  {id, section, content, kind, source, gen}
-  incoming {section, content, kind, source}     source: "teacher", "self", "peer:a2", "shared-lesson", ...
-  result   {id (the kept/edited note's id, or None for a new note), section, content, kind, source}
+  current  {id, section, content, kind, source, gen, task?}
+  incoming {section, content, kind, source, task?}   source: "teacher", "self", "peer:a2", "shared-lesson", ...
+  result   {id (the kept/edited note's id, or None for a new note), section, content, kind, source, task}
 """
 
 from __future__ import annotations
@@ -27,8 +31,10 @@ SHARED_MAX = 40
 
 class OrganizedNote(BaseModel):
     id: str | None = Field(description="the id of the current note this keeps or edits; null for a new note")
+    task: str = Field(default="general", description="the task id the note is about, or 'general'")
     section: Section
-    content: str = Field(description="specific and actionable, <= 60 words")
+    content: str | None = Field(description="specific and actionable, <= 50 words, without the [task] prefix; "
+                                            "null = keep the current note's text unchanged (only with an id)")
     kind: Kind
     source: str = Field(description="where it came from (e.g. teacher, self, peer:a2); merged notes join "
                                     "their sources with '+'")
@@ -53,21 +59,31 @@ Rules:
 3. Rewrite vague notes into specific ones using the evidence in the other notes (which group or
    point, what size or order, what effect). Never invent facts or numbers that appear nowhere in
    the material.
-4. When notes contradict, keep the one backed by the newest evidence (incoming beats current) and
-   drop or correct the older one.
+4. Every note has a task: a task id or "general". Notes for DIFFERENT tasks never contradict each
+   other: keep both, each tagged with its task. Within one task (or two general notes), when notes
+   contradict, keep the one backed by the newest evidence (incoming beats current) and drop or
+   correct the older one. A current note without a task tag: infer it from its content ("[task]"
+   prefix or the task it names), else "general".
 5. Drop a current note only when it is superseded (merged into a better note) or contradicted.
 6. Keep ids: a note that keeps or edits a current note carries that note's id (one output note per
    id; when you merge several current notes, keep the id of the main one). New notes have id null.
-7. Order by importance (what most changes the next score first: setup fixes, then where to put
-   elements, then ideas to test), grouped by section within that order. Keep notes <= 60 words.
+7. Order: general notes first, then each task's notes together under that task; within each,
+   by importance (setup fixes, then where to put elements, then ideas to test). Keep notes <= 50 words.
 8. Return at most the number of notes you are told; if there is more material, merge harder.
+9. Be compact (you are on the critical path): for a current note you keep unchanged, return its id,
+   task, section, kind, source and content null. Prefer short rewrites over long ones.
 """
 
 
 def _line(note: dict, with_id: bool) -> str:
     """One note as a one-line JSON object (precise for the model, and parseable by the mock)."""
-    keys = ("id", "section", "kind", "source", "content") if with_id else ("section", "kind", "source", "content")
-    return json.dumps({k: note.get(k) for k in keys})
+    keys = ("id", "task", "section", "kind", "source", "content") if with_id else ("task", "section", "kind", "source", "content")
+    return json.dumps({k: note.get(k) for k in keys if k != "task" or note.get("task")})
+
+
+def _untag(content: str, task: str) -> str:
+    p = f"[{task}] "
+    return content[len(p):] if content.startswith(p) else content
 
 
 def build_user(owner: str, current: list[dict], incoming: list[dict], max_notes: int) -> str:
@@ -86,14 +102,21 @@ def organize(owner: str, current: list[dict], incoming: list[dict], llm, records
                             OrganizerOutput, records)
     if out is None:
         return None
-    known, seen, result = {n["id"] for n in current}, set(), []
+    known, seen, result = {n["id"]: n for n in current}, set(), []
     for n in out.notes[:max_notes]:
         d = n.model_dump()
         # An id the model made up, or a second note claiming the same id, becomes a new note
         # (so replace_notes never edits the wrong bullet or one bullet twice).
         if d["id"] not in known or d["id"] in seen:
             d["id"] = None
+        if d["content"] is None:            # "unchanged": the current text (a new note needs text)
+            if d["id"] is None:
+                continue
+            d["content"] = known[d["id"]]["content"]
         seen.add(d["id"])
+        task = d["task"] = (d["task"] or "general").strip()
+        # The tag in the text, once (memory stores only the text for now).
+        d["content"] = f"[{task}] " + _untag(d["content"], task)
         result.append(d)
     return result
 

@@ -2,7 +2,9 @@
 
     build_run_report(run, out_dir)   heavy (one re-solve + images, ~1-5 s in 2D); runs in a scoring worker
     add_scores(report, run)          cheap, in the parent once the population is scored
-    report_text(report)              the report as compact text for an LLM (teacher, self-reflection)
+    report_text(report, hide_hidden=)   the report as compact text for an LLM (teacher, self-reflection);
+                                        hide_hidden=True for anything agents read (hidden points as aggregates)
+    disagreement_map(reports)        parent, per task: where the runs' von Mises disagree (no reference needed)
 
 The teacher and the agent's own self-reflection read this instead of a few summary numbers. It
 holds the same error map and mesh layout as the teacher's inspection tools (ace.inspect_tools) plus:
@@ -12,7 +14,9 @@ holds the same error map and mesh layout as the teacher's inspection tools (ace.
                 of the total error energy and the worst local von Mises error in it. A text-only
                 reader can see where elements are and where the error is, everywhere.
   check_points  every check point (disclosed and hidden) with reference and run von Mises.
-  images        mesh (element edges, named groups coloured, check points marked), error (log error
+  hidden_summary  the hidden points as aggregates only (RMS, worst, worst one's nearest group/region).
+  vm_at_grid    the run's von Mises at a fixed per-task set of sample points, with their grid cells.
+  images        mesh (element edges, named groups coloured, DISCLOSED check points marked), error (log error
                 energy density, mesh overlaid, hotspots numbered) and stress (the run's von Mises
                 next to the reference's, same colour scale). 2D: flat plots (axisymmetric: x = r,
                 y = z); 3D: the outer surface from two opposite views.
@@ -127,6 +131,90 @@ def _region_grid(dim: int, msh: it._Mesh, f: dict) -> dict:
                       "mean_h": sig(h_sum[k] / n_el[k]) if n_el[k] else None,
                       "error_share": float(share[k]), "max_rel_err": sig(worst[k], 2)})
     return {"shape": n.tolist(), "cell_size": [sig(x) for x in span / n], "cells": cells}
+
+
+# --------------------------------------------------------------------------- common sample points (disagreement map)
+
+N_SAMPLE = 2000          # von Mises sample points per task, the same for every run of the task
+_SAMPLE: dict = {}       # problem_id -> (indices into the reference integration points, cell id per point,
+                         #                {cell id: centre}); cached per process
+
+
+def _sample(problem_id: str, dim: int, pts: np.ndarray) -> tuple:
+    """A fixed subset of the reference integration points (only their locations: no reference
+    values are used) and the cell of each on a fixed grid over their bounding box (GRID cells)."""
+    if problem_id not in _SAMPLE:
+        idx = np.arange(len(pts))
+        if len(pts) > N_SAMPLE:
+            idx = np.sort(np.random.default_rng(0).choice(len(pts), N_SAMPLE, replace=False))
+        x = pts[idx, :dim]
+        lo, hi = pts[:, :dim].min(0), pts[:, :dim].max(0)
+        n = np.array(GRID[dim])
+        if dim == 3:
+            n = np.full(3, 6)
+            n[int(np.argmin(hi - lo))] = 4
+        span = np.where(hi > lo, hi - lo, 1.0)
+        cell = np.ravel_multi_index(np.clip(((x - lo) / span * n).astype(int), 0, n - 1).T, n)
+        centres = {int(k): (lo + (np.array(np.unravel_index(k, n)) + 0.5) * span / n).tolist()
+                   for k in np.unique(cell)}
+        _SAMPLE[problem_id] = (idx, cell, centres)
+    return _SAMPLE[problem_id]
+
+
+def _vm_at_grid(problem_id: str, dim: int, msh: it._Mesh, f: dict) -> dict:
+    """The run's von Mises at the task's common sample points, with each point's grid cell, and per
+    cell its centre and nearest named group (so disagreement_map needs nothing but the reports)."""
+    idx, cell, centres = _sample(problem_id, dim, f["pts"])
+    sig = it._sig
+    return {"vm": [sig(v, 4) for v in f["vm_run"][idx]], "cell": cell.tolist(),
+            "cells": {k: {"centre": [sig(x) for x in c], "near": msh.nearest_group(np.array(c))[0]}
+                      for k, c in centres.items()}}
+
+
+def disagreement_map(reports: list[dict], top: int = 6) -> dict:
+    """Where the runs of ONE task disagree, without ground truth. Per grid cell, each run's mean von
+    Mises over the common sample points in it; across runs: spread = std / mean (the mean is floored
+    at 0.2 x the median cell value, so nearly unstressed cells do not dominate), consensus = median,
+    outliers = agents more than 2 MAD (median absolute deviation) from the median."""
+    rs = [r for r in reports if r.get("vm_at_grid")]
+    if len(rs) < 2:
+        return {"n_runs": len(rs), "grid": [], "most_contested": []}
+    g0 = rs[0]["vm_at_grid"]
+    cell = np.array(g0["cell"])
+    ncell = int(cell.max()) + 1
+    cnt = np.bincount(cell, minlength=ncell)
+    occ = np.nonzero(cnt)[0]
+    # M[run, cell]: the run's mean von Mises in the cell
+    M = np.array([np.bincount(cell, weights=np.array(r["vm_at_grid"]["vm"], float), minlength=ncell)[occ] / cnt[occ]
+                  for r in rs])
+    med = np.median(M, axis=0)
+    floor = 0.2 * float(np.median(med))
+    spread = M.std(axis=0) / np.maximum(M.mean(axis=0), floor)
+    mad = np.median(np.abs(M - med), axis=0)
+    agents = [r.get("agent") or r.get("run_id") for r in rs]
+    sig = it._sig
+    grid = []
+    for j, k in enumerate(occ):
+        c = g0["cells"].get(int(k)) or g0["cells"].get(str(int(k))) or {}
+        out = [{"agent": agents[i], "cell_vm": sig(M[i, j])} for i in range(len(rs))
+               if mad[j] > 0 and abs(M[i, j] - med[j]) > 2 * mad[j]]
+        grid.append({"region": f"cell {int(k)} near {c.get('near')}", "centre": c.get("centre"),
+                     "spread": sig(spread[j], 3), "consensus_vm": sig(med[j]), "outliers": out})
+    return {"task": rs[0].get("task"), "n_runs": len(rs), "grid": grid,
+            "most_contested": sorted(grid, key=lambda g: -g["spread"])[:top]}
+
+
+def disagreement_text(dm: dict) -> str:
+    """The most contested regions as text for the teacher."""
+    if not dm.get("most_contested"):
+        return f"disagreement map: too few runs ({dm.get('n_runs', 0)})"
+    L = [f"disagreement map over {dm['n_runs']} runs (no reference used): most contested regions "
+         "(spread = std/mean of the runs' von Mises there; consensus = median; outliers > 2 MAD):"]
+    for g in dm["most_contested"]:
+        o = ", ".join(f"{x['agent']} {_g(x['cell_vm'])}" for x in g["outliers"]) or "none"
+        L.append(f"  {g['region']} at {_xyz(g['centre'] or [])}: spread {_pct(g['spread'])}, consensus "
+                 f"{_g(g['consensus_vm'])}, outliers: {o}")
+    return "\n".join(L)
 
 
 # --------------------------------------------------------------------------- pictures
@@ -417,11 +505,17 @@ def build_run_report(run: dict, out_dir: Path) -> dict:
         groups = _group_cells(mesh["path"], p.dim)
         axisym = reference_setup(p)["formulation"] == "axisymmetric"
         k = agent_of(rid)
+        # The pictures are shown to the agents (self-reflection) and to the teacher, whose notes the
+        # agents read: they mark only the DISCLOSED check points. The hidden points are fixed per task,
+        # so marking them would let agents learn to refine exactly there and win the be-the-best bonus
+        # by memorising the test points instead of meshing better.
+        shown = [c for c in checks if c["disclosed"]]
         if p.dim == 2:
-            images = _images_2d(rid, rid, msh, groups, f, em, checks, axisym, out_dir)
+            images = _images_2d(rid, rid, msh, groups, f, em, shown, axisym, out_dir)
         else:
-            images = _images_3d(rid, rid, msh, groups, f, em, checks, out_dir)
+            images = _images_3d(rid, rid, msh, groups, f, em, shown, out_dir)
         solve = run["solves"][cp["solve_index"]]
+        rg = _region_grid(p.dim, msh, f)
         report = {
             "run_id": rid, "agent": None if k is None else f"a{k}", "task": problem_id,
             "dim": p.dim, "axisymmetric": axisym,
@@ -429,7 +523,8 @@ def build_run_report(run: dict, out_dir: Path) -> dict:
             "mesh_stats": {"nodes": mesh.get("nodes"), "dofs": (solve["result"].get("info") or {}).get("n_dofs"),
                            "n_elements": int(len(msh.cells)), "min_quality": mesh.get("min_quality")},
             "setup": cp["setup"], "error_map": em, "mesh_layout": layout,
-            "region_grid": _region_grid(p.dim, msh, f), "check_points": checks, "images": images,
+            "region_grid": rg, "check_points": checks, "hidden_summary": _hidden_summary(checks, msh, rg),
+            "vm_at_grid": _vm_at_grid(problem_id, p.dim, msh, f), "images": images,
             "seconds": round(time.perf_counter() - t0, 2),
         }
     except Exception as e:  # noqa: BLE001  a report is a bonus: never break the loop over one
@@ -439,6 +534,20 @@ def build_run_report(run: dict, out_dir: Path) -> dict:
     except Exception as e:  # noqa: BLE001
         report.setdefault("error", f"could not write the report file: {e}")
     return report
+
+
+def _hidden_summary(checks: list, msh: it._Mesh, rg: dict) -> dict | None:
+    """The hidden check points as an aggregate only (safe to show agents): count, RMS and worst
+    error, and where the worst one is only coarsely (nearest named group, region-grid cell centre)."""
+    hid = [c for c in checks if not c["disclosed"]]
+    if not hid:
+        return None
+    errs = np.array([c["rel_err"] for c in hid], float)
+    w = hid[int(np.argmax(np.abs(errs)))]
+    x = np.array(w["xyz"], float)
+    cell = min(rg["cells"], key=lambda c: float(np.linalg.norm(np.array(c["centre"]) - x)))
+    return {"n": len(hid), "rms": float(np.sqrt(np.mean(errs ** 2))), "worst": float(np.abs(errs).max()),
+            "worst_near_group": msh.nearest_group(x)[0], "worst_region": cell["centre"]}
 
 
 def add_scores(report: dict, run: dict) -> dict:
@@ -471,9 +580,14 @@ def _xyz(v) -> str:
     return "(" + ", ".join(_g(x) for x in v) + ")"
 
 
-def report_text(report: dict, max_chars: int = 6000) -> str:
+GRID_ROWS = 20   # region-grid cells listed in report_text (worst first); the rest become one summary line
+
+
+def report_text(report: dict, max_chars: int = 6000, hide_hidden: bool = False) -> str:
     """The report as compact text: numbers, setup, mesh request, hotspots, mesh near groups, check
-    points, then the region grid (worst cells first, so a cut drops the least useful rows)."""
+    points, then the region grid (worst cells first, so a cut drops the least useful rows).
+    hide_hidden: the hidden check points only as an aggregate (count, RMS and worst error), never
+    their coordinates; for every text an agent (or the teacher writing to agents) reads."""
     rid = report.get("run_id")
     if report.get("error"):
         return f"RUN {rid}: no report ({report['error']})"
@@ -511,16 +625,33 @@ def report_text(report: dict, max_chars: int = 6000) -> str:
         for g, v in lay["groups"].items():
             L.append(f"  {g}: {v['elements_touching']} elements touching (h {_g(v['h_touching'])}), "
                      f"{v['elements_near']} near (h {_g(v['h_near'])} = {_g(v['h_near_vs_median'])}x median)")
-    L.append("check points (P = disclosed to the agent, H = hidden; error = run vs reference von Mises):")
-    for c in report.get("check_points") or []:
+    cps = report.get("check_points") or []
+    shown = [c for c in cps if c["disclosed"] or not hide_hidden]
+    L.append("check points (P = disclosed to the agent" + ("" if hide_hidden else ", H = hidden")
+             + "; error = run vs reference von Mises):")
+    for c in shown:
         L.append(f"  {'P' if c['disclosed'] else 'H'}{c['i']} {_xyz(c['xyz'])}: ref {_g(c['vm_ref'])}, "
                  f"run {_g(c['vm_run'])}, error {c['rel_err'] * 100:+.2f}%")
+    hid = report.get("hidden_summary")
+    if hide_hidden and hid:
+        L.append(f"  {hid['n']} hidden check points (locations withheld): RMS error {_pct(hid['rms'])}, worst "
+                 f"{_pct(hid['worst'])}, the worst one near group {hid['worst_near_group']}, in the grid region "
+                 f"around {_xyz(hid['worst_region'])}")
     rg = report["region_grid"]
+    cells = sorted(rg["cells"], key=lambda c: -c["error_share"])
     L.append(f"region grid ({'x'.join(map(str, rg['shape']))} cells of size {_xyz(rg['cell_size'])}, empty "
-             "cells dropped; worst first): centre | elements | mean h | share of error energy | worst local error")
-    for c in sorted(rg["cells"], key=lambda c: -c["error_share"]):
+             "cells dropped; elements counted by centroid, so a cell can hold error but 0 elements; worst "
+             "first): centre | elements | mean h | share of error energy | worst local error")
+    for c in cells[:GRID_ROWS]:
         L.append(f"  {_xyz(c['centre'])} | {c['n_elements']} | {_g(c['mean_h'])} | {_pct(c['error_share'])} | "
                  f"{_pct(c['max_rel_err'])}")
+    rest = cells[GRID_ROWS:]
+    if rest:        # the low-error remainder in one line: where the "wasted" elements are
+        n_rest = sum(c["n_elements"] for c in rest)
+        hs = [c["mean_h"] * c["n_elements"] for c in rest if c["mean_h"] is not None]
+        L.append(f"  ... the other {len(rest)} cells: {_pct(sum(c['error_share'] for c in rest))} of the error "
+                 f"energy, {n_rest} elements ({_pct(n_rest / max(1, ms['n_elements']))} of all), mean h "
+                 f"{_g(sum(hs) / n_rest) if n_rest else '-'}")
     text = "\n".join(L)
     if len(text) > max_chars:
         cut = "\n... (cut: lower-error grid cells omitted)"
