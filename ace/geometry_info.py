@@ -42,12 +42,25 @@ _ROLE_WORDS = [
 
 def describe(problem: Problem) -> dict:
     """Geometry summary of `problem` (cached). See the module docstring."""
-    if problem.id not in _CACHE:
+    from ace import config
+    key = (problem.id, config.STATEMENT)      # the roles come from the statement the agent reads
+    if key not in _CACHE:
         with gmsh_session(problem.id):
             problem.build_geometry()
             gmsh.model.occ.synchronize()
-            _CACHE[problem.id] = _Describer(problem).run()
-    return _CACHE[problem.id]
+            _CACHE[key] = _Describer(problem).run()
+    return _CACHE[key]
+
+
+def agent_statement(problem) -> str:
+    """The statement as the agent reads it. In requirements mode (config.STATEMENT) that is the
+    problem's requirements: its own description spells out the supports and loads, and the roles
+    this module reports (supported / loaded faces) would hand them to the agent."""
+    from ace import config
+    if config.STATEMENT == "requirements":
+        from ace import requirements
+        return requirements.agent_text(problem.id)
+    return problem.description()
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -82,7 +95,11 @@ class _Describer:
         # coordinates to ~1e-4 of the part's size: enough to place refinements, short to read
         self.dec = max(0, 4 - math.floor(math.log10(self.diag)))
         self.eps = 1e-3 * self.diag   # probe distance for inside/outside tests
-        self.desc = problem.description()
+        self.desc = agent_statement(problem)
+        # Requirements mode: deciding which faces are supported or loaded is the agent's task, and a
+        # keyword match on requirements misreads them ("unloaded" counts as a load), so no roles.
+        from ace import config
+        self.infer_roles = config.STATEMENT != "requirements"
         self.groups: dict[int, list[str]] = {}   # bnd tag -> physical group names
         for d, pt in gmsh.model.getPhysicalGroups(self.D - 1):
             for e in gmsh.model.getEntitiesForPhysicalGroup(d, pt):
@@ -190,6 +207,8 @@ class _Describer:
                             break
         if not found:
             return False, None
+        if not self.infer_roles:
+            return True, "mentioned"
         if role is None:   # e.g. a group called "clamped" named only in passing
             for r, words in _ROLE_WORDS:
                 if any(re.search(words, n, re.I) for n in names):

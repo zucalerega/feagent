@@ -228,7 +228,7 @@ def reference(problem_id: str) -> dict:
             "sigma": {k: z[f"s_{k}"] for k in DIAG + OFFDIAG}}
 
 
-def automesher(problem_id: str) -> dict:
+def automesher(problem_id: str, need_value: bool = False) -> dict:
     """The baseline every run is scored against: gmsh with all its default sizes (none set) and
     quadratic elements, solved with the problem's correct setup. Cached in ace/field_refs/."""
     import json
@@ -237,7 +237,9 @@ def automesher(problem_id: str) -> dict:
     from ace.config import TASKS
     CACHE.mkdir(exist_ok=True)
     f = CACHE / f"{problem_id}_auto.json"
-    if not f.exists():
+    # need_value: the scored quantity of this solve too (ace.evidence compares it with a physical
+    # test); entries cached before it was stored are recomputed.
+    if not f.exists() or (need_value and "value" not in json.loads(f.read_text())):
         p = fea.get_problem(problem_id)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "auto.msh"
@@ -246,13 +248,14 @@ def automesher(problem_id: str) -> dict:
                 ensure_domain_group(p.dim)
                 gmsh.model.mesh.generate(p.dim)
                 gmsh.model.mesh.setOrder(2)
-                if "gold" in p.tags:
+                if "gold" in p.tags or "physical" in p.tags:    # physical tests reuse gold CAD
                     _unfold_tet10()
                 gmsh.write(str(path))
             res = _solve(p, {"path": str(path), "order": 2}, reference_setup(p), TASKS[problem_id]["qoi"])
             e = errors_of_result(problem_id, res)
             f.write_text(json.dumps({"nodes": len(meshio.read(path).points), "dofs": int(res.info.n_dofs),
-                                     "error": e["error"], "field": e["field"], "points": e["points"]}, indent=1))
+                                     "error": e["error"], "field": e["field"], "points": e["points"],
+                                     "value": float(res.evaluate_all()[TASKS[problem_id]["qoi"]])}, indent=1))
     return json.loads(f.read_text())
 
 

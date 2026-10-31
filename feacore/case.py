@@ -44,9 +44,24 @@ elasticity: body_force (vector, force / volume), temperature (T field for therma
             alpha * (T - analysis.T_ref))
 heat:       source (volumetric heat source / Poisson right-hand side)
 
+Nonlinear (elastoplastic) analysis (opt-in; CalculiX backend only)
+-------------------------------------------------------------------
+``Material.plasticity`` (optional): ``{"model": "j2_isotropic", "yield_stress": sy,
+"hardening": [[plastic_strain, stress], ...]}``: von Mises (J2) plasticity with isotropic
+hardening. ``hardening`` is the flow stress vs equivalent plastic strain, piecewise linear, starting
+at ``[0, yield_stress]`` (prepended when the first point has plastic_strain > 0) and constant beyond
+the last point; omit it for elastic-perfectly plastic.
+``analysis.options`` (all optional except ``nonlinear``): ``nonlinear: true`` turns the analysis into a
+load-stepped static one; ``increments`` (default 20) fixed, equal increments; ``load_factor_max``
+(default 1.0) the multiplier of every load and prescribed displacement at the end of the ramp;
+``nlgeom`` (default false) geometric nonlinearity (large displacements); ``adaptive`` (default false)
+lets the solver cut an increment back when it does not converge (increments are then not equal).
+A material with ``plasticity`` requires ``nonlinear: true``. The skfem backend refuses nonlinear cases.
+
 Quantities of interest (``QoI.type``)
 -------------------------------------
   point          ``field`` at ``point`` (stresses use the solver's recovered, continuous field)
+  point_difference  ``field(point) - field(point2)``, e.g. a pressure drop between two probes
   max/min/max_abs extreme of the recovered nodal ``field`` over ``group`` (None = whole mesh)
   reaction       support force on the body: (K u - f) summed over the group's constrained DOFs,
                  ``component`` (heat: heat flow into the body through the group)
@@ -80,7 +95,8 @@ LOAD_TYPES = {
     "elasticity": ("body_force", "temperature"),
     "heat": ("source",),
 }
-QOI_TYPES = ("point", "max", "min", "max_abs", "reaction", "integral", "mean", "strain_energy")
+QOI_TYPES = ("point", "point_difference", "max", "min", "max_abs", "reaction", "integral", "mean",
+             "strain_energy")
 
 # Fields a backend must be able to probe. In 2D, uz, syz and sxz are 0; szz is the out-of-plane
 # stress (0 in plane stress). Axisymmetric: sxx = s_rr, syy = s_zz (axial), sxy = s_rz, and the
@@ -110,6 +126,7 @@ class Material:
     nu: float = 0.0      # Poisson's ratio
     alpha: float = 0.0   # coefficient of thermal expansion
     k: float = 1.0       # conductivity (heat) / diffusion coefficient (Poisson)
+    plasticity: dict | None = None   # optional J2 plasticity (nonlinear analyses only), see module doc
 
 
 @dataclass
@@ -144,6 +161,7 @@ class QoI:
     point: list[float] | None = None
     group: str | None = None
     component: int | None = None
+    point2: list[float] | None = None   # point_difference: value = field(point) - field(point2)
 
 
 @dataclass
@@ -154,6 +172,11 @@ class Analysis:
     thickness: float = 1.0         # plane stress / plane strain thickness
     T_ref: float = 0.0             # stress-free reference temperature
     options: dict = field(default_factory=dict)  # backend options, e.g. {"stress_recovery": "l2"}
+
+    @property
+    def nonlinear(self) -> bool:
+        """True for a load-stepped nonlinear analysis (``options["nonlinear"]``)."""
+        return bool((self.options or {}).get("nonlinear", False))
 
 
 @dataclass
@@ -194,6 +217,9 @@ class Case:
     def to_dict(self) -> dict:
         d = asdict(self)
         d.pop("base_dir", None)
+        for m in d["materials"].values():      # linear cases serialise exactly as before
+            if m.get("plasticity") is None:
+                m.pop("plasticity", None)
         return d
 
     @classmethod
@@ -248,6 +274,7 @@ class Case:
                 errs.append(f"material {name!r}: need E > 0 and -1 < nu < 0.5")
             if a.physics == "heat" and m.k <= 0:
                 errs.append(f"material {name!r}: need k > 0")
+        errs += _validate_nonlinear(self)
         for r in self.regions:
             if r.material not in self.materials:
                 errs.append(f"region {r.group!r} references unknown material {r.material!r}")
@@ -293,8 +320,12 @@ class Case:
             if q.type not in QOI_TYPES:
                 errs.append(f"{tag}: type must be one of {QOI_TYPES}")
                 continue
-            if q.type in ("point", "max", "min", "max_abs", "integral", "mean") and q.field not in fields:
+            if q.type in ("point", "point_difference", "max", "min", "max_abs", "integral", "mean") \
+                    and q.field not in fields:
                 errs.append(f"{tag}: field must be one of {fields}")
+            if q.type == "point_difference" and (q.point is None or q.point2 is None
+                                                 or len(q.point) not in (2, 3) or len(q.point2) not in (2, 3)):
+                errs.append(f"{tag}: point_difference needs point and point2 ([x, y(, z)])")
             if q.type == "point" and (q.point is None or len(q.point) not in (2, 3)):
                 errs.append(f"{tag}: point [x, y(, z)] required")
             if q.type == "reaction" and (q.group is None or q.component not in range(ncomp)):
@@ -308,6 +339,58 @@ class Case:
         if errs:
             raise CaseError("invalid case:\n  " + "\n  ".join(errs))
         return self
+
+
+# --------------------------------------------------------------------------- nonlinear
+
+PLASTICITY_MODELS = ("j2_isotropic",)
+NONLINEAR_OPTIONS = ("nonlinear", "increments", "load_factor_max", "nlgeom", "adaptive")
+
+
+def hardening_table(p: dict) -> list[tuple[float, float]]:
+    """(plastic strain, flow stress) points of a ``Material.plasticity`` dict, starting at (0, sy)."""
+    sy = float(p["yield_stress"])
+    pts = [(float(e), float(s)) for e, s in (p.get("hardening") or [])]
+    if not pts or pts[0][0] > 0:
+        pts.insert(0, (0.0, sy))
+    return pts
+
+
+def _validate_nonlinear(case: "Case") -> list[str]:
+    a, errs = case.analysis, []
+    opts = a.options or {}
+    plastic = {n: m.plasticity for n, m in case.materials.items() if m.plasticity is not None}
+    if plastic and not a.nonlinear:
+        errs.append(f"materials {sorted(plastic)} have plasticity: set analysis.options.nonlinear = true")
+    if a.nonlinear:
+        if a.physics != "elasticity":
+            errs.append("analysis.options.nonlinear is only defined for elasticity")
+        n = opts.get("increments", 20)
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            errs.append("analysis.options.increments must be an integer >= 1")
+        lf = opts.get("load_factor_max", 1.0)
+        if not isinstance(lf, (int, float)) or isinstance(lf, bool) or not lf > 0:
+            errs.append("analysis.options.load_factor_max must be a number > 0")
+    for name, p in plastic.items():
+        tag = f"material {name!r}: plasticity"
+        if not isinstance(p, dict) or p.get("model") not in PLASTICITY_MODELS:
+            errs.append(f"{tag}: model must be one of {PLASTICITY_MODELS}")
+            continue
+        sy = p.get("yield_stress")
+        if not isinstance(sy, (int, float)) or not sy > 0:
+            errs.append(f"{tag}: yield_stress must be > 0")
+            continue
+        try:
+            pts = hardening_table(p)
+        except (TypeError, ValueError):
+            errs.append(f"{tag}: hardening must be a list of [plastic_strain, stress] pairs")
+            continue
+        e, s = np.array(pts).T
+        if np.any(np.diff(e) <= 0) or e[0] < 0:
+            errs.append(f"{tag}: hardening plastic strains must start at >= 0 and increase")
+        if abs(s[0] - sy) > 1e-9 * sy or np.any(np.diff(s) < 0):
+            errs.append(f"{tag}: hardening must start at yield_stress and not soften")
+    return errs
 
 
 # --------------------------------------------------------------------------- expressions

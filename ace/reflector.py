@@ -97,7 +97,11 @@ def condense_trace(trace: list[dict], max_chars: int = 12000) -> str:
 
 def build_prompt(problem_id: str, runs: list[dict], checks: dict[str, dict], playbook) -> str:
     ranked = sorted(runs, key=lambda r: (-checks[r["run_id"]]["score"], r["turns"]))
-    parts = [f"# Task given to the agent\n{task_prompt(problem_id)}\n", "# Runs, best to worst"]
+    from ace import evidence
+    parts = [f"# Task given to the agent\n{task_prompt(problem_id)}\n"]
+    if test := evidence.teacher_section(problem_id, runs):
+        parts.append(f"# Physical test of this setup\n{test}\n")
+    parts.append("# Runs, best to worst")
     for rank, run in enumerate(ranked, 1):
         # The Reflector can infer a TRAIN problem's true value (value + rel_error); that is fine
         # because held-out problems are never reflected on and lessons may not contain answers.

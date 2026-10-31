@@ -34,7 +34,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolE
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from ace import config, process_brief, ui_bridge
+from ace import config, evidence, process_brief, ui_bridge
 from ace.agent import run_agent
 from ace.checkpoint import checkpoint
 from ace.checks import check_run, score_population, tolerance
@@ -619,7 +619,10 @@ def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
         how = ["score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
                "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
                "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
-    lines = ["# ACE run summary", "", *how,
+    told = ("Agents got each problem's engineering requirements (ace/requirements.py) and set the boundary "
+            "conditions themselves." if config.STATEMENT == "requirements" else
+            "Agents got each problem's statement, boundary conditions included.")
+    lines = ["# ACE run summary", "", told, "", *how,
              "'failed' counts runs that failed a gate; 'errored' counts runs that crashed (API or code errors).",
              "'base' is the mean score without bonuses; 'bonus' the mean be-the-best + diversity bonus (field mode).",
              "", "| gen | problem | split | mean score | base | bonus | min | max | mean accuracy | mean efficiency | within tol | median DOFs | median rel. error | failed | errored |",
@@ -714,7 +717,8 @@ def main(argv=None) -> int:
     ap.add_argument("--agents", type=int, default=config.AGENTS, help="persistent agents (shared+private mode)")
     ap.add_argument("--split", action="store_true",
                     help="shared+private only: each generation, randomly split the agents into one group per "
-                         "train problem; private notes follow the agent")
+                         "train problem; private notes follow the agent. With one train problem every agent "
+                         "works on it")
     ap.add_argument("--teacher", choices=["rerun", "inspect", "both"], default="rerun",
                     help="what the teacher may do: counterfactual reruns, a detailed inspection, or both")
     ap.add_argument("--shared-scope", choices=["all", "task"], default="all",
@@ -729,26 +733,47 @@ def main(argv=None) -> int:
     ap.add_argument("--deep", action="store_true",
                     help="run reports + deep teacher + self-reflection + organizer (see deep_learn); needs "
                          "--memory shared+private, --split and ACE_SCORE=field; implies --peers, --shared-scope all")
+    ap.add_argument("--statement", choices=["bcs", "requirements"], default=config.STATEMENT,
+                    help="what agents are told: the problem statement with its boundary conditions, or the "
+                         "problem's engineering requirements (ace/requirements.py), from which they set the "
+                         "boundary conditions themselves")
+    ap.add_argument("--evidence", type=Path, action="append", default=[],
+                    help="physical test data (ace/evidence.py): a test spec JSON or a directory of them; repeat for "
+                         "more. Files dropped into <out>/evidence/ during the run are picked up at the next generation")
+    ap.add_argument("--evidence-score", action="store_true",
+                    help="score runs on problems with test data against the test instead of the problem's reference")
     ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
                     "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
     # Before any process pool exists: spawned children (agents, scoring, teacher) read it at import.
     os.environ["ACE_TEACHER"] = args.teacher
     config.TEACHER_MODE = args.teacher
+    os.environ["ACE_STATEMENT"] = args.statement
+    config.STATEMENT = args.statement
     peers = args.split if args.peers is None else args.peers
 
     train = [p for p in args.problems.split(",") if p]
     holdout = [p for p in args.holdout.split(",") if p]
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
+    # Physical test data (ace.evidence): processed into <out>/evidence_active/, which the spawned agents,
+    # scorers and teachers read; set before any pool exists.
+    os.environ[evidence.ACTIVE_ENV] = str((out / "evidence_active").resolve())
+    os.environ[evidence.SCORE_ENV] = "1" if args.evidence_score else "0"
+    (out / "evidence").mkdir(exist_ok=True)
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()
     private = args.memory == "shared+private"
+    if args.statement == "requirements":
+        from ace.requirements import problems_ready
+        if not_ready := problems_ready(train + holdout):
+            raise SystemExit("--statement requirements: these problems have no clean requirements:\n  "
+                             + "\n  ".join(not_ready))
     if args.teacher != "rerun" and config.SCORE != "field":
         raise SystemExit("--teacher inspect/both needs field scoring (ACE_SCORE=field): its tools read the field error")
-    if args.split and not (private and len(train) > 1):
-        raise SystemExit("--split needs --memory shared+private and at least two --problems")
+    if args.split and not (private and train):
+        raise SystemExit("--split needs --memory shared+private and at least one --problems")
     persona_of = {k: PERSONAS[i % len(PERSONAS)]
                   for i, k in enumerate(persona_agents(args.personas, args.persona_count, args.agents))}
     if (peers or persona_of) and not private:
@@ -802,6 +827,17 @@ def main(argv=None) -> int:
                 break
             gdir = out / f"gen{gen}"
             (gdir / "runs").mkdir(parents=True, exist_ok=True)
+            # Physical test data, also when it arrives mid-run (after the population has settled): every
+            # agent, scorer and teacher of this generation sees it.
+            for pid in evidence.refresh(out, args.evidence, all_runs, gen):
+                if evidence.scored_by_test(pid) and all_runs[pid]:     # earlier runs: re-checked against the test
+                    for r in all_runs[pid]:
+                        if not r.get("error"):
+                            r["checks"] = check_run(pid, r)
+                    score_population(all_runs[pid])
+            if gen == 0 and (missing := evidence.missing_tests(train + holdout)):
+                raise SystemExit(f"{', '.join(missing)}: no reference value (no ground truth) and no physical test "
+                                 "data to score against; give the test with --evidence (see ace/evidence.py)")
             playbook.save(out / f"playbook_gen{gen}.json")
             if private:
                 mem.save(out, gen)

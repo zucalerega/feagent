@@ -13,7 +13,7 @@ import json
 import re
 from pathlib import Path
 
-from ace import fea, geometry_info, solve_feedback, ui_bridge
+from ace import config, fea, geometry_info, solve_feedback, ui_bridge
 from ace.checks import tolerance
 from ace.config import MAX_SOLVES, MAX_TURNS, MIN_QUALITY, SCORE, TASKS
 
@@ -276,8 +276,19 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
         scored = (f"SCORED QUANTITY: {q.name} = {q.type} of {q.field}{where}. Only this quantity is scored; "
                   f"ignore any other quantities the statement asks you to report.\n"
                   f"TARGET: {q.name} within {tolerance(problem_id):.0%} of the true value, with as few DOFs as possible.\n")
+    if config.STATEMENT == "requirements":
+        # Engineering requirements instead of the statement, and a neutral label instead of the id
+        # (which names the benchmark): the agent works the boundary conditions out itself.
+        from ace import requirements
+        shown_id = requirements.label_for(problem_id)
+        statement = f"{requirements.TASK_PREFACE}\n\n{requirements.agent_text(problem_id)}"
+    else:
+        shown_id, statement = problem_id, problem.description()
+    from ace import evidence
+    if test := evidence.agent_section(problem_id):    # physical test data, when the loop has some
+        statement += "\n\n" + test
     return (
-        f"Problem id: {problem_id}\n\n{problem.description()}\n\n"
+        f"Problem id: {shown_id}\n\n{statement}\n\n"
         f"{scored}"
         f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
         f"target), and its minimum element quality (quality.min) must be at least {MIN_QUALITY}. You may call solve "
@@ -384,11 +395,17 @@ class Tools:
         setup = {k: v for k, v in args.items() if k != "using"}
         result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"], keep_result=True)
         res = result.pop("_result", None)    # the feacore Result: kept in memory, never serialised
-        self.solves.append({"mesh": mesh, "mesh_index": len(self.meshes) - 1, "setup": setup, "result": result})
+        from ace import evidence
+        check = evidence.solve_check(self.problem_id, res)   # this solve vs the physical test, when there is one
+        self.solves.append({"mesh": mesh, "mesh_index": len(self.meshes) - 1, "setup": setup, "result": result,
+                            **({"test_check": check} if check else {})})
         n = len(self.solves)
         ui_bridge.record_solve(self.ui, self, res)
         out = {**{k: v for k, v in result.items() if k not in HIDDEN_KEYS}, "solve": n, "nodes": mesh["nodes"],
                "solves_left": self.max_solves - n}
+        if check:
+            out["test_check"] = {"prediction_vs_test": f"{check['rel_err']:+.2%}", "sigma": round(check["sigma"], 2),
+                                 "within_test_uncertainty": check["consistent"]}
         if res is not None:
             self.results[n] = res
             try:

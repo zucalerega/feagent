@@ -35,6 +35,13 @@ EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "cura
 # teacher by 2x.
 FAST = {"teacher": False}
 
+# ace/requirements.py (offline, not part of a loop run): the translator rewrites a problem's statement
+# as engineering requirements (the teacher's model); the back-translator reads them the way an agent
+# would and proposes a setup, to check they still pin down the reference setup (the agent's model).
+MODELS.update(translator=MODELS["teacher"], backtranslator=MODELS["generator"])
+MAX_TOKENS.update(translator=16000, backtranslator=8000)
+EFFORT.update(translator="high", backtranslator="high")
+
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
 PRICES = {
@@ -56,6 +63,12 @@ TASKS = {
     "cooks_membrane": {"qoi": "uy_C", "node_cap": 20000},         # tapered panel in shear (classic, not NAFEMS)
     # easy sanity problem (planted-failure tests use it; not in the loop)
     "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 20000},
+    # printed gold part abc_00000003 pulled on the Instron (feacore/problems/physical.py); scored on the
+    # video-extensometer elongation; physical test data can be fed in with run_loop --evidence
+    "abc_00000003_pull": {"qoi": "ext_marks", "node_cap": 60000},
+    # printed gold part abc_00000065 compressed on the Instron (feacore/problems/physical.py). No reference
+    # value (no ground truth): scored against its test, physical_tests/abc_00000065_compression/ (--evidence)
+    "abc_00000065_compression": {"qoi": "u_top", "node_cap": 40000},
     # gold ABC CAD parts (feacore/problems/gold.py): qoi = GoldProblem.scored_qoi(); node cap about the
     # L1 study mesh (48827 / 37613 nodes). Field scoring needs their adaptive reference (ace.gold_reference).
     "abc_00000003_bc7": {"qoi": "strain_energy", "node_cap": 49000},
@@ -63,6 +76,16 @@ TASKS = {
 }
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
+
+# What the agent is told about a problem (ACE_STATEMENT, set by run_loop --statement; an environment
+# variable so the spawned workers see it too):
+#   bcs           the problem statement: supports, loads and analysis type spelled out
+#   requirements  the problem's engineering requirements instead (ace/requirements.py, stored in
+#                 ace/requirements_data/): how the part is held and loaded in service, what is
+#                 symmetric, what the CAD represents. The agent decides the boundary conditions and
+#                 the analysis type itself. The problem id is replaced by a neutral task label, and
+#                 groups named after a support or load get neutral names. Scoring is unchanged.
+STATEMENT = os.environ.get("ACE_STATEMENT", "bcs")
 
 # --------------------------------------------------------------------------- agent limits
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)

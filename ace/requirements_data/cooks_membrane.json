@@ -1,0 +1,33 @@
+{
+  "problem_id": "cooks_membrane",
+  "requirements": "Component: a thin tapered panel, a bracket plate whose wide end is welded to a rigid wall and whose narrow end carries a shear load.\n\nGeometry (CAD): all quantities are in one consistent set of units (dimensionless). The panel is the quadrilateral with corners (0, 0), (48, 44), (48, 60) and (0, 44) in the xy-plane; the CAD file holds it as a planar face in the plane z = 0. The left edge x = 0 runs from (0, 0) to (0, 44); the right edge x = 48 runs from (48, 44) to (48, 60); the bottom and top edges are the straight lines joining (0, 0)-(48, 44) and (0, 44)-(48, 60). The panel is uniformly 1 thick.\n\nMaterial: isotropic, linear elastic; E = 1, Poisson's ratio 1/3.\n\nService loads: a shear load of total magnitude 1 in the +y direction is applied to the right edge (x = 48), spread uniformly along its length of 16 (1/16 per unit length). The top and bottom edges are unloaded. All loads lie in the plane of the panel, and the panel is thin, so the stresses across its thickness are negligible.\n\nInstallation and supports: the left edge (x = 0) is welded along its full length to a massive rigid wall that does not move or deform. Nothing else supports the panel.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity.\n\nRequired result: uy_C, the vertical (y) displacement at point C = (48, 52), the midpoint of the right edge.",
+  "group_aliases": {
+    "clamped": "left_edge",
+    "loaded": "right_edge"
+  },
+  "mapping": [
+    {
+      "reference": "fixed on clamped (shown as left_edge)",
+      "implied_by": "The left edge is welded along its full length to a rigid wall: no movement there."
+    },
+    {
+      "reference": "force [0, 1] on loaded (shown as right_edge)",
+      "implied_by": "A total shear load of 1 in +y, spread uniformly along the right edge."
+    },
+    {
+      "reference": "plane_stress, thickness 1",
+      "implied_by": "Thin panel loaded only in its own plane, uniformly 1 thick."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "c393d56b988e1843b96bfb348d4c5e5d9425d57a04ce10a20bbaf5c1ab56d476"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

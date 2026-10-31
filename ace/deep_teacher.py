@@ -494,7 +494,10 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
     pairs = [(run, by_id.get(run["run_id"], {"run_id": run["run_id"], "error": "no report"})) for run in runs]
     pairs.sort(key=lambda p: -(_numbers(p[1], p[0])["score"] or 0))      # best first
 
+    from ace import evidence
+    test = evidence.teacher_section(task, runs)          # physical test data, when the loop has some
     head = [f"TASK {task}\n--- problem statement as the agents saw it ---\n{_task_statement(task)}\n",
+            *([f"--- physical test of this setup ---\n{test}\n"] if test else []),
             f"--- shared playbook (all agents saw it) ---\n{shared_text or '(empty)'}\n",
             f"--- last generation's review of this task (mostly other agents) ---\n{prev_summary(prev_feedback)}\n",
             "--- ranking (best first) ---\nrun_id | agent | score | error | probe_error | DOFs | gain | bonus"]
