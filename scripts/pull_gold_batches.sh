@@ -9,6 +9,7 @@
 set -uo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 NODES=${GOLD_NODES:-"goldgen-l2 goldgen-l2b"}
+REMOTES=${GOLD_REMOTES:-"gold gold2"}   # run folders under ~ on each node (gold2 = second batch)
 DEST=${GOLD_DEST:-$HOME/Desktop/gold_benchmarks}
 mkdir -p "$DEST/archives"
 exec 9>"$DEST/.pull.lock"
@@ -17,13 +18,16 @@ flock -n 9 || { echo "$(date -Is) previous pull still running"; exit 0; }
 for N in $NODES; do
   state=$(autor node get "$N" --json --quiet 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null)
   case "$state" in running*) ;; *) echo "$(date -Is) $N: ${state:-unknown}, skipped"; continue ;; esac
-  listing=$(autor run "$N" --timeout 60 -- sh -c 'cd ~/gold/batches 2>/dev/null && { sha256sum *.tgz 2>/dev/null; [ -f DONE ] && echo DONE; }')
+  for R in $REMOTES; do
+  [ -f "$DEST/$N.$R.complete" ] || { [ "$R" = gold ] && [ -f "$DEST/$N.complete" ]; } && continue
+  listing=$(autor run "$N" --timeout 60 -- sh -c "cd ~/$R/batches 2>/dev/null && { sha256sum *.tgz 2>/dev/null; [ -f DONE ] && echo DONE; }")
+  [ -n "$listing" ] || continue
   new=0
   while read -r sha name; do
     [[ "${name:-}" == *.tgz && ${#sha} -eq 64 ]] || continue
     grep -qx "$name" "$DEST/pulled.txt" 2>/dev/null && continue
     part="$DEST/archives/$name.part"
-    if autor cp "$N:~/gold/batches/$name" "$part" >/dev/null && echo "$sha  $part" | sha256sum -c --quiet; then
+    if autor cp "$N:~/$R/batches/$name" "$part" >/dev/null && echo "$sha  $part" | sha256sum -c --quiet; then
       mv "$part" "$DEST/archives/$name" && tar -xzf "$DEST/archives/$name" -C "$DEST" \
         && echo "$name" >> "$DEST/pulled.txt" && new=$((new + 1))
     else
@@ -31,9 +35,10 @@ for N in $NODES; do
     fi
   done < <(printf '%s\n' "$listing" | grep -v '^DONE$')
   total=$(printf '%s\n' "$listing" | grep -c '\.tgz$')
-  have=$(grep -c "^${N}_[0-9]*\.tgz$" "$DEST/pulled.txt" 2>/dev/null); have=${have:-0}
-  echo "$(date -Is) $N: +$new new, $have/$total archives here, $(ls -d "$DEST"/out/*_bc* 2>/dev/null | wc -l) BC sets on this machine"
+  have=$(printf '%s\n' "$listing" | awk '/\.tgz$/{print $2}' | grep -cxFf "$DEST/pulled.txt" 2>/dev/null); have=${have:-0}
+  echo "$(date -Is) $N:$R: +$new new, $have/$total archives here, $(ls -d "$DEST"/out/*_bc* 2>/dev/null | wc -l) BC sets on this machine"
   if printf '%s\n' "$listing" | grep -qx DONE && [ "$have" -eq "$total" ]; then
-    date -Is > "$DEST/$N.complete"; echo "$(date -Is) $N: run finished and fully copied -> safe to stop"
+    date -Is > "$DEST/$N.$R.complete"; echo "$(date -Is) $N:$R: run finished and fully copied -> safe to stop"
   fi
+  done
 done

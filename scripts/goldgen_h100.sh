@@ -3,11 +3,12 @@
 # processes share the GPU (cuDSS). Screens ABC chunk 0000, then N parts x BCS BC sets x 3 levels.
 #   bash scripts/goldgen_h100.sh [NPARTS=10] [BCS=10] [MESH_WORKERS=12] [SOLVE_WORKERS=3] [CANDIDATES=300] \
 #                                [SHARD=0/1] [GPU_SLOTS=4]   (RENDER=1 also writes the abc_00000003 L2 results page)
+# GOLD_W=~/gold2 CAND_START=1500 runs a fresh batch on ABC files CAND_START..CAND_START+CANDIDATES-1.
 # Output: ~/gold/ (out/ benchmarks + solves.jsonl + gpu.jsonl, run.log, L2_results.html, summary.json)
 set -euo pipefail
 NPARTS=${1:-10}; BCS=${2:-10}; MW=${3:-12}; SW=${4:-3}; NCAND=${5:-300}; SHARD=${6:-0/1}; SLOTS=${7:-4}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-W=~/gold; mkdir -p "$W"; cd "$W"
+W=${GOLD_W:-$HOME/gold}; CAND0=${CAND_START:-0}; mkdir -p "$W"; cd "$W"
 T0=$(date +%s)
 NOISE='No multithreading interface|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*(\x1b\[[0-9;]*m)?\**(\x1b\[0m)?\s*$' 
 stamp() { echo "$(( $(date +%s) - T0 ))s $*" | tee -a "$W/timing.log"; }
@@ -24,9 +25,9 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | tee -a "$W/timi
 echo "cpu_limit=${GMN_CPU_LIMIT:-?} mem_limit=${GMN_MEMORY_LIMIT_BYTES:-?}" | tee -a "$W/timing.log"
 stamp "setup done"
 
-[ -f abc.7z ] || curl -sSL -o abc.7z https://archive.nyu.edu/rest/bitstreams/88598/retrieve
-7z x -y -oabc abc.7z $(for i in $(seq 0 $((NCAND - 1))); do printf '%08d/* ' "$i"; done) >/dev/null
-stamp "STEP downloaded + $NCAND candidates extracted"
+[ -f abc.7z ] || { [ -f ~/gold/abc.7z ] && ln -s ~/gold/abc.7z abc.7z; } || curl -sSL -o abc.7z https://archive.nyu.edu/rest/bitstreams/88598/retrieve
+7z x -y -oabc abc.7z $(for i in $(seq "$CAND0" $((CAND0 + NCAND - 1))); do printf '%08d/* ' "$i"; done) >/dev/null
+stamp "STEP downloaded + $NCAND candidates extracted (from $CAND0)"
 
 CPUS=${GMN_CPU_LIMIT:-8}; CPUS=${CPUS%.*}
 "$PY" -W ignore -m feacore.goldgen screen abc --out parts.jsonl --workers "$CPUS" | tee -a "$W/run.log"
