@@ -21,7 +21,7 @@ from pathlib import Path
 
 from ace import checkpoint as ckpt
 from ace import fea, oracles, stages
-from ace.config import TASKS
+from ace.config import SCORE, TASKS
 
 LOAD_TYPES = ("pressure", "traction", "force")
 
@@ -134,6 +134,9 @@ def evaluate_variant(problem_id: str, mesh: dict, request: dict | None, setup: d
     rep = stages.stage_report(run, orc, target_err)
     ref = fea.reference_value(problem, qoi)
     err = abs(res["value"] - ref) / abs(ref) if res.get("ok") else None
+    if SCORE == "field" and res.get("ok"):
+        from ace.field_error import errors_of_setup
+        err = errors_of_setup(problem_id, mesh, setup)["error"]
     return {
         "solved": bool(res.get("ok")), "error": res.get("error"), "value": res.get("value"),
         "rel_error": err, "accuracy": min(1.0, target_err / max(err, 1e-300)) if err is not None else None,

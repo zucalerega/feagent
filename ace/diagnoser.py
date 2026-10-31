@@ -24,7 +24,7 @@ import pydantic
 from pydantic import BaseModel, Field
 
 from ace import counterfactual as cf
-from ace.config import (DIAGNOSER_MAX_RERUNS, DIAGNOSER_MAX_TOOL_CALLS, MAX_SOLVES, TASKS, TRACE_FIELD_CHARS,
+from ace.config import (DIAGNOSER_MAX_RERUNS, DIAGNOSER_MAX_TOOL_CALLS, DIAGNOSER_MIN_RERUNS, MAX_SOLVES, SCORE, TASKS, TRACE_FIELD_CHARS,
                         TRACE_PAGE)
 from ace.reflector import BulletVote, Lesson, Section  # noqa: F401  (Section re-exported for the schema)
 
@@ -68,10 +68,19 @@ class DiagnosisLesson(Lesson):
     run_ids: list[str] = Field(default_factory=list, description="runs whose evidence supports the lesson")
 
 
+class AgentAdvice(BaseModel):
+    agent: str = Field(description='the agent, as at the end of its run_id, e.g. "a3"')
+    section: Section
+    content: str = Field(description='advice for THIS agent from its own run: "When X, do Y, because Z.", at most 40 words')
+    run_ids: list[str] = Field(default_factory=list, description="the run(s) of this agent it is based on")
+
+
 class Diagnosis(BaseModel):
     divergence: str = Field(description="where the best and worst runs first diverged")
     runs: list[RunDiagnosis]
-    lessons: list[DiagnosisLesson] = Field(description="1 to 3 lessons")
+    lessons: list[DiagnosisLesson] = Field(description="1 to 3 overall lessons, for every agent on this problem")
+    agent_advice: list[AgentAdvice] = Field(default_factory=list,
+                                            description="one piece of advice for EACH agent whose run you saw")
     bullet_votes: list[BulletVote] = Field(default_factory=list)
     verification_notes: list[str] = Field(default_factory=list, description="leave empty; filled in by code")
 
@@ -111,13 +120,33 @@ Procedure:
    contrast evidence (evidence_type "contrast", confidence "medium"). Form: "When X, do Y,
    because Z.", at most 40 words, with a scope (general / problem_class / one_off). List the
    supporting run_ids. Never put a reference value or numeric answer of this problem in a lesson.
-8. Vote helpful / harmful / neutral on each playbook bullet the runs cited, with a reason.
+8. Write agent_advice: for EACH agent (the a<k> at the end of its run_id), one piece of advice
+   specific to its own run: what it should change, or keep doing, to beat the other agents next
+   time. Agents keep this advice across problems, so make it about how the agent works, not
+   about this problem's numbers. Lessons (step 7) are the overall advice for everyone.
+9. Vote helpful / harmful / neutral on each playbook bullet the runs cited, with a reason.
 
-Limits: at most {DIAGNOSER_MAX_TOOL_CALLS} tool calls and {DIAGNOSER_MAX_RERUNS} reruns per session.
+Limits: at most {DIAGNOSER_MAX_TOOL_CALLS} tool calls and {DIAGNOSER_MAX_RERUNS} reruns per session. Run at
+least {DIAGNOSER_MIN_RERUNS} rerun before submitting: even when every run looks fine, test the change most
+likely to beat the best run (e.g. refining where its error is, or a cheaper mesh).
 When you are done, or a limit is reached, call submit_diagnosis with your result. Report the
 results of reruns exactly as the tool returned them; code checks every claim against the reruns
 that actually ran.
 """
+
+if SCORE == "field":   # field mode: the score is against the automesher (ace.config, ace.checks)
+    SYSTEM = SYSTEM.replace(
+        "The score is the team's speed/accuracy metric: accuracy = min(1, tolerance /\nerror) times efficiency = DOFs of the cheapest run on this problem that met the tolerance / this\nrun's DOFs. 1 = the cheapest mesh that is accurate enough; a run that is accurate but uses many\nmore DOFs than needed, or cheap but outside the tolerance, scores lower; invalid runs score 0.",
+        "rel_error = max(field error, probe error): the energy-norm error of the run's whole stress field\n"
+        "vs a fine reference, and the RMS von Mises error at 12 check points (4 told to the agent, 8\n"
+        "hidden; get_oracles/list_runs show field_error and probe_error separately). The score\n"
+        "is against an automesher (gmsh default sizes, quadratic): gain g = automesher error / rel_error,\n"
+        "accuracy A = (g/2)^2 below the 2x target (tolerance = automesher error / 2), g/2 above it;\n"
+        "efficiency = automesher DOFs / run DOFs; score = A x efficiency (1 = 2x the automesher's accuracy\n"
+        "at its DOFs; invalid runs score 0), plus a bonus of up to 0.25 for having the smallest error\n"
+        "on the hidden check points among the runs (a tie pays nobody). Where the mesh puts its elements is\n"
+        "what matters.")
+    assert "automesher" in SYSTEM
 
 
 def _intervention_help() -> str:
@@ -195,8 +224,11 @@ class DiagnoserTools:
             if self.calls > DIAGNOSER_MAX_TOOL_CALLS:
                 return {"error": f"tool-call limit ({DIAGNOSER_MAX_TOOL_CALLS}) reached: call submit_diagnosis now "
                                  "with what you have"}, True
+        fn = getattr(self, f"_{name}", None)
+        if fn is None or name not in {s["name"] for s in tool_specs()}:   # the model named a tool that doesn't exist
+            return {"error": f"unknown tool {name!r}; available: {sorted(s['name'] for s in tool_specs())}"}, True
         try:
-            return getattr(self, f"_{name}")(**a), False
+            return fn(**a), False
         except (KeyError, TypeError, cf.InterventionError) as e:
             return {"error": f"{type(e).__name__}: {e}"}, True
 
@@ -208,6 +240,7 @@ class DiagnoserTools:
                       for x in st.get(s, {}).get("checks", []) if not x["ok"]]
             rows.append({"run_id": r["run_id"], "score": round(c["score"], 3), "accuracy": c.get("accuracy"),
                          "efficiency": c.get("efficiency"), "dofs": c.get("dofs"), "rel_error": c.get("rel_error"),
+                         **({"field_error": c.get("field_error"), "probe_error": c.get("probe_error")} if SCORE == "field" else {}),
                          "first_failing_stage": st.get("first_failing_stage"), "failed_checks": failed,
                          "nodes": c.get("nodes"), "node_cap": c.get("node_cap"), "order": c.get("order"),
                          "n_meshes": c.get("n_meshes"), "n_solves": c.get("n_solves"), "cited": r.get("cited", [])})
@@ -317,7 +350,7 @@ def diagnose_problem(problem_id: str, runs: list[dict], playbook, llm, target_er
     messages: list = [{"role": "user", "content":
                        f"Diagnose the {len(runs)} runs on problem {problem_id} (scored quantity "
                        f"{TASKS[problem_id]['qoi']}, node cap {TASKS[problem_id]['node_cap']}). Start with list_runs."}]
-    log, diag, bad_submits = [], None, 0
+    log, diag, bad_submits, refused = [], None, 0, False
     # Room for the tool-call limit, plus a few turns to submit after hitting it.
     for _turn in range(DIAGNOSER_MAX_TOOL_CALLS + 4):
         resp, rec = llm.agent_turn(SYSTEM, messages, specs, run_id=f"diagnose-{problem_id}", role="diagnoser")
@@ -329,7 +362,13 @@ def diagnose_problem(problem_id: str, runs: list[dict], playbook, llm, target_er
             continue
         results = []
         for b in calls:
-            if b.name == "submit_diagnosis":
+            if (b.name == "submit_diagnosis" and not refused and len(tools.reruns) < DIAGNOSER_MIN_RERUNS
+                    and tools.calls < DIAGNOSER_MAX_TOOL_CALLS):
+                # Refused once: lessons should rest on at least one experiment, not only on reading.
+                refused = True
+                out, err = {"error": f"run at least {DIAGNOSER_MIN_RERUNS} rerun_from_stage before submitting: "
+                                     "test the change most likely to beat the best run, then submit"}, True
+            elif b.name == "submit_diagnosis":
                 try:
                     diag = Diagnosis.model_validate(b.input)
                     out, err = {"submitted": True}, False

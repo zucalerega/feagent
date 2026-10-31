@@ -23,7 +23,7 @@ dependencies = [
 ui = ["fastapi", "uvicorn", "python-multipart"]
 gpu = ["nvmath-python", "cupy-cuda12x"]
 pardiso = ["pypardiso"]
-ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib"]
+ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib", "streamlit", "plotly", "altair"]
 
 [project.scripts]
 feagent = "feagent.cli:main"

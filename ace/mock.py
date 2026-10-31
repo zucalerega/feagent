@@ -21,7 +21,7 @@ from ace.curator import CuratorOutput, Decision
 from ace.cost import usage_record
 from ace.reflector import BulletVote, Lesson, Reflection
 
-BULLET_ID = re.compile(r"\[((?:a\d+-)?[a-z]+-\d{4})\]")
+BULLET_ID = re.compile(r"\[((?:[ap]\d+-)?[a-z]+-\d{4})\]")
 
 
 def _usage(inp: int, out: int):

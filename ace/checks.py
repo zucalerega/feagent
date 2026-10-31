@@ -22,7 +22,7 @@ import tempfile
 from pathlib import Path
 
 from ace import fea
-from ace.config import MIN_QUALITY, TASKS
+from ace.config import AUTO_GAIN_TARGET, BEST_BONUS, FIELD_ERR_FLOOR, MIN_QUALITY, PROBE_DISCLOSED, SCORE, TASKS
 
 DEFAULT_TOL = 0.02
 
@@ -101,7 +101,11 @@ def load_calibration(problem_ids: list[str]) -> dict:
 
 
 def tolerance(problem_id: str) -> float:
-    """Accuracy target: the reference's stated tolerance for the scored quantity."""
+    """Accuracy target: the reference's stated tolerance for the scored quantity (field mode: the
+    automesher's field error divided by the target gain, see config)."""
+    if SCORE == "field":
+        from ace.field_error import automesher
+        return automesher(problem_id)["error"] / AUTO_GAIN_TARGET
     problem = fea.get_problem(problem_id)
     qoi = TASKS[problem_id]["qoi"]
     return next((r.tolerance for r in problem.references() if r.qoi == qoi), DEFAULT_TOL)
@@ -173,6 +177,12 @@ def check_run(problem_id: str, run: dict) -> dict:
     mesh = final["mesh"]
     ref = fea.reference_value(problem, task["qoi"])
     rel_err = abs(final["result"]["value"] - ref) / abs(ref)
+    point_err = rel_err
+    if SCORE == "field":                         # whole stress field vs the fine reference
+        from ace.field_error import errors_of_setup
+        errs = errors_of_setup(problem_id, final["mesh"], final["setup"])
+        rel_err = errs["error"]
+        out.update(field_error=errs["field"], probe_error=errs["points"], point_errors=errs["point_errors"])
     info = final["result"].get("info") or {}
     ncomp = 3 if problem.dim == 3 else 2
     out.update({
@@ -185,6 +195,7 @@ def check_run(problem_id: str, run: dict) -> dict:
         "quality_ok": (mesh["min_quality"] or 0) >= MIN_QUALITY,
         "qoi_value": final["result"]["value"],
         "rel_error": rel_err,
+        "point_rel_error": point_err,
         "meets_tol": rel_err <= out["tolerance"],
         "setup": bc_report(problem, final["setup"]),
     })
@@ -218,7 +229,11 @@ def score_population(runs: list[dict]) -> None:
         errors = {"q": {"est_err": c["rel_error"]}} if c.get("rel_error") is not None else {}
         agents.append({"agent_id": r["run_id"], "report": rep, "errors": errors})
     tol = {"q": runs[0]["checks"]["tolerance"]} if runs else {}
-    for r, row in zip(runs, feacore_score(agents, tol=tol)):
+    rows = feacore_score(agents, tol=tol)
+    if SCORE == "field":
+        _score_vs_automesher(runs, rows)
+        return
+    for r, row in zip(runs, rows):
         # feacore's efficiency (cheapest in-tolerance DOFs / own DOFs) exceeds 1 for a run that is
         # cheaper but OUTSIDE tolerance, which can push the score above its documented [0, 1]
         # (e.g. 0.32 accuracy x 5.8 efficiency). Cap it at 1: cheaper than the cheapest accurate
@@ -228,3 +243,46 @@ def score_population(runs: list[dict]) -> None:
         r["checks"].update(score=score, accuracy=row["accuracy"], efficiency=eff, efficiency_uncapped=row["efficiency"],
                            valid=row["valid"], cost=row["cost"], pareto_rank=row["pareto_rank"],
                            invalid_because=None if row["valid"] else [f for f in row["flags"]])
+
+
+def _score_vs_automesher(runs: list[dict], rows: list[dict]) -> None:
+    """Field mode: score each run against the automesher (formula in ace.config). Validity still
+    comes from feacore's fail flags (rows)."""
+    from ace.field_error import automesher
+    auto = automesher(runs[0]["problem_id"])
+    G = AUTO_GAIN_TARGET
+    for r, row in zip(runs, rows):
+        c = r["checks"]
+        if not row["valid"] or c.get("rel_error") is None:
+            c.update(score=0.0, accuracy=0.0, efficiency=0.0, gain=None, valid=False,
+                     invalid_because=list(row["flags"]) or ["no solve"])
+            continue
+        g = auto["error"] / max(c["rel_error"], FIELD_ERR_FLOOR)
+        acc = (g / G) ** 2 if g < G else g / G
+        eff = auto["dofs"] / c["dofs"]
+        c.update(score=acc * eff, accuracy=acc, efficiency=eff, gain=g, valid=True, invalid_because=None,
+                 auto_error=auto["error"], auto_dofs=auto["dofs"], best_bonus=0.0, best_points=0.0)
+    _best_bonus(runs)
+
+
+def _best_bonus(runs: list[dict]) -> None:
+    """Field mode: on each hidden probe point, the one valid run of a generation with the smallest
+    |error| there wins 1/n_hidden of BEST_BONUS. A tie pays nobody, so copying the leader earns
+    nothing: only being different AND better does."""
+    by_gen: dict = {}
+    for r in runs:
+        if r["checks"].get("valid") and r["checks"].get("point_errors"):
+            by_gen.setdefault(r.get("generation"), []).append(r)
+    for grp in by_gen.values():
+        hidden = range(PROBE_DISCLOSED, len(grp[0]["checks"]["point_errors"]))
+        for j in hidden:
+            errs = [abs(r["checks"]["point_errors"][j]) for r in grp]
+            best = min(errs)
+            winners = [r for r, e in zip(grp, errs) if e <= best * (1 + 1e-9) + 1e-15]
+            if len(winners) == 1:
+                winners[0]["checks"]["best_points"] += 1
+        for r in grp:
+            c = r["checks"]
+            c["best_bonus"] = BEST_BONUS * c["best_points"] / len(hidden)
+            c["base_score"] = c["score"]
+            c["score"] += c["best_bonus"]

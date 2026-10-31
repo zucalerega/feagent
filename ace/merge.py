@@ -16,17 +16,19 @@ from ace.config import DEDUP_THRESHOLD, PRUNE_MARGIN
 from ace.playbook import Bullet, Playbook
 
 
-def find_duplicate(playbook: Playbook, section: str, content: str) -> tuple[Bullet | None, float]:
+def find_duplicate(playbook: Playbook, section: str, content: str,
+                   threshold: float = DEDUP_THRESHOLD) -> tuple[Bullet | None, float]:
     """Most similar bullet in the section, if its similarity is at/above the threshold."""
     best, best_score = None, 0.0
     for b in playbook.in_section(section):
         s = fuzz.token_set_ratio(content.lower(), b.content.lower())
         if s > best_score:
             best, best_score = b, s
-    return (best, best_score) if best_score >= DEDUP_THRESHOLD else (None, best_score)
+    return (best, best_score) if best_score >= threshold else (None, best_score)
 
 
-def apply_ops(playbook: Playbook, ops: list, generation: int, prune_margin: int = PRUNE_MARGIN) -> dict:
+def apply_ops(playbook: Playbook, ops: list, generation: int, prune_margin: int = PRUNE_MARGIN,
+              dedup_threshold: float = DEDUP_THRESHOLD) -> dict:
     """Mutates `playbook`. Returns a change log for the diff."""
     changes = {"added": [], "voted": [], "deduped": [], "pruned": []}
 
@@ -38,7 +40,7 @@ def apply_ops(playbook: Playbook, ops: list, generation: int, prune_margin: int 
     for op in ops:
         if op.kind != "ADD":
             continue
-        dup, score = find_duplicate(playbook, op.section, op.content)
+        dup, score = find_duplicate(playbook, op.section, op.content, dedup_threshold)
         if dup:
             dup.helpful += 1
             if op.evidence_type == "counterfactual":

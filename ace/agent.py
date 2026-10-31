@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ace import fea
 from ace.checks import tolerance
-from ace.config import MAX_SOLVES, MAX_TURNS, TASKS
+from ace.config import MAX_SOLVES, MAX_TURNS, SCORE, TASKS
 
 # Deliberately short and non-expert: the playbook is where expertise should accumulate.
 # Keep it identical across runs (no problem-specific text) so prompt caching works.
@@ -155,8 +155,8 @@ TOOLS = [
 # Checkpoint bookkeeping kept in the run record but not shown to the agent.
 HIDDEN_KEYS = {"path", "request", "index", "sha256", "gmsh", "info"}
 
-CITATION = re.compile(r"\[using ((?:a\d+-)?[a-z]+-\d{4})\]")
-BULLET_ID = re.compile(r"^(?:a\d+-)?[a-z]+-\d{4}$")          # shared "mesh-0001" or private "a3-mesh-0001"
+CITATION = re.compile(r"\[using ((?:[ap]\d+-)?[a-z]+-\d{4})\]")
+BULLET_ID = re.compile(r"^(?:[ap]\d+-)?[a-z]+-\d{4}$")       # shared "mesh-0001" / "p1-mesh-0001" (task 1), private "a3-mesh-0001"
 
 
 def system_prompt(playbook_text: str) -> str:
@@ -168,11 +168,42 @@ def task_prompt(problem_id: str) -> str:
     problem = fea.get_problem(problem_id)
     q = fea.official_qoi(problem, task["qoi"])
     where = f" at point {q.point}" if q.point else (f" over group {q.group!r}" if q.group else "")
+    if SCORE == "field":
+        from ace.config import AUTO_GAIN_TARGET as G
+        from ace.field_error import automesher
+        a = automesher(problem_id)
+        from ace.config import BEST_BONUS, PROBE_DISCLOSED, PROBE_POINTS
+        from ace.field_error import probe_points
+        shown = "; ".join("(" + ", ".join(f"{v:.4g}" for v in pt[:problem.dim]) + ")"
+                          for pt in probe_points(problem_id)["points"][:PROBE_DISCLOSED])
+        scored = (f"SCORING FOR THIS TASK (replaces 'How you are scored' above). Scored: the whole stress field, "
+                  f"two ways. (1) Field error: the energy-norm error of your stress field over the entire part, "
+                  f"relative to a very fine reference solution (the strain energy of the stress difference, "
+                  f"integrated everywhere). (2) Point error: the RMS relative error of the von Mises stress at "
+                  f"{PROBE_POINTS} check points spread across the part (away from stress singularities). "
+                  f"{PROBE_DISCLOSED} of them are {shown}; the other {PROBE_POINTS - PROBE_DISCLOSED} are hidden. "
+                  f"Your error e = the larger of (1) and (2). The statement's {q.name}{where} is not scored; you "
+                  f"may still use it as a check.\n"
+                  f"You compete against an AUTOMESHER: gmsh with its default sizes and quadratic elements (scored "
+                  f"the same way), which "
+                  f"gets e = {a['error']:.2%} with {a['dofs']} DOFs.\n"
+                  f"TARGET: {G:g}x the automesher's accuracy, i.e. e <= {a['error'] / G:.2%}.\n"
+                  f"SCORE = A / c, where g = {a['error']:.4f} / e (your accuracy gain), c = your DOFs / {a['dofs']}, "
+                  f"A = (g/{G:g})^2 if g < {G:g} (missing the target is penalised quadratically) else g/{G:g} "
+                  f"(beating it keeps paying). Score 1 = {G:g}x the automesher's accuracy at its DOFs; the "
+                  f"automesher itself scores {1 / G ** 2:g}. Extra DOFs pay only if they buy at least proportionally "
+                  f"more accuracy, so put them where the error is.\n"
+                  f"BONUS for being the best: other agents attempt this task too. On each of the "
+                  f"{PROBE_POINTS - PROBE_DISCLOSED} hidden check points, the agent with the smallest stress error "
+                  f"there wins a share of up to +{BEST_BONUS:g} in total. A tie pays nobody, so copying the "
+                  f"leader earns nothing. Trying something that beats the others pays.\n")
+    else:
+        scored = (f"SCORED QUANTITY: {q.name} = {q.type} of {q.field}{where}. Only this quantity is scored; "
+                  f"ignore any other quantities the statement asks you to report.\n"
+                  f"TARGET: {q.name} within {tolerance(problem_id):.0%} of the true value, with as few DOFs as possible.\n")
     return (
         f"Problem id: {problem_id}\n\n{problem.description()}\n\n"
-        f"SCORED QUANTITY: {q.name} = {q.type} of {q.field}{where}. Only this quantity is scored; "
-        f"ignore any other quantities the statement asks you to report.\n"
-        f"TARGET: {q.name} within {tolerance(problem_id):.0%} of the true value, with as few DOFs as possible.\n"
+        f"{scored}"
         f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
         f"target). You may call solve at most {MAX_SOLVES} times."
     )

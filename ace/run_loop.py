@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import multiprocessing as mp
+import random
 import statistics
 import time
 import traceback
@@ -134,15 +135,24 @@ def diagnose_step(pid, pruns, playbook, llm, target_err, gdir, out, mock, cost, 
 
 
 def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
-    lines = ["# ACE run summary", "",
-             "score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
-             "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
-             "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;",
+    if config.SCORE == "field":
+        how = ["score = accuracy x efficiency against the automesher (gmsh default sizes, quadratic): error =",
+               "max(whole-field energy-norm error, RMS von Mises error at the probe points); gain g = automesher",
+               "error / error; accuracy = (g/2)^2 below the 2x target, g/2 above; efficiency = automesher DOFs /",
+               "own DOFs. 1 = 2x the automesher's accuracy at its DOFs; the automesher scores 0.25. 'within tol'",
+               "counts runs at or past the 2x target;"]
+    else:
+        how = ["score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
+               "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
+               "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
+    lines = ["# ACE run summary", "", *how,
              "'failed' counts runs that failed a gate; 'errored' counts runs that crashed (API or code errors).",
-             "", "| gen | problem | split | mean score | min | max | mean accuracy | mean efficiency | within tol | median DOFs | median rel. error | failed | errored |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "'base' is the mean score without the be-the-best bonus; 'bonus' the mean bonus (field mode).",
+             "", "| gen | problem | split | mean score | base | bonus | min | max | mean accuracy | mean efficiency | within tol | median DOFs | median rel. error | failed | errored |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
-        lines.append(f"| {r['gen']} | {r['problem']} | {r['split']} | {r['mean']:.2f} | {r['min']:.2f} | {r['max']:.2f} | "
+        lines.append(f"| {r['gen']} | {r['problem']} | {r['split']} | {r['mean']:.2f} | {r['base']:.2f} | {r['bonus']:.2f} | "
+                     f"{r['min']:.2f} | {r['max']:.2f} | "
                      f"{r['accuracy']:.2f} | {r['efficiency']:.2f} | {r['within_tol']}/{r['n']} | {r['median_dofs']} | "
                      f"{r['median_err']} | {r['failed']}/{r['n']} | {r['errored']} |")
     lines += ["", "| gen | playbook bullets used | added | voted | deduped | pruned | cumulative $ |",
@@ -162,7 +172,7 @@ def plot_scores(rows: list[dict], path: Path) -> None:
 
     colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
     fig, ax = plt.subplots(figsize=(7, 4), dpi=150)
-    ax.set_ylim(0, 1.05)
+    ax.set_ylim(0, max(1.05, max(r["max"] for r in rows) * 1.05))   # field-mode scores can exceed 1
     for i, pid in enumerate(sorted({r["problem"] for r in rows})):
         pts = [r for r in rows if r["problem"] == pid]
         label = pid + (" (held out)" if pts[0]["split"] == "holdout" else "")
@@ -192,11 +202,13 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
         if not ok:
             continue
         scores = [checks[r["run_id"]]["score"] for r in ok]
+        bonus = [checks[r["run_id"]].get("best_bonus") or 0.0 for r in ok]
         errs = [e for r in ok if (e := checks[r["run_id"]].get("rel_error")) is not None]
         dofs = [d for r in ok if (d := checks[r["run_id"]].get("dofs"))]
         rows.append({
             "gen": gen, "problem": pid, "split": "holdout" if pid in holdout else "train",
             "n": len(scores), "mean": statistics.mean(scores), "min": min(scores), "max": max(scores),
+            "base": statistics.mean(s - b for s, b in zip(scores, bonus)), "bonus": statistics.mean(bonus),
             "failed": sum(checks[r["run_id"]]["failed_gate"] is not None for r in ok),
             "errored": len(mine) - len(ok),
             "median_err": f"{statistics.median(errs):.2e}" if errs else "-",
@@ -226,6 +238,9 @@ def main(argv=None) -> int:
     ap.add_argument("--memory", choices=["shared", "shared+private"], default=config.MEMORY,
                     help="one shared playbook, or shared + one private playbook per persistent agent")
     ap.add_argument("--agents", type=int, default=config.AGENTS, help="persistent agents (shared+private mode)")
+    ap.add_argument("--split", action="store_true",
+                    help="shared+private only: each generation, randomly split the agents into one group per "
+                         "train problem; one shared playbook per problem, private notes follow the agent")
     args = ap.parse_args(argv)
 
     train = [p for p in args.problems.split(",") if p]
@@ -236,7 +251,13 @@ def main(argv=None) -> int:
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()
     private = args.memory == "shared+private"
-    mem = Memory(args.agents, shared=playbook) if private else None
+    if args.split and not (private and len(train) > 1):
+        raise SystemExit("--split needs --memory shared+private and at least two --problems")
+    mem = (Memory(args.agents, tasks=train) if args.split else Memory(args.agents, shared=playbook)) if private else None
+    if config.SCORE == "field":     # build baselines once here, not concurrently in every worker
+        from ace.field_error import automesher, probe_points
+        for pid in train + holdout:
+            automesher(pid), probe_points(pid)
     all_runs: dict[str, list[dict]] = {pid: [] for pid in train + holdout}   # every run so far, per problem
     rows, gen_notes = [], []
     print(f"output: {out}")
@@ -249,12 +270,23 @@ def main(argv=None) -> int:
             if private:
                 mem.save(out, gen)
             text = playbook.render(args.top_n)
-            print(f"\n=== generation {gen}: {len(playbook.bullets)} bullets, ${cost.total:.2f} spent")
+            n_shared = sum(len(pb.bullets) for pb in mem.shared_by_task.values()) if mem else len(playbook.bullets)
+            print(f"\n=== generation {gen}: {n_shared} shared bullets, ${cost.total:.2f} spent")
 
             # 1. run all agents
             # Interleaved (run 0 of every problem, then run 1, ...) so that if the budget stops a
             # generation early, every problem still has a similar number of runs.
-            if private:   # persistent agents a0..: each sees the shared playbook + its own notes
+            if private and args.split:   # agents shuffled into one group per task, every generation
+                order = random.Random(gen).sample(range(args.agents), args.agents)
+                group = {k: train[i % len(train)] for i, k in enumerate(order)}
+                (gdir / "groups.json").write_text(json.dumps({f"a{k}": pid for k, pid in sorted(group.items())}))
+                jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
+                         "playbook_text": mem.prompt_text(k, args.top_n, pid), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
+                         "mock": args.mock} for k, pid in sorted(group.items())]
+                jobs += [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
+                          "playbook_text": mem.prompt_text(k, args.top_n), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
+                          "mock": args.mock} for k in range(args.agents) for pid in holdout]
+            elif private:   # persistent agents a0..: each sees the shared playbook + its own notes
                 jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
                          "playbook_text": mem.prompt_text(k, args.top_n), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
                          "mock": args.mock} for k in range(args.agents) for pid in train + holdout]
@@ -284,7 +316,8 @@ def main(argv=None) -> int:
             for r in runs:
                 (gdir / "runs" / f"{r['run_id']}.json").write_text(json.dumps(r, indent=1, default=str))
             solver_log(out, {"gen": gen, "what": "oracles", "seconds": round(time.perf_counter() - t_oracles, 2)})
-            note = {"gen": gen, "bullets": len(playbook.bullets)}
+            note = {"gen": gen, "bullets": sum(len(pb.bullets) for pb in mem.shared_by_task.values())
+                    if mem else len(playbook.bullets)}
             gen_notes.append(note)
 
             if gen == args.generations - 1:
@@ -329,11 +362,18 @@ def main(argv=None) -> int:
                     log = mem.update(reflections, llm, gen, records=usage)
                 except Exception as e:  # noqa: BLE001  keep the memories unchanged this generation
                     print(f"  memory update failed: {e!r}; no change")
-                    log = {"shared": {"added": [], "voted": [], "deduped": [], "pruned": []}, "private": {}, "promoted": []}
+                    empty = {"added": [], "voted": [], "deduped": [], "pruned": []}
+                    log = {"shared": {t: dict(empty) for t in train} if args.split else empty, "private": {}, "promoted": []}
                 cost.add(usage)
                 (gdir / "memory_changes.json").write_text(json.dumps(log, indent=1, default=str))
                 mem.save(out, gen + 1)
-                diff = diff_markdown(log["shared"], gen + 1, mem.shared)
+                if args.split:   # one shared playbook per task: one diff section each
+                    diff = "\n".join(f"# Task {t}\n" + diff_markdown(log["shared"][t], gen + 1, mem.shared_by_task[t])
+                                     for t in train)
+                    shared_log = {k: [x for t in train for x in log["shared"][t][k]] for k in log["shared"][train[0]]}
+                else:
+                    diff = diff_markdown(log["shared"], gen + 1, mem.shared)
+                    shared_log = log["shared"]
                 diff += "\n## Promoted from private notes\n" + ("\n".join(
                     f"- `{p['shared_id']}` (agents {p['from_agents']}): {p['content']}" for p in log["promoted"]) or "none")
                 diff += "\n\n## Private notes added\n" + ("\n".join(
@@ -341,9 +381,9 @@ def main(argv=None) -> int:
                     for k, ch in sorted(log["private"].items()) if ch["added"]) or "none") + "\n"
                 (out / f"diff_gen{gen + 1}.md").write_text(diff)
                 n_priv = sum(len(c["added"]) for c in log["private"].values())
-                note.update({k: len(v) for k, v in log["shared"].items()}, usd=cost.total,
+                note.update({k: len(v) for k, v in shared_log.items()}, usd=cost.total,
                             private_added=n_priv, promoted=len(log["promoted"]))
-                print(f"  shared: +{len(log['shared']['added'])} added, {len(log['shared']['pruned'])} pruned; "
+                print(f"  shared: +{len(shared_log['added'])} added, {len(shared_log['pruned'])} pruned; "
                       f"private: +{n_priv} added across agents; promoted to shared: {len(log['promoted'])}")
                 continue
             usage = []
