@@ -134,12 +134,21 @@ def _integration_points(problem_id: str, workdir: Path) -> tuple[np.ndarray, np.
     return pts, w
 
 
+def _needs_uniform_reference(p) -> None:
+    """The uniform reference needs the problem's default size h0. Problems without one (the gold CAD
+    parts) get an adaptive reference built separately into the cache (ace.gold_reference)."""
+    if "h0" not in p.params:
+        raise RuntimeError(f"{p.id}: no cached reference in {CACHE} and no h0 for a uniform one; "
+                           f"build it with: python -m ace.gold_reference {p.id}")
+
+
 def reference(problem_id: str) -> dict:
     """Integration points, weights and reference stresses there (cached in ace/field_refs/)."""
     CACHE.mkdir(exist_ok=True)
     f = CACHE / f"{problem_id}.npz"
     if not f.exists():
         p = fea.get_problem(problem_id)
+        _needs_uniform_reference(p)
         with tempfile.TemporaryDirectory() as tmp:
             pts, w = _integration_points(problem_id, Path(tmp))
             res, mesh = _reference_solve(problem_id, REF_DIVISORS[p.dim][1], Path(tmp))
@@ -169,12 +178,33 @@ def automesher(problem_id: str) -> dict:
                 ensure_domain_group(p.dim)
                 gmsh.model.mesh.generate(p.dim)
                 gmsh.model.mesh.setOrder(2)
+                if "gold" in p.tags:
+                    _unfold_tet10()
                 gmsh.write(str(path))
             res = _solve(p, {"path": str(path), "order": 2}, reference_setup(p), TASKS[problem_id]["qoi"])
             e = errors_of_result(problem_id, res)
             f.write_text(json.dumps({"nodes": len(meshio.read(path).points), "dofs": int(res.info.n_dofs),
                                      "error": e["error"], "field": e["field"], "points": e["points"]}, indent=1))
     return json.loads(f.read_text())
+
+
+def _unfold_tet10() -> None:
+    """Gold CAD parts: gmsh's default coarse tet10 mesh, curved onto the CAD, has a few dozen folded
+    cells (negative scaled Jacobian; abc_00000003 / abc_00000065: 35 / 38 of them). The solver accepts
+    them but their stresses are garbage, so the folded cells are made straight-sided (midside nodes at
+    edge midpoints; this fixed every one on both parts), and if any still fold the whole mesh becomes
+    straight-sided order 2 (which cannot fold where the linear tets are valid). Same threshold as the
+    gold generator (ace.gold_reference.SJ_MIN)."""
+    import gmsh
+    from ace.gold_reference import _folded, _straighten
+    bad, _ = _folded()
+    for _ in range(5):
+        if not len(bad):
+            return
+        _straighten(bad)
+        bad, _ = _folded()
+    if len(bad):
+        _straighten(gmsh.model.mesh.getElementsByType(11)[0])
 
 
 def coarse_reference(problem_id: str) -> dict:
@@ -184,6 +214,7 @@ def coarse_reference(problem_id: str) -> dict:
     f = CACHE / f"{problem_id}_coarse.npz"
     if not f.exists():
         p = fea.get_problem(problem_id)
+        _needs_uniform_reference(p)
         pts = reference(problem_id)["pts"]
         with tempfile.TemporaryDirectory() as tmp:
             res, mesh = _reference_solve(problem_id, REF_DIVISORS[p.dim][0], Path(tmp))
