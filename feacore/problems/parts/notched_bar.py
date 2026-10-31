@@ -1,8 +1,9 @@
 """Flat bar with two opposite U-notches in tension (plane stress).
 
-Reference: Kt from the Peterson / Pilkey curve fit for opposite U-shaped notches in a finite
-width flat bar in tension (``_common.kt_opposite_u_notches_tension``) times the net-section
-nominal stress P / ((H - 2t) b).
+Reference: the converged FE peak notch-root stress (``_numerical_refs``). The Peterson / Pilkey
+curve fit for opposite U-shaped notches in a finite-width flat bar in tension
+(``_common.kt_opposite_u_notches_tension``) times the net-section nominal stress P / ((H - 2t) b)
+is 8-11 % lower; it is kept in the reference notes and in ``handbook_reference()``.
 
 Variants: notch depth t in {5, 10} mm x root radius r in {2, 4} mm on a 50 mm wide, 5 mm thick
 steel bar. The reference mesh is the full bar (2D is cheap); agents may use the two symmetry
@@ -58,7 +59,7 @@ class NotchedBar(PartProblem):
         p = self.params
         if p["notch_depth"] < p["notch_radius"]:
             raise ValueError("U-notch needs depth >= radius")
-        self.tags = ("part", "2d", "plane_stress", "notch", "tension", "stress_concentration", "handbook")
+        self.tags = ("part", "2d", "plane_stress", "notch", "tension", "stress_concentration")
         self.title = (f"Flat bar with opposite U-notches in tension, t = {fmt_mm(p['notch_depth'])}, "
                       f"r = {fmt_mm(p['notch_radius'])}")
 
@@ -190,7 +191,9 @@ class NotchedBar(PartProblem):
         if num is None:
             return [hb]
         diff = (num["value"] - hb.value) / hb.value
-        ccx = f"; CalculiX on the finest mesh {num['ccx_fine'] / 1e6:.2f} MPa" if num.get("ccx_fine") else ""
+        ccx = (f"; CalculiX on the finest mesh, which models plane stress as a {self.params['thickness'] * 1e3:g} mm "
+               f"slab and so includes a through-thickness effect at the notch root: "
+               f"{num['ccx_fine'] / 1e6:.2f} MPa" if num.get("ccx_fine") else "")
         return [Reference(
             qoi="peak_stress_notch", value=num["value"], kind="converged_numerical",
             source=NUM_SOURCE + f" Study of {self.id}{ccx}.", tolerance=0.02,

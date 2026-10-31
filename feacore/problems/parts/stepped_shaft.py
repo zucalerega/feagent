@@ -1,8 +1,10 @@
 """Stepped round bar (shaft) with a shoulder fillet in axial tension.
 
-Reference: Kt from the Peterson / Pilkey curve fit for a stepped bar of circular cross section
-with a shoulder fillet in tension (see ``_common.kt_shoulder_fillet_round_bar_tension``) times
-the nominal stress on the small diameter, sigma_nom = 4 P / (pi d^2).
+Reference: the converged FE peak fillet stress (``_numerical_refs``; skfem and CalculiX agree to
+< 0.1 %). The Peterson / Pilkey curve fit for a stepped bar of circular cross section with a
+shoulder fillet in tension (``_common.kt_shoulder_fillet_round_bar_tension``) times the nominal
+stress 4 P / (pi d^2) is 8-20 % lower for these geometries; it is kept in the reference notes and
+in ``handbook_reference()``.
 
 Variants: axisymmetric over D/d in {1.5, 2.0} x r/d in {0.05, 0.1, 0.2}; one sharp-shoulder
 trap (r = 0, axisymmetric, singular re-entrant corner); one full-3D variant (D/d = 2, r/d = 0.2)
@@ -33,7 +35,8 @@ FORCE = SIGMA_NOM * math.pi * D_SMALL**2 / 4.0   # 31.416 kN
 KT_SOURCE = (
     "Pilkey & Pilkey, Peterson's Stress Concentration Factors, 3rd ed. (Wiley 2008), Chapter 3, "
     "chart for a stepped bar of circular cross section with a shoulder fillet in tension "
-    "(Chart 3.4; photoelastic data of Allison 1961) and its curve fit "
+    "(photoelastic data of Allison 1961; Chart 3.4 in our reading, chart number not re-verified) "
+    "and its curve fit "
     "Kt = C1 + C2(2h/D) + C3(2h/D)^2 + C4(2h/D)^3, h = (D-d)/2, C_i(sqrt(h/r), h/r) for "
     "0.1<=h/r<=2 and 2<=h/r<=20; same fit in Young & Budynas, Roark's Formulas for Stress and "
     "Strain, 7th ed., Table 17.1. Peak stress = Kt * 4P/(pi d^2)."
@@ -139,7 +142,7 @@ class SteppedShaftAxi(_ShaftBase):
     def __init__(self, id: str | None = None, **params):
         super().__init__(id, **params)
         tags = ["part", "axisymmetric", "tension", "stepped_shaft"]
-        tags += ["sharp_corner", "singular_trap"] if self.sharp else ["fillet", "stress_concentration", "handbook"]
+        tags += ["sharp_corner", "singular_trap"] if self.sharp else ["fillet", "stress_concentration"]
         self.tags = tuple(tags)
         self.expected_behavior = "singular" if self.sharp else "stress_concentration"
         d, D, r, _, _ = self.dims
@@ -265,7 +268,7 @@ class SteppedShaft3D(_ShaftBase):
             raise ValueError("SteppedShaft3D needs r > 0")
         d, D, r, _, _ = self.dims
         self.tags = ("part", "3d", "tension", "stepped_shaft", "fillet", "stress_concentration",
-                     "handbook", "axisymmetric_part")
+                     "axisymmetric_part")
         self.title = f"Stepped shaft in tension, D/d = {D / d:g}, r/d = {r / d:g} (3D solid)"
 
     def description(self) -> str:

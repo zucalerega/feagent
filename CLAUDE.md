@@ -38,7 +38,14 @@ Decisions:
   case and mesh the two agree to about 1e-5 (displacements, reactions, energies) and about 1e-3 for
   boundary point stresses (different stress recovery). A bigger disagreement means a setup or solver bug.
   CalculiX models plane stress as a thin 3D slab, so keep plane-stress problems thin (thickness much
-  smaller than the in-plane size) or the two backends legitimately differ.
+  smaller than the in-plane size) or the two backends legitimately differ. Independent MMS checks
+  find CalculiX exact for plane strain, 3D (straight-edged tets) and 2D/3D heat. Axisymmetric, curved
+  P2 tets and plane stress with body forces showed errors and are being fixed or will be refused.
+- **Mesh sequences for GCI:** independently remeshed unstructured sequences (what agents produce)
+  scatter the observed order by a few tenths, so treat a 3-mesh GCI from them as approximate and use
+  4+ meshes (the least-squares fit in `analyze`) when it matters. Nested refinement
+  (`convergence_study(..., nested=True)`, i.e. gmsh `mesh.refine()` splitting) gives clean orders for
+  global norms. Point QoIs can still be irregular on nested meshes.
 - **Neural surrogate** (`backend="nn"`, optional, GPU): fast but unverified. It is never the reference;
   the verification layer judges it like any other submission.
 - **Solver input contract** = a case JSON (`feacore/case.py`: analysis, materials, BCs, loads, QoIs)

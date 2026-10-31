@@ -90,7 +90,7 @@ function result(r) {
     r.info ? h('table', { class: 'kv', style: { marginTop: '12px' } }, h('tbody', {},
       [['backend', i.backend], ['analysis', `${i.physics} · ${i.formulation} · P${i.order}`], ['mesh', `${i.cell_type} · ${fmtInt(i.n_cells)} cells · ${fmtInt(i.n_nodes)} nodes`],
        ['unknowns', fmtInt(i.n_dofs)], ['h (measured)', fmt(i.h_rep, 4)], ['solve time', fmtTime(i.wall_time)]].map(([k, v]) => h('tr', {}, h('th', {}, k), h('td', {}, v))))) : null,
-    (i.warnings || []).length || (r.warnings || []).length ? h('div', { class: 'small', style: { marginTop: '10px', color: '#7a4a00' } }, [...(i.warnings || []), ...(r.warnings || [])].join('; ')) : null,
+    (i.warnings || []).length || (r.warnings || []).length ? h('div', { class: 'small secondary', style: { marginTop: '10px' } }, [...(i.warnings || []), ...(r.warnings || [])].join('; ')) : null,
     h('div', { class: 'row', style: { marginTop: '14px' } },
       r.fields ? h('a', { class: 'btn primary', href: `#/viewer/${r.run_id}` }, 'Open in field viewer') : null,
       h('a', { class: 'btn', href: `/api/runs/${r.run_id}`, target: '_blank' }, 'Run record (JSON)'),

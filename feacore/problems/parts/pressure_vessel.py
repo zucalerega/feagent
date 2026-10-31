@@ -47,8 +47,7 @@ class PressureVesselAxi(PartProblem):
         super().__init__(id, **params)
         p = self.params
         self.thin_head = p["head_thickness"] < p["wall_thickness"] - 1e-12
-        self.tags = ("part", "axisymmetric", "pressure_vessel", "internal_pressure", "analytical",
-                     "shell_junction") + (("thickness_transition", "singular_trap") if self.thin_head else ())
+        self.tags = ("part", "axisymmetric", "pressure_vessel", "internal_pressure", "shell_junction") + (("thickness_transition", "singular_trap") if self.thin_head else ())
         # the sharp kink where the outside taper meets the thin head is a 198-degree re-entrant
         # corner: the whole-wall peak von Mises sits there and creeps up under refinement
         self.expected_behavior = "singular" if self.thin_head else "smooth"

@@ -4,7 +4,7 @@ import { api, h, clear, fmt, fmtInt, fmtTime, loading, errorBox, runStatusChip, 
 import { COLORMAPS, cssGradient, defaultMap } from '../colormap.js';
 import { niceTicks } from '../plot.js';
 
-const vstate = { field: null, cmap: 'auto', bands: 0, edges: true, deform: false, scale: null, scaleFor: null, range: 'auto', lo: null, hi: null };
+const vstate = { field: null, cmap: 'auto', bands: 0, edges: null, deform: false, scale: null, scaleFor: null, range: 'auto', lo: null, hi: null };
 
 export async function render(el, args) {
   if (!args.length) return renderIndex(el);
@@ -123,7 +123,8 @@ async function renderRun(el, rid) {
     h('option', { value: 'auto', selected: vstate.cmap === 'auto' }, 'Auto (sequential / diverging)'),
     Object.entries(COLORMAPS).map(([k, v]) => h('option', { value: k, selected: vstate.cmap === k }, v.label)));
   const bandsChk = h('input', { type: 'checkbox', checked: vstate.bands > 0, onchange: e => { vstate.bands = e.target.checked ? 12 : 0; paint(); } });
-  const edgesChk = h('input', { type: 'checkbox', checked: vstate.edges, onchange: e => { vstate.edges = e.target.checked; view.setEdgesVisible(vstate.edges); } });
+  const edgesOn = () => vstate.edges ?? (data.n_triangles <= 60000);  // auto: hide on very fine meshes
+  const edgesChk = h('input', { type: 'checkbox', checked: edgesOn(), onchange: e => { vstate.edges = e.target.checked; view.setEdgesVisible(vstate.edges); } });
   const rangeSel = h('select', { onchange: e => { vstate.range = e.target.value; drawRangeInputs(); paint(); } },
     [['auto', 'Auto (data min / max)'], ['robust', 'Robust (1st \u2013 99th percentile)'], ['symmetric', 'Symmetric about 0'], ['custom', 'Custom']].map(([v, l]) => h('option', { value: v, selected: vstate.range === v }, l)));
   const rangeInputs = h('div', { class: 'row', style: { gap: '8px' } });
@@ -161,7 +162,7 @@ async function renderRun(el, rid) {
       h('div', { class: 'scale-row' }, scaleNum, h('button', { class: 'btn small', onclick: () => { vstate.scale = +auto.toPrecision(2); scaleNum.value = vstate.scale; slider.value = toSlider(vstate.scale); applyDeform(); } }, 'auto'))) : null,
     qoiTable(run));
   drawRangeInputs();
-  view.setEdgesVisible(vstate.edges);
+  view.setEdgesVisible(edgesOn());
   applyDeform();
   paint();
   view.fit('iso');

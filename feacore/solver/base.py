@@ -56,7 +56,8 @@ class Result(ABC):
         raise NotImplementedError
 
     def summary(self) -> dict:
-        return {"info": asdict(self.info), "qois": self.evaluate_all(), "meta": self.case.meta}
+        qois = self.evaluate_all()  # first: QoI evaluation may append to info.warnings
+        return {"info": asdict(self.info), "qois": qois, "meta": self.case.meta}
 
     def save_summary(self, path: str | Path) -> Path:
         path = Path(path)

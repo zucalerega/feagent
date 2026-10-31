@@ -65,8 +65,11 @@ Load and support models (stated in each description, so every agent applies the 
 
 The plan was handbook references (Peterson / Pilkey curve fits, also in Roark Table 17.1) for the
 shaft and notched-bar families. The converged FE peak stresses are **8 to 20 % above those fits**,
-for every variant, with two independent solvers agreeing to < 0.2 % (skfem P2 isoparametric and
-CalculiX, same meshes; Richardson GCI 0.01-0.4 %). This is consistent with the literature: the
+for every variant (Richardson GCI 0.01-0.4 %). For the axisymmetric shafts two independent solvers
+agree to < 0.1 % on the same meshes (skfem P2 isoparametric and CalculiX CAX6). For the notched
+bars CalculiX models plane stress as a 3D slab of the given 5 mm thickness and comes out 1.4-2.1 %
+higher (a real through-thickness effect at a 2-4 mm notch root), so there the plane-stress value
+rests on the skfem study alone. This is consistent with the literature: the
 shoulder-fillet tension charts are based on 1960s photoelastic data and FE studies (Tipton, Sorem &
 Rolovic, J. Mech. Des. 118 (1996) 321-327) found them unconservative for shoulder fillets in
 tension; the opposite-U-notch fit is close to Neuber's nomogram, which body-force solutions

@@ -28,13 +28,11 @@ from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
-import scipy.sparse as sp
 from skfem import (Basis, BilinearForm, ElementTetP1, ElementTetP2, ElementTriP1, ElementTriP2,
                    ElementVector, FacetBasis, Functional, LinearForm)
 from skfem.helpers import ddot, dot, grad, sym_grad, trace
 
-from feacore.case import (DISPLACEMENT_LIKE, ELASTICITY_FIELDS, HEAT_FIELDS, Case, CaseError, QoI,
-                          as_field)
+from feacore.case import ELASTICITY_FIELDS, HEAT_FIELDS, Case, CaseError, QoI, as_field
 from feacore.solver import _skfem_assembly as fast
 from feacore.solver._skfem_locate import Locator
 from feacore.solver._skfem_mesh import MeshData, MeshError, read_mesh

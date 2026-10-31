@@ -127,12 +127,12 @@ async function renderDetail(el, id) {
 
   // geometry preview
   const vp = h('div', { class: 'viewport' });
-  const legend = h('div', { class: 'legend-overlay' });
+  const legend = h('div', { class: 'chips', style: { marginTop: '10px' } });
   const note = h('div', { class: 'overlay-note' }, st.dim === 2 ? 'drag: pan · wheel: zoom' : 'drag: rotate · right-drag: pan · wheel: zoom');
   const msg = h('div', { class: 'center-msg' }, h('span', {}, h('span', { class: 'spinner' }), ' generating geometry preview (gmsh, worker process)…'));
-  const wrap = h('div', { class: 'viewport-wrap' }, vp, legend, note, msg);
+  const wrap = h('div', { class: 'viewport-wrap' }, vp, note, msg);
   right.append(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('div', { class: 'section-title', style: { margin: 0 } }, 'Geometry (CAD) and named groups'),
-    h('span', { class: 'small muted', id: 'geo-stats' }, '')), wrap));
+    h('span', { class: 'small muted', id: 'geo-stats' }, '')), wrap, legend));
 
   // evaluator view
   const refs = ev.references || [];
@@ -186,7 +186,7 @@ async function loadGeometry(id, vp, legendEl, msg, dim) {
   if (!webglAvailable()) { msg.textContent = 'WebGL is not available in this browser.'; return; }
   msg.remove();
   if (viewer) viewer.dispose();
-  viewer = new MeshView(vp, { dim: g.dim, margin: 1.18 });
+  viewer = new MeshView(vp, { dim: g.dim, margin: 1.1 });
   const legend = viewer.setGeometry({
     dim: g.dim, points: decode(g.points), triangles: decode(g.triangles), triEntity: decode(g.tri_entity),
     lines: decode(g.lines), lineEntity: decode(g.line_entity), groups: g.groups, entityGroups: g.entity_groups,
