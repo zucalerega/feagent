@@ -33,7 +33,11 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   - Flow tools: finite-volume mesh with optional quads; solve with fluid, convection scheme and flow BCs on the openfoam backend.
   - Oracles: spec compliance, gaming, known answer, and a refinement study on the openfoam backend.
   - Two new exact benchmarks: `taylor_couette_2d` (rotating cylinder) and `square_duct_3d` (developing duct flow).
-  - The tasks are 2D only, because of the 3D unstructured-mesh bias listed under the known solver limits.
+  - Suites: `cfd` (2D) and `cfd3d` (`pipe_poiseuille_3d`, `square_duct_3d` on tets, scored on `dp_AB`).
+    3D became usable once the backend's 3D tet bias was fixed (FEA core, CFD bullet).
+  - Real runs (Claude API): `bash scripts/setup_ace_cfd.sh`, then `python -m ace.preflight --suite cfd --ping`;
+    `ace/README.md`, "Running the CFD suites with the Claude API". `--deep`, `--teacher inspect|both`
+    and `ACE_SCORE=field` are elasticity-only, and `run_loop` refuses them for flow tasks.
   - Without a local OpenFOAM: `scripts/openfoam_docker.sh` (OpenFOAM v1912 in Docker, plus shims) and `FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp`.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
@@ -154,11 +158,10 @@ Decisions:
   - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
     or thermal-load interfaces. Don't use point stresses right at an interface.
   - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
-  - 3D flow on unstructured meshes looks biased in the openfoam backend (found on `ace-cfd`). On tets of the
-    3D pipe (4.6k nodes) the axial pressure gradient is +15 %, while the wall force is +3 % and the flow rate
-    +0.6 %. Tets split into hexes are still +12 % at 33k nodes, and the square duct on tets is +12 %. So the
-    pressure force and the wall shear do not balance. 2D triangles are as accurate as quads, and structured
-    hexes converge. Not investigated yet; until then, judge 3D flow only on structured hex meshes.
+  - 3D flow on tets: fixed by the skew-consistent schemes (CFD bullet above). The old +15 % pressure gradient
+    on tets was a solver bias. The apparent force imbalance came from the wall force dividing by |Cf - C|
+    instead of the wall-normal distance. Point velocities at a smooth maximum still read 2-5 % low on coarse
+    tets (the probe's vertex fit); pressure drops, forces and flow rates are fine.
 
 ## NVIDIA compute (hackathon)
 

@@ -38,6 +38,8 @@ GOOD_MESH = {
     "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1883/2500 nodes, 0.43%
     "cylinder_channel_dfg_2d1": {"h": 0.015, "quads": True,                               # 5440/12000 nodes, 0.28%
                                  "refinements": [{"group": "cylinder", "size": 0.002, "radius": 0.1}]},
+    "pipe_poiseuille_3d": {"h": 0.001, "refinements": []},                                 # 4642/6000 nodes, 1.3% (tets)
+    "square_duct_3d": {"h": 0.0014, "refinements": []},                                    # 4259/6000 nodes, 0.8% (tets)
 }
 
 
