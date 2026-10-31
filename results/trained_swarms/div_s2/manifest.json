@@ -1,0 +1,26 @@
+{
+ "run": "div_s2",
+ "source": "/Users/aryan/Documents/Aryan/CS/scienceclawhack/feagent/ace_runs/div_s2",
+ "kind": "swarm",
+ "generation": 7,
+ "tasks": [
+  "abc_00000003_bc7",
+  "abc_00000065_bc0"
+ ],
+ "agents": [
+  "a0",
+  "a1"
+ ],
+ "models": {
+  "generator": "claude-sonnet-5-5",
+  "reflector": "claude-sonnet-5-5",
+  "diagnoser": "claude-sonnet-5-5",
+  "curator": "claude-sonnet-5-5",
+  "teacher": "claude-opus-5-5",
+  "reflect": "claude-sonnet-5-5",
+  "organizer": "claude-sonnet-5-5",
+  "big_generator": "claude-sonnet-5-5"
+ },
+ "git_commit": "8a080c376f09176f26415e23b9e3fceffcc7ba77",
+ "exported_at": "2026-10-31 17:26:26"
+}
