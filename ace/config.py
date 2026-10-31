@@ -19,12 +19,21 @@ MODELS = {
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
 MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000,
-              "teacher": 16000, "reflect": 8000, "organizer": 8000,   # teacher: one agent's feedback per call (~3k + thinking)
+              # teacher: one agent's feedback per call (~3k + thinking); its cross-run call once hit 16k
+              # and was retried, so 32k (the call streams, so a long answer does not time out)
+              "teacher": 32000, "reflect": 8000, "organizer": 8000,
               "big_generator": 32000}   # max effort can think long in one turn (ace.llm passes a long timeout)
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
 EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
           "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "medium"}   # big_generator: Opus at its default effort (medium)
+
+# Fast mode (research preview, Claude API only): the same model and effort, output generated faster,
+# at twice the price ($8 / $40 per MTok on Opus 5.5 instead of $4 / $20). Off to save money. If the
+# API rejects it, ace.llm logs that once and continues at normal speed.
+# NOTE ace.cost prices every call at the normal rate, so with this on the $ tracker under-counts the
+# teacher by 2x.
+FAST = {"teacher": False}
 
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
@@ -57,7 +66,7 @@ HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never
 
 # --------------------------------------------------------------------------- agent limits
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)
-MAX_TURNS = 25                    # model calls per run
+MAX_TURNS = 35                    # model calls per run
 MIN_QUALITY = 0.1                 # gate: minimum element quality (gmsh minSICN) of the mesh
 
 # --------------------------------------------------------------------------- score

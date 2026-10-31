@@ -272,7 +272,7 @@ mistake gets a named, concrete correction.
 {PROCESS_BRIEF}
 
 USE THE TOOLS IN YOUR FEEDBACK. The agents have the tools listed above. Tell each agent which tool
-calls to make and how: e.g. refine re-entrant edge 37 with {edge: 37, size, radius}; check
+calls to make and how: e.g. refine re-entrant edge 37 with {{edge: 37, size, radius}}; check
 folded_cells; read the solve's error hotspots and view the error; compare solves 1 and 2 before
 submitting. If an agent ignored a tool that would have shown its mistake, say so.
 
@@ -469,6 +469,10 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
     rids = [run["run_id"] for run, _ in pairs]
     with ThreadPoolExecutor(max_workers=len(rids) + 1) as pool:
         cross = pool.submit(call, cross_user, CrossRunFeedback)   # different schema: its own cache, start now
+        # Kept blocking on purpose: a cache entry is readable only once its writer's answer has begun,
+        # so per-agent calls sent at the same moment would each pay the full long prefix (images,
+        # reports) instead of ~5% of it. The wait is mostly the prefix's processing, which every
+        # call would otherwise do itself, so dropping it saves only a second or two.
         if len(rids) > 1:
             llm.warm_cache("teacher", SYSTEM, agent_user(rids[0]), AgentFeedback, records)
         per = [pool.submit(call, agent_user(rid), AgentFeedback) for rid in rids]
