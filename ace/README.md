@@ -119,6 +119,35 @@ FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui
 - If the store can't be written (permissions, full disk), the loop only prints a warning and
   carries on; its own results don't change. Code: `ace/ui_bridge.py`.
 
+## Mesh harness (opt-in)
+
+`ACE_HARNESS=1` (an environment variable, so the agent worker processes see it; `config.HARNESS`)
+gives the agent the `feagent` mesh harness's view of the part, on 3D problems only:
+
+- `inspect_geometry` also returns `harness`: `digest`, feagent's token-bounded geometry digest of the
+  problem's built geometry (bbox, CAD faces with kind, area, centre, normal/axis and radius, planar
+  faces by normal, features, hazards), with a NAMED SURFACE GROUPS section and each FACES row
+  labelled with the group(s) the face is in; `features` (holes, bosses, fillets, rounds: radius,
+  axis, axis point, groups); `hazards` (thin walls, small fillets or faces, short edges: value,
+  threshold, location, groups). Hazard thresholds use h = bbox diagonal / 40. That is where a
+  `group` or `point` refinement pays.
+- `mesh` also returns `quality`: feagent's mesh gates on the written `.msh` against the CAD
+  (`inverted`, `sicn`, `gamma`, `volume_fidelity`, `area_fidelity` per surface group,
+  `connectivity`, `thin_walls`), each with status, value, threshold and message. Order-2 volumes
+  and areas are integrated over the curved elements. It only reads the mesh: mesh files, node
+  counts and scores are unchanged.
+- The two tool descriptions mention these fields. Prompts are unchanged.
+
+2D and axisymmetric problems are untouched even with the switch on (the harness analyses 3D OCC
+solids only). It is **off by default**: with it off, prompts, tool schemas, tool results and scores
+are byte-identical to before, so existing experiment results are unaffected
+(`tests/test_ace_harness.py` checks this against hashes recorded before it existed). Code:
+`ace/harness.py`.
+
+```bash
+ACE_HARNESS=1 .venv/bin/python -m ace.run_loop ...
+```
+
 ## Knobs that matter (`ace/config.py`)
 
 - `MODELS`: one line per role. The Reflector is the step most worth a strong model.
@@ -136,5 +165,6 @@ FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui
 - Mesh-refinement convergence check (GCI) as a diagnostic: TODO in `checks.py`.
 - A rediscovered lesson counts as a helpful vote on the existing bullet. That rewards ideas the
   Reflector keeps finding, not ideas shown to help; cited-bullet votes are the stronger signal.
-- The agent works on the problem's own named geometry, not raw STEP. Swapping its tools for
-  the `feagent` mesh-harness MCP is the natural next step.
+- The agent works on the problem's own named geometry, not raw STEP. The `feagent` digest and
+  mesh gates are wired in behind `ACE_HARNESS=1` (above); swapping its tools for the full
+  mesh-harness MCP (YAML specs, STEP import) is still to do.
