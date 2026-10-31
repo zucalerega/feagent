@@ -47,6 +47,10 @@ TASKS = {
     "cooks_membrane": {"qoi": "uy_C", "node_cap": 20000},         # tapered panel in shear (classic, not NAFEMS)
     # easy sanity problem (planted-failure tests use it; not in the loop)
     "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 20000},
+    # gold ABC CAD parts (feacore/problems/gold.py): qoi = GoldProblem.scored_qoi(); node cap about the
+    # L1 study mesh (48827 / 37613 nodes). Field scoring needs their adaptive reference (ace.gold_reference).
+    "abc_00000003_bc7": {"qoi": "strain_energy", "node_cap": 49000},
+    "abc_00000065_bc0": {"qoi": "strain_energy", "node_cap": 38000},
 }
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on

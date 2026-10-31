@@ -51,6 +51,13 @@ REF_DIVISORS = {2: (6, 9), 3: (3, 4.5)}
 # measures the idealisation, not the mesh.
 EXCLUDE = {"nafems_le10": ("line_outer_midplane", 0.1)}
 
+# How far outside a run's mesh a point may be and still be evaluated (at the nearest point of the
+# nearest cell), as a fraction of the bounding-box diagonal; feacore's default is 1%. Coarse tet10
+# meshes of curved CAD, with straight-sided cells where curving folded them, cut off thin slivers of
+# the part: on abc_00000003 the gmsh-default automesher leaves 139 reference points (0.03% of the
+# volume) up to 1.9% outside, which would otherwise make the run unscorable.
+LOCATE_TOL = 0.05
+
 DIAG = ("sxx", "syy", "szz")          # in axisymmetric models szz is the hoop stress (feacore)
 OFFDIAG = ("sxy", "syz", "sxz")
 
@@ -88,7 +95,7 @@ def stresses(result, pts: np.ndarray, dim: int) -> dict:
     md = result.model
     if result._locator is None:
         result._locator = Locator(md.mesh, md.md.bbox_diag)
-    cells, xi, _ = result._locator.locate(p)
+    cells, xi, _ = result._locator.locate(p, tol_out=LOCATE_TOL * md.md.bbox_diag)
     sb = md.sb
     phi = np.stack([sb.elem.lbasis(xi, i)[0] for i in range(sb.element_dofs.shape[0])])
     dofs = sb.element_dofs[:, cells]
@@ -188,23 +195,33 @@ def automesher(problem_id: str) -> dict:
     return json.loads(f.read_text())
 
 
-def _unfold_tet10() -> None:
+def _unfold_tet10(sj_min: float = 0.05) -> None:
     """Gold CAD parts: gmsh's default coarse tet10 mesh, curved onto the CAD, has a few dozen folded
     cells (negative scaled Jacobian; abc_00000003 / abc_00000065: 35 / 38 of them). The solver accepts
-    them but their stresses are garbage, so the folded cells are made straight-sided (midside nodes at
-    edge midpoints; this fixed every one on both parts), and if any still fold the whole mesh becomes
-    straight-sided order 2 (which cannot fold where the linear tets are valid). Same threshold as the
-    gold generator (ace.gold_reference.SJ_MIN)."""
+    them but their stresses are garbage, so cells below sj_min (as the gold generator) are made
+    straight-sided (midside nodes at edge midpoints; this fixed every one on both parts), and if any
+    still fold the whole mesh becomes straight-sided order 2 (cannot fold where the linear tets are valid)."""
     import gmsh
-    from ace.gold_reference import _folded, _straighten
-    bad, _ = _folded()
+    edges = [(0, 1, 4), (1, 2, 5), (0, 2, 6), (0, 3, 7), (2, 3, 8), (1, 3, 9)]   # gmsh tet10 ordering
+
+    def folded():
+        tags, _ = gmsh.model.mesh.getElementsByType(11)
+        return np.asarray(tags)[np.asarray(gmsh.model.mesh.getElementQualities(tags, "minSJ")) < sj_min]
+
+    def straighten(cells):
+        for c in cells:
+            nodes = gmsh.model.mesh.getElement(int(c))[1]
+            X = {int(n): np.asarray(gmsh.model.mesh.getNode(int(n))[0]) for n in nodes[:4]}
+            for a, b, m in edges:
+                gmsh.model.mesh.setNode(int(nodes[m]), (0.5 * (X[int(nodes[a])] + X[int(nodes[b])])).tolist(), [])
+
     for _ in range(5):
+        bad = folded()
         if not len(bad):
             return
-        _straighten(bad)
-        bad, _ = _folded()
-    if len(bad):
-        _straighten(gmsh.model.mesh.getElementsByType(11)[0])
+        straighten(bad)
+    if len(folded()):
+        straighten(gmsh.model.mesh.getElementsByType(11)[0])
 
 
 def coarse_reference(problem_id: str) -> dict:
@@ -253,12 +270,25 @@ def _geometry_vertices(problem) -> np.ndarray:
         return np.array([gmsh.model.getValue(0, t, []) for _, t in gmsh.model.getEntities(0)])
 
 
+def _geometry_edges(problem, n: int = 400) -> np.ndarray:
+    """Points sampled along every CAD edge (gmsh curve) of the problem's geometry, n per curve."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import gmsh_session
+    with gmsh_session(problem.id):
+        problem.build_geometry()
+        out = []
+        for _, c in gmsh.model.getEntities(1):
+            lo, hi = gmsh.model.getParametrizationBounds(1, c)
+            out.append(np.reshape(gmsh.model.getValue(1, c, np.linspace(lo[0], hi[0], n).tolist()), (-1, 3)))
+        return np.vstack(out)
+
+
 def probe_points(problem_id: str) -> dict:
     """PROBE_POINTS points spread over the part where the reference stress is trustworthy, with the
     reference von Mises stress there. Candidates are the integration points; a candidate is kept
     only if it is farther than 10% of the part's size from every geometric corner (where stresses
-    are singular or concentrated), the two reference levels agree on its von Mises stress to 0.1%,
-    and its stress is not near zero (where a relative error means little). From those,
+    are singular or concentrated; gold CAD parts: also 5% from every CAD edge), the two reference
+    levels agree on its von Mises stress to 0.1%, and its stress is not near zero (where a relative error means little). From those,
     farthest-point sampling spreads the points out; the first PROBE_DISCLOSED are told to the agent."""
     import json
     from ace.config import PROBE_POINTS
@@ -275,6 +305,9 @@ def probe_points(problem_id: str) -> dict:
         from scipy.spatial import cKDTree
         far = cKDTree(corners).query(cand[:, : corners.shape[1]])[0] > 0.1 * diag
         ok = (np.abs(vc - vf) <= 0.001 * vf) & (vf >= 0.2 * np.median(vf)) & far
+        if "gold" in p.tags:     # CAD parts: also away from every CAD edge (the singular re-entrant / clamped
+            ok &= cKDTree(_geometry_edges(p)).query(cand)[0] > 0.05 * diag    # edges; on a stand-in reference
+            # (L1 vs L0) 4 of 12 points otherwise landed within 0.3-2% of the diagonal from an edge)
         pts, vm = cand[ok], vf[ok]
         pick = [int(np.argmin(np.linalg.norm(pts - pts.mean(0), axis=1)))]     # start near the centre
         d = np.linalg.norm(pts - pts[pick[0]], axis=1)

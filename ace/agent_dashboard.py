@@ -575,8 +575,12 @@ def page() -> None:
     # ---- one generation in detail: what it saw, what it did, what it was told
     with st.container(border=True):
         st.subheader("One generation in detail")
-        g = st.select_slider("Generation", options=list(mine["gen"]), value=int(mine["gen"].max()), key="detail_gen")
-        r = mine[mine["gen"] == g].iloc[0]
+        g = st.select_slider("Generation", options=sorted(mine["gen"].unique()), value=int(mine["gen"].max()), key="detail_gen")
+        here = mine[mine["gen"] == g]
+        if len(here) > 1:     # an agent doing several tasks per generation (e.g. "big", the single-agent baseline)
+            t = st.segmented_control("Task", list(here["task"]), default=here["task"].iloc[0], format_func=short, key="detail_task")
+            here = here[here["task"] == t] if t in set(here["task"]) else here
+        r = here.iloc[0]
         run_rec = json.loads(Path(r["path"]).read_text())
         # the agent's mesh next to the structure it is trying to capture, both draggable
         path = scored_mesh_path(r["path"])
