@@ -167,7 +167,7 @@ def _vm_at_grid(problem_id: str, dim: int, msh: it._Mesh, f: dict) -> dict:
     idx, cell, centres = _sample(problem_id, dim, f["pts"])
     sig = it._sig
     return {"vm": [sig(v, 4) for v in f["vm_run"][idx]], "cell": cell.tolist(),
-            "cells": {k: {"centre": [sig(x) for x in c], "near": msh.nearest_group(np.array(c))[0]}
+            "cells": {k: {"centre": [sig(x) for x in c], "near": msh.nearest_group(np.pad(np.asarray(c, float), (0, 3 - len(c))))[0]}
                       for k, c in centres.items()}}
 
 
@@ -544,8 +544,9 @@ def _hidden_summary(checks: list, msh: it._Mesh, rg: dict) -> dict | None:
         return None
     errs = np.array([c["rel_err"] for c in hid], float)
     w = hid[int(np.argmax(np.abs(errs)))]
-    x = np.array(w["xyz"], float)
-    cell = min(rg["cells"], key=lambda c: float(np.linalg.norm(np.array(c["centre"]) - x)))
+    x = np.zeros(3)
+    x[:len(w["xyz"])] = w["xyz"]                       # mesh points are 3-vectors (z = 0 in 2D)
+    cell = min(rg["cells"], key=lambda c: float(np.linalg.norm(np.array(c["centre"]) - x[:len(c["centre"])])))
     return {"n": len(hid), "rms": float(np.sqrt(np.mean(errs ** 2))), "worst": float(np.abs(errs).max()),
             "worst_near_group": msh.nearest_group(x)[0], "worst_region": cell["centre"]}
 
