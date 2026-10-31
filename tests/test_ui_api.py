@@ -516,6 +516,7 @@ def test_swarm_leaderboards(tmp_path):
     with TestClient(app) as c:
         d = c.get("/api/swarm", params={"loop_id": "loopA", "generation": 0}).json()
         assert {l["loop_id"] for l in d["loops"]} == {"loopA", "loopB"}
+        assert d["score_scheme"] == "log"            # older log-score records still render
         la = next(l for l in d["loops"] if l["loop_id"] == "loopA")
         assert la["generations"] == [0, 1] and la["n_submissions"] == 3 and la["active"] is True
         assert d["loop_id"] == "loopA" and d["generation"] == 0
@@ -608,3 +609,64 @@ def test_swarm_bridge_record_shapes(tmp_path):
         d2 = c.get("/api/swarm", params={"loop_id": "L2"}).json()
         assert [r["score"] for r in d2["problems"][0]["rows"]] == [-0.5]
         assert c.get(f"/api/consensus/{pid}").status_code == 200   # empty / crashed submissions don't break it
+
+
+def test_swarm_speed_accuracy_scores(tmp_path):
+    """New-style ACE records: 0-1 speed/accuracy score with score_parts, null = pending (not scored
+    yet) or crashed, invalid runs score 0 with a gate, diagnosis text, persistent agent ids, and
+    scores rewritten in place by the bridge each generation."""
+    from feacore.runstore import write_json
+
+    store = RunStore(tmp_path / "runs")
+    pid = "nafems_le1"
+
+    def run_and_submit(gen, aid, score, parts=None, gates=(), error=None, diagnosis=None, agent=None):
+        rid = _ace_solve(store, "L-new", gen, aid, pid, 0, 9.25e7, 6000)
+        meta = {"source": "ace", "loop_id": "L-new", "generation": gen, "ace_run_id": aid, "submitted_run_id": rid,
+                "score": score, "gates": list(gates), "setup_diagnostics": [], "cited_bullets": [],
+                "tokens": {"input": 1, "output": 1, "cache_write": 0, "cache_read": 0, "total": 2}}
+        if parts is not None:
+            meta["score_parts"] = parts
+        if error:
+            meta["error"] = error
+        if diagnosis:
+            meta["diagnosis"] = diagnosis
+        if agent:
+            meta["agent"] = agent
+        return store.create_submission(pid, f"ace:{aid}", run_ids=[rid], meta=meta)
+
+    parts = lambda acc, eff, ok=True: {"accuracy": acc, "efficiency": eff, "valid": ok, "rel_error": 0.004,  # noqa: E731
+                                       "tolerance": 0.02, "meets_tol": ok, "dofs": 6000, "pareto_rank": 1, "population": 5}
+    run_and_submit(0, "g0-le1-a1", 0.8, parts(0.9, 0.89), diagnosis="good mesh near D", agent="a1")
+    run_and_submit(0, "g0-le1-a2", 0.0, parts(0.2, 0.5, ok=False), gates=["invalid: unconverged"])   # agent from the id
+    run_and_submit(0, "g0-le1-a3", None, error="APIError: overloaded", agent="a3")
+    run_and_submit(1, "g1-le1-a1", None, agent="a1")                                       # finished, not scored yet
+    late = run_and_submit(1, "g1-le1-a2", 0.95, parts(0.97, 0.98), diagnosis={"verdict": "refined at the hole"})
+
+    app = create_app(runs_dir=tmp_path / "runs", token="")
+    with TestClient(app) as c:
+        d = c.get("/api/swarm", params={"loop_id": "L-new", "generation": 1}).json()
+        assert d["score_scheme"] == "speed_accuracy"
+        rows = d["problems"][0]["rows"]
+        assert [(r["agent"], r["status"]) for r in rows] == [("a2", "finished"), ("a1", "pending")]
+        top = rows[0]
+        assert top["score"] == 0.95 and top["score_parts"]["accuracy"] == 0.97 and top["score_parts"]["meets_tol"] is True
+        assert top["diagnosis"] == "refined at the hole" and rows[1]["score"] is None
+        gens = {g["generation"]: g for g in d["generations"]}
+        assert gens[1]["n_pending"] == 1 and gens[1]["n_within_tolerance"] == 1 and gens[1]["median"] == 0.95
+        assert gens[0]["n_invalid"] == 1 and gens[0]["n_crashed"] == 1 and gens[0]["n_pending"] == 0
+        agents = {a["agent"]: a["generations"] for a in d["agents"]}
+        assert list(agents) == ["a1", "a2", "a3"]
+        assert agents["a1"]["0"]["mean"] == 0.8 and agents["a1"]["1"]["mean"] is None and agents["a1"]["1"]["n_pending"] == 1
+        assert agents["a2"]["0"]["mean"] == 0.0 and agents["a2"]["1"]["mean"] == 0.95
+        d0 = c.get("/api/swarm", params={"loop_id": "L-new", "generation": 0}).json()
+        r0 = {r["agent"]: r for r in d0["problems"][0]["rows"]}
+        assert r0["a1"]["diagnosis"] == "good mesh near D" and r0["a2"]["gates"] == ["invalid: unconverged"]
+        assert r0["a3"]["status"] == "crashed" and r0["a2"]["score_parts"]["valid"] is False
+        # the bridge rewrites scores in place every generation: the next read shows the new value
+        path = store.submissions_dir / f"{late['submission_id']}.json"
+        rec = json.loads(path.read_text())
+        rec["meta"]["score"] = 0.5
+        write_json(path, rec)
+        d1 = c.get("/api/swarm", params={"loop_id": "L-new", "generation": 1}).json()
+        assert d1["problems"][0]["rows"][0]["score"] == 0.5

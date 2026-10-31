@@ -329,10 +329,18 @@ export function stripChart(opts) {
   const svg = frame(W, H);
   const ys = groups.flatMap(g => g.points.map(p => p.y)).filter(Number.isFinite);
   if (!groups.length || !ys.length) return svg;
-  let y0 = Math.min(-0.5, ...ys), y1 = Math.max(1, ...ys);
-  const pad = (y1 - y0) * 0.08;
-  const yt = niceTicks(y0 - pad, y1 + pad, 5);
-  y0 = Math.min(y0 - pad, yt[0]); y1 = Math.max(y1 + pad, yt[yt.length - 1]);
+  let y0, y1, yt;
+  if (opts.yDomain) {                      // fixed scale (e.g. a 0-1 score)
+    [y0, y1] = opts.yDomain;
+    yt = niceTicks(y0, y1, 4);
+    const pad = (y1 - y0) * 0.06;
+    y0 -= pad; y1 += pad;
+  } else {
+    y0 = Math.min(-0.5, ...ys); y1 = Math.max(1, ...ys);
+    const pad = (y1 - y0) * 0.08;
+    yt = niceTicks(y0 - pad, y1 + pad, 5);
+    y0 = Math.min(y0 - pad, yt[0]); y1 = Math.max(y1 + pad, yt[yt.length - 1]);
+  }
   const Y = lin(y0, y1, H - m.b, m.t);
   const bw = (W - m.l - m.r) / groups.length;
   const X = i => m.l + (i + 0.5) * bw;
@@ -340,7 +348,7 @@ export function stripChart(opts) {
   svg.append(g);
   yt.forEach(t => {
     g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: t === 0 ? C.axis : C.grid, 'stroke-width': t === 0 ? 1.5 : 1 }));
-    g.append(s('text', { x: m.l - 10, y: Y(t) + 4.5, 'text-anchor': 'end', class: 'tick' }, (t > 0 ? '+' : '') + (+t.toFixed(2))));
+    g.append(s('text', { x: m.l - 10, y: Y(t) + 4.5, 'text-anchor': 'end', class: 'tick' }, (t > 0 && opts.signed !== false ? '+' : '') + (+t.toFixed(2))));
   });
   if (opts.zeroLabel && 0 >= y0 && 0 <= y1) g.append(s('text', { x: m.l + 6, y: Y(0) + 16, 'text-anchor': 'start', class: 'tick' }, opts.zeroLabel));
   g.append(s('text', { x: 16, y: (m.t + H - m.b) / 2, transform: `rotate(-90 16 ${(m.t + H - m.b) / 2})`, 'text-anchor': 'middle', class: 'axis-title' }, opts.yTitle || 'score'));

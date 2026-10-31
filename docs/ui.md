@@ -228,6 +228,17 @@ Python: `store.create_run(..., source="ace", meta=...)` then `store.update_run(.
 
 **Score** = log10(e_uniform / e_agent): 0 means as good as the best uniform mesh with the same node budget, +1 means ten times better, and a failed gate scores −2. The bridge computes it; the UI only displays it.
 
+**Speed / accuracy score (current ACE).** Submissions with `meta.score_parts` use a different score: `score` in [0, 1] = valid × accuracy × efficiency.
+
+- 1 is the cheapest run on that problem within tolerance; invalid runs score 0, and their `gates` say why (e.g. `"invalid: <flags>"`).
+- The score is relative to every run on the problem so far, so the bridge rewrites each submission's meta in place every generation. The page re-reads the records on every refresh.
+- `score: null` means the generation isn't scored yet (shown as *pending*), or, with `meta.error` set, a crash.
+- `score_parts = {accuracy, efficiency, valid, rel_error, tolerance, meets_tol, dofs, pareto_rank, population}` appears under the score bar and in its tooltip.
+- `diagnosis` (the diagnoser's verdict) sits in a collapsed column.
+- `agent` is a persistent id like `a3` (run ids end in `-a<k>`). It feeds the *Agents across generations* table, so one agent can be followed as its playbook changes.
+
+The page detects the scheme per loop (`score_scheme` = `speed_accuracy` if any submission has `score_parts`, else `log`) and draws a 0–1 axis and bar or the older log-score view.
+
 Details the UI relies on (as written by the bridge, `ace/ui_bridge.py` on `ace-ui-bridge`):
 
 - `meta.mesh.refinements` is the agent's list of refinement dicts. The leaderboard shows their count, with the details in a tooltip.
