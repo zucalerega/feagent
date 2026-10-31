@@ -12,7 +12,7 @@ import pytest
 gmsh = pytest.importorskip("gmsh")
 pytest.importorskip("foamlib")
 
-from feacore.case import BC, Analysis, Case, CaseError, Material, QoI  # noqa: E402
+from feacore.case import BC, Analysis, Case, CaseError, Material, QoI, Region  # noqa: E402
 from feacore.solver import solve  # noqa: E402
 from feacore.solver._foam_env import find_openfoam  # noqa: E402
 from feacore.solver._skfem_mesh import MeshError  # noqa: E402
@@ -22,8 +22,9 @@ pytestmark = pytest.mark.skipif(find_openfoam() is None, reason="OpenFOAM not in
 MU, RHO, UM, H, L, T = 0.01, 1.0, 1.0, 0.1, 0.6, 0.01   # Re = rho Um H / mu = 10
 
 
-def _rect(path, Lx, Ly, nx, ny, names, quad=True):
-    """Rectangle [0, Lx] x [0, Ly]; names(x, y) -> group of the edge with that midpoint."""
+def _rect(path, Lx, Ly, nx, ny, names, quad=True, reverse=False):
+    """Rectangle [0, Lx] x [0, Ly]; names(x, y) -> group of the edge with that midpoint.
+    ``reverse``: write the cells in reverse order (same mesh, different cell numbering)."""
     gmsh.initialize(readConfigFiles=False, interruptible=False)
     try:
         gmsh.option.setNumber("General.Terminal", 0)
@@ -46,6 +47,9 @@ def _rect(path, Lx, Ly, nx, ny, names, quad=True):
         else:
             gmsh.option.setNumber("Mesh.MeshSizeMax", Ly / ny)
         gmsh.model.mesh.generate(2)
+        if reverse:
+            for et, tags in zip(*gmsh.model.mesh.getElements(2, s)[:2]):
+                gmsh.model.mesh.reorderElements(et, s, list(range(len(tags)))[::-1])
         gmsh.write(str(path))
     finally:
         gmsh.finalize()
@@ -128,6 +132,7 @@ def test_triangles_and_normal_speed_inlet(tmp_path):
     """Unstructured triangles; uniform inlet given as a scalar inward-normal speed."""
     mesh = _rect(tmp_path / "tri.msh", L, H, 0, 10, _channel_names, quad=False)
     case = _channel_case(mesh, inlet_value=UM)
+    case.regions = [Region("fluid", "water")]                   # a named fluid region resolves too
     res = solve(case, backend="openfoam")
     q = res.evaluate_all()
     assert q["q_in"] == pytest.approx(-UM * H * T, rel=1e-9)
@@ -264,3 +269,29 @@ def test_komega_sst_channel_runs(tmp_path):
     assert q["q_in"] + q["q_out"] == pytest.approx(0, abs=1e-6)
     assert q["fx"] > 0 and np.isfinite(q["fx"])
     assert {"k", "omega", "p", "U"} <= set(res.info.residuals)
+
+
+def test_probe_continuous_and_cell_order_independent(tmp_path):
+    """Probes on shared vertices / faces (the Ghia points of a uniform grid sit there): the same value
+    for any cell numbering, and continuous across faces (cellPoint-style interpolation)."""
+    def run(reverse):
+        mesh = _rect(tmp_path / f"cav_{reverse}.msh", 1.0, 1.0, 16, 16,
+                     lambda x, y: "lid" if abs(y - 1) < 1e-12 else "walls", reverse=reverse)
+        case = Case(mesh=str(mesh), analysis=Analysis(physics="flow", formulation="2d", order=2, thickness=0.1),
+                    materials={"fluid": Material(rho=1.0, mu=0.01)},
+                    bcs=[BC("wall", group="lid", value=[1.0, 0.0]), BC("wall", group="walls")])
+        return solve(case, backend="openfoam")
+
+    a, b = run(False), run(True)
+    assert not np.allclose(a.nodal("ux")[0], b.nodal("ux")[0])          # really a different numbering
+    h = 1.0 / 16
+    pts = [[0.5, 0.5], [0.5 + 0.5 * h, 0.5], [0.5, 0.25 + 0.5 * h], [0.3, 0.7], [0.5, 1.0], [0.0, 0.5]]
+    for fld in ("ux", "uy", "p"):
+        va, vb = a.probe(fld, pts), b.probe(fld, pts)
+        assert np.allclose(va, vb, rtol=1e-6, atol=1e-8), (fld, va, vb)
+    assert a.probe("ux", [[0.5, 1.0]])[0] == pytest.approx(1.0)              # lid value on the lid
+    assert a.probe("uy", [[0.0, 0.5]])[0] == pytest.approx(0.0, abs=1e-12)   # no-slip wall
+    for x0, y0 in ((0.5, 0.3), (0.5 + 0.5 * h, 0.5)):                       # across a vertical / horizontal face
+        for d in ([1e-9, 0.0], [0.0, 1e-9]):
+            pm = a.probe("ux", [[x0 - d[0], y0 - d[1]], [x0 + d[0], y0 + d[1]]])
+            assert abs(pm[0] - pm[1]) < 1e-7

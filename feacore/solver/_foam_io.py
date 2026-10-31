@@ -40,7 +40,8 @@ def _t(s: str):
                 return float(w)
             except ValueError:
                 return w
-    return tuple(tok(w) for w in s.split())
+    toks = tuple(tok(w) for w in s.split())
+    return toks[0] if len(toks) == 1 else toks
 
 
 # --------------------------------------------------------------------------- system / constant

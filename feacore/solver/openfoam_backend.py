@@ -36,7 +36,7 @@ from scipy.spatial import cKDTree
 from feacore.case import FLOW_FIELDS, Case, CaseError, QoI, as_field
 from feacore.solver import _foam_io as fio
 from feacore.solver._foam_env import require_openfoam, run, run_monitored
-from feacore.solver._foam_fv import FvMesh
+from feacore.solver._foam_fv import DIRICHLET, CellPointInterpolator, FvMesh
 from feacore.solver._foam_mesh import FRONT_BACK, UNASSIGNED, FoamMesh, convert
 from feacore.solver._skfem_mesh import MeshError
 from feacore.solver.base import Result, SolveInfo
@@ -89,6 +89,15 @@ def _patch_bcs(case: Case, fm: FoamMesh, warnings: list) -> dict:
     if nobc:
         warnings.append(f"info: boundary groups without a BC are no-slip walls: {nobc}")
     return out
+
+
+def _fluid_material(case: Case):
+    """The single fluid: the only material, or the one every region (fluid cell group or "*") uses."""
+    used = sorted({r.material for r in case.regions}) if case.regions else sorted(case.materials)
+    if len(used) != 1:
+        raise CaseError(f"flow cases take a single fluid material; got {used} "
+                        f"({'regions' if case.regions else 'materials'})")
+    return case.materials[used[0]]
 
 
 def _value_at(value, X: np.ndarray, dim: int) -> np.ndarray:
@@ -189,15 +198,13 @@ def solve(case: Case, **options) -> "OpenFOAMResult":
         raise CaseError(f"the openfoam backend solves physics 'flow' only (got {a.physics!r})")
     if fio.FOAMLIB_ERROR is not None:
         raise ImportError(f"the openfoam backend needs foamlib (pip install foamlib): {fio.FOAMLIB_ERROR}")
-    if len(case.materials) != 1 or (case.regions and len({r.material for r in case.regions}) > 1):
-        raise CaseError("flow cases take a single fluid material")
+    mat = _fluid_material(case)
     fe = require_openfoam()
     opts = {**DEFAULTS, **(a.options or {}), **options}
     warnings: list[str] = []
     unknown = sorted(set(a.options or {}) - set(KNOWN_OPTIONS))
     if unknown:
         warnings.append(f"unknown analysis options ignored: {unknown}")
-    mat = case.material_for(None)
     rho, mu = float(mat.rho), float(mat.mu)
     nu = mu / rho
     turbulence = str(opts["turbulence"])
@@ -243,6 +250,10 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
     timeout = opts.get("timeout")
     fm = convert(case.mesh_path(), dim, float(a.thickness), cdir / "mesh.msh")
     warnings += fm.warnings
+    for r in case.regions:
+        if r.group != "*" and r.group not in fm.cell_groups:
+            warnings.append(f"region group {r.group!r} is not a cell group of the mesh "
+                            f"(cell groups: {sorted(fm.cell_groups)}); the fluid fills the whole mesh")
     fio.write_control(cdir, max_it)
     run(fe, ["gmshToFoam", "mesh.msh"], cdir, timeout=timeout)
     bcs = _patch_bcs(case, fm, warnings)
@@ -431,6 +442,13 @@ class OpenFOAMResult(Result):
             self.patch[name] = {"Cf": mesh.Cf[sl], "Sf": mesh.Sf[sl], "U": uf, "p": (pf - self.pshift) * self.rho,
                                 "phi": ph}
         self._Ub, self._pb_kin, self._nu_b = Ub, pb, nut_b
+        self._faces = poly["faces"]
+        self._dirichlet = {
+            "U": {n: Ub[n] for n in Ub if bU.get(n, {}).get("type") in DIRICHLET},
+            "p": {n: (pb[n] - self.pshift) * self.rho for n in pb if bp.get(n, {}).get("type") in DIRICHLET},
+        }
+        self._interp = None
+        self._nodes: dict = {}
         self.gradU = mesh.grad(U, Ub)                         # [c, i, j] = d U_j / d x_i
         self.gradp = mesh.grad(p, pb) * self.rho
         self.p = (p - self.pshift) * self.rho
@@ -459,28 +477,33 @@ class OpenFOAMResult(Result):
         return self.C[:, :self.dim].copy(), np.asarray(self._cell_values(fld), dtype=float).copy()
 
     def probe(self, fld, points):
+        """Continuous point values (``CellPointInterpolator``): independent of the cell numbering and
+        continuous across faces, so probes on faces / vertices are well defined."""
         self._check_field(fld)
         pts = np.atleast_2d(np.asarray(points, dtype=float))
         X = np.zeros((len(pts), 3))
         X[:, :min(3, pts.shape[1])] = pts[:, :3]
         if self.dim == 2:
             X[:, 2] = 0.5 * self.fm.thickness
-        if self._tree is None:
+        if self._interp is None:
             self._tree = cKDTree(self.C[:, :self.dim])
             self._hloc = (np.abs(self.V) / (self.fm.thickness if self.dim == 2 else 1.0)) ** (1.0 / self.dim)
-        dist, c = self._tree.query(X[:, :self.dim])
-        far = dist > 2.0 * self._hloc[c] + 1e-12
-        if np.any(far):
-            raise CaseError(f"probe point(s) outside the mesh: {pts[far][:3].tolist()}")
-        dx = X - self.C[c]
-        if self.dim == 2:
-            dx[:, 2] = 0.0
+            empty = [n for n, (_, _, t) in self.mesh.patches.items() if t == "empty"]
+            self._interp = CellPointInterpolator(self.mesh, self._faces, fit_dims=self.dim, skip_patches=empty)
+        key = "p" if fld == "p" else "U"
+        if key not in self._nodes:
+            vals = self.p[:, None] if key == "p" else self.U
+            self._nodes[key] = self._interp.node_values(vals, self._dirichlet[key])
+        try:
+            tet, lam = self._interp.locate(X, self._tree, self._hloc, self.dim)
+        except ValueError as e:
+            raise CaseError(str(e)) from None
+        v = np.einsum("ni,nik->nk", lam, self._nodes[key][self._interp.tets[tet]])
         if fld == "p":
-            return self.p[c] + np.einsum("ij,ij->i", self.gradp[c], dx)
-        u = self.U[c] + np.einsum("ij,ijk->ik", dx, self.gradU[c])
+            return v[:, 0]
         if fld == "u_mag":
-            return np.linalg.norm(u, axis=1)
-        return u[:, "xyz".index(fld[1])]
+            return np.linalg.norm(v, axis=1)
+        return v[:, "xyz".index(fld[1])]
 
     # ---- groups
     def _group_faces(self, group):

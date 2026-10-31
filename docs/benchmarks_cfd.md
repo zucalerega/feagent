@@ -71,7 +71,19 @@ grid points.
 - The extrema of the continuous profiles lie within 0.01 of Ghia's grid points, where the profiles are
   flat. Moving the point therefore changes the value by well under 0.5 %, which does not explain the
   difference.
-- TOLERANCE_NOTE
+- **Converged values here.** The fixed solver's mesh-converged values come from the 32/64/128 study
+  (observed order about 2, GCI <= 0.1 %, Richardson-extrapolated): u_vcl_min = -0.21401,
+  v_hcl_max = 0.17952, v_hcl_min = -0.25382 and u_centre = -0.20914.
+  - These are 1.5 %, 2.4 %, 3.5 % and 1.6 % larger in magnitude than Ghia's table, in the same
+    direction as Sahin & Owens.
+  - High-accuracy Re = 100 values often quoted in the literature agree with ours to 0.1 %. They are
+    u_min = -0.2140424 at y = 0.4581, v_max = 0.1795728 at x = 0.2370 and v_min = -0.2538030 at
+    x = 0.8104. **These values are from memory, not verified here.**
+- **Tolerances.** A 1 % tolerance against Ghia would fail a converged solution. The tolerances are
+  therefore 3 % (`u_vcl_min`, `u_centre`), 4 % (`v_hcl_max`) and 5 % (`v_hcl_min`): the table's own
+  error plus about 1.5 % for the agent's discretization error.
+  - Coarse solutions have smaller peaks, so they sit closer to Ghia; a 32 x 32 grid passes too.
+  - A wrong setup (Re, lid speed, a wall condition) is off by far more than 5 %.
 
 **DFG 2D-1 (Schaefer & Turek 1996).** The problem definition follows M. Schaefer & S. Turek,
 "Benchmark computations of laminar flow around a cylinder", Notes on Numerical Fluid Mechanics 52
@@ -98,4 +110,100 @@ dp in [0.1172, 0.1176]; these intervals are quoted from memory.
 
 ## Validation (fixed solver `openfoam`)
 
-VALIDATION_TABLE
+Studies were run with `convergence_study(problem, order=2, backend="openfoam", verbose=True)`.
+- Default `study_sizes`, ratio 2: 4 meshes for `poiseuille_channel`, 3 for the others.
+- Each study was run twice: remeshed at every size, and `nested=True` (one split per level of the
+  h0 mesh).
+- Saved studies: `/tmp/cfd_bench/studies/<id>_openfoam_p2[_nested].json`.
+- Runner: `/tmp/cfd_bench/run_study.py`.
+- Backend: OpenFOAM v1912 `simpleFoam`, second-order convection, `residual_tol` 1e-8.
+
+How to read the table:
+- Error % is relative to the reference. It uses the Richardson-extrapolated value when the study
+  judges the extrapolation reliable, otherwise the finest value, marked "(finest)".
+- p is the observed order; the theory is 2 (the scheme order) for every QoI.
+
+| problem | seq | QoI | reference | values (coarse -> fine) | extrapolated | p | GCI % | error % | convergence | pass |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `poiseuille_channel` | both | dp_AB | 0.3 | 0.293179, 0.298255, 0.299561, 0.29989 | 0.300001 | 1.99 | 0.046 | +0.000 | monotone | pass |
+| `poiseuille_channel` | both | u_centreline | 0.015 | 0.0151172, 0.0150293, 0.0150073, 0.0150018 | 0.015 | 2.00 | 0.015 | -0.000 | monotone | pass |
+| `poiseuille_channel` | both | wall_force_bottom (= top) | 0.003 | 0.00292445, 0.00297977, 0.00299468, 0.00299861 | 0.00300002 | 1.92 | 0.059 | +0.001 | monotone | pass |
+| `poiseuille_channel` | both | flow_rate_outlet | 0.0001 | 0.000100781, 0.000100195, 0.000100049, 0.000100012 | 0.0001 | 2.00 | 0.015 | +0.000 | monotone | pass |
+| `lid_driven_cavity_re100` | remeshed | u_vcl_min | -0.2109 | -0.210956, -0.213355, -0.213869 | -0.214009 | 2.22 | 0.082 | +1.474 | monotone | pass (3 %) |
+| `lid_driven_cavity_re100` | remeshed | v_hcl_max | 0.17527 | 0.176481, 0.178965, 0.17942 | 0.179522 | 2.45 | 0.071 | +2.426 | monotone | pass (4 %) |
+| `lid_driven_cavity_re100` | remeshed | v_hcl_min | -0.24533 | -0.250542, -0.252991, -0.253611 | -0.253821 | 1.98 | 0.103 | +3.461 | monotone | pass (5 %) |
+| `lid_driven_cavity_re100` | remeshed | u_centre | -0.20581 | -0.206504, -0.208548, -0.209004 | -0.209136 | 2.16 | 0.079 | +1.616 | monotone | pass (3 %) |
+| `lid_driven_cavity_re100` | nested | u_vcl_min | -0.2109 | -0.210956, -0.213519, -0.213829 | -0.213872 | 3.05 | 0.025 | +1.409 | monotone | pass |
+| `lid_driven_cavity_re100` | nested | v_hcl_max | 0.17527 | 0.176481, 0.17897, 0.17942 | 0.179519 | 2.47 | 0.069 | +2.424 | monotone | pass |
+| `lid_driven_cavity_re100` | nested | v_hcl_min | -0.24533 | -0.250542, -0.252991, -0.253444 | -0.253547 | 2.44 | 0.051 | +3.349 | monotone | pass |
+| `lid_driven_cavity_re100` | nested | u_centre | -0.20581 | -0.206504, -0.208548, -0.209004 | -0.209136 | 2.16 | 0.079 | +1.616 | monotone | pass |
+| `cylinder_channel_dfg_2d1` | remeshed | drag | 0.0111591 | 0.0111245, 0.0111358, 0.0111405 | 0.0111438 | 1.26 | 0.038 | -0.136 | monotone (p_below_theory) | pass |
+| `cylinder_channel_dfg_2d1` | remeshed | lift | 2.12379e-05 | 2.09929e-05, 2.1295e-05, 2.13133e-05 | 2.13145e-05 | 4.05 | 0.007 | +0.355 (finest) | monotone (p_above_theory) | pass |
+| `cylinder_channel_dfg_2d1` | remeshed | dp_front_rear | 0.11752 | 0.117044, 0.117133, 0.117286 | - | - | - | -0.199 (finest) | divergent | pass |
+| `cylinder_channel_dfg_2d1` | nested | drag | 0.0111591 | 0.0111245, 0.0111399, 0.0111425 | 0.011143 | 2.58 | 0.006 | -0.144 | monotone | pass |
+| `cylinder_channel_dfg_2d1` | nested | lift | 2.12379e-05 | 2.09929e-05, 2.13182e-05, 2.13287e-05 | 2.13291e-05 | 4.95 | 0.002 | +0.428 (finest) | monotone (p_above_theory) | pass |
+| `cylinder_channel_dfg_2d1` | nested | dp_front_rear | 0.11752 | 0.117044, 0.117062, 0.117273 | - | - | - | -0.210 (finest) | divergent | pass |
+| `pipe_poiseuille_3d` | remeshed | dp_AB | 0.64 | 0.682129, 0.653627, 0.645086 | 0.641495 | 1.76 | 0.696 | +0.234 | monotone | pass |
+| `pipe_poiseuille_3d` | remeshed | u_centreline | 0.02 | 0.0215096, 0.0203738, 0.0200982 | 0.0200115 | 2.07 | 0.539 | +0.058 | monotone | pass |
+| `pipe_poiseuille_3d` | remeshed | wall_force | 0.000125664 | 0.000129074, 0.000127156, 0.000126295 | 0.000125605 | 1.17 | 0.683 | -0.047 | monotone (p_below_theory) | pass |
+| `pipe_poiseuille_3d` | remeshed | flow_rate_outlet | 7.85398e-07 | 7.99922e-07, 7.89261e-07, 7.86379e-07 | 7.85329e-07 | 1.91 | 0.167 | -0.009 | monotone | pass |
+| `pipe_poiseuille_3d` | nested | dp_AB | 0.64 | 0.682129, 0.655852, 0.647172 | 0.642965 | 1.62 | 0.813 | +0.463 | monotone | pass |
+| `pipe_poiseuille_3d` | nested | u_centreline | 0.02 | 0.0215096, 0.020391, 0.0201164 | 0.0200286 | 2.05 | 0.546 | +0.143 | monotone | pass |
+| `pipe_poiseuille_3d` | nested | wall_force | 0.000125664 | 0.000129074, 0.000126993, 0.000126372 | 0.000126112 | 1.77 | 0.257 | +0.357 | monotone | pass |
+| `pipe_poiseuille_3d` | nested | flow_rate_outlet | 7.85398e-07 | 7.99922e-07, 7.8927e-07, 7.86382e-07 | 7.85327e-07 | 1.91 | 0.168 | -0.009 | monotone | pass |
+
+All 32 QoI judgements pass. Cavity tolerances are in brackets; the other tolerances are 1 % (DFG
+drag, dp), 5 % (DFG lift) and 2 % (pipe).
+
+Runtimes are for OpenFOAM v1912 on one core of a shared 4-core VM. The fluid solve dominates;
+meshing takes under 1 s.
+
+| problem | cells | simpleFoam iterations | solve s per mesh | study total s |
+|---|---|---|---|---|
+| `poiseuille_channel` | 320 / 1280 / 5120 / 20480 | 154 / 145 / 252 / 477 | 0.2 / 0.3 / 1.5 / 10.4 | 13 |
+| `lid_driven_cavity_re100` | 1024 / 4096 / 16384 | 186 / 566 / 1932 | 0.5 / 3.2 / 39 | 43 |
+| `cylinder_channel_dfg_2d1` | 2954 / 11816 / 47264 | 151 / 256 / 839 | 0.8 / 4.6 / 68 | 74 |
+| `pipe_poiseuille_3d` | 640 / 5120 / 40960 hexahedra | 150 / 145 / 274 | 0.3 / 1.3 / 27 | 29 |
+
+### Findings
+
+- **Poiseuille: textbook second order, and the errors are predicted exactly.**
+  - With wall-cell height h/2, the discrete solution is the exact parabola plus a uniform shift. The
+    face-centre inlet profile carries (1 + (h/H)^2 / 2) U H. The wall flux balance then gives
+    dp error = (1 + (h/H)^2 / 2) / (1 + 2 (h/H)^2) - 1, which is -2.27 % at 8 cells across, as observed.
+  - The flow rate is +(h/H)^2 / 2 (midpoint rule of the inlet profile), also as observed.
+  - Extrapolated values match the exact ones to <= 7e-6.
+  - The structured grid splits into exactly the remeshed grid, so the nested and remeshed studies
+    are identical.
+- **Cavity:** clean order 2-3 and GCI <= 0.1 %. The converged values differ from Ghia's table by
+  1.5-3.5 % (see Sources). That is why the tolerances are 3-5 % rather than 1 %.
+  - The nested and remeshed meshes are the same uniform grids, yet values differ by up to 0.08 %.
+  - The cause is the backend's point probe: nearest cell centre plus that cell's gradient. At a
+    vertex the tie between neighbouring cells is broken by cell order, and Ghia's points are grid
+    vertices.
+- **DFG 2D-1:** every reference is met on the coarsest mesh already (drag -0.31 %, lift -1.15 %,
+  dp -0.41 % at 2954 cells).
+  - **Drag** is within 0.15 % of the reference on every mesh. Both studies extrapolate to
+    0.011143-0.011144 (c_D = 5.5715-5.5719), 0.14 % below the reference and outside the GCI band
+    (0.006-0.04 %). DFG_NOTE
+  - The pressure and viscous parts converge from opposite sides: c_D,p = 3.578 -> 3.602 and
+    c_D,visc = 1.985 -> 1.966 on the first two meshes. Their sum therefore converges irregularly:
+    p = 1.26 remeshed, 2.58 nested.
+  - **Lift** converges fast (p 4-5, flagged `p_above_theory`) to +0.36-0.43 % above the reference.
+    That is well inside its 5 % tolerance and the paper's +-3 % interval.
+  - **dp** at the two surface points converges non-monotonically (flagged `divergent`) but stays
+    within 0.2-0.4 % of the reference on every mesh. Wall-point pressures come from a wall-adjacent
+    cell value plus its gradient (zero-gradient pressure at the wall), and the probe point is a
+    boundary vertex shared by two cells.
+- **Pipe (3D):** u_centreline and the flow rate are order 2. The pressure drop converges at order
+  1.6-1.8 and the wall force at 1.2-1.8; all finest-mesh errors are <= 0.8 %.
+  - The h0 section is a 16-gon, 2.5 % short in area, so the coarse pressure gradient is 7 % high.
+  - After the fixed-velocity inlet with zero-gradient pressure, the solution has an odd-even
+    pressure wiggle over the first ~3 (long, 5:1) cells. The probes therefore sit at x = L/2 and
+    0.9 L. The first version used L/4, which gave oscillatory dp sequences and a 4 % jump in p(A)
+    between probe points 2e-9 apart.
+- **Iteration control:** `residual_tol` 1e-8 is reached in 150-1900 SIMPLE iterations.
+  - In the fully developed flows the cross-stream velocity is zero to round-off. Its normalised
+    residual stalls near 1e-7, so the first backend version ran to `max_iterations`.
+  - The backend now accepts such a stalled component once the others converge. The two
+    fully developed problems also cap `max_iterations` at 3000.

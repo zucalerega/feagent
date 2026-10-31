@@ -96,7 +96,9 @@ class PoiseuilleChannel(FlowProblem):
             "y = 0 [N per m depth]\n"
             "  wall_force_top    the same on the wall y = H [N per m depth]\n"
             "  flow_rate_outlet  volumetric flow rate through the outlet, positive out of the channel "
-            "[m^3/s per m depth]"
+            "[m^3/s per m depth]\n"
+            "The force and flow-rate QoIs refer to the boundary groups wall_bottom, wall_top and outlet: "
+            "use these names for the corresponding mesh groups."
         )
 
     # ---- geometry and mesh

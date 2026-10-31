@@ -17,7 +17,7 @@ pressure, rho = 1).
 High-accuracy reference values (FEATFLOW benchmark page for 2D-1, "reference results", computed with
 high-order methods): c_D = 5.57953523384, c_L = 0.010618948146, dp = 0.11752016697. The original
 paper gives the acceptance intervals c_D in [5.57, 5.59], c_L in [0.0104, 0.0110], dp in
-[0.1172, 0.1176].
+[0.1172, 0.1176] (intervals quoted from memory).
 
 Reference mesh: 12 transfinite quad blocks. A square box [0.1, 0.3]^2 around the cylinder is an
 O-grid (4 blocks between the circle and the box, graded towards the cylinder); the rest of the
@@ -109,7 +109,9 @@ class CylinderChannelDFG2D1(FlowProblem):
             "  lift            y-component of that force [N per m depth]\n"
             f"  dp_front_rear   static pressure difference p(front) - p(rear) between the points "
             f"({pts['front'][0]}, {pts['front'][1]}) and ({pts['rear'][0]}, {pts['rear'][1]}) on the cylinder "
-            "surface [Pa]"
+            "surface [Pa]\n"
+            "The force QoIs refer to the boundary group cylinder: use this name for the cylinder surface "
+            "group of the mesh."
         )
 
     # ---- geometry
@@ -131,6 +133,8 @@ class CylinderChannelDFG2D1(FlowProblem):
 
     def build_geometry(self) -> None:
         """Reference geometry: the same face, split into 12 four-sided blocks for the structured mesh."""
+        import gmsh
+
         p = self.params
         L, H, xc, yc, a, r = p["L"], p["H"], p["xc"], p["yc"], p["box"], 0.5 * p["D"]
         X = [0.0, xc - a, xc + a, L]
@@ -158,8 +162,6 @@ class CylinderChannelDFG2D1(FlowProblem):
         group(1, boundary_curves_where(lambda x0, y0, z0, x1, y1, z1: near(y1, 0.0, tol) or near(y0, H, tol)),
               "walls")
         group(1, [abs(t) for t in b.arcs.values()], "cylinder")
-        import gmsh
-
         group(2, [t for _, t in gmsh.model.getEntities(2)], "fluid")
 
     def apply_sizing(self, h: float) -> None:
@@ -232,13 +234,13 @@ class CylinderChannelDFG2D1(FlowProblem):
         conv = f"F = c rho U_bar^2 D / 2 per m depth, rho U_bar^2 D / 2 = {s:.6g} N/m"
         return [
             Reference("drag", CD_REF * s, "published_numerical", f"{_SRC}; c_D = {CD_REF}; {conv}", tolerance=0.01,
-                      notes="Schaefer & Turek (1996) acceptance interval c_D in [5.57, 5.59]."),
+                      notes="Schaefer & Turek (1996) acceptance interval c_D in [5.57, 5.59] (from memory)."),
             Reference("lift", CL_REF * s, "published_numerical", f"{_SRC}; c_L = {CL_REF}; {conv}", tolerance=0.05,
                       notes="Lift is ~0.2 % of drag and sensitive to the mesh; Schaefer & Turek (1996) acceptance "
-                            "interval c_L in [0.0104, 0.0110] (+-3 %)."),
+                            "interval c_L in [0.0104, 0.0110] (+-3 %, from memory)."),
             Reference("dp_front_rear", DP_REF, "published_numerical",
                       f"{_SRC}; dp = p(0.15, 0.2) - p(0.25, 0.2) = {DP_REF} (rho = 1, so Pa)", tolerance=0.01,
-                      notes="Schaefer & Turek (1996) acceptance interval [0.1172, 0.1176]."),
+                      notes="Schaefer & Turek (1996) acceptance interval [0.1172, 0.1176] (from memory)."),
         ]
 
 

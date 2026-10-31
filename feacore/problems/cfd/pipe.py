@@ -100,7 +100,9 @@ class PipePoiseuille3D(FlowProblem):
             f"A = ({pts['A'][0]}, 0, 0) and B = ({pts['B'][0]}, 0, 0) [Pa]\n"
             f"  u_centreline      u_x on the axis at C = ({pts['C'][0]}, 0, 0) [m/s]\n"
             "  wall_force        x-component of the force of the fluid (pressure + viscous) on the pipe wall [N]\n"
-            "  flow_rate_outlet  volumetric flow rate through the outlet, positive out of the pipe [m^3/s]"
+            "  flow_rate_outlet  volumetric flow rate through the outlet, positive out of the pipe [m^3/s]\n"
+            "The force and flow-rate QoIs refer to the boundary groups wall and outlet: use these names for "
+            "the corresponding mesh groups."
         )
 
     # ---- geometry

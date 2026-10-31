@@ -44,9 +44,19 @@ It is not validated, and SIMPLE + SST may stall around 1e-5 instead of reaching 
 ## Results and QoIs
 
 * `nodal(field)`: cell centres (x, y in 2D) and cell values.
-* `probe(field, points)`: linear reconstruction from the nearest cell centre (cell value plus Gauss
-  gradient times the offset). This is second-order accurate and works for any cell shape. A point
-  farther than 2 local cell sizes from every centre raises `CaseError`. p is in Pa.
+* `probe(field, points)`: continuous, cellPoint-style interpolation (`CellPointInterpolator` in
+  `_foam_fv.py`).
+  * Vertex values come from a weighted least-squares linear fit to the surrounding cell centres.
+    Where the 1-ring of cells is too small (walls, corners) the fit uses the 2-ring. On Dirichlet
+    patches (walls, velocity inlets for U; a fixed-pressure outlet for p) the vertex value is the
+    mean of the adjacent face values.
+  * Inside a cell the value is linear on its decomposition into tets (cell centre, face centre,
+    face edge).
+  * It is exact for linear fields and continuous across faces, so a probe on a face or vertex
+    (Ghia points, axis points, wall points) does not depend on the cell numbering. A reversed
+    numbering agrees to the iteration error, and points 2e-9 apart across a face agree to 1e-9.
+  * A point outside every cell and farther than 2 local cell sizes from every centre raises
+    `CaseError`. p is in Pa.
 * `max` / `min` / `max_abs`: over cell values (group `None` / `*` or a cell group) or over the face
   values of a boundary group.
 * `integral` / `mean`: cell values times volumes, or face values times face areas. Volumes and
@@ -111,6 +121,18 @@ dp/dx_h = dp/dx (1 + h^2/2H^2) / (1 + 2h^2/H^2). Unstructured triangles (h = H/8
     balance and second order, but with a large constant on coarse wall-normal spacing.
 * Inlet flow rates come from face-centre samples of the profile: a parabola gives
   Q (1 + h^2 / 2H^2), not Q. Faceted curved inlets lose area at O(h^2).
+* Unstructured triangles (prisms) converge poorly with the default `linear` interpolation, because
+  OpenFOAM's skewness error does not shrink with h. Poiseuille dp/dx errors at H/8, H/16, H/32:
+  * default: -6.9e-4, 2.5e-3, 3.8e-3; cell-value u rms 3.5e-3, 1.9e-3, 1.9e-3; p noise about 2e-2;
+  * `skewCorrected linear` (tried, not the default): u rms 3.1e-3, 9.3e-4, 4.9e-4; p noise halving
+    with h; dp/dx -1.5e-3, -3.4e-4, 8.3e-4.
+
+  Prefer quad / hex meshes for GCI studies. Quad results converge cleanly at second order.
+* Linear interpolation clips smooth extrema at O(h^2). A probe on the Poiseuille centreline
+  (a grid line) reads about 1.5 (h/H)^2 low. Probe errors on quads: 3.4e-2, 8.6e-3, 2.2e-3 at
+  H/8, H/16, H/32 (second order).
+* A flow case may name its fluid region (`regions=[Region("fluid", "water")]`). Only one fluid
+  material is allowed.
 
 ## Version notes
 

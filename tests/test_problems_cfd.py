@@ -278,56 +278,69 @@ def _openfoam_or_skip():
         pytest.skip("OpenFOAM not installed")
 
 
-def _coarse(pid, tmp_path, order=2, h_factor=1.0):
+# Coarse solve per problem: (mesh size as a fraction of h0, relative tolerance). The reference
+# studies (docs/benchmarks_cfd.md) check the reference tolerances on refined meshes; these bounds
+# only catch a broken setup or backend. The pipe's h0 section is a 16-gon (7 % off), so it uses h0/2.
+COARSE = {
+    "poiseuille_channel": (1.0, 0.05),
+    "lid_driven_cavity_re100": (1.0, 0.06),     # Ghia's table is itself 1.5-3.5 % off
+    "cylinder_channel_dfg_2d1": (1.0, 0.02),
+    "pipe_poiseuille_3d": (0.5, 0.05),
+}
+
+
+@pytest.mark.parametrize("pid", sorted(COARSE))
+def test_coarse_solve_matches_references(pid, tmp_path):
     _openfoam_or_skip()
     from feacore.solver import solve
 
     problem = get(pid)
-    path = problem.mesh(tmp_path / f"{pid}.msh", problem.params["h0"] * h_factor)
+    factor, tol = COARSE[pid]
+    path = problem.mesh(tmp_path / f"{pid}.msh", problem.params["h0"] * factor)
     try:
-        return problem, solve(problem.case(path, order=order), backend="openfoam")
+        res = solve(problem.case(path, order=2), backend="openfoam")
     except NotImplementedError as e:   # backend feature still missing
         pytest.skip(f"openfoam backend: {e}")
-
-
-# loose bounds for the coarsest (h0) mesh; the reference studies (docs/benchmarks_cfd.md) check
-# the tolerances on refined meshes
-COARSE_TOL = {"poiseuille_channel": 0.05, "lid_driven_cavity_re100": 0.05, "cylinder_channel_dfg_2d1": 0.05}
-COARSE_TOL_QOI = {("cylinder_channel_dfg_2d1", "lift"): 0.5}
-
-
-@pytest.mark.parametrize("pid", ["poiseuille_channel", "lid_driven_cavity_re100"])
-def test_coarse_solve_matches_references(pid, tmp_path):
-    problem, res = _coarse(pid, tmp_path)
-    values = res.evaluate_all()
     assert res.info.backend == "openfoam" and res.info.physics == "flow"
+    assert not [w for w in res.info.warnings if "NOT CONVERGED" in w], res.info.warnings
+    values = res.evaluate_all()
     for ref in problem.references():
         v = values[ref.qoi]
-        tol = COARSE_TOL_QOI.get((pid, ref.qoi), COARSE_TOL[pid])
         assert math.isfinite(v)
         assert abs(v - ref.value) <= tol * abs(ref.value), (pid, ref.qoi, v, ref.value)
 
 
-@slow
-def test_coarse_solve_dfg_2d1(tmp_path):
-    pid = "cylinder_channel_dfg_2d1"
-    problem, res = _coarse(pid, tmp_path)
-    values = res.evaluate_all()
-    for ref in problem.references():
-        tol = COARSE_TOL_QOI.get((pid, ref.qoi), COARSE_TOL[pid])
-        assert abs(values[ref.qoi] - ref.value) <= tol * abs(ref.value), (ref.qoi, values[ref.qoi], ref.value)
+def test_first_order_upwind_runs(tmp_path):
+    """analysis.order = 1 (upwind convection) also solves; for fully developed flow convection
+    vanishes, so it matches the second-order result."""
+    _openfoam_or_skip()
+    from feacore.solver import solve
+
+    problem = get("poiseuille_channel")
+    path = problem.mesh(tmp_path / "p.msh", problem.params["h0"])
+    v1 = solve(problem.case(path, order=1), backend="openfoam").evaluate_all()
+    v2 = solve(problem.case(path, order=2), backend="openfoam").evaluate_all()
+    for k in v2:
+        assert v1[k] == pytest.approx(v2[k], rel=1e-3)
 
 
 @slow
-@pytest.mark.parametrize("pid", ["poiseuille_channel"])
-def test_reference_study_nested(pid, tmp_path):
+@pytest.mark.parametrize("pid,nested", [("poiseuille_channel", True), ("lid_driven_cavity_re100", False),
+                                        ("cylinder_channel_dfg_2d1", True), ("pipe_poiseuille_3d", False)])
+def test_reference_study(pid, nested, tmp_path):
+    """Full 3-mesh reference study (10 s to ~1.5 min): every reference QoI passes, and the QoIs that
+    are clean second order in the validation (docs/benchmarks_cfd.md) show it."""
     _openfoam_or_skip()
     from feacore.verification.study import convergence_study
 
-    study = convergence_study(get(pid), order=2, backend="openfoam", nested=True,
-                              sizes=get(pid).study_sizes()[:3], workdir=tmp_path)
-    assert study["passed"], [(q["name"], q.get("gci", {}).get("p"), q["err_fine"]) for q in study["qois"]]
+    problem = get(pid)
+    study = convergence_study(problem, sizes=problem.study_sizes()[:3], order=2, backend="openfoam",
+                              nested=nested, workdir=tmp_path)
+    assert study["passed"], [(q["name"], q["values"], q["err_fine"]) for q in study["qois"]]
+    second_order = {"poiseuille_channel": ["dp_AB", "u_centreline", "flow_rate_outlet"],
+                    "lid_driven_cavity_re100": ["v_hcl_min", "u_centre"],
+                    "cylinder_channel_dfg_2d1": [],
+                    "pipe_poiseuille_3d": ["u_centreline", "flow_rate_outlet"]}[pid]
     for q in study["qois"]:
-        g = q.get("gci") or {}
-        if g.get("p") is not None:
-            assert 1.5 <= g["p"] <= 2.6, (q["name"], g["p"])
+        if q["name"] in second_order:
+            assert 1.7 <= q["gci"]["p"] <= 2.6, (q["name"], q["gci"]["p"])
