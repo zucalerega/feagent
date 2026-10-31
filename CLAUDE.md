@@ -50,6 +50,10 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   map, curved-cell validity judged by the Jacobian, and a reduced SVD in the rigid-body checks.
   Without them skfem rejects some of these meshes.
 
+- `physical-validation` branch: printed Rigid 10K pull tests on the Breakerspace Instron (two gold
+  parts with grip ends added, plus `mounting_bracket_vertical`). Parts, fixtures and procedure are in
+  `physical_tests/README.md`; `scripts/physical_parts.py` rebuilds the parts.
+
 ## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
 
 Decisions:
