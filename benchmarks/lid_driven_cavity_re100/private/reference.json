@@ -1,0 +1,156 @@
+{
+  "id": "lid_driven_cavity_re100",
+  "expected_behavior": "smooth",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "u_vcl_min",
+      "value": -0.2109,
+      "kind": "published_numerical",
+      "source": "U. Ghia, K.N. Ghia & C.T. Shin, 'High-Re solutions for incompressible flow using the Navier-Stokes equations and a multigrid method', J. Comput. Phys. 48 (1982) 387-411, Re = 100 column; table values as transcribed in https://github.com/pypr/pysph/blob/master/pysph/examples/ghia_cavity_data.py; Table I (u on x = 0.5), y = 0.4531",
+      "tolerance": 0.03,
+      "notes": "Ghia et al.: finite-difference stream function-vorticity multigrid solution on a uniform grid (129 x 129 for Re = 100, from memory); grid-point values to 5 decimals. The table is 1.4% smaller in magnitude than the mesh-converged value -0.21392 of the fixed solver (OpenFOAM, Richardson-extrapolated 32/64/128 study, GCI <= 0.25 %), consistent with fine-grid literature (Sahin & Owens 2003); the tolerance covers that table error plus the agent's discretization error. See docs/benchmarks_cfd.md."
+    },
+    {
+      "qoi": "v_hcl_max",
+      "value": 0.17527,
+      "kind": "published_numerical",
+      "source": "U. Ghia, K.N. Ghia & C.T. Shin, 'High-Re solutions for incompressible flow using the Navier-Stokes equations and a multigrid method', J. Comput. Phys. 48 (1982) 387-411, Re = 100 column; table values as transcribed in https://github.com/pypr/pysph/blob/master/pysph/examples/ghia_cavity_data.py; Table II (v on y = 0.5), x = 0.2344",
+      "tolerance": 0.04,
+      "notes": "Ghia et al.: finite-difference stream function-vorticity multigrid solution on a uniform grid (129 x 129 for Re = 100, from memory); grid-point values to 5 decimals. The table is 2.4% smaller in magnitude than the mesh-converged value 0.17951 of the fixed solver (OpenFOAM, Richardson-extrapolated 32/64/128 study, GCI <= 0.25 %), consistent with fine-grid literature (Sahin & Owens 2003); the tolerance covers that table error plus the agent's discretization error. See docs/benchmarks_cfd.md."
+    },
+    {
+      "qoi": "v_hcl_min",
+      "value": -0.24533,
+      "kind": "published_numerical",
+      "source": "U. Ghia, K.N. Ghia & C.T. Shin, 'High-Re solutions for incompressible flow using the Navier-Stokes equations and a multigrid method', J. Comput. Phys. 48 (1982) 387-411, Re = 100 column; table values as transcribed in https://github.com/pypr/pysph/blob/master/pysph/examples/ghia_cavity_data.py; Table II (v on y = 0.5), x = 0.8047",
+      "tolerance": 0.05,
+      "notes": "Ghia et al.: finite-difference stream function-vorticity multigrid solution on a uniform grid (129 x 129 for Re = 100, from memory); grid-point values to 5 decimals. The table is 3.4% smaller in magnitude than the mesh-converged value -0.25379 of the fixed solver (OpenFOAM, Richardson-extrapolated 32/64/128 study, GCI <= 0.25 %), consistent with fine-grid literature (Sahin & Owens 2003); the tolerance covers that table error plus the agent's discretization error. See docs/benchmarks_cfd.md."
+    },
+    {
+      "qoi": "u_centre",
+      "value": -0.20581,
+      "kind": "published_numerical",
+      "source": "U. Ghia, K.N. Ghia & C.T. Shin, 'High-Re solutions for incompressible flow using the Navier-Stokes equations and a multigrid method', J. Comput. Phys. 48 (1982) 387-411, Re = 100 column; table values as transcribed in https://github.com/pypr/pysph/blob/master/pysph/examples/ghia_cavity_data.py; Table I (u on x = 0.5), y = 0.5000",
+      "tolerance": 0.03,
+      "notes": "Ghia et al.: finite-difference stream function-vorticity multigrid solution on a uniform grid (129 x 129 for Re = 100, from memory); grid-point values to 5 decimals. The table is 1.6% smaller in magnitude than the mesh-converged value -0.20914 of the fixed solver (OpenFOAM, Richardson-extrapolated 32/64/128 study, GCI <= 0.25 %), consistent with fine-grid literature (Sahin & Owens 2003); the tolerance covers that table error plus the agent's discretization error. See docs/benchmarks_cfd.md."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "flow",
+      "formulation": "2d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {
+        "turbulence": "laminar",
+        "max_iterations": 20000,
+        "residual_tol": 1e-08
+      }
+    },
+    "materials": {
+      "fluid": {
+        "E": 0.0,
+        "nu": 0.0,
+        "alpha": 0.0,
+        "k": 1.0,
+        "rho": 1.0,
+        "mu": 0.01
+      }
+    },
+    "bcs": [
+      {
+        "type": "wall",
+        "group": "lid",
+        "point": null,
+        "components": null,
+        "value": [
+          1.0,
+          0.0
+        ],
+        "where": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "wall",
+        "group": "walls",
+        "point": null,
+        "components": null,
+        "value": null,
+        "where": null,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [
+      {
+        "group": "fluid",
+        "material": "fluid"
+      }
+    ],
+    "qois": [
+      {
+        "name": "u_vcl_min",
+        "type": "point",
+        "field": "ux",
+        "point": [
+          0.5,
+          0.453125
+        ],
+        "group": null,
+        "component": null,
+        "point2": null
+      },
+      {
+        "name": "v_hcl_max",
+        "type": "point",
+        "field": "uy",
+        "point": [
+          0.234375,
+          0.5
+        ],
+        "group": null,
+        "component": null,
+        "point2": null
+      },
+      {
+        "name": "v_hcl_min",
+        "type": "point",
+        "field": "uy",
+        "point": [
+          0.8046875,
+          0.5
+        ],
+        "group": null,
+        "component": null,
+        "point2": null
+      },
+      {
+        "name": "u_centre",
+        "type": "point",
+        "field": "ux",
+        "point": [
+          0.5,
+          0.5
+        ],
+        "group": null,
+        "component": null,
+        "point2": null
+      }
+    ],
+    "meta": {
+      "problem": "lid_driven_cavity_re100",
+      "setup": "reference"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.03125,
+    0.015625,
+    0.0078125
+  ]
+}
