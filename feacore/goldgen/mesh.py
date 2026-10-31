@@ -7,7 +7,9 @@ remeshed sequences scatter them (see CLAUDE.md, "Mesh sequences for GCI"). The b
 deterministic, so each level can be regenerated on its own. One sequence serves every BC set.
 
 Quadratic geometry. Curved (isoparametric) cells keep their boundary midside nodes on the CAD;
-some cells fold (min scaled Jacobian <= 0). Strategies (``STRATEGIES`` lists the ones tried, in order):
+some cells fold or nearly fold (min scaled Jacobian < SJ_MIN). Splitting a level also snaps new
+boundary vertices onto the CAD, which can flatten a few tets; those are repaired with gmsh's linear
+tet optimizer before curving, and every level must reach QUALITY_MIN corner quality. Strategies (``STRATEGIES`` lists the ones tried, in order):
   curved           no folded cells after curving: nothing to fix
   curved-local     straighten only the folded cells' midside nodes (a few cells lose curvature);
                    the default and only strategy tried (STRATEGIES)
@@ -40,18 +42,41 @@ CURV = 8               # base elements per 2 pi of curvature (small holes get re
 RATIO = 2.0            # refinement ratio per level (nested splitting)
 STRATEGIES = ("curved-local",)   # gmsh's optimizers stay available but unused: they abort / grind
 ATTEMPT_TIMEOUT = 600.0   # seconds per curving attempt (the optimizer can grind)
+SJ_MIN = 0.05             # curved cells below this scaled Jacobian are straightened (the solver must invert them)
+QUALITY_MIN = 0.03        # corner-tet mean-ratio quality every level must reach (diagnostics fail < 0.01)
 
 
 class MeshFailed(RuntimeError):
     pass
 
 
-def _folded_tags() -> np.ndarray:
+def _folded_tags(threshold: float = SJ_MIN) -> np.ndarray:
+    """Tet10 cells that are folded or nearly so (min scaled Jacobian below ``threshold``)."""
     tags, _ = gmsh.model.mesh.getElementsByType(11)
     if len(tags) == 0:
         return np.zeros(0, dtype=np.int64)
     q = np.asarray(gmsh.model.mesh.getElementQualities(tags, "minSJ"))
-    return np.asarray(tags)[q <= 0]
+    return np.asarray(tags)[q < threshold]
+
+
+def _min_quality() -> float:
+    """Worst mean-ratio quality of the corner tets (1 = regular), the measure the diagnostics use
+    (feacore.diagnostics.checks.mesh_quality); gmsh's "gamma" is on a much harsher scale."""
+    tags, nodes = gmsh.model.mesh.getElementsByType(4)
+    if len(tags) == 0:
+        tags, nodes = gmsh.model.mesh.getElementsByType(11)
+        nodes = np.asarray(nodes).reshape(len(tags), 10)[:, :4]
+    else:
+        nodes = np.asarray(nodes).reshape(len(tags), 4)
+    if len(tags) == 0:
+        return 1.0
+    ntags, X, _ = gmsh.model.mesh.getNodes()
+    pos = np.empty(int(np.max(ntags)) + 1, dtype=np.int64)
+    pos[np.asarray(ntags, dtype=np.int64)] = np.arange(len(ntags))
+    P = np.asarray(X).reshape(-1, 3)[pos[nodes.astype(np.int64)]]          # (n, 4, 3)
+    vol = np.abs(np.linalg.det(P[:, 1:] - P[:, :1])) / 6
+    l2 = sum(((P[:, i] - P[:, j]) ** 2).sum(1) for i in range(4) for j in range(i + 1, 4))
+    return float(np.min(12 * (3 * vol) ** (2 / 3) / l2))
 
 
 def _straighten(cells: np.ndarray) -> None:
@@ -89,6 +114,12 @@ def mesh_level(step: str | Path, part: Part, k: int, out: str | Path, threads: i
         gmsh.model.mesh.generate(3)
         for _ in range(k):
             gmsh.model.mesh.refine()
+        # splitting snaps new boundary vertices onto the CAD, which can flatten a few tets: repair
+        # them with gmsh's linear tet optimizer (robust, unlike the high-order one) before curving
+        repaired = False
+        if k and _min_quality() < 0.1:
+            gmsh.model.mesh.optimize("")
+            repaired = True
         gmsh.model.mesh.setOrder(2)
         folded = len(_folded_tags())
         used = "straight" if scheme == "straight" else "curved"
@@ -113,11 +144,15 @@ def mesh_level(step: str | Path, part: Part, k: int, out: str | Path, threads: i
                     _straighten(bad)
         remaining = len(_folded_tags())
         if remaining:
-            raise MeshFailed(f"L{k} {scheme}: {remaining} folded cells remain (of {folded} before fixing)")
+            raise MeshFailed(f"L{k} {scheme}: {remaining} cells below scaled Jacobian {SJ_MIN} remain "
+                             f"(of {folded} before fixing)")
+        quality = _min_quality()
+        if quality < QUALITY_MIN:
+            raise MeshFailed(f"L{k} {scheme}: worst corner-tet quality {quality:.2e} < {QUALITY_MIN}")
         cells = len(gmsh.model.mesh.getElementsByType(11)[0])   # tet10
         gmsh.write(str(out))
     return {"path": str(out), "h": h0 / RATIO**k, "cells": cells, "seconds": time.perf_counter() - t0,
-            "scheme": used, "folded_before_fix": folded}
+            "scheme": used, "folded_before_fix": folded, "linear_repair": repaired, "min_quality": quality}
 
 
 def mesh_level_safe(step, part: Part, k: int, out, threads: int = 0, h0_frac: float = H0_FRAC,
