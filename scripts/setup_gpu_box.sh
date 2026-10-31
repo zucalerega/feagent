@@ -15,7 +15,9 @@ echo "== arch: $ARCH"
 
 echo "== system packages (gmsh runtime libs, CalculiX)"
 $SUDO apt-get update -qq
-$SUDO apt-get install -y -qq libglu1-mesa libxcursor1 libxft2 libxinerama1 libxrender1 libxi6 libgl1 \
+# gmsh's shared library links these (ldd libgmsh.so); minimal cloud images often lack libgomp1 and the GL libs
+$SUDO apt-get install -y -qq libgomp1 libglu1-mesa libgl1 libglx0 libopengl0 libx11-6 libxext6 libxfixes3 \
+  libxcursor1 libxft2 libxinerama1 libxrender1 libxi6 libfontconfig1 libfreetype6 \
   calculix-ccx curl bzip2 git tmux python3-venv xvfb >/dev/null
 
 if [ "$ARCH" = "x86_64" ]; then
@@ -57,6 +59,7 @@ else
 fi
 
 echo "== smoke check"
+trap 'echo "!! setup FAILED at the smoke check (error above). A missing system library usually means apt"; echo "   could not install one of the packages listed; fix that and re-run this script."' ERR
 $PY - <<'EOF'
 import gmsh, skfem, feacore
 from feacore.solver import BACKENDS
