@@ -258,6 +258,8 @@ def target_structure(task: str) -> dict:
     # gmsh is process-global and not safe to call from Streamlit's script threads more than once, so
     # the tessellation is made once in a separate process and kept on disk next to the references.
     path = fe.CACHE / f"{task}_target.msh"
+    if "h0" not in p.params:              # gold CAD problems: draw the part from its own L1 study mesh
+        path = Path(p.mesh_file(1))
     if not path.exists():
         script = ("import gmsh, sys; from ace import fea; "
                   "from feacore.geometry.gmsh_tools import ensure_domain_group, gmsh_session, set_uniform_size; "

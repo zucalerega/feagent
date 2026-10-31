@@ -17,7 +17,9 @@ import math
 from pathlib import Path
 
 import gmsh
+import numpy as np
 
+from ace.config import MIN_QUALITY
 from feacore.case import BC, Analysis, Case, CaseError, Load, Material
 from feacore.geometry.gmsh_tools import distance_threshold_field, ensure_domain_group, gmsh_session
 from feacore.problems import registry
@@ -92,12 +94,13 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
 
     h: global element size. order: 1 (linear) or 2 (quadratic, curved); flow meshes are always
     linear. quads (2D flow only): recombine the triangles into quad-dominant cells.
-    refinements: [{"group": name | "point": [x, y(, z)], "size": s, "radius": r}]
-      element size s at the group or point, growing linearly to h at distance r
-      (same meaning for groups and points).
+    refinements: [{"group": name | "edge": curve tag | "point": [x, y(, z)], "size": s, "radius": r}]
+      element size s at the group, CAD curve or point, growing linearly to h at distance r;
+      or {"box": [xmin, ymin, zmin, xmax, ymax, zmax], "size": s}: size s inside the box.
+    Order 2 meshes are checked with the solver's Jacobian test; curved cells that fold or nearly
+    fold are straightened (`repaired_cells`), so `folded_cells` should be 0.
     Returns stats; `ok` is False with an `error` message on failure.
     """
-    refinements = refinements or []
     if order not in (1, 2):
         return {"ok": False, "error": "order must be 1 or 2"}
     flow = is_flow(problem)
@@ -105,6 +108,41 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
         order = 1                           # finite volumes: straight-sided cells
     if quads and not (flow and problem.dim == 2):
         return {"ok": False, "error": "quads is only available for 2D flow meshes"}
+    # gmsh's default surface mesher sometimes leaves flat tets between boundary curves of a CAD
+    # part (all four nodes on CAD edges, so no optimizer can move them); MeshAdapt surfaces avoid
+    # that on the gold parts. Both can fail on a curved face much smaller than h ("overlapping
+    # facets"); sizing by curvature resolves it at the price of extra elements there, so it is the
+    # last resort, and it starts at few elements per 2 pi (8 per 2 pi puts ~7000 nodes on a gold
+    # part whatever h is, which would forbid coarse meshes). The first mesh that passes the scoring
+    # quality gate (MIN_QUALITY) is kept, else the best one. Each attempt is a fresh gmsh session
+    # (after a failed generate gmsh fails every later one) writing its own file.
+    path = Path(path)
+    errors, best = [], None
+    for i, mesher in enumerate(MESHERS):
+        res = _mesh_once(problem, path.with_suffix(f".try{i}.msh"), h, order, refinements or [], mesher,
+                         quads)
+        if not res["ok"]:
+            if not res.pop("retry", False):
+                return res               # a bad request: every mesher would refuse it
+            errors.append(res["error"])
+            continue
+        if best is None or res["min_quality"] > best["min_quality"]:
+            best = res
+        if res["min_quality"] >= MIN_QUALITY:
+            break
+    for f in path.parent.glob(path.stem + ".try*.msh"):
+        if best is None or str(f) != best["path"]:
+            f.unlink()
+    if best is None:
+        return {"ok": False, "error": errors[0]}
+    Path(best["path"]).replace(path)
+    return best | {"path": str(path)}
+
+
+def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: list[dict],
+               mesher: tuple[int, int], quads: bool = False) -> dict:
+    """make_mesh with one mesher (gmsh surface algorithm, curvature sizing). A gmsh failure comes
+    back with "retry": True."""
     with gmsh_session(problem.id):
         problem.build_geometry()
         ensure_domain_group(problem.dim)
@@ -118,7 +156,7 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
             size = max(float(r.get("size", h)), floor)
             sizes_used.append(size)
             radius = float(r.get("radius", 0.0))
-            if radius <= 0:
+            if "box" not in r and radius <= 0:
                 return {"ok": False, "error": f"refinement {r}: radius must be > 0"}
             if "group" in r:
                 if r["group"] not in names:
@@ -130,6 +168,27 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
                     return {"ok": False, "error": f"cannot refine near a volume group ({r['group']!r})"}
                 fields.append(distance_threshold_field(**{kw: ents}, size_min=size, size_max=h,
                                                        dist_min=0.0, dist_max=radius))
+            elif "edge" in r:
+                # A CAD curve by its tag (geometry_info lists them): re-entrant edges are where 3D
+                # stresses are singular, and a face group refinement would refine whole faces instead.
+                curves = {t for _, t in gmsh.model.getEntities(1)}
+                if not isinstance(r["edge"], int) or r["edge"] not in curves:
+                    return {"ok": False, "error": f"refinement {r}: 'edge' must be a curve tag; "
+                                                  f"the geometry has curves 1..{max(curves, default=0)}"}
+                fields.append(distance_threshold_field(curves=[r["edge"]], size_min=size, size_max=h,
+                                                       dist_min=0.0, dist_max=radius))
+            elif "box" in r:
+                # Size `size` inside an axis-aligned box, h outside (radius is not used).
+                b = [float(v) for v in r["box"]]
+                if len(b) != 6 or b[0] > b[3] or b[1] > b[4] or b[2] > b[5]:
+                    return {"ok": False, "error": f"refinement {r}: 'box' must be [xmin, ymin, zmin, xmax, ymax, zmax] "
+                                                  f"(2D: any zmin <= 0 <= zmax)"}
+                f = gmsh.model.mesh.field.add("Box")
+                for k, v in zip(("XMin", "YMin", "ZMin", "XMax", "YMax", "ZMax"), b):
+                    gmsh.model.mesh.field.setNumber(f, k, v)
+                gmsh.model.mesh.field.setNumber(f, "VIn", size)
+                gmsh.model.mesh.field.setNumber(f, "VOut", h)
+                fields.append(f)
             elif "point" in r:
                 # A Ball of zero radius whose transition layer is `radius` thick: size at the
                 # point, growing linearly to h at distance radius, like the group Threshold above.
@@ -140,7 +199,7 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
                     gmsh.model.mesh.field.setNumber(f, k, v)
                 fields.append(f)
             else:
-                return {"ok": False, "error": f"refinement {r} needs 'group' or 'point'"}
+                return {"ok": False, "error": f"refinement {r} needs 'group', 'edge', 'box' or 'point'"}
 
         if fields:
             m = gmsh.model.mesh.field.add("Min")
@@ -148,36 +207,71 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
             gmsh.model.mesh.field.setAsBackgroundMesh(m)
         gmsh.option.setNumber("Mesh.MeshSizeMin", floor)
         gmsh.option.setNumber("Mesh.MeshSizeMax", h)
-        for opt in ("MeshSizeFromPoints", "MeshSizeFromCurvature", "MeshSizeExtendFromBoundary"):
+        for opt in ("MeshSizeFromPoints", "MeshSizeExtendFromBoundary"):   # curvature: see MESHERS
             gmsh.option.setNumber(f"Mesh.{opt}", 0)
         if quads:
             gmsh.option.setNumber("Mesh.RecombineAll", 1)
 
+        alg, curv = mesher
+        gmsh.option.setNumber("Mesh.Algorithm", alg)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", curv)
         try:
             gmsh.model.mesh.generate(problem.dim)
         except Exception as e:  # noqa: BLE001  gmsh raises plain Exception
-            return {"ok": False, "error": f"gmsh failed: {e}"}
-        if flow and problem.dim == 2:
+            return {"ok": False, "error": f"gmsh failed: {e}", "retry": True}
+        if is_flow(problem) and problem.dim == 2:
             orient_ccw_2d()                 # the openfoam backend extrudes +z: cells must be counter-clockwise
-
-        # Quality is measured on the straight-sided mesh, before curving to order 2.
-        _, elem_tags, _ = gmsh.model.mesh.getElements(problem.dim)
-        tags = [int(t) for block in elem_tags for t in block]
-        q = gmsh.model.mesh.getElementQualities(tags, "minSICN") if tags else []
-        if order == 2:
-            gmsh.model.mesh.setOrder(2)
-        n_nodes = len(gmsh.model.mesh.getNodes()[0])
+        q = _qualities(problem.dim)
+        if not len(q):
+            return {"ok": False, "error": "gmsh failed: no elements generated", "retry": True}
+        # Snapping boundary vertices onto curved CAD can leave a few nearly flat tets; gmsh's tet
+        # optimizer + vertex relocation repairs those it can (as the gold generator does). Only when
+        # needed, so meshes that are already fine stay exactly as gmsh made them.
+        if problem.dim == 3 and q.min() < REPAIR_TARGET:
+            for _ in range(3):
+                gmsh.model.mesh.optimize("", niter=3)
+                gmsh.model.mesh.optimize("Relocate3D", niter=3)
+                q = _qualities(problem.dim)
+                if q.min() >= REPAIR_TARGET:
+                    break
+        # Quality and local sizes are measured on the straight-sided mesh, before curving to order 2.
+        size_by_group = _size_by_group(problem.dim)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        gmsh.write(str(path))
+        repaired, jac = 0, {"folded": 0, "min_ratio": 1.0}   # straight cells: constant Jacobian
+        if order == 2:
+            gmsh.model.mesh.setOrder(2)
+            # Curving boundary midside nodes onto the CAD can fold a thin cell. Straighten cells
+            # whose scaled Jacobian is below the threshold (they lose their curvature, nothing else),
+            # then check with the solver's own Jacobian test; escalate if any still fold, as a last
+            # resort to an all straight-sided order-2 mesh (cannot fold where the corner tets are valid).
+            straightened: set[int] = set()
+            for threshold in (SJ_MIN, 0.2, math.inf):
+                straightened |= _straighten_below(threshold, problem.dim)
+                gmsh.write(str(path))
+                jac = _jacobian_check(path, problem.dim)
+                if jac["folded"] == 0:
+                    break
+            repaired = len(straightened)
+        else:
+            gmsh.write(str(path))
+        n_nodes = len(gmsh.model.mesh.getNodes()[0])
     return {
         "ok": True,
         "path": str(path),
         "nodes": n_nodes,
-        "elements": len(tags),
+        "elements": len(q),
         "order": order,
-        **({"quads": bool(quads)} if flow else {}),
-        "min_quality": round(float(min(q)), 4) if len(q) else None,
+        **({"quads": bool(quads)} if is_flow(problem) else {}),
+        "min_quality": round(float(q.min()), 4),
+        # minSICN of the straight-sided cells: 1 = regular, near 0 = flat
+        "quality": {k: round(float(f(q)), 4) for k, f in
+                    (("min", np.min), ("p01", lambda a: np.percentile(a, 1)), ("median", np.median))},
+        "repaired_cells": repaired,                    # curved cells straightened to keep them valid
+        "folded_cells": jac["folded"],                 # still folded (Jacobian changes sign): should be 0
+        "min_jacobian_ratio": jac["min_ratio"],        # min over cells of min/max det J; <= 0 means folded
+        "size_by_group": size_by_group,
+        "mesher": MESHER_NAMES[mesher],    # +curvature: extra elements on small curved faces
         "h_used": h,                       # after clamping to the size floor
         "sizes_used": sizes_used,          # refinement sizes after clamping, in request order
         # Checkpoint fingerprint: a rebuild from the same request reproduces the mesh only with
@@ -185,6 +279,102 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "gmsh": gmsh.__version__,
     }
+
+
+REPAIR_TARGET = MIN_QUALITY   # min straight-cell quality (minSICN) the linear repair aims for: the scoring gate
+# (gmsh Mesh.Algorithm, Mesh.MeshSizeFromCurvature) tried in turn until one passes the gate:
+# Frontal-Delaunay surfaces (gmsh's default), MeshAdapt, then curvature sizing with 4, 6 and 8
+# (as feacore.goldgen) elements per 2 pi. Nodes grow with the elements per 2 pi, quality does not
+# reliably, so the coarse settings come first.
+MESHERS = ((6, 0), (1, 0), (1, 4), (6, 4), (1, 6), (1, 8))
+MESHER_NAMES = {(6, 0): "frontal-delaunay", (1, 0): "meshadapt", (1, 4): "meshadapt+curvature4",
+                (6, 4): "frontal-delaunay+curvature4", (1, 6): "meshadapt+curvature6",
+                (1, 8): "meshadapt+curvature8"}
+SJ_MIN = 0.05          # curved cells below this min scaled Jacobian are straightened (as feacore.goldgen)
+# The straight cells a mesh of each dimension can hold: 2D flow meshes may be quad-dominant (quads=true).
+CELL_TYPES = {2: (2, 3), 3: (4,)}    # tri3, quad4 / tet4
+CELL_EDGES = {2: ((0, 1), (1, 2), (0, 2)), 3: ((0, 1), (1, 2), (2, 3), (0, 3)),     # by gmsh type
+              4: ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))}
+CURVED_TYPE = {2: 9, 3: 11}          # tri6, tet10
+# (corner a, corner b, midside node) in gmsh's node ordering
+MIDSIDE = {2: [(0, 1, 3), (1, 2, 4), (2, 0, 5)],
+           3: [(0, 1, 4), (1, 2, 5), (0, 2, 6), (0, 3, 7), (2, 3, 8), (1, 3, 9)]}
+
+
+def _qualities(dim: int) -> np.ndarray:
+    """minSICN of every straight cell (triangles and quads in 2D, tets in 3D)."""
+    tags = [t for typ in CELL_TYPES[dim] for t in gmsh.model.mesh.getElementsByType(typ)[0]]
+    return np.asarray(gmsh.model.mesh.getElementQualities(tags, "minSICN")) if len(tags) else np.zeros(0)
+
+
+def _size_by_group(dim: int) -> dict:
+    """{group: mean local element size near it}: each mesh node gets the mean length of the
+    element edges touching it; a group's size is the mean over its nodes (straight mesh)."""
+    ntags, X, _ = gmsh.model.mesh.getNodes()
+    ntags = np.asarray(ntags, dtype=np.int64)
+    pos = np.zeros(int(ntags.max()) + 1, dtype=np.int64)
+    pos[ntags] = np.arange(len(ntags))
+    X = np.asarray(X).reshape(-1, 3)
+    total, count = np.zeros(len(ntags)), np.zeros(len(ntags))
+    for typ in CELL_TYPES[dim]:
+        _, conn = gmsh.model.mesh.getElementsByType(typ)
+        if not len(conn):
+            continue
+        edges = CELL_EDGES[typ]
+        T = pos[np.asarray(conn, dtype=np.int64).reshape(-1, max(max(e) for e in edges) + 1)]
+        for i, j in edges:
+            length = np.linalg.norm(X[T[:, i]] - X[T[:, j]], axis=1)
+            for k in (T[:, i], T[:, j]):
+                total += np.bincount(k, length, len(ntags))
+                count += np.bincount(k, None, len(ntags))
+    node_h = total / np.maximum(count, 1)
+    out = {}
+    for d, t in gmsh.model.getPhysicalGroups():
+        nodes = np.asarray(gmsh.model.mesh.getNodesForPhysicalGroup(d, t)[0], dtype=np.int64)
+        idx = pos[nodes][count[pos[nodes]] > 0]
+        if len(idx):
+            out[gmsh.model.getPhysicalName(d, t)] = float(f"{node_h[idx].mean():.4g}")
+    return out
+
+
+def _straighten_below(threshold: float, dim: int) -> set[int]:
+    """Move the midside nodes of curved cells whose min scaled Jacobian is below `threshold` to
+    their edge midpoints, repeatedly (a moved shared midside node changes the neighbours too).
+    Returns the tags of the cells straightened."""
+    done: set[int] = set()
+    for _ in range(5):
+        tags, conn = gmsh.model.mesh.getElementsByType(CURVED_TYPE[dim])
+        sj = np.asarray(gmsh.model.mesh.getElementQualities(tags, "minSJ"))
+        bad = np.nonzero(sj < threshold)[0]
+        if not len(bad):
+            break
+        conn = np.asarray(conn, dtype=np.int64).reshape(len(tags), -1)
+        ntags, X, _ = gmsh.model.mesh.getNodes()
+        coord = dict(zip(np.asarray(ntags, dtype=np.int64).tolist(), np.asarray(X).reshape(-1, 3)))
+        for c in bad:
+            for a, b, m in MIDSIDE[dim]:
+                mid = 0.5 * (coord[conn[c, a]] + coord[conn[c, b]])
+                gmsh.model.mesh.setNode(int(conn[c, m]), mid.tolist(), [])
+        done |= {int(tags[c]) for c in bad}
+        if math.isinf(threshold):
+            break      # every cell is straight now
+    return done
+
+
+def _jacobian_check(path: Path, dim: int) -> dict:
+    """The solver's validity test for curved cells (skfem_backend._check_jacobians): det J at the
+    integration points of the order-2 analysis; a cell folds when det J changes sign in it."""
+    from skfem import Basis, ElementTetP2, ElementTriP2
+
+    from feacore.solver._skfem_mesh import read_mesh
+
+    md = read_mesh(path, dim, 2)
+    b = Basis(md.mesh, ElementTetP2() if dim == 3 else ElementTriP2(), intorder=4)
+    det = b.mapping.detDF(b.X)                       # (cells, integration points), signed
+    lo, hi = det.min(axis=1), det.max(axis=1)
+    folded = lo * hi <= 0
+    ratio = np.where(folded, lo / np.where(hi > 0, hi, 1.0), np.abs(det).min(axis=1) / np.abs(det).max(axis=1))
+    return {"folded": int(folded.sum()), "min_ratio": round(float(ratio.min()), 4)}
 
 
 # --------------------------------------------------------------------------- solve
@@ -227,9 +417,11 @@ def _build_flow_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str, b
     )
 
 
-def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_result=None) -> dict:
+def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_result=None,
+              keep_result: bool = False) -> dict:
     """Solve with the fixed solver and evaluate the scored QoI ourselves. `on_result`, if
-    given, receives the feacore Result of a successful solve (for ace.ui_bridge)."""
+    given, receives the feacore Result of a successful solve (for ace.ui_bridge). With
+    `keep_result` the Result is also returned under "_result" (in memory only: not JSON)."""
     try:
         case = build_case(problem, mesh, setup, qoi_name)
         result = solve(case, backend="openfoam" if is_flow(problem) else "skfem")
@@ -242,4 +434,7 @@ def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_resul
         on_result(result)
     info = {"n_dofs": int(result.info.n_dofs), "wall_time": float(result.info.wall_time),
             "warnings": list(result.info.warnings)}
-    return {"ok": True, "qoi": qoi_name, "value": value, "info": info}
+    out = {"ok": True, "qoi": qoi_name, "value": value, "info": info}
+    if keep_result:
+        out["_result"] = result
+    return out

@@ -191,6 +191,7 @@ What changes for flow (it is chosen from the problem's physics, so the two suite
     may be expressions in x, y, z.
   - The solver controls (laminar, iteration cap, residual target) come from the problem, not
     the agent.
+  - No `view`, `compare` or automatic solve feedback: those read stress fields (`ace/TOOLS.md`).
 - **Score**: unchanged. DOFs are cells × unknowns. The uniform-mesh baseline compares the two
   convection schemes, where elasticity compares the two element orders.
 - **Oracles**: feacore's diagnostics run the elasticity solver, so equilibrium, singularity,

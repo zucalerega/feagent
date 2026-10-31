@@ -49,7 +49,8 @@ def test_flow_task_plumbing(pid, tmp_path):
 
 def test_flow_prompt_and_tools():
     assert "flow (CFD)" in system_prompt("", flow=True) and "linear-elastic" in system_prompt("")
-    assert [t["name"] for t in TOOLS_FLOW] == [t["name"] for t in TOOLS]
+    names = [t["name"] for t in TOOLS_FLOW]          # view / compare read stress fields: not for flow
+    assert names == ["inspect_geometry", "mesh", "solve", "submit"] and set(names) <= {t["name"] for t in TOOLS}
     mesh = TOOLS_FLOW[1]["input_schema"]["properties"]
     assert "order" not in mesh and "quads" in mesh
 
