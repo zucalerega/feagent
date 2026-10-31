@@ -335,7 +335,9 @@ class DiagnoserTools:
                          **({"field_error": c.get("field_error"), "probe_error": c.get("probe_error")} if SCORE == "field" else {}),
                          "first_failing_stage": st.get("first_failing_stage"), "failed_checks": failed,
                          "nodes": c.get("nodes"), "node_cap": c.get("node_cap"), "order": c.get("order"),
-                         "n_meshes": c.get("n_meshes"), "n_solves": c.get("n_solves"), "cited": r.get("cited", [])})
+                         "n_meshes": c.get("n_meshes"), "n_solves": c.get("n_solves"), "cited": r.get("cited", []),
+                         **({"test_error": c["evidence"]["rel_err"], "test_sigma": c["evidence"]["sigma"]}
+                            if c.get("evidence") else {})})
         return {"problem": self.problem_id, "qoi": TASKS[self.problem_id]["qoi"], "tolerance": self.target_err,
                 "runs": rows}
 
@@ -453,9 +455,12 @@ def diagnose_problem(problem_id: str, runs: list[dict], playbook, llm, target_er
     tools = DiagnoserTools(problem_id, runs, playbook, target_err, workdir, rerun_fn, mode)
     specs, system = tool_specs(mode), system_prompt(mode)
     usage = [] if usage is None else usage
+    from ace import evidence
+    test = evidence.teacher_section(problem_id, runs)    # physical test data, when the loop has some
     messages: list = [{"role": "user", "content":
                        f"Diagnose the {len(runs)} runs on problem {problem_id} (scored quantity "
-                       f"{TASKS[problem_id]['qoi']}, node cap {TASKS[problem_id]['node_cap']}). Start with list_runs."}]
+                       f"{TASKS[problem_id]['qoi']}, node cap {TASKS[problem_id]['node_cap']}). Start with list_runs."
+                       + (f"\n\n{test}" if test else "")}]
     log, diag, bad_submits, refused = [], None, 0, False
     # Room for the tool-call limit, plus a few turns to submit after hitting it.
     for _turn in range(DIAGNOSER_MAX_TOOL_CALLS + 4):

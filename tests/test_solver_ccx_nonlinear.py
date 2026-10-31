@@ -1,0 +1,233 @@
+"""Opt-in elastoplastic (J2) load-stepped analysis with the CalculiX backend, against closed forms:
+
+* uniaxial bar (C3D10), elastic-perfectly plastic and linear hardening, displacement and force control:
+  stress caps at sy (or follows the hardening line), PEEQ = eps - sy / E (/ (1 + H / E));
+* thick-walled sphere under internal pressure (CAX6), elastic-perfectly plastic: elastic limit pressure
+  and elastic-plastic boundary radius c(p) from the closed-form solution (Hill 1950, ch. V);
+* reactions balance the applied load at every increment.
+
+Small meshes; the whole file runs in well under a minute. The schema / skfem tests need no ccx.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import shutil
+
+import numpy as np
+import pytest
+
+from feacore.case import BC, Analysis, Case, Material, QoI
+from feacore.solver import solve
+
+needs_ccx = pytest.mark.skipif(shutil.which("ccx") is None, reason="CalculiX (ccx) not installed")
+
+E, NU, SY = 210000.0, 0.3, 355.0
+L, W = 2.0, 0.5                     # bar length, square cross-section side
+
+
+def _box(path, h=0.25):
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
+    with gmsh_session("box"):
+        v = gmsh.model.occ.addBox(0, 0, 0, L, W, W)
+        gmsh.model.occ.synchronize()
+        add_group(3, [v], "body")
+        for name, kw in (("left", {"xmax": 0}), ("right", {"xmin": L}), ("y0", {"ymax": 0}), ("z0", {"zmax": 0})):
+            add_group(2, in_box(2, **kw), name)
+        set_uniform_size(h)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.write(str(path))
+    return str(path)
+
+
+def _quarter_annulus(path, a, b, h):
+    """r-z section of a hemispherical shell a <= sqrt(x^2 + y^2) <= b, x, y >= 0 (axis x = 0)."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, set_uniform_size
+    with gmsh_session("ann"):
+        d1, d2 = gmsh.model.occ.addDisk(0, 0, 0, b, b), gmsh.model.occ.addDisk(0, 0, 0, a, a)
+        ring, _ = gmsh.model.occ.cut([(2, d1)], [(2, d2)])
+        q, _ = gmsh.model.occ.intersect(ring, [(2, gmsh.model.occ.addRectangle(0, 0, 0, 2 * b, 2 * b))])
+        gmsh.model.occ.synchronize()
+        add_group(2, [t for _, t in q], "body")
+        g = {"inner": [], "outer": [], "equator": [], "axis": []}
+        for _, c in gmsh.model.getEntities(1):
+            x, y, _ = gmsh.model.occ.getCenterOfMass(1, c)
+            g["equator" if abs(y) < 1e-9 else "axis" if abs(x) < 1e-9 else
+              "inner" if math.hypot(x, y) < 0.5 * (a + b) else "outer"].append(c)
+        for k, v in g.items():
+            add_group(1, v, k)
+        set_uniform_size(h)
+        gmsh.model.mesh.generate(2)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.write(str(path))
+    return str(path)
+
+
+@pytest.fixture(scope="module")
+def meshes(tmp_path_factory):
+    d = tmp_path_factory.mktemp("ccx_nl")
+    return {"box": _box(d / "box.msh"), "sphere": _quarter_annulus(d / "sphere.msh", 1.0, 2.0, 0.05)}
+
+
+def _plastic(H=0.0):
+    p = {"model": "j2_isotropic", "yield_stress": SY}
+    if H:
+        p["hardening"] = [[0.0, SY], [1.0, SY + H]]
+    return p
+
+
+def _bar(mesh, load, H=0.0, n=8, **opts):
+    """Quarter-symmetric bar: symmetry on x = 0, y = 0, z = 0; ``load`` on the face x = L."""
+    return Case(mesh=mesh, analysis=Analysis("elasticity", "3d", order=2,
+                                             options={"nonlinear": True, "increments": n, **opts}),
+                materials={"steel": Material(E=E, nu=NU, plasticity=_plastic(H))},
+                bcs=[BC("symmetry", group="left"), BC("symmetry", group="y0"), BC("symmetry", group="z0"), load],
+                qois=[QoI("R", "reaction", group="left", component=0),
+                      QoI("sxx", "mean", field="sxx", group="body")])
+
+
+# ----------------------------------------------------------------------------- schema (no ccx)
+def test_schema_backward_compatible_and_validated(tmp_path):
+    lin = Case(mesh="m.msh", analysis=Analysis(), materials={"m": Material(E=1.0, nu=0.3)},
+               bcs=[BC("fixed", group="a")])
+    d = lin.to_dict()
+    assert "plasticity" not in d["materials"]["m"] and not lin.analysis.nonlinear
+    assert Case.from_dict(d).to_dict() == d
+    nl = Case(mesh="m.msh", analysis=Analysis(options={"nonlinear": True, "increments": 5}),
+              materials={"m": Material(E=1.0, nu=0.3, plasticity=_plastic(1000.0))}, bcs=[BC("fixed", group="a")])
+    assert nl.validate() == [] and Case.from_dict(nl.to_dict()).materials["m"].plasticity == _plastic(1000.0)
+    nl.analysis.options = {}
+    assert any("nonlinear = true" in e for e in nl.validate())
+    bad = {"increments": 0, "load_factor_max": -1.0, "nonlinear": True}
+    nl.analysis.options = bad
+    assert len(nl.validate()) == 2
+    nl.analysis.options = {"nonlinear": True}
+    for p, msg in ((dict(_plastic(), model="tresca"), "model"), (dict(_plastic(), yield_stress=0), "yield_stress"),
+                   (dict(_plastic(), hardening=[[0, SY], [0.1, SY - 1]]), "soften"),
+                   (dict(_plastic(), hardening=[[0, SY + 5]]), "start at yield_stress"),
+                   (dict(_plastic(), hardening=[[0, SY], [0.0, SY + 1]]), "increase")):
+        nl.materials["m"].plasticity = p
+        assert any(msg in e for e in nl.validate()), (p, nl.validate())
+
+
+def test_skfem_refuses_nonlinear():
+    c = Case(mesh="missing.msh", analysis=Analysis(options={"nonlinear": True}),
+             materials={"m": Material(E=E, nu=NU, plasticity=_plastic())}, bcs=[BC("fixed", group="a")])
+    with pytest.raises(NotImplementedError, match="skfem backend: nonlinear"):
+        solve(c, backend="skfem")
+
+
+# ----------------------------------------------------------------------------- uniaxial bar
+@needs_ccx
+@pytest.mark.parametrize("H", [0.0, 2000.0])
+def test_uniaxial_bar_displacement_control(meshes, H):
+    """sxx = min(E eps, sy + H eps_p), PEEQ = (eps - sy / E) / (1 + H / E) at every increment."""
+    eps_max = 4.0 * SY / E
+    r = solve(_bar(meshes["box"], BC("displacement", group="right", components=[0], value=eps_max * L), H=H),
+              backend="ccx")
+    assert r.converged and len(r.increments) == 8
+    for i, inc in enumerate(r.increments):
+        q = r.increment_qois(i)
+        eps = inc.lam * eps_max
+        ep = max(eps - SY / E, 0.0) / (1.0 + H / E)
+        sig = E * eps if ep == 0 else SY + H * ep
+        assert abs(q["qois"]["sxx"] - sig) < 2e-5 * SY        # ccx nodal stress carries ~1e-5
+        assert abs(q["qois"]["R"] + sig * W * W) < 1e-5 * SY * W * W
+        assert abs(q["max_peeq_ip"] - ep) < 1e-6 * SY / E and abs(q["max_peeq"] - ep) < 2e-5 * ep + 1e-9
+        assert q["plastic_volume_fraction"] == pytest.approx(1.0 if ep > 0 else 0.0)
+        assert q["imbalance_rel"] < 1e-5
+    assert r.increments[1].PEEQ.max() == 0.0 and r.increments[2].PEEQ.min() > 0   # yield at lambda = 1/4
+
+
+@needs_ccx
+def test_uniaxial_bar_force_control_hardening(meshes):
+    """Load control past yield with hardening: sxx = F / A, eps_p = (sxx - sy) / H, reactions = -F."""
+    H, F = 2000.0, 1.2 * SY * W * W
+    r = solve(_bar(meshes["box"], BC("force", group="right", value=[F, 0.0, 0.0]), H=H, n=6), backend="ccx")
+    assert r.converged
+    for i, inc in enumerate(r.increments):
+        q = r.increment_qois(i)
+        sig = inc.lam * F / (W * W)
+        assert abs(q["qois"]["R"] + inc.lam * F) < 1e-6 * F
+        assert abs(q["applied"][0] - inc.lam * F) < 1e-9 * F and q["imbalance_rel"] < 1e-5
+        assert abs(q["max_peeq_ip"] - max(sig - SY, 0.0) / H) < 1e-6
+    ux = r.probe("ux", [[L, 0.1, 0.1]])[0]
+    assert ux == pytest.approx((1.2 * SY / E + 0.2 * SY / H) * L, rel=1e-5)
+
+
+@needs_ccx
+def test_nonconvergence_keeps_converged_increments(meshes):
+    """Perfectly plastic bar loaded by force beyond its limit load sy A: fixed increments diverge
+    after lambda = 1 / 1.5; the converged increments are kept and the run is flagged."""
+    r = solve(_bar(meshes["box"], BC("force", group="right", value=[1.5 * SY * W * W, 0.0, 0.0]), n=6),
+              backend="ccx")
+    assert not r.converged and r.errors
+    assert 0.5 <= r.increments[-1].lam < 1.0 and any("stopped at load factor" in w for w in r.info.warnings)
+
+
+@needs_ccx
+def test_nlgeom_and_series_output(meshes, tmp_path):
+    """NLGEOM at 0.7 % strain stays within 1 % of the small-strain answer; the series writer gives one
+    .vtu per increment (+ lambda = 0), a .pvd and summary.json."""
+    import meshio
+
+    eps_max = 4.0 * SY / E
+    c = _bar(meshes["box"], BC("displacement", group="right", components=[0], value=eps_max * L), H=2000.0, n=4,
+             nlgeom=True)
+    r = solve(c, backend="ccx")
+    s = r.write_series(tmp_path / "series", extra={"set": "bar"})
+    sig = SY + 2000.0 * (eps_max - SY / E) / (1 + 2000.0 / E)
+    assert s["converged"] and s["set"] == "bar" and abs(s["increments"][-1]["qois"]["sxx"] / sig - 1) < 1e-2
+    assert s["first_plastic_increment_lambda"] == pytest.approx(0.5)   # lambda = 0.25 is exactly at yield
+    files = sorted(p.name for p in (tmp_path / "series").iterdir())
+    assert files == ["inc.pvd"] + [f"inc_{k:03d}.vtu" for k in range(5)] + ["summary.json"]
+    m = meshio.read(tmp_path / "series" / "inc_004.vtu")
+    assert m.point_data["PEEQ"].max() > 0 and m.point_data["displacement"].shape[1] == 3
+    assert json.loads((tmp_path / "series" / "summary.json").read_text())["n_increments"] == 4
+
+
+# ----------------------------------------------------------------------------- thick sphere (Hill)
+def _hill_p(c, a=1.0, b=2.0, sy=SY):
+    """Internal pressure at which the plastic zone of a perfectly plastic thick sphere reaches radius c."""
+    return 2.0 * sy * math.log(c / a) + 2.0 * sy / 3.0 * (1.0 - c ** 3 / b ** 3)
+
+
+@needs_ccx
+def test_thick_sphere_internal_pressure(meshes):
+    """Elastic limit p_e = 2 sy / 3 (1 - a^3 / b^3); plastic radius c(p) from _hill_p (independent of nu).
+    c is measured twice: from the elastic zone, where von Mises = sy (c / r)^3, at the outer surface;
+    and from the plastic volume (integration points with PEEQ > 0) of the hemispherical shell."""
+    from scipy.optimize import brentq
+
+    a, b = 1.0, 2.0
+    pe, pmax = _hill_p(a), _hill_p(1.6)
+    c = Case(mesh=meshes["sphere"],
+             analysis=Analysis("elasticity", "axisymmetric", order=2, options={"nonlinear": True, "increments": 20}),
+             materials={"steel": Material(E=E, nu=NU, plasticity=_plastic())},
+             bcs=[BC("symmetry", group="equator"), BC("pressure", group="inner", value=pmax)],
+             qois=[QoI("vm_outer", "mean", field="von_mises", group="outer"),
+                   QoI("Rz", "reaction", group="equator", component=1)])
+    r = solve(c, backend="ccx")
+    assert r.converged
+    elastic = []
+    for i, inc in enumerate(r.increments):
+        q = r.increment_qois(i)
+        p = inc.lam * pmax
+        assert abs(q["qois"]["Rz"] + p * math.pi * a * a) < 1e-5 * p * math.pi * a * a
+        assert q["imbalance_rel"] < 1e-4
+        if p < pe:
+            assert q["max_peeq"] == 0.0
+            elastic.append(p * SY / q["max_von_mises"])          # vM(a) scales with p
+            continue
+        assert q["max_peeq"] > 0
+        c_ex = brentq(lambda x: _hill_p(x) - p, a, b)
+        c_stress = b * (q["qois"]["vm_outer"] / SY) ** (1 / 3)
+        c_vol = (a ** 3 + 3.0 * q["plastic_volume"] / (2.0 * math.pi)) ** (1 / 3)
+        assert abs(c_stress / c_ex - 1) < 2e-3, (p, c_stress, c_ex)
+        assert abs(c_vol / c_ex - 1) < 1e-2, (p, c_vol, c_ex)
+        assert q["max_von_mises"] < 1.02 * SY
+    assert abs(np.mean(elastic) / pe - 1) < 3e-3          # nodal vM at the bore overshoots ~0.2 %

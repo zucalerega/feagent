@@ -1,0 +1,34 @@
+{
+  "problem_id": "nafems_le1",
+  "requirements": "Component: a thin flat plate in the shape of an elliptic ring, pulled outward uniformly all round its outer rim.\n\nGeometry (CAD): metres. The CAD file holds one quarter of the plate, the part with x >= 0 and y >= 0, as a planar face in the plane z = 0. Inner boundary (the hole): the ellipse (x/2.0)^2 + (y/1.0)^2 = 1, from A = (0, 1.0) to D = (2.0, 0). Outer boundary (the rim): the ellipse (x/3.25)^2 + (y/2.75)^2 = 1, from B = (0, 2.75) to C = (3.25, 0). The straight edges AB (on x = 0) and CD (on y = 0) are cuts through the full plate, not edges of it. The plate is uniformly 0.1 m thick.\n\nMaterial: isotropic, linear elastic; Young's modulus E = 210 GPa, Poisson's ratio 0.3.\n\nService loads: the whole outer rim of the full plate is pulled outward by a uniformly distributed tension of 10 MPa (force per unit area of the rim's edge face), acting along the rim's outward normal at every point. The edge of the elliptic hole is unloaded. All loads lie in the plane of the plate, and the plate is thin compared with its other dimensions, so the stresses across its thickness are negligible.\n\nInstallation and supports: the plate is attached to nothing; the balanced pull on its rim keeps it in equilibrium. The full plate and its loading are mirror-symmetric about the planes x = 0 and y = 0, which is why only the quarter is modelled.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity.\n\nRequired result: syy_D, the direct stress sigma_yy at point D = (2.0, 0.0), in Pa.",
+  "group_aliases": {},
+  "mapping": [
+    {
+      "reference": "symmetry on edge_AB",
+      "implied_by": "The full plate and its loading are mirror-symmetric about x = 0 and AB is the cut on x = 0: its points cannot cross that plane and are otherwise free."
+    },
+    {
+      "reference": "symmetry on edge_CD",
+      "implied_by": "The same about y = 0, for the cut CD."
+    },
+    {
+      "reference": "pressure -1e7 on edge_BC",
+      "implied_by": "The rim is pulled outward along its normal by 10 MPa: a tension, i.e. a negative pressure of 10 MPa."
+    },
+    {
+      "reference": "plane_stress, thickness 0.1",
+      "implied_by": "Thin plate loaded only in its own plane, uniformly 0.1 m thick."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "b28d35cb6e599083c9f8bd41dea85721419755e6046b5f9b83eab39e81c648fa"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

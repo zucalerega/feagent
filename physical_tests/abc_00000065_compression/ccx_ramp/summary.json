@@ -1,0 +1,113 @@
+{
+ "test": {
+  "slope": 2696.731500240317,
+  "toe_mm": 0.19154880682430642,
+  "peak_N": 4755.2,
+  "peak_mm": 2.5133
+ },
+ "note": "test displacement is crosshead travel; the toe is removed by shifting it to the intercept of its straight part (1050-1800 N)",
+ "runs": {
+  "team_slide": {
+   "material": {
+    "name": "team",
+    "E": 1879.8,
+    "nu": 0.35,
+    "source": "experiments/material/alpha_fast_dogbone1.json (Formlabs Alpha Fast Resin, 2 min cure (dogbone1.pdf)): specimen geometry assumed (ASTM D638 Type I); not in the PDF; strain from crosshead over 115 mm: includes grip and frame compliance (E is apparent, low); post-necking curve not used for hardening; failure = plastic strain at break (approximate)"
+   },
+   "platen": "slide",
+   "converged": true,
+   "wall_s": 702,
+   "n_nodes": 41186,
+   "initial_stiffness_N_per_mm": 3329.074329074329,
+   "F_max_N": 2919.327,
+   "u_at_F_max_mm": 2.499999,
+   "u_reached_mm": 3.0,
+   "series_compliance_to_match_test_mm_per_N": 7.043546689590078e-05,
+   "F_at_test_peak_travel_N": 2915.7141881828215,
+   "F_at_test_peak_travel_with_series_N": 2902.3365892923075,
+   "first_yield": {
+    "u_mm": 0.0999999,
+    "F_N": 332.9071,
+    "peeq_max": {
+     "value": 0.000449969,
+     "at_mm": [
+      23.72,
+      25.74,
+      -6.62
+     ]
+    }
+   },
+   "last": {
+    "u_mm": 3.0,
+    "F_N": 2900.598,
+    "peeq_max": {
+     "value": 0.64789,
+     "at_mm": [
+      23.72,
+      25.74,
+      -6.62
+     ]
+    },
+    "s1_max_MPa": {
+     "value": 81.39202977045323,
+     "at_mm": [
+      20.7,
+      25.94,
+      8.1
+     ]
+    }
+   }
+  },
+  "corrected_slide": {
+   "material": {
+    "name": "corrected",
+    "E": 2230.0,
+    "nu": 0.35,
+    "source": "dogbone1.csv with slack removed: initial slope 663 N/mm vs 861 N/mm for the printed Type I at E = 2230 MPa (slack 3.47e-04 mm/N); plastic stretch over the 57 mm narrow section"
+   },
+   "platen": "slide",
+   "converged": true,
+   "wall_s": 629,
+   "n_nodes": 41186,
+   "initial_stiffness_N_per_mm": 3946.4319464319465,
+   "F_max_N": 2817.954,
+   "u_at_F_max_mm": 2.4000000000000004,
+   "u_reached_mm": 3.0,
+   "series_compliance_to_match_test_mm_per_N": 0.00011742581920678037,
+   "F_at_test_peak_travel_N": 2817.1104694271285,
+   "F_at_test_peak_travel_with_series_N": 2799.2933838809377,
+   "first_yield": {
+    "u_mm": 0.0999999,
+    "F_N": 394.6428,
+    "peeq_max": {
+     "value": 0.00126689,
+     "at_mm": [
+      23.72,
+      25.74,
+      -6.62
+     ]
+    }
+   },
+   "last": {
+    "u_mm": 3.0,
+    "F_N": 2796.094,
+    "peeq_max": {
+     "value": 0.628295,
+     "at_mm": [
+      23.72,
+      25.74,
+      -6.62
+     ]
+    },
+    "s1_max_MPa": {
+     "value": 79.43449699336199,
+     "at_mm": [
+      20.7,
+      25.94,
+      8.1
+     ]
+    }
+   }
+  }
+ }
+}

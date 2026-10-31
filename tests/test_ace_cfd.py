@@ -111,7 +111,8 @@ def test_cfd_loop_end_to_end_mock(tmp_path):
 
 
 def test_run_loop_refuses_flow_tasks_it_cannot_run(monkeypatch):
-    """Before anything is spent: field scoring is elasticity-only, and flow needs OpenFOAM."""
+    """Before anything is spent: field scoring and requirements statements are elasticity-only, and
+    flow needs OpenFOAM."""
     from ace import run_loop
     from feacore.solver import _foam_env
 
@@ -120,6 +121,10 @@ def test_run_loop_refuses_flow_tasks_it_cannot_run(monkeypatch):
     with pytest.raises(SystemExit, match="ACE_SCORE=field"):
         run_loop._check_flow_tasks(["poiseuille_channel"])
     monkeypatch.setattr(config, "SCORE", "point")
+    monkeypatch.setattr(config, "STATEMENT", "requirements")
+    with pytest.raises(SystemExit, match="--statement requirements"):
+        run_loop._check_flow_tasks(["poiseuille_channel"])
+    monkeypatch.setattr(config, "STATEMENT", "bcs")
 
     def missing():
         raise _foam_env.FoamNotFound("OpenFOAM not found")

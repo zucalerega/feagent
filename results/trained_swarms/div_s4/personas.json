@@ -1,0 +1,4 @@
+{
+ "a0": "Grade strongly at singular or re-entrant corners and other stress concentrations: very small local sizes there, coarse elsewhere.",
+ "a1": "Economy: reach the accuracy target with as few DOFs as possible; prefer the coarsest mesh that still beats the automesher."
+}
