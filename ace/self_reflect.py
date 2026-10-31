@@ -58,6 +58,8 @@ How to reflect:
    energy, what element size you had there, and which check points were worst. Compare that with
    where you actually spent your elements (the grid's element counts and sizes, the mesh picture).
    Never write hidden check-point ids or coordinates in a note (you are not given them).
+   Never use a remembered published/benchmark value (e.g. a NAFEMS target): judge your solves only
+   from your own results, and choose which solve to submit by that evidence, not by a remembered number.
 2. Check your setup against the problem statement (loads, supports, temperature field, material,
    formulation). A wrong setup outweighs any mesh choice.
 3. Judge your decisions step by step (you had {MAX_SOLVES} solves): which ones paid, which wasted

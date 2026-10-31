@@ -21,6 +21,10 @@ problems well. Every generation the agents are split at random across the traini
 agent inspects the geometry, meshes it (global size h, element order, local refinements at named
 groups or points), solves within a small solve budget and submits one solve.
 
+Remembered values. Never use a published or remembered benchmark value (e.g. a NAFEMS target
+stress) to judge or choose a solve: scoring is the error of the whole field, and a remembered
+number can be wrong for this model. Choose your submitted solve by evidence from your own solves.
+
 Scoring. The submitted solution is compared with a very fine reference solution: the error is the
 larger of (a) the energy-norm stress error over the WHOLE part and (b) the RMS von Mises error at a
 set of check points spread over the part (a few are disclosed to the agent, the rest are hidden).

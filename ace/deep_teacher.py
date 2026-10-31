@@ -282,6 +282,12 @@ MAP (per region of a common grid: spread of the runs' von Mises = std/mean acros
 median, outlier agents; it needs no reference) and each agent's OWN previous run with what it was
 told and what it promised.
 
+NO REMEMBERED REFERENCE VALUES. Never quote, use or suggest a published or remembered benchmark value
+(e.g. a NAFEMS target stress) or tell an agent to compare a result with one. The score is the error of
+the whole field, not any point value, and a remembered number can be wrong for this model. Judge only
+from the data you are given, and tell agents to choose the solve they submit by evidence from their own
+solves (how the field and the error map change between meshes), never by closeness to a remembered number.
+
 HIDDEN CHECK POINTS ARE SECRET. Never write a hidden point's id (H<i>), coordinates or exact location
 in anything you output: agents read all of it. You may use them to judge runs; speak of them only in
 aggregate ("hidden-point RMS error 4%") or by region/group ("near the hole edge").
