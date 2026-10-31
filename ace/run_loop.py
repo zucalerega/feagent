@@ -27,7 +27,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from ace import config
+from ace import config, ui_bridge
 from ace.agent import run_agent
 from ace.checks import check_run, score_population, tolerance
 from ace.cost import BudgetExceeded, CostLog
@@ -56,13 +56,14 @@ def _worker(job: dict) -> dict:
     usage: list = []   # filled call by call, so a crash halfway still reports its tokens
     try:
         return run_agent(job["problem_id"], job["run_id"], job["generation"], job["playbook_text"],
-                         Path(job["workdir"]), make_llm(job["mock"]), usage=usage)
+                         Path(job["workdir"]), make_llm(job["mock"]), usage=usage, ui=job.get("ui"))
     except Exception:  # noqa: BLE001  one broken run must not kill the generation
         return _error_run(job, traceback.format_exc(), usage)
 
 
-def run_generation(jobs: list[dict], concurrency: int, cost: CostLog) -> list[dict]:
-    """Run jobs with at most `concurrency` in flight; stop starting new ones once over budget."""
+def run_generation(jobs: list[dict], concurrency: int, cost: CostLog, on_done=None) -> list[dict]:
+    """Run jobs with at most `concurrency` in flight; stop starting new ones once over budget.
+    `on_done(run)`, if given, is called here as each run finishes (e.g. by ace.ui_bridge)."""
     runs, pending, todo = [], {}, list(jobs)
     new_pool = lambda: ProcessPoolExecutor(concurrency, mp_context=mp.get_context("spawn"))  # noqa: E731
     pool = new_pool()
@@ -88,6 +89,8 @@ def run_generation(jobs: list[dict], concurrency: int, cost: CostLog) -> list[di
                     run = _error_run(job, f"worker process failed: {e!r} (token usage unknown)", [])
                 cost.add(run["usage"])
                 runs.append(run)
+                if on_done is not None:
+                    on_done(run)
                 status = "ERROR" if run.get("error") else f"{run['turns']} turns"
                 print(f"  run {run['run_id']} done ({status}), spent ${cost.total:.2f}", flush=True)
     finally:
@@ -241,6 +244,8 @@ def main(argv=None) -> int:
     ap.add_argument("--split", action="store_true",
                     help="shared+private only: each generation, randomly split the agents into one group per "
                          "train problem; one shared playbook per problem, private notes follow the agent")
+    ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
+                    "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
 
     train = [p for p in args.problems.split(",") if p]
@@ -261,6 +266,7 @@ def main(argv=None) -> int:
     all_runs: dict[str, list[dict]] = {pid: [] for pid in train + holdout}   # every run so far, per problem
     rows, gen_notes = [], []
     print(f"output: {out}")
+    ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
 
     try:
         for gen in range(args.generations):
@@ -294,7 +300,8 @@ def main(argv=None) -> int:
                 jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-{i}", "generation": gen,
                          "playbook_text": text, "workdir": str(gdir / "work" / f"{pid}-{i}"), "mock": args.mock}
                         for i in range(args.runs_per_problem) for pid in train + holdout]
-            runs = run_generation(jobs, args.concurrency, cost)
+            jobs = [{**j, "ui": ui} for j in jobs]   # ace.ui_bridge settings (None = off)
+            runs = run_generation(jobs, args.concurrency, cost, on_done=lambda r: ui_bridge.record_agent_run(ui, r))
             if runs and all(r.get("error") for r in runs):
                 print(runs[0]["error"])
                 raise SystemExit("every run failed; see the error above")
@@ -312,6 +319,7 @@ def main(argv=None) -> int:
             for pid in all_runs:
                 if all_runs[pid]:
                     score_population(all_runs[pid])
+            ui_bridge.record_scores(ui, all_runs)   # every run so far was just (re)scored
             checks = {r["run_id"]: r["checks"] for r in runs}
             for r in runs:
                 (gdir / "runs" / f"{r['run_id']}.json").write_text(json.dumps(r, indent=1, default=str))
@@ -335,6 +343,7 @@ def main(argv=None) -> int:
                 if config.REFLECTOR_MODE == "diagnoser":
                     refl = diagnose_step(pid, pruns, mem or playbook, llm, tolerance(pid), gdir, out,
                                          args.mock, cost, gen)
+                    ui_bridge.record_diagnosis(ui, pruns, refl)
                     if refl is not None:
                         reflections.append((pid, refl, [r["run_id"] for r in pruns]))
                     cost.check()

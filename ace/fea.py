@@ -182,8 +182,9 @@ def build_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> Case
     )
 
 
-def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> dict:
-    """Solve with the fixed solver and evaluate the scored QoI ourselves."""
+def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_result=None) -> dict:
+    """Solve with the fixed solver and evaluate the scored QoI ourselves. `on_result`, if
+    given, receives the feacore Result of a successful solve (for ace.ui_bridge)."""
     try:
         case = build_case(problem, mesh, setup, qoi_name)
         result = solve(case, backend="skfem")
@@ -192,6 +193,8 @@ def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     except Exception as e:  # noqa: BLE001  solver failures go back to the agent as text
         return {"ok": False, "error": f"solver failed: {type(e).__name__}: {e}"}
+    if on_result is not None:
+        on_result(result)
     info = {"n_dofs": int(result.info.n_dofs), "wall_time": float(result.info.wall_time),
             "warnings": list(result.info.warnings)}
     return {"ok": True, "qoi": qoi_name, "value": value, "info": info}
