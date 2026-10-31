@@ -103,8 +103,10 @@ This is analytical numerical verification, not validation against physical
 measurements or proof of accuracy on a multilayer chiplet package. The current
 heat material contract is scalar conductivity per region; tensor anisotropy
 is not implemented in this backend. Million-DOF and ten-million-DOF runs have
-not been demonstrated by this fixture. No new FEAgent license grant is made
-by this handoff; solver/dependency licensing must be reviewed for the intended use.
+not been demonstrated by this fixture. Original fixture scripts, documentation
+and numerical outputs are covered by the scoped MIT grant in
+[`COLLABORATION-LICENSE.txt`](../../COLLABORATION-LICENSE.txt). This does not
+license the underlying FEAgent solver or its dependencies.
 
 For the proposed published TAP-2.5D case, please provide the cited parameter
 sheet: layer extents/thicknesses and conductivities (explicitly flag any tensors),
