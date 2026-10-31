@@ -2,8 +2,8 @@
 
 Everything reported comes from the kernel (OCC via gmsh): areas, centres, bounding boxes, outward
 normals, cylinder axes/radii, concavity, adjacency. A temporary 2D tessellation supplies exact surface
-sample points (interior mesh nodes carry their uv) and the triangles used for ray-cast wall thickness
-and gap estimates. The mesh is always cleared again before returning.
+sample points (interior mesh nodes carry their uv), the outward orientation (ray parity) and the
+triangles used for ray-cast wall thickness and gap estimates. The mesh is cleared before returning.
 """
 from __future__ import annotations
 
@@ -11,12 +11,14 @@ import math
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from itertools import product
 from pathlib import Path
 
 import gmsh
 import numpy as np
 
-from .gmsh_session import gmsh_session, load_cad
+from .errors import FeagentError
+from .gmsh_session import gmsh_messages, gmsh_session, load_cad
 from .types import (EdgeInfo, FaceInfo, Feature, GeometryModel, Hazard, Tessellation,
                     VolumeInfo)
 
@@ -35,8 +37,19 @@ _REVOLVED = ("cylinder", "cone", "torus")   # u parameter = angle about the axis
 _MAX_SAMPLES = 24          # exact surface samples per face used for normals / curvature
 _EDGE_SAMPLES = 17         # points per boundary curve used for extents / angle span
 _MAX_RAYS = 50             # thickness / gap rays per face
+_PARITY_RAYS = 3           # orientation rays per face (majority vote)
 _SPAN_FULL = 300.0         # angle_span (deg) at or above which a cylinder counts as a full revolution
+_DIGEST_BUDGET = 7000      # summary digest target size (chars); FACES rows stop here
+_SUMMARY_GROUPS = 10       # feature patterns / normal groups listed in a summary digest
 _EMPTY3 = np.zeros((0, 3))
+# Session-independent temporary tessellation: whatever a mesher set up, this run is linear triangles
+# sized by MeshSizeMax + curvature. (Size fields cannot be switched off through the gmsh API; they
+# can only refine it, because sizes are clamped to MeshSizeMax.)
+_TESS_OPTIONS = {"Mesh.ElementOrder": 1, "Mesh.RecombineAll": 0, "Mesh.SubdivisionAlgorithm": 0,
+                 "Mesh.MeshSizeFactor": 1, "Mesh.MeshSizeMin": 0, "Mesh.MeshSizeFromPoints": 0,
+                 "Mesh.MeshSizeExtendFromBoundary": 1, "Mesh.Algorithm": 6,
+                 "Mesh.MeshSizeFromCurvature": 12}
+_TILTS = 0.2 * np.array([[0.31, 0.53, 0.79], [-0.72, 0.21, 0.66], [0.45, -0.83, 0.33]])
 
 
 @dataclass
@@ -48,10 +61,11 @@ class _Face:
     edges: list[int]
     xyz: np.ndarray = field(default_factory=lambda: _EMPTY3)   # exact samples (k,3)
     uv: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))
+    raw: np.ndarray = field(default_factory=lambda: _EMPTY3)   # getNormal at samples
     nrm: np.ndarray = field(default_factory=lambda: _EMPTY3)   # outward normals at samples
     pts: np.ndarray = field(default_factory=lambda: _EMPTY3)   # every known point on the face
     tris: np.ndarray = field(default_factory=lambda: np.zeros((0, 3), dtype=np.int64))
-    sign: float = 1.0          # getNormal * sign = outward normal
+    sign: float = 1.0          # raw * sign = outward normal
     uspan: float | None = None
 
 
@@ -62,6 +76,8 @@ class _Ctx:
     ref_size: float
     faces: dict[int, _Face]
     edge_pts: dict[int, np.ndarray]
+    mesh_error: str | None = None
+    unresolved: list[int] = field(default_factory=list)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -184,7 +200,8 @@ def _axis_point_from_normals(pts: np.ndarray, nrm: np.ndarray, axis) -> np.ndarr
 
 
 def _ray_triangle(o: np.ndarray, d: np.ndarray, tri: np.ndarray) -> np.ndarray:
-    """Moller-Trumbore distance along unit d from o to each triangle (k,3,3); inf where missed."""
+    """Moller-Trumbore distance along unit d from o to each triangle (k,3,3); inf where missed.
+    o and d are one ray (3,) or one ray per triangle (k,3)."""
     a, e1, e2 = tri[:, 0], tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]
     pv = np.cross(d, e2)
     det = np.einsum("ij,ij->i", e1, pv)
@@ -193,10 +210,18 @@ def _ray_triangle(o: np.ndarray, d: np.ndarray, tri: np.ndarray) -> np.ndarray:
     tv = o - a
     qv = np.cross(tv, e1)
     u = np.einsum("ij,ij->i", tv, pv) * inv
-    v = (qv @ d) * inv
+    v = np.einsum("ij,ij->i", qv, np.broadcast_to(d, qv.shape)) * inv
     t = np.einsum("ij,ij->i", e2, qv) * inv
     hit = good & (u >= -1e-7) & (v >= -1e-7) & (u + v <= 1 + 1e-7)
     return np.where(hit, t, np.inf)
+
+
+def _distinct_count(t: np.ndarray, tol: float) -> int:
+    """Number of distinct values (a ray through a shared edge hits both triangles once each)."""
+    if not len(t):
+        return 0
+    t = np.sort(t)
+    return int(1 + np.count_nonzero(np.diff(t) > tol))
 
 
 # ----------------------------------------------------------------------------------------------
@@ -262,8 +287,32 @@ def _curvature_radius(fd: _Face) -> float | None:
     return float(1.0 / np.median(big[big > 0])) if (big > 0).any() else None
 
 
+def _face_triangles(f: int) -> np.ndarray:
+    """Corner-node triangles (node tags) of the face mesh, whatever element type it holds
+    (quads are split, high-order elements reduced to their corners)."""
+    etypes, _, enodes = gmsh.model.mesh.getElements(2, f)
+    out = []
+    for t, nodes in zip(etypes, enodes):
+        _, _, _, nn, _, npri = gmsh.model.mesh.getElementProperties(t)
+        c = np.asarray(nodes, dtype=np.int64).reshape(-1, nn)[:, :npri]
+        out += [c] if npri == 3 else ([c[:, [0, 1, 2]], c[:, [0, 2, 3]]] if npri == 4 else [])
+    return np.vstack(out) if out else np.zeros((0, 3), dtype=np.int64)
+
+
+def _node_table() -> tuple[np.ndarray, np.ndarray]:
+    """(coordinates, row-of-node-tag lookup) of the current mesh."""
+    ntags, ncoord, _ = gmsh.model.mesh.getNodes()
+    if len(ntags) == 0:
+        return _EMPTY3, np.zeros(0, dtype=np.int64)
+    ntags = np.asarray(ntags, dtype=np.int64)
+    row = np.full(int(ntags.max()) + 1, -1, dtype=np.int64)
+    row[ntags] = np.arange(len(ntags))
+    return np.asarray(ncoord, float).reshape(-1, 3), row
+
+
 @contextmanager
 def _mesh_options(opts: dict[str, float]):
+    """Pin mesh options for the temporary tessellation; always clear the mesh and restore them."""
     saved = {k: gmsh.option.getNumber(k) for k in opts}
     try:
         for k, v in opts.items():
@@ -273,6 +322,15 @@ def _mesh_options(opts: dict[str, float]):
         gmsh.model.mesh.clear()
         for k, v in saved.items():
             gmsh.option.setNumber(k, v)
+
+
+def _require_no_mesh() -> None:
+    if len(gmsh.model.mesh.getNodes()[0]):
+        raise FeagentError(
+            "a mesh already exists in the current gmsh session; analyze_current_model needs a "
+            "temporary tessellation and would destroy it",
+            hint="analyze the geometry before meshing, call gmsh.model.mesh.clear() first, or pass "
+                 "tessellate=False (no thickness/gap measures)")
 
 
 # ----------------------------------------------------------------------------------------------
@@ -288,27 +346,45 @@ def analyze(path: str | Path, ref_size: float | None = None, heal: bool = False,
 
 def analyze_current_model(ref_size: float | None = None, source: str = "",
                           tessellate: bool = True) -> GeometryModel:
-    """Analyze the model of the CURRENT gmsh session. Leaves no mesh behind and restores the mesh
-    options it touches. ref_size (default diag/40) sets the hazard thresholds; tessellate=False skips
-    the temporary mesh (no thickness/gap, no Tessellation; samples come from a uv grid)."""
+    """Analyze the model of the CURRENT gmsh session; call it BEFORE meshing.
+
+    ref_size (default diag/40, must be > 0 else ValueError) sets the hazard thresholds.
+    tessellate=True builds a temporary linear triangulation with pinned mesh options (restored after)
+    and clears it again; it raises FeagentError if the session already holds a mesh, rather than
+    destroying it. tessellate=False never touches the mesh: no thickness/gap, no Tessellation, uv-grid
+    samples and one isInside probe pair per face for orientation. A failed or partial tessellation is
+    reported as an `analysis_incomplete` hazard (also shown in the digest header)."""
+    if tessellate:
+        _require_no_mesh()
     bbox = _model_bbox()
     diag = float(np.linalg.norm(np.subtract(bbox[1], bbox[0])))
-    h = float(ref_size) if ref_size and ref_size > 0 else (diag / 40.0 if diag > 0 else 1.0)
-    ctx = _Ctx(scale=diag if diag > 0 else 1.0, diag=diag, ref_size=h, faces=_face_records(),
-               edge_pts={})
+    ctx = _Ctx(scale=diag if diag > 0 else 1.0, diag=diag, ref_size=_ref_size(ref_size, diag),
+               faces=_face_records(), edge_pts={})
     volumes, edges = _volume_infos(), _edge_infos(ctx.scale)
     ctx.edge_pts = {e.tag: _curve_points(e.tag) for e in edges}
     points = _tessellate(ctx) if tessellate and ctx.faces else _EMPTY3
+    for fd in ctx.faces.values():
+        _prepare_samples(ctx, fd)
+    tess = _build_tessellation(ctx.faces, points) if len(points) else None
+    caster = _RayCaster(tess, ctx.scale) if tess is not None and volumes else None
+    _orient_faces(ctx, volumes, tess, caster)
     faces = [_face_info(ctx, fd) for fd in ctx.faces.values()]
     _set_neighbors(faces, edges)
-    tess = _build_tessellation(ctx.faces, points) if len(points) else None
-    if tess is not None and volumes:
-        _ray_measures(faces, tess, ctx.scale)
     features = _features(faces, ctx)
-    hazards = _hazards(faces, edges, volumes, features, ctx)
-    return GeometryModel(source=source, units="mm", bbox=bbox, diag=diag, ref_size=h,
+    if caster is not None:
+        _ray_measures(faces, tess, caster, _feature_index(features))
+    hazards = _hazards(faces, edges, volumes, features, ctx) + _hz_incomplete(ctx, tessellate)
+    return GeometryModel(source=source, units="mm", bbox=bbox, diag=diag, ref_size=ctx.ref_size,
                          volumes=volumes, faces=faces, edges=edges, features=features,
                          hazards=hazards, tessellation=tess)
+
+
+def _ref_size(ref_size: float | None, diag: float) -> float:
+    if ref_size is None:
+        return diag / 40.0 if diag > 0 else 1.0
+    if not ref_size > 0:
+        raise ValueError(f"ref_size must be > 0 (got {ref_size}); omit it for diag/40")
+    return float(ref_size)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -360,28 +436,21 @@ def _tessellate(ctx: _Ctx) -> np.ndarray:
     """2D-mesh the model, record per-face triangles and exact interior samples, clear the mesh.
     Returns the node coordinates the per-face triangle rows index into."""
     size = min(ctx.ref_size, ctx.diag / 25.0) if ctx.diag > 0 else ctx.ref_size
-    with _mesh_options({"Mesh.MeshSizeMax": size, "Mesh.MeshSizeFromCurvature": 12}):
+    with _mesh_options({**_TESS_OPTIONS, "Mesh.MeshSizeMax": size}):
         try:
             gmsh.model.mesh.generate(2)
-        except Exception:
-            pass  # keep whatever faces did mesh; the rest fall back to uv-grid samples
-        ntags, ncoord, _ = gmsh.model.mesh.getNodes()
-        if len(ntags) == 0:
-            return _EMPTY3
-        ntags = np.asarray(ntags, dtype=np.int64)
-        points = np.asarray(ncoord, float).reshape(-1, 3)
-        row = np.full(int(ntags.max()) + 1, -1, dtype=np.int64)
-        row[ntags] = np.arange(len(ntags))
-        for fd in ctx.faces.values():
+        except Exception as e:  # keep whatever faces did mesh; reported as analysis_incomplete
+            ctx.mesh_error = (str(e) + " " + "; ".join(gmsh_messages("Error")[-3:])).strip()
+        points, row = _node_table()
+        for fd in ctx.faces.values() if len(points) else ():
             _read_face_mesh(fd, points, row)
     return points
 
 
 def _read_face_mesh(fd: _Face, points: np.ndarray, row: np.ndarray) -> None:
-    etypes, _, enodes = gmsh.model.mesh.getElements(2, fd.tag)
-    tris = [np.asarray(n, dtype=np.int64).reshape(-1, 3) for t, n in zip(etypes, enodes) if t == 2]
-    if tris:
-        fd.tris = row[np.vstack(tris)]
+    tris = _face_triangles(fd.tag)
+    if len(tris):
+        fd.tris = row[tris]
         fd.pts = points[np.unique(fd.tris)]
     itags, ixyz, iuv = gmsh.model.mesh.getNodes(2, fd.tag, includeBoundary=False,
                                                 returnParametricCoord=True)
@@ -395,45 +464,108 @@ def _read_face_mesh(fd: _Face, points: np.ndarray, row: np.ndarray) -> None:
 
 
 def _build_tessellation(fdata: dict[int, _Face], points: np.ndarray) -> Tessellation | None:
-    """Outward-oriented triangles of all faces, compacted to the nodes they use."""
+    """Triangles of all faces wound along getNormal (flipped to outward later), compacted to the
+    nodes they use."""
     parts = [(fd.tag, *_orient_face_tris(fd, points)) for fd in fdata.values() if len(fd.tris)]
     if not parts:
         return None
     tris = np.vstack([p[1] for p in parts])
     used, inv = np.unique(tris, return_inverse=True)
-    remap = np.full(len(points), -1, dtype=np.int64)
-    remap[used] = np.arange(len(used))
-    for fd in fdata.values():
-        fd.tris = remap[fd.tris] if len(fd.tris) else fd.tris
     return Tessellation(points=points[used].copy(), triangles=inv.reshape(-1, 3).astype(np.int64),
                         face_tag=np.concatenate([np.full(len(p[1]), p[0], dtype=np.int64) for p in parts]),
                         normals=np.vstack([p[2] for p in parts]))
 
 
 def _orient_face_tris(fd: _Face, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Flip triangles whose winding disagrees with the exact outward normal; return (tris, normals)."""
+    """Wind triangles along the exact getNormal of the face; return (tris, unit normals)."""
     tris = fd.tris.copy()
     p = points[tris]
     cr = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
-    if fd.kind == "plane" and len(fd.nrm):
-        ref = np.broadcast_to(fd.nrm[0], cr.shape)
-    else:  # exact outward normal at each projected centroid
-        ref = fd.sign * _normals_at(fd.tag, _project(fd.tag, p.mean(axis=1))[1])
+    if fd.kind == "plane" and len(fd.raw):
+        ref = np.broadcast_to(fd.raw[0], cr.shape)
+    else:  # exact normal at each projected centroid
+        ref = _normals_at(fd.tag, _project(fd.tag, p.mean(axis=1))[1])
     flip = np.einsum("ij,ij->i", cr, ref) < 0
     tris[flip] = tris[flip][:, [0, 2, 1]]
     cr[flip] *= -1
     ln = np.linalg.norm(cr, axis=1)
     nrm = np.where(ln[:, None] > 0, cr / np.maximum(ln, 1e-300)[:, None], _unit_rows(ref))
-    fd.tris = tris
     return tris, nrm
 
 
+def _rows_by_face(tess: Tessellation | None) -> dict[int, np.ndarray]:
+    if tess is None:
+        return {}
+    order = np.argsort(tess.face_tag, kind="stable")
+    tags, starts = np.unique(tess.face_tag[order], return_index=True)
+    return dict(zip(tags.tolist(), np.split(order, starts[1:])))
+
+
 # ----------------------------------------------------------------------------------------------
-# per-face analysis
+# samples and outward orientation
+
+def _prepare_samples(ctx: _Ctx, fd: _Face) -> None:
+    """Exact samples (uv grid when the face has no mesh), known points and getNormal at samples."""
+    if len(fd.xyz) == 0:
+        try:
+            fd.xyz, fd.uv = _uv_grid_samples(fd.tag)
+        except Exception:
+            fd.xyz, fd.uv = _EMPTY3, np.zeros((0, 2))
+    own = [ctx.edge_pts[e] for e in fd.edges if len(ctx.edge_pts.get(e, _EMPTY3))]
+    fd.pts = np.vstack([fd.pts, fd.xyz, *own])
+    fd.raw = _normals_at(fd.tag, fd.uv) if len(fd.xyz) else _EMPTY3
+
+
+def _orient_faces(ctx: _Ctx, volumes: list[VolumeInfo], tess: Tessellation | None,
+                  caster: _RayCaster | None) -> None:
+    """Outward sign per face from ray parity against its first volume's boundary triangles
+    (O(F log T)); one isInside probe pair only where parity is unavailable or undecided."""
+    vol_faces = {v.tag: np.asarray(v.faces, dtype=np.int64) for v in volumes}
+    rows = _rows_by_face(tess)
+    for fd in ctx.faces.values():
+        if fd.volumes and len(fd.xyz):
+            votes = 0
+            if caster is not None and fd.tag in rows:
+                votes = _parity_votes(rows[fd.tag], vol_faces.get(fd.volumes[0]), tess, caster)
+            if votes == 0:
+                votes = _inside_vote(fd.volumes[0], fd.xyz[0], fd.raw[0], 1e-4 * ctx.scale)
+            fd.sign = -1.0 if votes < 0 else 1.0
+        fd.nrm = fd.sign * fd.raw
+        if fd.sign < 0 and fd.tag in rows:
+            r = rows[fd.tag]
+            tess.triangles[r] = tess.triangles[r][:, [0, 2, 1]]
+            tess.normals[r] *= -1
+
+
+def _parity_votes(rows: np.ndarray, vol_faces, tess: Tessellation, caster: _RayCaster) -> int:
+    """+1 per ray (from a triangle centroid, tilted off its getNormal-side normal) that crosses the
+    volume boundary an even number of times (normal points out), -1 per odd count."""
+    votes = 0
+    for k, cid in enumerate(rows[_spread(len(rows), _PARITY_RAYS)]):
+        n = tess.normals[cid]
+        d = _unit(n + _TILTS[k] - np.dot(_TILTS[k], n) * n)
+        t, ids = caster.hits(caster.centroid(cid), d, int(cid))
+        on = np.isin(tess.face_tag[ids], vol_faces) if vol_faces is not None else np.ones(len(t), bool)
+        votes += -1 if _distinct_count(t[on], caster.eps * 1e-3) % 2 else 1
+    return votes
+
+
+def _inside_vote(vol: int, p: np.ndarray, n: np.ndarray, delta: float) -> int:
+    """isInside probe pair at p ± d·n: -1 if the normal points into the volume, +1 if out."""
+    for d in (delta, 10 * delta, 0.1 * delta):
+        ahead = bool(gmsh.model.isInside(3, vol, (p + d * n).tolist()))
+        behind = bool(gmsh.model.isInside(3, vol, (p - d * n).tolist()))
+        if ahead != behind:
+            return -1 if ahead else 1
+    return 0
+
+
+# ----------------------------------------------------------------------------------------------
+# per-face shape facts
 
 def _face_info(ctx: _Ctx, fd: _Face) -> FaceInfo:
     center = np.asarray(gmsh.model.occ.getCenterOfMass(2, fd.tag), float)
-    info = _sample_and_orient(ctx, fd, center)
+    info = _shape_facts(ctx, fd, center)
     as_tup = lambda k: _tup(info[k]) if info.get(k) is not None else None  # noqa: E731
     return FaceInfo(
         tag=fd.tag, kind=fd.kind, area=float(gmsh.model.occ.getMass(2, fd.tag)), center=_tup(center),
@@ -443,40 +575,23 @@ def _face_info(ctx: _Ctx, fd: _Face) -> FaceInfo:
         volumes=fd.volumes, edges=fd.edges, neighbors=[])
 
 
-def _sample_and_orient(ctx: _Ctx, fd: _Face, center: np.ndarray) -> dict:
-    """Fill samples / outward normals / known points of fd; return the shape facts of the face."""
+def _shape_facts(ctx: _Ctx, fd: _Face, center: np.ndarray) -> dict:
+    """Normal at the sample nearest the centre plus kind-specific facts; failures are recorded in
+    ctx.unresolved (reported as analysis_incomplete), never silently dropped."""
     if len(fd.xyz) == 0:
-        fd.xyz, fd.uv = _uv_grid_samples(fd.tag)
-    own = [ctx.edge_pts[e] for e in fd.edges if len(ctx.edge_pts.get(e, _EMPTY3))]
-    fd.pts = np.vstack([fd.pts, fd.xyz, *own])
-    if len(fd.xyz) == 0:
+        ctx.unresolved.append(fd.tag)
         return {}
-    raw = _normals_at(fd.tag, fd.uv)
-    fd.sign = _outward_sign(fd, raw, 1e-4 * ctx.scale) if fd.volumes else 1.0
-    fd.nrm = fd.sign * raw
     rep = int(np.argmin(np.linalg.norm(fd.xyz - center, axis=1)))
     info = {"normal": fd.nrm[rep]}
+    shape = _SHAPES.get(fd.kind)
     try:
-        info.update(_SHAPES.get(fd.kind, lambda *_: {})(fd, rep, ctx.scale))
-    except Exception:  # curvature queries can fail on odd surfaces; keep the face
-        pass
+        facts = shape(fd, rep, ctx.scale) if shape else {}
+    except Exception:
+        facts = {}
+    if shape and not facts:
+        ctx.unresolved.append(fd.tag)
+    info.update(facts)
     return info
-
-
-def _outward_sign(fd: _Face, raw: np.ndarray, delta: float) -> float:
-    """+1 if getNormal points out of the face's first volume, -1 if it points in (majority vote of
-    isInside probes on both sides of up to 5 samples)."""
-    votes = sum(_inside_vote(fd.volumes[0], fd.xyz[i], raw[i], delta) for i in _spread(len(fd.xyz), 5))
-    return -1.0 if votes < 0 else 1.0
-
-
-def _inside_vote(vol: int, p: np.ndarray, n: np.ndarray, delta: float) -> int:
-    for d in (delta, 10 * delta, 0.1 * delta):
-        ahead = bool(gmsh.model.isInside(3, vol, (p + d * n).tolist()))
-        behind = bool(gmsh.model.isInside(3, vol, (p - d * n).tolist()))
-        if ahead != behind:
-            return -1 if ahead else 1
-    return 0
 
 
 def _cylinder(fd: _Face, rep: int, scale: float) -> dict:
@@ -549,7 +664,7 @@ _SHAPES = {"cylinder": _cylinder, "cone": _cone, "sphere": _sphere, "torus": _to
 
 
 # ----------------------------------------------------------------------------------------------
-# ray-cast thickness and gap
+# ray casting: orientation parity, thickness, gap
 
 class _RayCaster:
     """Cell locator over the tessellation; distances are recomputed exactly per candidate triangle.
@@ -572,64 +687,107 @@ class _RayCaster:
         self._loc.SetDataSet(self._pd)
         self._loc.BuildLocator()
         self._hp, self._hi = vtkPoints(), vtkIdList()
-        self.tri = tess.points[tess.triangles]
+        self.tri = tess.points[tess.triangles]   # vertex positions: unaffected by later flips
         self.eps, self.length = 1e-6 * scale, 1.01 * scale
 
-    def first_hit(self, origin: np.ndarray, direction: np.ndarray, source: int):
-        """(distance, cell) of the first triangle hit beyond eps, excluding the source cell."""
+    def centroid(self, cid: int) -> np.ndarray:
+        return self.tri[cid].mean(axis=0)
+
+    def hits(self, origin: np.ndarray, direction: np.ndarray, source: int):
+        """(distances, cells) of every triangle hit beyond eps along the ray, source cell excluded."""
+        ids = self._candidates(origin, direction, source)
+        t = _ray_triangle(origin, direction, self.tri[ids]) if len(ids) else np.zeros(0)
+        ok = np.isfinite(t) & (t > self.eps)
+        return t[ok], ids[ok]
+
+    def _candidates(self, origin: np.ndarray, direction: np.ndarray, source: int) -> np.ndarray:
         self._hp.Reset()
         self._hi.Reset()
         self._loc.IntersectWithLine(origin.tolist(), (origin + self.length * direction).tolist(),
                                     self.eps * 1e-3, self._hp, self._hi, None)
         ids = np.array([self._hi.GetId(i) for i in range(self._hi.GetNumberOfIds())], dtype=np.int64)
-        ids = ids[ids != source]
-        t = _ray_triangle(origin, direction, self.tri[ids]) if len(ids) else np.zeros(0)
+        return ids[ids != source]
+
+    def first_hits(self, origins: np.ndarray, dirs: np.ndarray, sources: np.ndarray):
+        """Nearest hit per ray, batched: (distances (inf = none), cells (-1 = none))."""
+        cand = [self._candidates(o, d, int(s)) for o, d, s in zip(origins, dirs, sources)]
+        ray = np.repeat(np.arange(len(cand)), [len(c) for c in cand])
+        cells = np.concatenate(cand) if cand else np.zeros(0, dtype=np.int64)
+        t = _ray_triangle(origins[ray], dirs[ray], self.tri[cells]) if len(cells) else np.zeros(0)
         t = np.where(np.isfinite(t) & (t > self.eps), t, np.inf)
-        if not len(t) or not np.isfinite(t.min()):
-            return None
-        k = int(np.argmin(t))
-        return float(t[k]), int(ids[k])
+        best = np.full(len(cand), np.inf)
+        np.minimum.at(best, ray, t)
+        cell = np.full(len(cand), -1, dtype=np.int64)
+        win = np.isfinite(t) & (t == best[ray])
+        cell[ray[win]] = cells[win]
+        return best, cell
 
 
-def _ray_measures(faces: list[FaceInfo], tess: Tessellation, scale: float) -> None:
+def _ray_measures(faces: list[FaceInfo], tess: Tessellation, caster: _RayCaster,
+                  group: dict[int, int]) -> None:
     """thickness = median / thickness_min = min inward first-hit distance over <=50 triangles per
-    face; gap = min outward first-hit distance when the hit is on another face."""
-    caster = _RayCaster(tess, scale)
-    cen = tess.points[tess.triangles].mean(axis=1)
-    order = np.argsort(tess.face_tag, kind="stable")
-    tags, starts = np.unique(tess.face_tag[order], return_index=True)
-    groups = dict(zip(tags.tolist(), np.split(order, starts[1:])))
+    face; gap = min outward first-hit distance when the hit is on another face (and not on another
+    face of the same feature, e.g. the other half of a split hole)."""
+    rows = _rows_by_face(tess)
+    members: dict[int, set[int]] = defaultdict(set)
+    for t, g in group.items():
+        members[g].add(t)
     for fi in faces:
-        ids = groups.get(fi.tag, np.zeros(0, int))
-        if len(ids) and fi.volumes:
-            _face_rays(fi, ids[_spread(len(ids), _MAX_RAYS)], caster, cen, tess)
+        ids = rows.get(fi.tag)
+        own = members[group[fi.tag]] | {fi.tag} if fi.tag in group else {fi.tag}
+        if ids is not None and fi.volumes:
+            _face_rays(fi, ids[_spread(len(ids), _MAX_RAYS)], caster, tess, own)
 
 
-def _face_rays(fi: FaceInfo, ids, caster: _RayCaster, cen, tess: Tessellation) -> None:
-    thick, gaps = [], []
-    for cid in ids:
-        o, n = cen[cid], tess.normals[cid]
-        hit = caster.first_hit(o, -n, int(cid))
-        if hit is not None:
-            thick.append(hit[0])
-        hit = caster.first_hit(o, n, int(cid)) if len(fi.volumes) == 1 else None
-        if hit is not None and int(tess.face_tag[hit[1]]) != fi.tag:
-            gaps.append(hit[0])
-    if thick:
+def _face_rays(fi: FaceInfo, ids, caster: _RayCaster, tess: Tessellation, own: set[int]) -> None:
+    o, n = caster.tri[ids].mean(axis=1), tess.normals[ids]
+    t, _ = caster.first_hits(o, -n, ids)
+    if np.isfinite(t).any():
+        thick = t[np.isfinite(t)]
         fi.thickness, fi.thickness_min = float(np.median(thick)), float(np.min(thick))
-    if gaps:
-        fi.gap = float(np.min(gaps))
+    if len(fi.volumes) != 1:
+        return
+    g, cell = caster.first_hits(o, n, ids)
+    other = (cell >= 0) & ~np.isin(tess.face_tag[np.maximum(cell, 0)], list(own))
+    if other.any():
+        fi.gap = float(np.min(g[other]))
 
 
 # ----------------------------------------------------------------------------------------------
 # features
 
 def _features(faces: list[FaceInfo], ctx: _Ctx) -> list[Feature]:
-    """Group cylinders by (concavity, radius ±1e-3·r, collinear axis, touching) and classify."""
+    """Group cylinders by (concavity, radius ±1e-3·r, collinear axis, touching) and classify. Pairs
+    are only tested inside a spatial hash of the axis points, so this is ~linear in cylinders."""
     cyl = [f for f in faces if f.kind == "cylinder" and f.radius and f.axis is not None
            and f.axis_point is not None and f.concave is not None]
     ext = {f.tag: _axial_extent(ctx.faces[f.tag].pts, f.axis) for f in cyl}
-    parent = {f.tag: f.tag for f in cyl}
+    pairs = [(a.tag, b.tag) for a, b in _candidate_pairs(cyl, ctx.diag)
+             if _same_cylinder(a, b, ext, ctx.diag)]
+    by_tag = {f.tag: f for f in cyl}
+    groups = [[by_tag[t] for t in g] for g in _union_groups([f.tag for f in cyl], pairs)]
+    feats = [_feature(g, ctx) for g in groups]
+    return [f for f in feats if f is not None]
+
+
+def _candidate_pairs(cyl: list[FaceInfo], diag: float):
+    """Cylinder pairs whose axis points share or touch a hash cell larger than the merge tolerance."""
+    cell = 2e-3 * max([diag, 1e-9] + [f.radius for f in cyl])
+    key = {f.tag: tuple(np.floor(np.asarray(f.axis_point) / cell).astype(int)) for f in cyl}
+    grid: dict[tuple, list[FaceInfo]] = defaultdict(list)
+    for f in cyl:
+        grid[key[f.tag]].append(f)
+    for a in cyl:
+        k = key[a.tag]
+        for off in product((-1, 0, 1), repeat=3):
+            for b in grid.get((k[0] + off[0], k[1] + off[1], k[2] + off[2]), ()):
+                if b.tag > a.tag:
+                    yield a, b
+
+
+def _union_groups(tags: list[int], pairs: list[tuple[int, int]]) -> list[list[int]]:
+    """Connected components (sorted, ordered by smallest tag) of the pair graph."""
+    parent = {t: t for t in tags}
 
     def find(x):
         while parent[x] != x:
@@ -637,15 +795,12 @@ def _features(faces: list[FaceInfo], ctx: _Ctx) -> list[Feature]:
             x = parent[x]
         return x
 
-    for i, a in enumerate(cyl):
-        for b in cyl[i + 1:]:
-            if _same_cylinder(a, b, ext, ctx.diag):
-                parent[find(b.tag)] = find(a.tag)
-    groups: dict[int, list[FaceInfo]] = defaultdict(list)
-    for f in cyl:
-        groups[find(f.tag)].append(f)
-    feats = [_feature(g, ctx) for g in sorted(groups.values(), key=lambda g: g[0].tag)]
-    return [f for f in feats if f is not None]
+    for a, b in pairs:
+        parent[find(b)] = find(a)
+    groups: dict[int, list[int]] = defaultdict(list)
+    for t in tags:
+        groups[find(t)].append(t)
+    return sorted((sorted(g) for g in groups.values()), key=lambda g: g[0])
 
 
 def _axial_extent(pts: np.ndarray, axis) -> tuple[float, float]:
@@ -689,8 +844,20 @@ def _classify(concave: bool, span: float, r: float, diag: float) -> str | None:
     return "round"
 
 
+def _feature_index(features: list[Feature]) -> dict[int, int]:
+    """face tag -> index of the feature it belongs to."""
+    return {t: i for i, ft in enumerate(features) for t in ft.faces}
+
+
 # ----------------------------------------------------------------------------------------------
 # hazards
+
+def _id_text(tags, cap: int = 12) -> str:
+    """Face/edge id list for messages: at most `cap` ids, then '+N more'."""
+    tags = list(tags)
+    more = f" +{len(tags) - cap} more" if len(tags) > cap else ""
+    return "[" + ", ".join(str(t) for t in tags[:cap]) + more + "]"
+
 
 def _hazards(faces, edges, volumes, features, ctx: _Ctx) -> list[Hazard]:
     h = ctx.ref_size
@@ -744,7 +911,7 @@ def _hz_short_edge(e: EdgeInfo, h: float, pts: np.ndarray) -> Hazard:
         kind="short_edge", entities=[(1, e.tag)], value=e.length, threshold=0.25 * h,
         location=_tup(pts[len(pts) // 2]) if len(pts) else None,
         message=f"edge {e.tag} ({e.kind}) length {_f(e.length)} < 0.25*h = {_f(0.25 * h)} "
-                f"(faces {e.faces})",
+                f"(faces {_id_text(e.faces)})",
         suggestion="it forces elements of that size locally; defeature the tiny step in CAD or "
                    "heal: true, otherwise expect a local size jump (watch the sicn gate)")
 
@@ -768,17 +935,19 @@ def _hz_walls(faces, attr: str, h: float) -> list[Hazard]:
 
 
 def _thin_wall_text(tags, t: float, h: float) -> tuple[str, str]:
-    return (f"wall thickness {_f(t)} < 2*h = {_f(2 * h)} on faces {tags}; at size {_f(h)} there are "
+    ids = _id_text(tags)
+    return (f"wall thickness {_f(t)} < 2*h = {_f(2 * h)} on faces {ids}; at size {_f(h)} there are "
             f"fewer than 2 elements through the wall",
-            f"local size <= t/2 = {_f(t / 2)} on faces {tags} (spec: refine: [{{select: <query for these "
+            f"local size <= t/2 = {_f(t / 2)} on faces {ids} (spec: refine: [{{select: <query for these "
             f"faces>, size: {_f(t / 2)}, distance: {_f(t)}}}]) or element order 2 (spec: element.order: "
             f"2); elements through the wall: size.thin_wall_layers")
 
 
 def _narrow_gap_text(tags, g: float, h: float) -> tuple[str, str]:
-    return (f"gap {_f(g)} < 2*h = {_f(2 * h)} in front of faces {tags} (distance to the next surface "
+    ids = _id_text(tags)
+    return (f"gap {_f(g)} < 2*h = {_f(2 * h)} in front of faces {ids} (distance to the next surface "
             f"along the outward normal)",
-            f"local size <= gap/2 = {_f(g / 2)} near faces {tags} (spec: refine with size {_f(g / 2)}), "
+            f"local size <= gap/2 = {_f(g / 2)} near faces {ids} (spec: refine with size {_f(g / 2)}), "
             f"or close/defeature the gap in CAD")
 
 
@@ -787,8 +956,8 @@ def _hz_small_fillet(ft: Feature, h: float) -> Hazard:
     return Hazard(
         kind="small_fillet", entities=[(2, t) for t in ft.faces], value=r, threshold=0.5 * h,
         location=None,
-        message=f"fillet r={_f(r)} < 0.5*h = {_f(0.5 * h)} on faces {ft.faces}; it will be faceted "
-                f"by about one element or force local refinement",
+        message=f"fillet r={_f(r)} < 0.5*h = {_f(0.5 * h)} on faces {_id_text(ft.faces)}; it will be "
+                f"faceted by about one element or force local refinement",
         suggestion=f"if stress at the fillet matters, refine to size <= r/3 = {_f(r / 3)} (spec: "
                    f"refine: [{{select: {{feature: fillet}}, size: {_f(r / 3)}}}]); else defeature it")
 
@@ -797,10 +966,34 @@ def _hz_interface(f: FaceInfo) -> Hazard:
     return Hazard(
         kind="multi_volume_interface", entities=[(2, f.tag)], value=f.area, threshold=None,
         location=f.center,
-        message=f"face {f.tag} is shared by volumes {f.volumes} (conformal interface after fragment: "
-                f"nodes are shared, the bodies are bonded)",
+        message=f"face {f.tag} is shared by volumes {_id_text(f.volumes)} (conformal interface after "
+                f"fragment: nodes are shared, the bodies are bonded)",
         suggestion="fine for bonded multi-body parts; it is internal, so it is not a boundary-group "
                    "candidate (default_group takes only faces with one volume)")
+
+
+def _hz_incomplete(ctx: _Ctx, tessellate: bool) -> list[Hazard]:
+    """analysis_incomplete: failed/partial tessellation (no thickness/gap) and unresolved faces."""
+    out = []
+    missing = sorted(t for t, fd in ctx.faces.items() if not len(fd.tris)) if tessellate else []
+    if ctx.mesh_error or missing:
+        why = f"temporary tessellation failed ({ctx.mesh_error})" if ctx.mesh_error else \
+            "temporary tessellation is partial"
+        out.append(Hazard(
+            kind="analysis_incomplete", entities=[(2, t) for t in missing], value=None, threshold=None,
+            location=None,
+            message=f"{why}: thickness/gap not measured on faces {_id_text(missing)}; thin_wall and "
+                    f"narrow_gap hazards may be missing there",
+            suggestion="retry with heal: true or a different ref_size; inspect those faces "
+                       "(render/describe) before trusting the hazard list"))
+    if ctx.unresolved:
+        out.append(Hazard(
+            kind="analysis_incomplete", entities=[(2, t) for t in ctx.unresolved], value=None,
+            threshold=None, location=None,
+            message=f"shape facts unresolved on faces {_id_text(ctx.unresolved)} (sampling/curvature "
+                    f"query failed): normal/axis/radius/concavity may be missing",
+            suggestion="select these faces by position (box/near/at) rather than by axis/radius"))
+    return out
 
 
 # ----------------------------------------------------------------------------------------------
@@ -845,15 +1038,26 @@ def _counts(items) -> str:
     return ", ".join(f"{k} {n}" for k, n in sorted(c.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
+def _capped(lines: list[str], full: bool, what: str) -> list[str]:
+    """Summary keeps the first _SUMMARY_GROUPS lines, then '… N more <what> (use detail=full)'."""
+    if full or len(lines) <= _SUMMARY_GROUPS:
+        return lines
+    return lines[:_SUMMARY_GROUPS] + [f"… {len(lines) - _SUMMARY_GROUPS} more {what} (use detail=full)"]
+
+
 def digest_text(model: GeometryModel, detail: str = "summary", max_faces: int = 60) -> str:
     """Deterministic text digest: header, FEATURES, PLANAR FACES, HAZARDS, FACES. detail="summary"
-    truncates FACES to the max_faces largest; detail="full" lists every face and edge."""
+    is token-bounded: groups are capped and FACES stops at max_faces rows or ~_DIGEST_BUDGET chars;
+    detail="full" lists every feature, face and edge."""
     if detail not in ("summary", "full"):
         raise ValueError(f"detail must be 'summary' or 'full', got {detail!r}")
     full = detail == "full"
     z = 1e-6 * model.diag  # kernel tolerance noise (bbox enlargement, mass integration) prints as 0
-    sections = [_dg_header(model, z), _dg_features(model, z), _dg_planes(model, z, full),
-                _dg_hazards(model, full), _dg_faces(model, z, full, max_faces)]
+    sections = [_dg_header(model, z), _dg_features(model, z, full), _dg_planes(model, z, full),
+                _dg_hazards(model, full)]
+    used = sum(len(line) + 1 for s in sections for line in s)
+    budget = math.inf if full else max(_DIGEST_BUDGET - used, 1500)
+    sections.append(_dg_faces(model, z, max_faces if not full else len(model.faces), budget))
     if full:
         sections += [_dg_edges(model), _dg_measures(model, z)]
     return "\n\n".join("\n".join(s) for s in sections) + "\n"
@@ -875,43 +1079,48 @@ def _dg_header(model: GeometryModel, z: float) -> list[str]:
         f"edges {len(model.edges)} ({_counts(model.edges)})",
         f"ref_size h={_f(h)}  thresholds: small_face A<{_f((0.5 * h) ** 2)}, short_edge "
         f"L<{_f(0.25 * h)}, sliver 2A/P<{_f(0.25 * h)}, thin_wall/narrow_gap <{_f(2 * h)}, "
-        f"small_fillet r<{_f(0.5 * h)}"]
+        f"small_fillet r<{_f(0.5 * h)}",
+        *[f"NOTE: {hz.message}" for hz in model.hazards if hz.kind == "analysis_incomplete"]]
 
 
-def _dg_features(model: GeometryModel, z: float) -> list[str]:
-    """Identical features collapse into one line: "4× hole r=3.25 axis +z depth 6 ..."."""
+def _dg_features(model: GeometryModel, z: float, full: bool) -> list[str]:
+    """Identical features collapse into one line ("4× hole r=3.25 axis +z depth 6 ..."); patterns
+    are ordered by count, then total face area."""
+    area = {f.tag: f.area for f in model.faces}
     pat: dict[tuple, list[Feature]] = defaultdict(list)
     for ft in model.features:
         p = ft.params
         pat[(ft.kind, _f(p["radius"]), _dir_label(p["axis"]), _f(p["depth"]),
              _f(round(p["angle_span"])))].append(ft)
-    out = [f"FEATURES ({len(model.features)})"]
-    if not pat:
-        out.append("  none detected (holes/bosses/fillets/rounds come from cylindrical faces)")
-    for (kind, r, ax, depth, span), fts in pat.items():
+    order = sorted(pat.items(), key=lambda kv: (-len(kv[1]),
+                                                -sum(area.get(t, 0.0) for ft in kv[1] for t in ft.faces)))
+    lines = []
+    for (kind, r, ax, depth, span), fts in order:
         word = "depth" if kind in ("hole", "boss") else "length"
         at = (" at " + " ".join(_pt(ft.params["axis_point"], z) for ft in fts)) if len(fts) <= 8 else ""
         faces = sorted(t for ft in fts for t in ft.faces)
-        out.append(f"- {len(fts)}× {kind} r={r} axis {ax} {word} {depth} span {span}°{at} "
-                   f"faces {_ids(faces)}")
-    return out
+        lines.append(f"- {len(fts)}× {kind} r={r} axis {ax} {word} {depth} span {span}°{at} "
+                     f"faces {_ids(faces)}")
+    none = ["  none detected (holes/bosses/fillets/rounds come from cylindrical faces)"]
+    return [f"FEATURES ({len(model.features)})"] + (_capped(lines, full, "feature patterns") or none)
 
 
 def _dg_planes(model: GeometryModel, z: float, full: bool) -> list[str]:
-    """Planar faces grouped by rounded outward normal, largest group first."""
+    """Planar faces grouped by rounded outward normal, largest total area first."""
     groups: dict[str, list[FaceInfo]] = defaultdict(list)
     for f in model.faces:
         if f.kind == "plane" and f.normal is not None:
             groups[_dir_label(np.round(f.normal, 3))].append(f)
-    out = ["PLANAR FACES (by outward normal; offset = n·x)"] + ([] if groups else ["  none"])
+    lines = []
     for lab, fs in sorted(groups.items(), key=lambda kv: -sum(f.area for f in kv[1])):
         fs = sorted(fs, key=lambda f: -f.area)
         cap = len(fs) if full else 8
         parts = [f"{f.tag} (A={_f(f.area)}, {_plane_offset(f, lab, z)})" for f in fs[:cap]]
         parts += [f"… {len(fs) - cap} more"] if len(fs) > cap else []
-        out.append(f"{lab:<6} {len(fs)} face{'s' if len(fs) != 1 else ''}  "
-                   f"ΣA={_f(sum(f.area for f in fs))}: " + "; ".join(parts))
-    return out
+        lines.append(f"{lab:<6} {len(fs)} face{'s' if len(fs) != 1 else ''}  "
+                     f"ΣA={_f(sum(f.area for f in fs))}: " + "; ".join(parts))
+    head = ["PLANAR FACES (by outward normal; offset = n·x)"]
+    return head + (_capped(lines, full, "normal groups") or ["  none"])
 
 
 def _plane_offset(f: FaceInfo, label: str, z: float) -> str:
@@ -923,6 +1132,7 @@ def _plane_offset(f: FaceInfo, label: str, z: float) -> str:
 
 
 def _dg_hazards(model: GeometryModel, full: bool) -> list[str]:
+    """Summary: up to 3 hazards of a kind are listed, more collapse into one line."""
     out = [f"HAZARDS ({len(model.hazards)})"]
     if not model.hazards:
         out.append(f"  none at ref_size h={_f(model.ref_size)}")
@@ -930,7 +1140,7 @@ def _dg_hazards(model: GeometryModel, full: bool) -> list[str]:
     for hz in model.hazards:
         by_kind[hz.kind].append(hz)
     for kind, hs in by_kind.items():
-        if full or len(hs) <= 4:
+        if full or len(hs) <= 3:
             out += [f"- {kind}: {hz.message} → {hz.suggestion}" for hz in hs]
             continue
         ents = [t for hz in hs for _, t in hz.entities]
@@ -938,7 +1148,7 @@ def _dg_hazards(model: GeometryModel, full: bool) -> list[str]:
         rng = f" values {_f(min(vals))}..{_f(max(vals))}" if vals else ""
         dim = "edges" if hs[0].entities and hs[0].entities[0][0] == 1 else "faces"
         out.append(f"- {len(hs)}× {kind} on {dim} {_ids(ents)}{rng} (threshold "
-                   f"{_f(hs[0].threshold)}) → {hs[0].suggestion}")
+                   f"{_f(hs[0].threshold)}) → e.g. {hs[0].suggestion}")
     return out
 
 
@@ -950,16 +1160,21 @@ def _face_row(f: FaceInfo, ztol: float) -> str:
             f"{_f(f.radius):>7} {cv:>7}  {_ids(f.neighbors, 12)}")
 
 
-def _dg_faces(model: GeometryModel, z: float, full: bool, max_faces: int) -> list[str]:
+def _dg_faces(model: GeometryModel, z: float, max_rows: int, budget: float) -> list[str]:
+    """FACES table, largest first, until max_rows rows or the char budget is used up."""
     faces = sorted(model.faces, key=lambda f: (-f.area, f.tag))
-    shown = faces if full else faces[:max_faces]
-    note = "" if len(shown) == len(faces) else f"; largest {max_faces} by area"
+    rows: list[str] = []
+    for f in faces[:max_rows]:
+        row = _face_row(f, z)
+        if rows and sum(len(r) + 1 for r in rows) + len(row) > budget:
+            break
+        rows.append(row)
+    note = "" if len(rows) == len(faces) else f"; largest {len(rows)} by area"
     out = [f"FACES ({len(faces)}{note})",
            f"{'tag':>5} {'kind':<10} {'area':>10} {'center':<22} {'normal|axis':<16} {'r':>7} "
-           f"{'concave':>7}  nbrs"]
-    out += [_face_row(f, z) for f in shown]
-    if len(faces) > len(shown):
-        out.append(f"… {len(faces) - len(shown)} more (use detail=full)")
+           f"{'concave':>7}  nbrs"] + rows
+    if len(faces) > len(rows):
+        out.append(f"… {len(faces) - len(rows)} more (use detail=full)")
     return out
 
 

@@ -85,7 +85,8 @@ class FeaDisplacement:
 
 
 @dataclass
-class FeaSolveSpec:
+class FeaBcs:
+    """Structural boundary conditions declared for the downstream solver."""
     fixed: list[str]
     loads: list[FeaLoad]
     E: float = 210000.0
@@ -96,7 +97,8 @@ class FeaSolveSpec:
 
 
 @dataclass
-class CfdSolveSpec:
+class CfdBcs:
+    """Flow boundary conditions declared for the downstream solver."""
     inlet: list[str]
     outlet: list[str]
     velocity: float = 1.0
@@ -120,8 +122,8 @@ class MeshSpec:
     algorithm_3d: int
     export: list[str]
     quality: QualitySpec
-    fea: FeaSolveSpec | None
-    cfd: CfdSolveSpec | None
+    bcs_fea: FeaBcs | None
+    bcs_cfd: CfdBcs | None
     output: Path = field(default_factory=lambda: Path("out"))
 
     def out_dir(self) -> Path:
@@ -133,7 +135,7 @@ def _query_keys() -> tuple[str, ...]:
         from feagent.select import QUERY_KEYS
 
         return tuple(QUERY_KEYS)
-    except Exception:
+    except ImportError:
         return _FALLBACK_QUERY_KEYS
 
 
@@ -343,8 +345,16 @@ def _parse_default_group(data: dict, done: dict) -> dict:
         _text(dg, "default_group", "a non-empty string or null")
         if dg in done["groups"]:
             raise _err("default_group", f"{dg!r} collides with a group of the same name",
-                       "rename default_group or the group")
+                       _collision_hint(dg, "default_group" in data, done["analysis"]))
     return {"default_group": dg}
+
+
+def _collision_hint(dg: str, explicit: bool, analysis: str) -> str:
+    if explicit or analysis != "cfd":
+        return "rename default_group or the group"
+    return (f"analysis: cfd sets default_group to {dg!r} (all faces not in a group) unless you "
+            f"set it: rename your group, set default_group: <other name>, or set "
+            f"default_group: null to keep your own {dg!r} group and leave no default")
 
 
 def _parse_size(data: dict, done: dict) -> dict:
@@ -394,36 +404,36 @@ def _parse_quality(data: dict, done: dict) -> dict:
     return {"quality": QualitySpec(**_section(data.get("quality"), "quality", _QUALITY))}
 
 
-def _parse_solve(data: dict, done: dict) -> dict:
-    sv = _mapping(data.get("solve"), "solve", ("fea", "cfd"))
-    return {"fea": _solver(sv, "fea", done, _parse_fea),
-            "cfd": _solver(sv, "cfd", done, _parse_cfd)}
+def _parse_bcs(data: dict, done: dict) -> dict:
+    bc = _mapping(data.get("bcs"), "bcs", ("fea", "cfd"))
+    return {"bcs_fea": _bcs_of(bc, "fea", done, _parse_fea),
+            "bcs_cfd": _bcs_of(bc, "cfd", done, _parse_cfd)}
 
 
-def _solver(sv: dict, kind: str, done: dict, parse: Callable[[Any, dict], Any]) -> Any:
-    if sv.get(kind) is None:
+def _bcs_of(bc: dict, kind: str, done: dict, parse: Callable[[Any, dict], Any]) -> Any:
+    if bc.get(kind) is None:
         return None
     if done["analysis"] != kind:
-        raise _err(f"solve.{kind}", f"only allowed with analysis: {kind}")
-    return parse(sv[kind], done["groups"])
+        raise _err(f"bcs.{kind}", f"only allowed with analysis: {kind}")
+    return parse(bc[kind], done["groups"])
 
 
 _FEA_KEYS = ("E", "nu", "fixed", "loads", "symmetry", "pressure", "displacement")
 
 
-def _parse_fea(v: Any, groups: dict) -> FeaSolveSpec:
-    fd = _mapping(v, "solve.fea", _FEA_KEYS)
-    return FeaSolveSpec(
-        fixed=_group_refs(fd.get("fixed", []), "solve.fea.fixed", groups),
+def _parse_fea(v: Any, groups: dict) -> FeaBcs:
+    fd = _mapping(v, "bcs.fea", _FEA_KEYS)
+    return FeaBcs(
+        fixed=_group_refs(fd.get("fixed", []), "bcs.fea.fixed", groups),
         loads=_fea_items(fd, "loads", _parse_load, groups),
-        symmetry=_group_refs(fd.get("symmetry", []), "solve.fea.symmetry", groups),
+        symmetry=_group_refs(fd.get("symmetry", []), "bcs.fea.symmetry", groups),
         pressure=_fea_items(fd, "pressure", _parse_pressure, groups),
         displacement=_fea_items(fd, "displacement", _parse_displacement, groups),
-        **_values(fd, "solve.fea", _FEA_SCALARS))
+        **_values(fd, "bcs.fea", _FEA_SCALARS))
 
 
 def _fea_items(fd: dict, key: str, parse: Callable[[Any, str, dict], Any], groups: dict) -> list:
-    path = f"solve.fea.{key}"
+    path = f"bcs.fea.{key}"
     return [parse(item, f"{path}[{i}]", groups) for i, item in enumerate(_list(fd.get(key, []), path))]
 
 
@@ -460,12 +470,11 @@ def _parse_load(ld: Any, lp: str, groups: dict) -> FeaLoad:
     return FeaLoad(group, tuple(_num(c, f"{lp}.force[{j}]") for j, c in enumerate(f)))
 
 
-def _parse_cfd(v: Any, groups: dict) -> CfdSolveSpec:
-    cd = _mapping(v, "solve.cfd", ("inlet", "outlet", "velocity"))
-    inlet = _group_refs(cd.get("inlet", []), "solve.cfd.inlet", groups)
-    outlet = _group_refs(cd.get("outlet", []), "solve.cfd.outlet", groups)
-    return CfdSolveSpec(inlet=inlet, outlet=outlet,
-                        **_values(cd, "solve.cfd", {"velocity": _positive}))
+def _parse_cfd(v: Any, groups: dict) -> CfdBcs:
+    cd = _mapping(v, "bcs.cfd", ("inlet", "outlet", "velocity"))
+    inlet = _group_refs(cd.get("inlet", []), "bcs.cfd.inlet", groups)
+    outlet = _group_refs(cd.get("outlet", []), "bcs.cfd.outlet", groups)
+    return CfdBcs(inlet=inlet, outlet=outlet, **_values(cd, "bcs.cfd", {"velocity": _positive}))
 
 
 def _parse_output(data: dict, done: dict) -> dict:
@@ -474,27 +483,39 @@ def _parse_output(data: dict, done: dict) -> dict:
 
 _SECTIONS = (_parse_name, _parse_geometry, _parse_analysis, _parse_heal, _parse_domain,
              _parse_groups, _parse_default_group, _parse_size, _parse_refine, _parse_element,
-             _parse_algorithm, _parse_export, _parse_quality, _parse_solve, _parse_output)
+             _parse_algorithm, _parse_export, _parse_quality, _parse_bcs, _parse_output)
 _TOP = ("name", "geometry", "analysis", "heal", "domain", "groups", "default_group", "size",
-        "refine", "element", "algorithm", "export", "quality", "solve", "output")
+        "refine", "element", "algorithm", "export", "quality", "bcs", "output")
+_RENAMED = {"solve": "bcs: (boundary conditions for the solver; same fea/cfd sub-keys)"}
 
 
 def load_spec(path: str | Path) -> MeshSpec:
     """Read and validate a YAML mesh spec; raises SpecError naming the bad field."""
     p = Path(path)
     if not p.is_file():
-        raise _err("", f"spec file not found: {p}")
+        raise _err("", f"spec file not found: {p}",
+                   "pass the path of a mesh.yaml (relative to the current directory); "
+                   "`feagent automesh PART` writes a starting spec")
     try:
         data = yaml.safe_load(p.read_text())
     except yaml.YAMLError as exc:
-        raise _err("", f"invalid YAML in {p}: {exc}") from exc
+        raise _err("", f"invalid YAML in {p}: {exc}",
+                   "fix the line/column shown: YAML needs `key: value` with consistent "
+                   "indentation; quote strings containing ':' or '#'") from exc
     return parse_spec(data, p)
 
 
 def parse_spec(data: dict, path: Path) -> MeshSpec:
     """Validate spec ``data`` (paths relative to ``path``), section by section in order."""
     parsed: dict[str, Any] = {"path": Path(path)}
+    _reject_renamed(data)
     data = _mapping(data, "", _TOP)
     for parse in _SECTIONS:
         parsed.update(parse(data, parsed))
     return MeshSpec(**parsed)
+
+
+def _reject_renamed(data: Any) -> None:
+    for old, new in _RENAMED.items():
+        if isinstance(data, dict) and old in data:
+            raise _err(old, "unknown key (renamed)", f"use {new}")
