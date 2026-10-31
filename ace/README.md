@@ -144,8 +144,9 @@ solver in `docs/benchmarks_cfd.md`. The suites can be mixed with `--problems` / 
 
 Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mesh for each, and
 `tests/test_diagnosis.py` checks that it passes every oracle. For example, the cylinder drag is
-0.28 % off at 5440 nodes with refinement at the cylinder. With lighter refinement (3277 nodes) it
-is 1.71 % off and fails the 1 % tolerance, so local refinement is what the agents have to learn.
+0.37 % off at 5440 nodes with refinement at the cylinder. With lighter refinement (3277 nodes) it
+was 1.71 % off (measured before the wall-distance fix in the force evaluation) and fails the 1 %
+tolerance, so local refinement is what the agents have to learn.
 The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with
 linearUpwind meets the tolerance (`calibration.json`: Poiseuille 0.08 %, Taylor-Couette 0.36 %,
 cavity 1.33 %, 3D pipe 1.50 %, 3D duct 0.84 %), so the score rewards the cheapest accurate setup.
