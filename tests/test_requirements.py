@@ -129,3 +129,13 @@ def test_loop_end_to_end_in_requirements_mode_mock(tmp_path, monkeypatch):
     assert groups == {"left_edge", "right_edge"}              # the agent only ever saw the neutral names
     assert record["checks"]["setup"]["missing"] == [] and "score" in record["checks"]
     assert "engineering requirements" in (tmp_path / "summary.md").read_text()
+
+
+def test_inspect_geometry_leaves_supports_and_loads_to_the_agent(monkeypatch):
+    from ace import geometry_info
+    hints = geometry_info.describe(fea.get_problem("cooks_membrane"))["hints"]
+    assert "Supported: clamped" in hints                      # bcs mode: read off the statement
+    monkeypatch.setattr(config, "STATEMENT", "requirements")
+    info = geometry_info.describe(fea.get_problem("cooks_membrane"))
+    assert "Supported" not in info["hints"] and "Loaded" not in info["hints"]
+    assert not info["support_boundary"] and not info["load_boundary"]

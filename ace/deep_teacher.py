@@ -66,8 +66,10 @@ class NoteItem(BaseModel):
 
 
 class Refinement(BaseModel):
-    group: str | None = Field(default=None, description="a named group of the geometry, or null with a point")
-    point: list[float] | None = Field(default=None, description="[x, y] or [x, y, z], or null with a group")
+    group: str | None = Field(default=None, description="a named face group (f<tag>), or null")
+    edge: int | None = Field(default=None, description="a CAD edge tag from inspect_geometry (refine along it), or null")
+    point: list[float] | None = Field(default=None, description="[x, y] or [x, y, z], or null")
+    box: list[float] | None = Field(default=None, description="[xmin, ymin, zmin, xmax, ymax, zmax], or null")
     size: float = Field(description="element size at the group/point")
     radius: float = Field(description="distance over which the size grows back to h")
 
@@ -269,8 +271,13 @@ mistake gets a named, concrete correction.
 
 {PROCESS_BRIEF}
 
+USE THE TOOLS IN YOUR FEEDBACK. The agents have the tools listed above. Tell each agent which tool
+calls to make and how: e.g. refine re-entrant edge 37 with {edge: 37, size, radius}; check
+folded_cells; read the solve's error hotspots and view the error; compare solves 1 and 2 before
+submitting. If an agent ignored a tool that would have shown its mistake, say so.
+
 WHAT EACH AGENT DID. It inspected the geometry, called mesh(h, order, refinements) (refinements: an
-element size `size` at a named `group` or at a `point`, growing linearly back to h over `radius`),
+element size `size` at a face `group`, an `edge`, a `point` or in a `box`, growing back to h over `radius`),
 called solve(setup) at most {MAX_SOLVES} times, and submitted one solve. For each run you get: its
 numbers and rank; its submitted setup; its mesh request and statistics; an error map (hotspots with
 their share of the error energy, nearest named group, local element size); a REGION GRID over the

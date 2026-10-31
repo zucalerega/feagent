@@ -10,7 +10,8 @@ It is the swarm's moving baseline: run both in parallel on the same tasks, then
 cumulative $ and wall time.
 
 The same as the swarm:
-  - the tools (ace.agent: inspect_geometry, mesh, solve, submit), each now with a `task` argument;
+  - the tools (ace.agent: inspect_geometry, mesh, solve, view, compare, submit), each now with a `task`
+    argument; TaskTools passes each call, view images included, to that task's ace.agent.Tools;
   - the field-mode score (ace.checks.check_run + score_population against the automesher). The
     be-the-best bonus needs peers: a lone run "wins" every hidden point, so it is set to 0 here and
     `score` equals `base_score`, the number to compare with the swarm's base score;

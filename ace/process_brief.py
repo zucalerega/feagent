@@ -53,6 +53,28 @@ one thing, compare). Specific beats generic: name groups, points, sizes, radii a
 """
 
 
+
+TOOLS_BRIEF = """\
+## THE AGENTS' TOOLS (every agent has them; full reference: ace/TOOLS.md)
+- inspect_geometry(): every face (group f<tag>, type, area, centroid, normal, neighbours, named in
+  the statement or not) and edge (tag, length, faces, dihedral angle, RE-ENTRANT or not: a likely
+  stress singularity), smallest features, plain-language hints.
+- mesh(h, order, refinements): refinements at a face {group}, a CAD edge {edge: tag}, a {point} or a
+  {box: [xmin,ymin,zmin,xmax,ymax,zmax]}, each with size and radius. Returns quality, repaired_cells
+  (folded curved cells straightened automatically) and folded_cells (must be 0, else the run is
+  invalid), and element size near each named group.
+- solve(setup): the scored quantity plus every statement quantity, reactions vs applied loads, max
+  displacement and stress with locations, and a reference-free error estimate with the top 5
+  hotspots (location, nearest face/edge, local element size, share of the error).
+- view(solve, kind=mesh|stress|error, view=iso|x|y|z|-x|-y|-z): a picture the agent sees.
+- compare(solve_a, solve_b): how much the stress field changed between two solves and where
+  (convergence evidence without a reference).
+- submit(solve).
+Good practice: inspect the geometry first; refine re-entrant edges and support/load edges; check
+folded_cells is 0 and equilibrium holds; use the hotspots to place the next refinement; compare two
+solves before choosing; submit by this evidence.
+"""
+
 # The single-agent baseline (ace/single_loop.py): PROCESS_BRIEF rewritten for ONE agent that works on
 # every task in one conversation. Same scoring, same learning (teacher, self-reflection, organizer),
 # no peers and no be-the-best bonus. ace/single_loop.py swaps it in for PROCESS_BRIEF in every
@@ -99,7 +121,8 @@ def mesh_call_text(call: dict | None) -> str:
     if not call:
         return "(none)"
     refs = ", ".join(
-        "{" + ", ".join(f"{k}: {v}" for k, v in (("group", r.get("group")), ("point", r.get("point")),
+        "{" + ", ".join(f"{k}: {v}" for k, v in (("group", r.get("group")), ("edge", r.get("edge")),
+                                                 ("point", r.get("point")), ("box", r.get("box")),
                                                  ("size", r.get("size")), ("radius", r.get("radius")))
                         if v is not None) + "}"
         for r in call.get("refinements") or [])
@@ -319,3 +342,9 @@ def single_context(tasks: list[str], playbook, notes, per_task: dict[str, dict])
     parts.append("## THIS GENERATION\n" + CLOSING + "\nDo this for every task. Use solves as experiments: "
                  "change one thing and compare.")
     return "\n\n".join(parts)
+
+
+# Every role reads one of the briefs (agents via deep_context / single_context; teacher, reflector and
+# organizer via their system prompts), so appending the tools section here tells all of them.
+PROCESS_BRIEF = PROCESS_BRIEF.rstrip() + "\n\n" + TOOLS_BRIEF
+SINGLE_BRIEF = SINGLE_BRIEF.rstrip() + "\n\n" + TOOLS_BRIEF
