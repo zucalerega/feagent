@@ -8,6 +8,7 @@ NPARTS=${1:-10}; BCS=${2:-10}; MW=${3:-12}; SW=${4:-3}; NCAND=${5:-300}
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 W=~/gold; mkdir -p "$W"; cd "$W"
 T0=$(date +%s)
+NOISE='No multithreading interface|Statistics on Transfer|Transfer Mode|Transferring Shape|WorkSession|Step File Name|^\s*(\x1b\[[0-9;]*m)?\**(\x1b\[0m)?\s*$' 
 stamp() { echo "$(( $(date +%s) - T0 ))s $*" | tee -a "$W/timing.log"; }
 
 stamp "setup start"
@@ -28,14 +29,14 @@ stamp "screened"
 
 PYTHONUNBUFFERED=1 "$PY" -W ignore -m feacore.goldgen run parts.jsonl abc --out out --parts "$NPARTS" \
   --bcs "$BCS" --min-bcs 5 --levels 3 --h0-frac 0.237 --mesh-workers "$MW" --solve-workers "$SW" \
-  --linear-solver cudss 2>&1 | grep -av "No multithreading interface" | tee -a "$W/run.log"
+  --linear-solver cudss 2>&1 | grep -av -E "$NOISE" | tee -a "$W/run.log"
 stamp "goldgen run done"
 
 L2=out/_meshes/abc_00000003/L2.msh
 if [ -f "$L2" ]; then
   PYTHONUNBUFFERED=1 "$PY" -W ignore "$REPO/scripts/view_results.py" parts.jsonl abc_00000003 "$L2" --bcs 10 \
     --out "$W/L2_results.html" --title "abc_00000003  (L2 curved Tet10, 10 BC sets, H100)" 2>&1 \
-    | grep -av "No multithreading interface" | tee -a "$W/run.log"
+    | grep -av -E "$NOISE" | tee -a "$W/run.log"
   stamp "L2 results page written"
 fi
 

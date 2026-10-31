@@ -22,10 +22,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import resource
 import sys
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, as_completed, wait
 from pathlib import Path
 
 
@@ -130,6 +131,7 @@ def _solve_job(job) -> dict:
     except Exception as e:  # noqa: BLE001 - one bad BC set must not stop the run
         summ = {"id": s.id, "result": "error", "error": f"{type(e).__name__}: {str(e)[:300]}"}
     summ["seconds_total"] = round(time.perf_counter() - t0, 1)
+    summ["worker_maxrss_gb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6, 1)
     return summ
 
 
@@ -166,31 +168,35 @@ def cmd_run(a) -> int:
     # BC sets enter the solve pool the moment its meshes are ready
     with ProcessPoolExecutor(max(1, a.mesh_workers)) as mesh_ex, ProcessPoolExecutor(max(1, a.solve_workers)) as solve_ex:
         mesh_futs = {mesh_ex.submit(_mesh_part, j): j[0]["part"]["id"] for j in jobs}
-        solve_futs = []
-        for f in as_completed(mesh_futs):
-            pid = mesh_futs[f]
-            row, sets = todo[pid]
-            try:
-                meshes = f.result()
-            except Exception as e:  # noqa: BLE001
-                print(f"[{pid}] mesh FAILED: {type(e).__name__}: {str(e)[:200]}", flush=True)
-                continue
-            for m in meshes:
-                meshlog.write(json.dumps({k: m.get(k) for k in ("part", "mesh_level", "h", "cells", "seconds", "scheme",
-                                                                 "nested", "alg3d", "folded_before_fix", "min_sj",
-                                                                 "min_linear_quality", "failed_attempts", "fallback_reason")}) + "\n")
-                print(f"[{pid}] L{m['mesh_level']}: {m['cells']} cells, {m['seconds']:.1f}s, {m['scheme']}"
-                      f"{'' if m.get('nested', True) else ' remesh'}", flush=True)
-            meshlog.flush()
-            part_json = json.dumps(row["part"])
-            solve_futs += [solve_ex.submit(_solve_job, (row["path"], part_json, s, meshes, str(out), a.linear_solver))
-                           for s in sets]
-        for f in as_completed(solve_futs):
-            summ = f.result()
-            summaries.write(json.dumps(summ) + "\n")
-            summaries.flush()
-            print(f"[{summ['id']}] {summ.get('result')} gold={summ.get('gold')} singular={summ.get('singular')} "
-                  f"dofs={summ.get('dofs')} t={summ['seconds_total']}s", flush=True)
+        pending = set(mesh_futs)
+        while pending:                                     # one loop drives both pools
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for f in done:
+                if f in mesh_futs:
+                    pid = mesh_futs[f]
+                    row, sets = todo[pid]
+                    try:
+                        meshes = f.result()
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[{pid}] mesh FAILED: {type(e).__name__}: {str(e)[:200]}", flush=True)
+                        continue
+                    for m in meshes:
+                        meshlog.write(json.dumps({k: m.get(k) for k in (
+                            "part", "mesh_level", "h", "cells", "seconds", "scheme", "nested", "alg3d", "folded_before_fix",
+                            "min_sj", "min_linear_quality", "failed_attempts", "fallback_reason")}) + "\n")
+                        print(f"[{pid}] L{m['mesh_level']}: {m['cells']} cells, {m['seconds']:.1f}s, {m['scheme']}"
+                              f"{'' if m.get('nested', True) else ' remesh'}", flush=True)
+                    meshlog.flush()
+                    part_json = json.dumps(row["part"])
+                    pending |= {solve_ex.submit(_solve_job, (row["path"], part_json, s, meshes, str(out), a.linear_solver))
+                                for s in sets}
+                else:
+                    summ = f.result()
+                    summaries.write(json.dumps(summ) + "\n")
+                    summaries.flush()
+                    print(f"[{summ['id']}] {summ.get('result')} gold={summ.get('gold')} singular={summ.get('singular')} "
+                          f"dofs={summ.get('dofs')} t={summ['seconds_total']}s rss={summ.get('worker_maxrss_gb')}GB",
+                          flush=True)
     stop.set()
     print(f"run done in {time.perf_counter() - t_start:.0f}s", flush=True)
     return 0
