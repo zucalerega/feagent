@@ -250,9 +250,48 @@ def _dump(x):
 
 
 def _highlight_note(h: dict) -> dict:
-    return {"section": "meshing", "kind": "highlight", "source": f"peer:{h.get('agent')}",
+    return {"section": "meshing", "kind": "highlight", "source": f"peer:{h.get('agent')}@{h.get('task') or 'general'}",
             "content": f"{h.get('agent')} on {h.get('task')}: {h.get('what')} Why it works: {h.get('why_it_works')} "
                        f"How to copy: {h.get('how_to_copy')}"}
+
+
+def _first_text(run: dict, max_chars: int = 4000) -> str:
+    """The agent's first message (its checklist: what it promised to do about last feedback)."""
+    for t in run.get("trace") or []:
+        if t.get("type") == "text" and (t.get("text") or "").strip():
+            return t["text"][:max_chars]
+    return "(no first message)"
+
+
+def _run_summary(run: dict, report: dict | None = None) -> dict:
+    """A run in a few numbers: task, the submitted mesh request, score, errors, rank. Only
+    aggregates (no hidden check-point data), so it is safe to show to the agent."""
+    c = run.get("checks") or {}
+    n = (report or {}).get("numbers") or {}
+    meshes, solves, i = run.get("meshes") or [], run.get("solves") or [], run.get("submitted")
+    mesh = None
+    if isinstance(i, int) and 0 <= i < len(solves):
+        mi = solves[i].get("mesh_index")
+        if isinstance(mi, int) and 0 <= mi < len(meshes):
+            mesh = meshes[mi].get("request")
+    if mesh is None and meshes:                       # no submit: its last mesh
+        mesh = meshes[-1].get("request")
+    return {"run_id": run["run_id"], "task": run["problem_id"], "mesh_call": mesh,
+            "score": c.get("score"), "field_error": c.get("rel_error"), "probe_error": c.get("probe_error"),
+            "dofs": c.get("dofs"), "rank": n.get("rank_in_group"), "group_size": n.get("group_size"),
+            "failed_gate": c.get("failed_gate"), "error": run.get("error")}
+
+
+def _accepted(fn, kwargs: dict) -> dict:
+    """kwargs minus those fn does not take (so new teacher inputs can land before teach accepts them)."""
+    import inspect
+    params = inspect.signature(fn).parameters
+    if any(p.kind is p.VAR_KEYWORD for p in params.values()):
+        return kwargs
+    dropped = [k for k in kwargs if k not in params]
+    if dropped:
+        print(f"  note: {fn.__name__} does not take {dropped} yet; not passed")
+    return {k: v for k, v in kwargs.items() if k in params}
 
 
 def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memory, train: list[str], llm,
@@ -263,7 +302,8 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
          playbook; their new note lists replace the old ones (Memory.replace_notes).
     `state` carries what the next generation's contexts need and is updated in place:
     "teacher" {task: last TeacherFeedback dict}, "feedback" {agent: its last AgentFeedback dict},
-    "reflection" {agent: its last SelfReflection dict}, "highlights" [this generation's highlights].
+    "reflection" {agent: its last SelfReflection dict}, "highlights" [this generation's highlights],
+    "last_run" {agent: _run_summary of its last taught run}.
     Returns {"timings": {...}, "private": {agent: changes}, "shared": changes or None}."""
     from ace.deep_teacher import teach        # --deep only (and written alongside this mode)
     from ace.organizer import organize_private, organize_shared
@@ -280,21 +320,46 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
     notes = lambda r: process_brief.render_notes(mem.private[agent_of(r["run_id"])])   # noqa: E731
     shared_text = process_brief.render_notes(mem.shared)
 
+    state.setdefault("last_run", {})
+    timings = {}
+
+    # Disagreement map per task (no ground truth needed): where the runs' von Mises fields differ.
+    t0 = time.perf_counter()
+    disagreement = {}
+    for pid in train:
+        pruns = [r for r in ok if r["problem_id"] == pid]
+        if len(pruns) >= 2:
+            try:
+                from ace.run_report import disagreement_map
+                disagreement[pid] = disagreement_map([reports[r["run_id"]] for r in pruns])
+            except Exception as e:  # noqa: BLE001  the teacher still works without it
+                print(f"  disagreement map for {pid} failed: {e!r}; teacher gets none")
+    timings["disagreement"] = round(time.perf_counter() - t0, 2)
+
+    # Continuity: each agent's OWN previous run, the feedback and reflection it got on it, and the
+    # first message of this run (its promises), so the teacher can check each promise was kept.
+    def last_by_agent(pruns):
+        return {name(r): {"previous_run": state["last_run"].get(name(r)),
+                          "previous_feedback": state["feedback"].get(name(r)),
+                          "previous_reflection": state["reflection"].get(name(r)),
+                          "promised_this_run": _first_text(r)} for r in pruns}
+
     # 3. teacher per task + self-reflection per run: one pool, so they overlap fully.
     jobs = {}
     for pid in train:
         pruns = [r for r in ok if r["problem_id"] == pid]
         if pruns:
-            jobs[f"teacher {pid}"] = (teach, dict(
+            jobs[f"teacher {pid}"] = (teach, _accepted(teach, dict(
                 task=pid, reports=[reports[r["run_id"]] for r in pruns], runs=pruns,
                 notes_by_agent={name(r): notes(r) for r in pruns}, shared_text=shared_text,
-                prev_feedback=state["teacher"].get(pid), llm=llm))
+                prev_feedback=None, disagreement=disagreement.get(pid),
+                last_by_agent=last_by_agent(pruns), llm=llm)))
     for r in ok:
         jobs[f"reflect {r['run_id']}"] = (reflect_on_run, dict(report=reports[r["run_id"]], run=r,
                                                                own_notes_text=notes(r), llm=llm))
     res, secs = _llm_jobs(jobs, cost)
-    timings = {"teacher": max([v for k, v in secs.items() if k.startswith("teacher")], default=0),
-               "reflect": max([v for k, v in secs.items() if k.startswith("reflect")], default=0)}
+    timings.update(teacher=max([v for k, v in secs.items() if k.startswith("teacher")], default=0),
+                   reflect=max([v for k, v in secs.items() if k.startswith("reflect")], default=0))
 
     feedback = {pid: _dump(res.get(f"teacher {pid}")) for pid in train}
     (gdir / "reflections").mkdir(exist_ok=True)
@@ -316,12 +381,14 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
             own[name(r)] = {**refl, "run_id": r["run_id"], "task": r["problem_id"]}
     state["feedback"].update(per_agent)
     state["reflection"].update(own)
+    state["last_run"].update({name(r): _run_summary(r, reports.get(r["run_id"])) for r in ok})
     state["highlights"] = highlights
     cost.check()
 
-    # 4. organizer: what each agent gets = the teacher's notes and mesh call for it, its own
-    #    reflection's notes, and what the OTHER agents did well; the shared playbook gets every
-    #    task's shared lessons, highlights and setup warnings.
+    # 4. organizer: what each agent gets = the teacher's notes and mesh call for it and its own
+    #    reflection's notes, each tagged "@<task>"; the shared playbook gets every task's shared
+    #    lessons, highlights, setup warnings and contested regions. (Peer highlights stay out of the
+    #    private lists: agents see them in the shared playbook and the context's highlights section.)
     t0 = time.perf_counter()
     incoming = {}
     for r in ok:
@@ -329,22 +396,26 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
         items = []
         if a in per_agent:
             af = per_agent[a]
-            items += [{**n, "source": "teacher"} for n in af.get("notes") or []]
-            items.append({"section": "meshing", "kind": "fix", "source": "teacher",
+            items += [{**n, "source": f"teacher@{n.get('task') or af['task']}"} for n in af.get("notes") or []]
+            items.append({"section": "meshing", "kind": "fix", "source": f"teacher@{af['task']}",
                           "content": f"Teacher's next mesh call for {af['task']}: "
                                      f"{process_brief.mesh_call_text(af.get('next_mesh_call'))}"})
         if a in own:
-            items += [{**n, "source": "self"} for n in own[a].get("what_i_learned") or []]
-        items += [_highlight_note(h) for h in highlights if h.get("agent") != a]
+            items += [{**n, "source": f"self@{n.get('task') or own[a]['task']}"}
+                      for n in own[a].get("what_i_learned") or []]
         incoming[a] = items
     shared_in = []
     for pid, fb in feedback.items():
         if fb is None:
             continue
-        shared_in += [{**n, "source": "shared-lesson"} for n in fb.get("shared_lessons") or []]
+        shared_in += [{**n, "source": f"shared-lesson@{n.get('task') or pid}"} for n in fb.get("shared_lessons") or []]
         shared_in += [_highlight_note({**h, "task": pid}) for h in fb.get("highlights") or []]
-        shared_in += [{"section": "solver_setup", "kind": "avoid", "source": "teacher", "content": w}
+        shared_in += [{"section": "solver_setup", "kind": "avoid", "source": f"teacher@{pid}", "content": w}
                       for w in fb.get("setup_warnings") or []]
+        shared_in += [{"section": "meshing", "kind": "fix", "source": f"teacher@{pid}",
+                       "content": f"Contested region on {pid}: {c.get('region')}. Why: {c.get('why_contested')} "
+                                  f"What to do: {c.get('what_to_do')}"}
+                      for c in fb.get("contested_regions") or [] if isinstance(c, dict)]
     owners = {a: mem.private[int(a[1:])] for a in incoming}
     jobs = {f"organize {a}": (organize_private, dict(agent=a, current=notes_as_dicts(owners[a]), incoming=items, llm=llm))
             for a, items in incoming.items()}
@@ -587,7 +658,7 @@ def main(argv=None) -> int:
     print(f"output: {out}")
     ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
     # --deep: what the next generation's contexts are built from (filled by deep_learn)
-    deep = {"teacher": {}, "feedback": {}, "reflection": {}, "highlights": []}
+    deep = {"teacher": {}, "feedback": {}, "reflection": {}, "highlights": [], "last_run": {}}
 
     def agent_text(k: int, pid: str | None, gen: int) -> str:
         """Agent k's prompt text on task pid (None: held out): memory, then peers and persona."""
@@ -595,9 +666,10 @@ def main(argv=None) -> int:
         if args.deep:
             a = f"a{k}"
             text = process_brief.deep_context(
-                a, pid, process_brief.render_notes(mem.shared), process_brief.render_notes(mem.private[k]),
+                a, pid, mem.shared, mem.private[k],     # Playbooks: rendered grouped by task
                 deep["feedback"].get(a), deep["reflection"].get(a), deep["highlights"],
-                peers_text(k, pid, prev) if pid is not None else "")
+                peers_text(k, pid, prev) if pid is not None else "",
+                last_run=deep["last_run"].get(a), task_feedback=deep["teacher"].get(pid))
         else:
             text = mem.prompt_text(k, args.top_n, pid)
         if peers and pid is not None and not args.deep:
