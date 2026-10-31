@@ -127,3 +127,79 @@ def test_thin_wall_gate_warns(cantilever):
     rep = assess_mesh(cantilever, r, Q, "fea")
     g = next(g for g in rep.gates if g.id == "thin_walls")
     assert g.status == "warn" and "size.thin_wall_layers" in g.hint
+
+
+def test_area_fidelity_fails_on_wrong_cad_area(cantilever):
+    r = _cant_result(cantilever)
+    r.geometry.faces[0].area = 150.0
+    g = next(g for g in assess_mesh(cantilever, r, Q, "fea").gates if g.id == "area_fidelity")
+    assert g.status == "fail" and "quality.max_area_error" in g.hint
+
+
+def test_area_fidelity_fails_on_missing_group(cantilever):
+    r = _cant_result(cantilever)
+    r.groups["ghost"] = GroupResult("ghost", 2, [1], 0, 100.0)
+    rep = assess_mesh(cantilever, r, Q, "fea")
+    g = next(g for g in rep.gates if g.id == "area_fidelity")
+    assert g.status == "fail" and "ghost" in g.message
+
+
+def test_volume_fidelity_skips_without_geometry(cantilever):
+    r = _cant_result(cantilever)
+    r.geometry.volumes = []
+    g = next(g for g in assess_mesh(cantilever, r, Q, "fea").gates if g.id == "volume_fidelity")
+    assert g.status == "skip"
+
+
+def test_sicn_gate_fails_when_threshold_above_min(cantilever):
+    q = SimpleNamespace(**{**vars(Q), "min_sicn": 0.999})
+    g = next(g for g in assess_mesh(cantilever, _cant_result(cantilever), q, "fea").gates
+             if g.id == "sicn")
+    assert g.status == "fail" and "quality.min_sicn" in g.hint
+
+
+def test_sicn_per_tet_aligned_with_tets(cantilever):
+    from feagent.meshdata import read_msh
+    rep = assess_mesh(cantilever, _cant_result(cantilever), Q, "fea")
+    md = read_msh(cantilever)
+    i = int(np.argmin(rep.sicn_per_tet))
+    with gmsh_session():
+        gmsh.open(str(cantilever))
+        ref = gmsh.model.mesh.getElementQualities([int(md.tet_tags[i])], "minSICN")[0]
+    assert rep.sicn_per_tet[i] == pytest.approx(ref)
+    assert rep.worst[0].tag == int(md.tet_tags[i])
+    # centroid of worst element matches tets[i] corner mean
+    assert np.allclose(rep.worst[0].centroid, md.points[md.tets[i]].mean(axis=0))
+
+
+def test_hint_spec_keys_exist_in_schema(cantilever, tmp_path):
+    """Every dotted spec key cited in a hint must be accepted by parse_spec."""
+    import re
+    from pathlib import Path
+
+    from feagent.spec import parse_spec
+    q = SimpleNamespace(min_sicn=2.0, min_gamma=2.0, max_volume_error=0.0, max_area_error=0.0,
+                        max_non_ortho=0.0, max_skewness=0.0, thin_wall_min_elements=2)
+    r = _cant_result(cantilever)
+    r.geometry.faces[0].area = 150.0
+    r.geometry.volumes[0].volume = 12000.0
+    r.geometry.hazards.append(Hazard(kind="thin_wall", entities=[(2, 1)], value=2.0,
+                                     threshold=None, location=None, message="", suggestion=""))
+    hints = " ".join(g.hint for g in assess_mesh(cantilever, r, q, "cfd").gates)
+    hints += " " + " ".join(g.hint for g in assess_mesh(
+        cantilever, r, q, "fea").gates)
+    keys = set(re.findall(r"\b(?:size|element|algorithm|quality)\.[a-z_0-9]+", hints))
+    keys |= {"heal", "refine"}
+    assert {"element.optimize", "algorithm.mesh3d", "size.curvature"} <= keys
+    assert not re.search(r"algorithm_3d|\boptimize:|\border:", hints.replace("element.optimize:", "")
+                         .replace("element.order:", ""))
+    base = {"name": "t", "geometry": "p.step", "analysis": "fea", "heal": True,
+            "size": {"global": 3.0}, "refine": [], "quality": {}, "element": {}, "algorithm": {}}
+    (tmp_path / "p.step").write_text("x")
+    for k in sorted(keys - {"heal", "refine"}):
+        sect, field_ = k.split(".")
+        data = {**base, sect: {**base[sect], field_: {"quality.min_sicn": 0.1}.get(k) or
+                               {"element.optimize": "netgen", "element.order": 2,
+                                "algorithm.mesh3d": 1, "algorithm.mesh2d": 6}.get(k, 1)}}
+        data["quality"] = data["quality"] if sect == "quality" else {}
+        parse_spec(data, tmp_path / "spec.yaml")  # raises SpecError on an unknown key

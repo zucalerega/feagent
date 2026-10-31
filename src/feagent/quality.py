@@ -286,9 +286,9 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
     group_area: dict[str, tuple[float, float, float]] = {}
     pts = md.points
     for name, gr in result.groups.items():
-        if gr.dim != 2 or name not in md.tris or geo is None:
+        if gr.dim != 2 or geo is None:
             continue
-        tri = md.tris[name]
+        tri = md.tris.get(name, np.zeros((0, 3), int))
         if len(tri):
             a = 0.5 * np.linalg.norm(np.cross(pts[tri[:, 1]] - pts[tri[:, 0]],
                                               pts[tri[:, 2]] - pts[tri[:, 0]]), axis=1).sum()
@@ -300,7 +300,9 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
                 cad += geo.face(t).area
             except KeyError:
                 pass
-        group_area[name] = (float(cad), float(a), float(abs(a - cad) / cad) if cad > 0 else 0.0)
+        missing = name not in md.tris  # group absent from the mesh: never silently dropped
+        err = 1.0 if missing else (float(abs(a - cad) / cad) if cad > 0 else 0.0)
+        group_area[name] = (float(cad), float(a), err)
 
     components = _components(tets)
     expected = _expected_components(geo)
@@ -318,7 +320,7 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
         "inverted", "No inverted elements", "fail" if inverted > 0 else "pass",
         float(inverted), 0.0,
         f"{inverted} of {n_tets} tets have non-positive scaled Jacobian (min SJ {s_sj.min:.3g})",
-        "Inverted elements: lower size.global, try algorithm_3d 1 (Delaunay) or optimize: netgen; "
+        "Inverted elements: lower size.global, try algorithm.mesh3d: 1 (Delaunay) or element.optimize: netgen; "
         "check the worst elements' faces for CAD defects (heal: true)." if inverted else ""))
 
     gates.append(_g(
@@ -327,7 +329,7 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
         f"min SICN {s_sicn.min:.3f} (threshold {q.min_sicn}); p01 {s_sicn.p01:.3f}, "
         f"median {s_sicn.median:.3f}",
         f"Worst elements touch faces {worst[0].faces if worst else []}: add a `refine` entry "
-        "there, lower size.global, enable optimize: netgen, or relax quality.min_sicn."
+        "there, lower size.global, enable element.optimize: netgen, or relax quality.min_sicn."
         if s_sicn.min < q.min_sicn else ""))
 
     gates.append(_g(
@@ -335,16 +337,22 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
         s_gamma.min, float(q.min_gamma),
         f"min gamma {s_gamma.min:.3f} (threshold {q.min_gamma}); median {s_gamma.median:.3f}",
         "Low inscribed/circumscribed radius ratio (slivers): lower size.global, set "
-        "optimize: netgen, or adjust quality.min_gamma." if s_gamma.min < q.min_gamma else ""))
+        "element.optimize: netgen, or adjust quality.min_gamma." if s_gamma.min < q.min_gamma else ""))
 
     ve_bad = volume_error > q.max_volume_error
-    gates.append(_g(
-        "volume_fidelity", "Volume fidelity", "fail" if ve_bad else "pass",
-        volume_error, float(q.max_volume_error),
-        f"mesh volume {volume_mesh:.6g} vs CAD {volume_cad:.6g}: relative error "
-        f"{volume_error:.3g} (threshold {q.max_volume_error})",
-        "Geometry is poorly resolved (curved boundaries): raise size.curvature, lower "
-        "size.global, use order: 2, or relax quality.max_volume_error." if ve_bad else ""))
+    if volume_cad <= 0:
+        gates.append(_g("volume_fidelity", "Volume fidelity", "skip", None,
+                        float(q.max_volume_error),
+                        "no CAD volume available (geometry missing or zero volume)", ""))
+    else:
+        gates.append(_g(
+            "volume_fidelity", "Volume fidelity", "fail" if ve_bad else "pass",
+            volume_error, float(q.max_volume_error),
+            f"mesh volume {volume_mesh:.6g} vs CAD {volume_cad:.6g}: relative error "
+            f"{volume_error:.3g} (threshold {q.max_volume_error})",
+            "Geometry is poorly resolved (curved boundaries): raise size.curvature, lower "
+            "size.global, use element.order: 2, or relax quality.max_volume_error."
+            if ve_bad else ""))
 
     if not group_area:
         gates.append(_g("area_fidelity", "Group area fidelity", "skip", None,
@@ -355,7 +363,7 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
         gates.append(_g(
             "area_fidelity", "Group area fidelity", "fail" if bad else "pass", we,
             float(q.max_area_error),
-            f"worst group '{wn}': mesh area {wm:.6g} vs CAD {wc:.6g}, relative error {we:.3g} "
+            f"worst group '{wn}'{' (missing from mesh)' if wn not in md.tris else ''}: mesh area {wm:.6g} vs CAD {wc:.6g}, relative error {we:.3g} "
             f"(threshold {q.max_area_error})",
             f"Group '{wn}' is poorly resolved: add a `refine` entry for it, raise size.curvature, "
             "lower size.global, or relax quality.max_area_error." if bad else ""))
@@ -390,7 +398,7 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
                 float(q.thin_wall_min_elements),
                 f"fewer than {q.thin_wall_min_elements} elements across thickness on: {lst}",
                 "Raise size.thin_wall_layers, add a `refine` entry with size <= thickness/"
-                f"{q.thin_wall_min_elements} on those faces, or use order: 2."))
+                f"{q.thin_wall_min_elements} on those faces, or use element.order: 2."))
         elif worst_ratio is None:
             gates.append(_g("thin_walls", "Thin-wall resolution", "skip", None,
                             float(q.thin_wall_min_elements),
@@ -411,7 +419,7 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
             f"max non-orthogonality {mx:.1f} deg (fail > {q.max_non_ortho}, warn > "
             f"{NON_ORTHO_WARN}); mean {float(no_arr.mean()) if no_arr.size else 0.0:.1f}",
             "Reduce non-orthogonality: lower size.global, add `refine` near the offending region, "
-            "use algorithm_3d 1 / optimize: netgen, or adjust quality.max_non_ortho."
+            "use algorithm.mesh3d: 1 / element.optimize: netgen, or adjust quality.max_non_ortho."
             if st != "pass" else ""))
         sx = sk_stats.max if sk_stats else 0.0
         bad = sx > q.max_skewness
@@ -419,7 +427,7 @@ def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
             "skewness", "Skewness", "fail" if bad else "pass", sx, float(q.max_skewness),
             f"max skewness {sx:.2f} (threshold {q.max_skewness}); mean "
             f"{float(sk_arr.mean()) if sk_arr.size else 0.0:.2f}",
-            "Reduce skewness: lower size.global, add `refine`, use optimize: netgen, or adjust "
+            "Reduce skewness: lower size.global, add `refine`, use element.optimize: netgen, or adjust "
             "quality.max_skewness." if bad else ""))
 
     return QualityReport(
