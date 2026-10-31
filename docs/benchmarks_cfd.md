@@ -11,9 +11,21 @@ and tagged `cfd`. The fixed flow solver is the OpenFOAM backend (`backend="openf
 | `lid_driven_cavity_re100` | lid-driven unit square, Re = 100 | `u_vcl_min`, `u_centre` = u_x on x = 0.5; `v_hcl_max`, `v_hcl_min` = u_y on y = 0.5 [m/s] | Ghia, Ghia & Shin (1982) Tables I and II | see below | published_numerical |
 | `cylinder_channel_dfg_2d1` | Schaefer & Turek (1996) DFG 2D-1: cylinder D = 0.1 in a 2.2 x 0.41 channel, Re = 20 | `drag`, `lift` (force of the fluid on the cylinder) [N/m]; `dp_front_rear` = p(0.15, 0.2) - p(0.25, 0.2) [Pa] | c_D = 5.57953523384, c_L = 0.010618948146, dp = 0.11752016697 | 1 % / 5 % / 1 % | published_numerical |
 | `pipe_poiseuille_3d` | Hagen-Poiseuille flow, 3D pipe R = 5 mm, L = 5 cm, Re = 10 | `dp_AB` on the axis [Pa]; `u_centreline`; `wall_force` [N]; `flow_rate_outlet` [m^3/s] | exact: 8 mu U (x_B - x_A) / R^2; 2 U; 8 pi mu U L; pi R^2 U | 2 % | analytical |
+| `taylor_couette_2d` | circular Couette flow: annulus R1 = 1 cm, R2 = 2 cm, inner wall rotating at 10 rad/s (expression wall velocity), closed, Re = 10 | `u_theta_mid` = u_y at mid-gap on +x [m/s]; `u_mag_inner` = speed at r = 1.25 cm, 135 deg; `dp_gap` = p(r = 1.75 cm) - p(r = 1.25 cm) [Pa] | exact: u_theta = A r + B / r; p = rho (A^2 r^2 / 2 + 2 A B ln r - B^2 / (2 r^2)) | 1 % / 1 % / 2 % | analytical |
+| `square_duct_3d` | developing laminar flow in a square duct s = 1 cm, L = 10 s, UNIFORM inflow, Re = 10 | `u_axis`, `u_offaxis` = u_x at x = 0.75 L on the axis and at y = s/4 [m/s]; `dp_AB` = p(0.5 L) - p(0.9 L) on the axis [Pa]; `flow_rate_outlet` [m^3/s] | exact developed values (series, White eq. 3-48; Shah & London 1978): u_max / U = 2.096256, u(s/4, 0) / U = 1.631416, G s^2 / (mu U) = 28.4542 (f Re = 14.227); U s^2 | 2 % / 2 % / 2 % / 1 % | analytical |
 
 Files: `_common.py` (the `FlowProblem` base class, block-structured mesh builder, citations),
-`poiseuille.py`, `cavity.py`, `cylinder.py`, `pipe.py`. Tests: `tests/test_problems_cfd.py`.
+`poiseuille.py`, `cavity.py`, `cylinder.py`, `pipe.py`, `taylor_couette.py`, `square_duct.py`. Tests: `tests/test_problems_cfd.py`.
+
+The two newest problems were checked with the fixed solver (OpenFOAM v1912) on their structured reference meshes:
+
+- `taylor_couette_2d`: on 10, 20 and 40 cells across the gap, the errors converge at second order.
+  `u_theta_mid` is 1.25 %, 0.31 % and 0.08 % low.
+  `u_mag_inner` is 0.81 %, 0.26 % and 0.06 % low.
+  `dp_gap` is 0.99 %, 0.69 % and 0.17 % low; it is pre-asymptotic on the coarsest mesh.
+- `square_duct_3d`: on 8 and 16 cells across (80 and 160 along), the errors converge at second order.
+  `u_axis` is 6.69 % and 1.78 % low, and `dp_AB` 5.55 % and 1.47 %.
+  The Richardson estimate is within 0.15 % of the exact developed values, so the probes sit in fully developed flow.
 
 ## Conventions
 
