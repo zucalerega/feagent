@@ -29,7 +29,7 @@ stamp "screened"
 
 THREADS=${GMN_CPU_LIMIT:-8}
 PYTHONUNBUFFERED=1 "$PY" -W ignore -m feacore.goldgen run parts.jsonl abc --out out --parts 1 \
-  --bcs "$BCS" --min-bcs 1 --levels 3 --h0-frac "$H0" --threads "${THREADS%.*}" --linear-solver cudss \
+  --bcs "$BCS" --min-bcs 1 --levels 3 --h0-frac "$H0" --threads "${THREADS%.*}" --linear-solver cudss --mesh-workers 1 \
   2>&1 | grep -av "^\s*$" | tee -a "$W/run.log"
 stamp "goldgen run done"
 
