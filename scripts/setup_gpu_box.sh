@@ -31,7 +31,7 @@ if [ "$ARCH" = "x86_64" ]; then
       || python3 -m pip install -q --break-system-packages --user uv
     export PATH="$HOME/.local/bin:$PATH"
   fi
-  uv venv -q --python ">=3.12" .venv
+  [ -x .venv/bin/python ] || uv venv -q --python ">=3.12" .venv   # re-runs reuse the environment
   PY="$PWD/.venv/bin/python"
   PIP="uv pip install -q --python $PY"   # uv venvs have no pip module
   $PIP -e ".[dev]" pypardiso fastapi uvicorn python-multipart httpx
