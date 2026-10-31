@@ -18,8 +18,17 @@ class CcxError(RuntimeError):
 
 
 def fnum(v: float) -> str:
-    """Full-precision float for the .inp deck."""
-    return repr(float(v))
+    """Float for the .inp deck: 14 significant digits, at most 20 characters (ccx truncates
+    longer fields and then fails to parse them)."""
+    v = float(v)
+    if not np.isfinite(v):
+        raise ValueError(f"non-finite value {v!r} in the CalculiX deck")
+    if v != 0.0 and abs(v) < 1e-90:
+        v = 0.0
+    s = f"{v:.14g}"
+    if len(s) > 20:          # pragma: no cover - 3-digit exponents
+        s = f"{v:.12g}"
+    return s
 
 
 def id_lines(ids, per_line: int = 16) -> str:

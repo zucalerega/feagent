@@ -30,7 +30,7 @@ from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_totals, p
 from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh
 from feacore.solver.base import Result, SolveInfo
 
-__all__ = ["solve", "CcxResult", "CcxError", "ELEMENT_TYPES", "AXI_CCX_PER_FULL"]
+__all__ = ["solve", "CcxResult", "CcxError", "ELEMENT_TYPES", "AXI_CLOAD_FACTOR", "AXI_OUTPUT_FACTOR"]
 
 # CalculiX element type per (formulation, order)
 ELEMENT_TYPES = {
@@ -41,10 +41,13 @@ ELEMENT_TYPES = {
     ("2d", 1): "CPS3", ("2d", 2): "CPS6",            # heat, plane (thickness = analysis.thickness)
 }
 
-# CalculiX axisymmetric (CAX) convention: concentrated loads (*CLOAD / *CFLUX) and nodal
-# reactions / totals (RF, RFL, ELSE) refer to one radian, i.e. full-360 totals / (2 pi).
-# Determined empirically (tests/test_solver_ccx.py::test_axisymmetric_units) against closed form.
-AXI_CCX_PER_FULL = 1.0 / (2.0 * math.pi)
+# CalculiX axisymmetric (CAX) convention, determined empirically against closed-form solutions
+# (tests/test_solver_ccx.py::test_axisymmetric_units): ccx expands CAX elements into a 2-degree
+# wedge. Concentrated loads (*CLOAD / *CFLUX) are input as full-360-degree totals, but the
+# nodal reactions and totals it reports (RF, RFL, ELSE) belong to the 2-degree wedge, i.e.
+# full-360 values / 180. The schema uses full-360 totals everywhere.
+AXI_CLOAD_FACTOR = 1.0          # schema (full 360) -> *CLOAD / *CFLUX value
+AXI_OUTPUT_FACTOR = 180.0       # ccx RF / RFL / ELSE (2-degree wedge) -> schema (full 360)
 
 _VOIGT = ("sxx", "syy", "szz", "sxy", "syz", "sxz")
 
@@ -98,9 +101,14 @@ class _Deck:
 
     # ----------------------------------------------------------- unit conversions
     @property
-    def ccx_factor(self) -> float:
-        """schema nodal load / total -> CalculiX value (axisymmetric: per radian)."""
-        return AXI_CCX_PER_FULL if self.axi else 1.0
+    def load_factor(self) -> float:
+        """schema nodal load -> CalculiX *CLOAD / *CFLUX value."""
+        return AXI_CLOAD_FACTOR if self.axi else 1.0
+
+    @property
+    def out_factor(self) -> float:
+        """CalculiX RF / RFL / ELSE -> schema value (full 360 degrees for axisymmetric)."""
+        return AXI_OUTPUT_FACTOR if self.axi else 1.0
 
     def weight(self, x: np.ndarray) -> np.ndarray:
         """Integration weight of the physical body at points x (..., 3): thickness, 2 pi r or 1."""
@@ -284,7 +292,9 @@ class _Deck:
                 p = as_field(b.value, x[..., 0], x[..., 1], x[..., 2])
                 trac = -p[..., None] * n[..., :dim]
                 self.add_nodal(nodes, N, trac * (w * self.weight(x))[..., None])
-                if isinstance(b.value, str):
+                if isinstance(b.value, str) or self.etype == "CAX3":
+                    # expressions, and CAX3 (ccx distributes *DLOAD on CAX3 faces inconsistently:
+                    # right total, wrong nodal split) -> consistent nodal loads
                     self._cload_from(nodes, N, trac * (w * self.weight(x))[..., None])
                 else:
                     dloads += [f"{e + 1}, P{f + 1}, {fnum(b.value)}" for e, f in zip(el, fc)]
@@ -333,7 +343,7 @@ class _Deck:
         if cl is not None and np.any(cl):
             S.append("*CLOAD")
             for n in np.nonzero(np.any(cl != 0, axis=1))[0]:
-                S += [f"{n + 1}, {d + 1}, {fnum(cl[n, d] * self.ccx_factor)}" for d in range(dim) if cl[n, d] != 0]
+                S += [f"{n + 1}, {d + 1}, {fnum(cl[n, d] * self.load_factor)}" for d in range(dim) if cl[n, d] != 0]
         S += ["*NODE FILE", "U, RF" + (", NT" if self.thermal else ""), "*EL FILE", "S"]
         S += self._totals_requests("RF")
         S += ["*EL PRINT, ELSET=EALL, TOTALS=ONLY", "ELSE", "*END STEP"]
@@ -412,7 +422,7 @@ class _Deck:
         cl = getattr(self, "_cloads", None)
         if cl is not None and np.any(cl):
             S.append("*CFLUX")
-            S += [f"{n + 1}, 11, {fnum(cl[n, 0] * self.ccx_factor)}" for n in np.nonzero(cl[:, 0])[0]]
+            S += [f"{n + 1}, 11, {fnum(cl[n, 0] * self.load_factor)}" for n in np.nonzero(cl[:, 0])[0]]
         S += ["*NODE FILE", "NT, RFL", "*EL FILE", "HFL"]
         S += self._totals_requests("RFL")
         S += ["*END STEP"]
@@ -567,12 +577,12 @@ class CcxResult(Result):
         key = ("flux" if heat else "force", d.nsets.get(group, "").upper())
         tot = self.totals.get(key)
         if tot is not None and len(tot) > comp:
-            rf = float(tot[comp]) / d.ccx_factor
+            rf = float(tot[comp]) * d.out_factor
         else:
             arr = self.RFL if heat else self.RF
             if arr is None:
                 raise CcxError("no reaction output available")
-            rf = float(arr[nodes, comp].sum()) / d.ccx_factor
+            rf = float(arr[nodes, comp].sum()) * d.out_factor
         return rf - fext
 
     def strain_energy(self) -> float:
@@ -582,7 +592,7 @@ class CcxResult(Result):
         tot = self.totals.get(("internal energy", "EALL"))
         if tot is None:
             raise CcxError("no internal energy total in the .dat")
-        return float(tot[0]) / self.deck.ccx_factor
+        return float(tot[0]) * self.deck.out_factor
 
     def integral(self, field: str, group: str | None, mean: bool = False) -> float:
         """Integral over the physical body (plane: x thickness, axisymmetric: x 2 pi r) of ``field``

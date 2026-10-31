@@ -54,8 +54,18 @@ Decisions:
   `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to
   singularities or setup errors). The evaluator owns the final rubric.
-- Setup on a fresh Ubuntu / Brev box: `apt-get install -y libglu1-mesa libxcursor1 libxft2
-  libxinerama1 libxrender1 libxi6 libgl1 calculix-ccx` and `pip install -e ".[dev]"`.
+- Setup on a fresh Ubuntu / Brev box / DGX Spark: `bash scripts/setup_gpu_box.sh` (system libs,
+  CalculiX, Python deps, and GPU extras when `nvidia-smi` works).
+
+## NVIDIA compute (hackathon)
+
+- Provided (per the ScienceClaw NVIDIA docs index): Brev GPU instances (credits), hosted model
+  endpoints on build.nvidia.com (e.g. Nemotron, API key), and Dell GB10 "DGX Spark" boxes for local
+  LLMs / NIMs. The doc contents themselves are not yet in this repo.
+- **DGX Spark is aarch64 (Grace CPU).** PyPI has no Linux ARM wheel for `gmsh` (only macOS arm64), so
+  `pip install gmsh` fails there. That affects the mesh harness too. Use conda-forge (`gmsh`,
+  `python-gmsh`), as `scripts/setup_gpu_box.sh` does. MKL PARDISO is x86-only. CuPy, nvmath-python
+  (cuDSS) and torch do have aarch64 wheels.
 
 ## Open questions
 

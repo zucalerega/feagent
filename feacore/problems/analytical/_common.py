@@ -182,6 +182,16 @@ def plate_with_quarter_hole(r: float, lx: float, ly: float) -> dict:
     return {"y0": y0, "right": right, "top": top, "x0": x0, "hole": hole, "surface": s}
 
 
+def group_entities(name: str) -> list[int]:
+    """Entity tags of the physical group ``name`` in the current gmsh model."""
+    import gmsh
+
+    for d, t in gmsh.model.getPhysicalGroups():
+        if gmsh.model.getPhysicalName(d, t) == name:
+            return [int(e) for e in gmsh.model.getEntitiesForPhysicalGroup(d, t)]
+    raise KeyError(f"no physical group {name!r}")
+
+
 def refine_near(curves: list[int], h: float, fine: float, coarse: float, dist_min: float,
                 dist_max: float) -> None:
     """Size h*fine within dist_min of the curves, growing linearly to h*coarse at dist_max.
@@ -199,6 +209,6 @@ def check_close(a: float, b: float, rel: float = 1e-12) -> bool:
 
 __all__ = [
     "STEEL", "ALUMINIUM", "TG", "BARBER", "num", "stress_tensor", "derived_field", "ExactProblem",
-    "quarter_annulus", "polygon", "plate_with_quarter_hole", "refine_near", "BC", "Load", "QoI",
+    "quarter_annulus", "polygon", "plate_with_quarter_hole", "group_entities", "refine_near", "BC", "Load", "QoI",
     "Reference",
 ]
