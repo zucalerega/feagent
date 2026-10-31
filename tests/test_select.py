@@ -57,7 +57,7 @@ def test_geometric_keys(model):
 
 
 def test_largest(model):
-    assert len(select_faces(model, {"kind": "plane", "largest": 2})) == 2
+    assert select_faces(model, {"kind": "plane", "largest": 2}) == [1, 2]  # ties: lowest tag
     assert select_faces(model, {"smallest": 1}) == [7]
 
 
@@ -86,3 +86,22 @@ def test_explain_miss_lists_candidates(model):
 def test_describe_faces(model):
     lines = describe_faces(model, [2, 7]).splitlines()
     assert len(lines) == 2 and "tag=2" in lines[0] and "axis=" in lines[1]
+
+
+def test_nested_unknown_key_raises(model):
+    with pytest.raises(QueryError) as e:
+        select_faces(model, {"any": [{"kind": "plane"}, {"nromal": [1, 0, 0]}]})
+    assert "normal" in e.value.hint
+    with pytest.raises(QueryError):
+        select_faces(model, {"not": {"adjacent_to": {"bogus": 1}}})
+
+
+def test_area_min_relaxed_slack_is_ten_percent(model):
+    assert "area_min: 0 matched / 6 relaxed" in explain_miss(model, {"area_min": 1.05}, 1)
+    assert "area_min: 0 matched / 0 relaxed" in explain_miss(model, {"area_min": 1.5}, 1)
+
+
+def test_explain_adjacent_to_names_inner_key(model):
+    text = explain_miss(model, {"adjacent_to": {"ids": [7], "kind": "sphere"}}, 1)
+    assert "sub-query 'adjacent_to'" in text
+    assert "kind: 0 matched" in text and "ids: 1 matched" in text

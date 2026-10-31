@@ -125,12 +125,12 @@ def _check(m: GeometryModel, f: FaceInfo, q: dict, key: str, relax: float):
             return False, f"has no radius (kind {f.kind})", 1e3
         lim = float(v)
         d = (lim - f.radius) if key == "radius_min" else (f.radius - lim)
-        sl = abs(lim) * 0.1 * (relax - 1.0) if relax > 1 else 0.0
+        sl = abs(lim) * 0.1 if relax > 1 else 0.0
         return d <= sl, f"radius {f.radius:.4g} violates {key}={lim:g}", 1 + max(d, 0) / max(abs(lim), 1e-9)
     if key in ("area_min", "area_max"):
         lim = float(v)
         d = (lim - f.area) if key == "area_min" else (f.area - lim)
-        sl = abs(lim) * 0.1 * (relax - 1.0) if relax > 1 else 0.0
+        sl = abs(lim) * 0.1 if relax > 1 else 0.0
         return d <= sl, f"area {f.area:.4g} violates {key}={lim:g}", 1 + max(d, 0) / max(abs(lim), 1e-9)
     if key == "concave":
         return f.concave is v, f"concave is {f.concave}, wanted {v}", 1e3
@@ -191,7 +191,7 @@ def _eval(m: GeometryModel, q: dict, relax: float = 1.0) -> set[int]:
             tags &= _nonlocal(m, q, key, relax)
     for key, rev in (("largest", True), ("smallest", False)):
         if key in q:
-            ordered = sorted(tags, key=lambda t: (m.face(t).area, t), reverse=rev)
+            ordered = sorted(tags, key=lambda t: (-m.face(t).area if rev else m.face(t).area, t))
             tags = set(ordered[: int(q[key])])
     return tags
 
@@ -250,6 +250,7 @@ def explain_miss(model: GeometryModel, query: dict, expected: int | tuple[int, i
             if mod in query:
                 sub[mod] = query[mod]
         out.append(f"  {k}: {len(_eval(model, sub))} matched / {len(_eval(model, sub, 10.0))} relaxed")
+    nl_sets = {k: _nonlocal(model, query, k, 1.0) for k in keys if k not in _LOCAL}
     scored = []
     for f in model.faces:
         fails, total = [], 0.0
@@ -258,9 +259,9 @@ def explain_miss(model: GeometryModel, query: dict, expected: int | tuple[int, i
             if not ok:
                 fails.append(detail)
                 total += min(ratio, 1e3)
-        for k in keys:
-            if k not in _LOCAL and f.tag not in _nonlocal(model, query, k, 1.0):
-                fails.append(f"fails '{k}' sub-query")
+        for k, st in nl_sets.items():
+            if f.tag not in st:
+                fails.append(f"fails '{k}' sub-query (see below)")
                 total += 1e3
         scored.append((len(fails), total, f.tag, fails))
     scored.sort(key=lambda s: s[:3])
@@ -268,4 +269,14 @@ def explain_miss(model: GeometryModel, query: dict, expected: int | tuple[int, i
     for n, _, tag, fails in scored[:5]:
         out.append(describe_faces(model, [tag]))
         out.append("    fails: " + ("; ".join(fails) if fails else "only the largest/smallest filter"))
+    for k in nl_sets:
+        subs = query[k] if k in ("any", "all") else [query[k]]
+        for i, sub in enumerate(subs):
+            label = k if k not in ("any", "all") else f"{k}[{i}]"
+            out.append(f"sub-query '{label}' {sub}: {len(_eval(model, sub))} matched; each key alone:")
+            for sk in sub:
+                if sk in _MODIFIERS or sk in _POST:
+                    continue
+                one = {sk: sub[sk], **{m_: sub[m_] for m_ in _MODIFIERS if m_ in sub}}
+                out.append(f"    {sk}: {len(_eval(model, one))} matched / {len(_eval(model, one, 10.0))} relaxed")
     return "\n".join(out)
