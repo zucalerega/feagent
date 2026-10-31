@@ -23,6 +23,11 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `improver-loop` branch: improver side of the loop.
 - `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
   gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
+- `solution-diagnostics` branch (off `fea-solver-benchmarks`): the skfem backend
+  (`feacore/solver/skfem_backend.py`: elasticity plane stress / plane strain / 3D; no axisymmetric, heat or
+  thermal yet) and `feacore/diagnostics/`: deterministic failure-mode flags, reference-free accuracy
+  (ZZ estimate + refinement study of the agent's own setup) and the speed / accuracy score. Catalogue and
+  metric: `docs/failure-modes.md`.
 - `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
   parts and a UI (package `feacore/`, see below). In progress: interfaces are in place, the solver
   backends and problems are being built.

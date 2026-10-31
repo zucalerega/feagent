@@ -10,3 +10,4 @@ __pycache__/
 *.cvg
 *.12d
 spooles.out
+.venv/
