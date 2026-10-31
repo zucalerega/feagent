@@ -87,7 +87,8 @@ class NafemsLE10(Problem):
         group(2, faces(lambda x0, y0, z0, x1, y1, z1: near(z0, -HALF_T) and near(z1, -HALF_T)), "face_lower")
         group(2, faces(lambda x0, y0, z0, x1, y1, z1: near(x1, 0.0)), "face_ABA'B'_x0")
         group(2, faces(lambda x0, y0, z0, x1, y1, z1: near(y1, 0.0)), "face_DCD'C'_y0")
-        outer = faces(lambda x0, y0, z0, x1, y1, z1: near(x1, c) and near(y1, d))
+        # vertical extent excludes the upper / lower faces, whose bounding boxes also reach (c, d)
+        outer = faces(lambda x0, y0, z0, x1, y1, z1: near(x1, c) and near(y1, d) and z1 - z0 > 0.1)
         if len(outer) != 2:
             raise RuntimeError(f"LE10 geometry: outer face should be split in two, got {outer}")
         group(2, outer, "face_BCB'C'_outer")

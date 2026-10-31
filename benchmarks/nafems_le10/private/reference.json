@@ -1,0 +1,112 @@
+{
+  "id": "nafems_le10",
+  "expected_behavior": "stress_concentration",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "syy_D",
+      "value": -5380000.0,
+      "kind": "published",
+      "source": "NAFEMS, \"The Standard NAFEMS Benchmarks\", publication TNSB Rev. 3 (October 1990), test LE10, output sigma_yy at D, target 5.38 MPa (compressive); data sheet reproduced at https://github.com/seamplex/feenox/blob/main/doc/nafems-le10-problem-input.svg; sign as in FeenoX examples/nafems-le10.fee (-5.380 MPa) and https://www.seamplex.com/fino/cases/012-nafems-le10 (-5.38 MPa)",
+      "tolerance": 0.02,
+      "notes": "The NAFEMS sheet prints the magnitude 5.38 MPa; the stress at D (upper surface) is compressive. Some task descriptions call this point E; NAFEMS calls it D."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "3d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 210000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "pressure",
+        "group": "face_upper",
+        "point": null,
+        "components": null,
+        "value": 1000000.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "face_DCD'C'_y0",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "face_ABA'B'_x0",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "displacement",
+        "group": "face_BCB'C'_outer",
+        "point": null,
+        "components": [
+          0,
+          1
+        ],
+        "value": 0.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "displacement",
+        "group": "line_outer_midplane",
+        "point": null,
+        "components": [
+          2
+        ],
+        "value": 0.0,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "syy_D",
+        "type": "point",
+        "field": "syy",
+        "point": [
+          2.0,
+          0.0,
+          0.3
+        ],
+        "group": null,
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "nafems_le10",
+      "units": "SI (m, N, Pa)"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.3,
+    0.19999999999999998,
+    0.13333333333333333
+  ]
+}

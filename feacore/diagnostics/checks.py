@@ -243,7 +243,11 @@ def _group_edge_points(res, kinds: tuple[str, ...]) -> np.ndarray:
     bfac = np.setdiff1d(bfac, np.concatenate(planes)) if planes else bfac
     out = []
     for b in res.case.bcs:
-        if b.type not in kinds or (b.type in _DIRICHLET and not _singular_support(b, res.dim)):
+        if b.type not in kinds:
+            continue
+        lower_dim = b.point is not None or res.md.group(b.group).kind != "facets"
+        # any constraint on a point / edge concentrates force; on faces only clamps are singular
+        if b.type in _DIRICHLET and not lower_dim and not _singular_support(b, res.dim):
             continue
         if b.point is not None:
             out.append(np.asarray(b.point[: res.dim], float)[None])
