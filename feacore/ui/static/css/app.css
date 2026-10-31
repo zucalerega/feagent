@@ -248,11 +248,13 @@ table.kv td { padding: 4px 0; font-variant-numeric: tabular-nums; }
 .viewer-side { border-right: 1px solid var(--grid); background: var(--surface); padding: 18px 18px 30px; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
 .viewer-main { position: relative; background: linear-gradient(#f7f7f5, #e6e5e0); min-width: 0; }
 .viewer-main canvas { display: block; }
-.colorbar { position: absolute; right: 22px; top: 50%; transform: translateY(-50%); display: flex; gap: 10px; align-items: stretch; background: rgba(252, 252, 251, 0.9); border: 1px solid var(--grid); border-radius: 10px; padding: 14px 14px 14px 12px; }
+.colorbar { position: absolute; right: 22px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 10px; background: rgba(252, 252, 251, 0.92); border: 1px solid var(--grid); border-radius: 10px; padding: 12px 14px; }
+.colorbar .cb-title { font-weight: 650; font-size: 15px; color: var(--ink); }
+.colorbar .cb-body { display: flex; gap: 10px; }
 .colorbar .bar { width: 22px; border-radius: 4px; height: 340px; }
-.colorbar .ticks { position: relative; width: 92px; font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.colorbar .ticks { position: relative; width: 96px; height: 340px; font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .colorbar .ticks span { position: absolute; left: 0; transform: translateY(-50%); white-space: nowrap; }
-.colorbar .cb-title { position: absolute; top: -32px; right: 0; font-weight: 650; font-size: 14px; white-space: nowrap; color: var(--ink); }
+.colorbar .cb-foot { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; font-variant-numeric: tabular-nums; }
 .view-info { position: absolute; left: 18px; top: 16px; background: rgba(252, 252, 251, 0.9); border: 1px solid var(--grid); border-radius: 10px; padding: 10px 14px; font-size: 14px; max-width: 520px; }
 .view-info .t { font-weight: 650; font-size: 16px; }
 .view-buttons { position: absolute; left: 18px; bottom: 16px; display: flex; gap: 6px; }

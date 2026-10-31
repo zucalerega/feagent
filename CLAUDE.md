@@ -34,7 +34,9 @@ Decisions:
 - **Fixed solver** = scikit-fem backend (`backend="skfem"`, CPU). The linear solve is pluggable: SciPy /
   MKL PARDISO on CPU, NVIDIA cuDSS (via nvmath-python) on a GPU when one is present. Both are direct
   solves, so the answer doesn't depend on the hardware.
-- **Cross-check solver** = CalculiX (`backend="ccx"`), independent of the fixed solver.
+- **Cross-check solver** = CalculiX (`backend="ccx"`), independent of the fixed solver. On the same
+  case and mesh the two agree to about 1e-5 (displacements, reactions, energies) and about 1e-3 for
+  boundary point stresses (different stress recovery). A bigger disagreement means a setup or solver bug.
 - **Neural surrogate** (`backend="nn"`, optional, GPU): fast but unverified. It is never the reference;
   the verification layer judges it like any other submission.
 - **Solver input contract** = a case JSON (`feacore/case.py`: analysis, materials, BCs, loads, QoIs)

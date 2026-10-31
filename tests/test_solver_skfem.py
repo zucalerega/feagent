@@ -553,3 +553,38 @@ def test_info_probe_errors_vtu_cli(meshdir, tmp_path):
     res = json.loads(out.read_text())
     assert abs(res["qois"]["ux_max"] - r.evaluate(case.qois[0])) < 1e-15
     assert (tmp_path / "cli.vtu").exists()
+
+
+def test_insufficient_constraints_reported(meshdir):
+    mesh = rect_mesh(meshdir / "rb.msh", h=0.25, order=1)
+    with pytest.raises(RuntimeError, match="rotation about z"):
+        solve(_case(mesh, bcs=[BC(type="fixed", group="p00"), BC(type="traction", group="right", value=[1.0, 0.0])]))
+    with pytest.raises(RuntimeError, match="translation x"):
+        solve(_case(mesh, bcs=[BC(type="symmetry", group="bottom"), BC(type="traction", group="right", value=[1.0, 0.0])]))
+    with pytest.raises(RuntimeError, match="constant temperature"):
+        solve(_case(mesh, physics="heat", formulation="2d", bcs=[BC(type="flux", group="left", value=1.0),
+                                                                  BC(type="flux", group="right", value=-1.0)]))
+    # symmetry on two orthogonal edges + nothing else is enough in 2D
+    r = solve(_case(mesh, bcs=[BC(type="symmetry", group="bottom"), BC(type="symmetry", group="left"),
+                               BC(type="traction", group="right", value=[1.0, 0.0])],
+                    qois=[QoI(name="R", type="reaction", group="top", component=0)]))
+    assert abs(r.evaluate_all()["R"]) < 1e-12 and any("no Dirichlet" in w for w in r.info.warnings)
+
+
+@pytest.mark.parametrize("formulation", ["plane_strain", "axisymmetric", "3d"])
+def test_fast_assembly_matches_skfem_forms(meshdir, formulation):
+    if formulation == "3d":
+        mesh = box_mesh(meshdir / "asm3.msh", h=0.5, order=2, distort=0.2)
+        bcs = [BC(type="fixed", group="x0"), BC(type="pressure", group="x1", value="1 + y*z")]
+    else:
+        mesh = quarter_ring_mesh(meshdir / "asm2.msh", h=0.3, order=2)
+        bcs = [BC(type="symmetry", group="ysym"), BC(type="pressure", group="inner", value="1 + x")]
+        if formulation != "axisymmetric":
+            bcs.append(BC(type="symmetry", group="xsym"))
+    loads = [Load(type="temperature", value="10*x"), Load(type="body_force", value=[0.1] * (3 if formulation == "3d" else 2))]
+    q = [QoI(name="U", type="strain_energy"), QoI(name="vm", type="max", field="von_mises")]
+    a = solve(_case(mesh, formulation=formulation, order=2, bcs=bcs, loads=loads, qois=q)).evaluate_all()
+    b = solve(_case(mesh, formulation=formulation, order=2, bcs=bcs, loads=loads, qois=q,
+                    options={"assembly": "skfem"})).evaluate_all()
+    for k in a:
+        assert abs(a[k] - b[k]) <= 1e-10 * abs(b[k]), k

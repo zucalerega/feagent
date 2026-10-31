@@ -46,8 +46,10 @@ Quantities of interest (``QoI.type``)
 -------------------------------------
   point          ``field`` at ``point`` (stresses use the solver's recovered, continuous field)
   max/min/max_abs extreme of the recovered nodal ``field`` over ``group`` (None = whole mesh)
-  reaction       total reaction force ``component`` on Dirichlet group ``group``
-  integral/mean  integral / average of ``field`` over cell or facet ``group``
+  reaction       support force on the body: (K u - f) summed over the group's constrained DOFs,
+                 ``component`` (heat: heat flow into the body through the group)
+  integral/mean  integral of ``field`` over cell or facet ``group`` including thickness (plane) or
+                 2*pi*r (axisymmetric); mean = integral / equally weighted measure
   strain_energy  total strain energy 0.5 u.K.u (elasticity only)
 """
 
@@ -78,8 +80,9 @@ LOAD_TYPES = {
 }
 QOI_TYPES = ("point", "max", "min", "max_abs", "reaction", "integral", "mean", "strain_energy")
 
-# Fields a backend must be able to probe. In 2D, z-components are 0 (plane strain szz is
-# the out-of-plane stress). Axisymmetric: sxx = s_rr, syy = s_zz, sxy = s_rz, stt = hoop.
+# Fields a backend must be able to probe. In 2D, uz, syz and sxz are 0; szz is the out-of-plane
+# stress (0 in plane stress). Axisymmetric: sxx = s_rr, syy = s_zz (axial), sxy = s_rz, and the
+# hoop stress is both stt and szz (out-of-plane). stt is 0 outside axisymmetric.
 ELASTICITY_FIELDS = (
     "ux", "uy", "uz", "u_mag",
     "sxx", "syy", "szz", "sxy", "syz", "sxz", "stt",

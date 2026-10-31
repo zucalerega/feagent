@@ -72,6 +72,28 @@ def _make_one(task: dict) -> dict:
         return {"name": stem.name, "error": f"{type(e).__name__}: {e}", "trace": traceback.format_exc(limit=3)}
 
 
+def _refeaturize_one(path: str) -> dict:
+    """Rebuild graph + features of an existing sample from its case/mesh; keep the FEM targets."""
+    import numpy as np
+
+    from feacore.case import Case
+    from feacore.surrogate.data import load_sample, save_sample
+    from feacore.surrogate.graph import build_graph
+
+    p = Path(path)
+    try:
+        with np.load(p, allow_pickle=False) as z:
+            y, meta, old_pts = z["targets"], json.loads(str(z["meta"])), z["points"]
+        graph = build_graph(Case.load(p.with_suffix(".json")))
+        if graph.points.shape != old_pts.shape or not np.allclose(graph.points, old_pts):
+            raise ValueError("mesh nodes changed since the targets were computed")
+        save_sample(p, graph, y, meta)
+        load_sample(p)
+        return {"name": p.stem}
+    except Exception as e:  # noqa: BLE001
+        return {"name": p.stem, "error": f"{type(e).__name__}: {e}"}
+
+
 def main(argv=None) -> int:
     from feacore.surrogate.family import DEFAULT_H_REL, ID_RANGES, OOD_CATEGORIES
 
@@ -85,9 +107,20 @@ def main(argv=None) -> int:
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip-existing", action="store_true")
+    ap.add_argument("--refeaturize", action="store_true",
+                    help="recompute graph features of every existing sample under --out (no FEM re-solve)")
     args = ap.parse_args(argv)
 
     root = Path(args.out)
+    if args.refeaturize:
+        paths = [str(p) for p in sorted(root.rglob("*.npz"))]
+        with ProcessPoolExecutor(max_workers=args.workers, mp_context=get_context("spawn")) as ex:
+            res = list(ex.map(_refeaturize_one, paths, chunksize=16))
+        bad = [r for r in res if "error" in r]
+        for r in bad[:10]:
+            print(f"FAILED {r['name']}: {r['error']}")
+        print(f"refeaturized {len(res) - len(bad)} / {len(res)} samples under {root}")
+        return 0 if not bad else 1
     out = root / args.split
     out.mkdir(parents=True, exist_ok=True)
     cats = ["id"] if args.split == "id" else (args.categories or list(OOD_CATEGORIES))

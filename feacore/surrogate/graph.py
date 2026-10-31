@@ -31,11 +31,13 @@ from scipy.spatial import cKDTree
 from feacore.case import Case, as_field
 
 NODE_FEATURES = ("x", "y", "fixed", "loaded", "free", "interior", "fix_x", "fix_y",
-                 "tx", "ty", "nx", "ny", "nu", "d_fixed", "d_loaded", "d_free")
+                 "tx", "ty", "nx", "ny", "nu", "d_fixed", "d_loaded", "d_free",
+                 # graph-level, broadcast to every node: resultant load force / moment, bbox extents
+                 "Fx", "Fy", "Mz", "ex", "ey")
 EDGE_FEATURES = ("dx", "dy", "length")
 TARGETS = ("ux", "uy", "sxx", "syy", "sxy", "von_mises")
 # continuous node features whose training range is checked at inference
-RANGE_CHECKED = ("x", "y", "tx", "ty", "nu", "d_fixed", "d_loaded", "d_free")
+RANGE_CHECKED = ("x", "y", "tx", "ty", "d_fixed", "d_loaded", "d_free", "Fx", "Fy", "Mz")
 DESCRIPTORS = ("extent_x", "extent_y", "solid_fraction", "n_loops", "inner_perimeter", "min_ligament",
                "h_mean", "n_nodes", "load_angle", "nu", "fixed_fraction", "loaded_fraction")
 INTEGER_DESCRIPTORS = ("n_loops",)
@@ -338,7 +340,13 @@ def build_graph(case: Case, mesh=None) -> Graph:
         min_lig = float("nan")
     tm = 0.5 * (trac[bnd.a] + trac[bnd.b])
     loaded_edge = loaded[bnd.a] & loaded[bnd.b]
-    Fres = (tm[loaded_edge] * bnd.length[loaded_edge, None]).sum(axis=0)
+    fe = tm[loaded_edge] * bnd.length[loaded_edge, None]                     # edge forces (per thickness)
+    Fres = fe.sum(axis=0)
+    arm = 0.5 * (pts[bnd.a[loaded_edge]] + pts[bnd.b[loaded_edge]]) - (origin + 0.5 * ext)
+    Mres = float((arm[:, 0] * fe[:, 1] - arm[:, 1] * fe[:, 0]).sum())
+    F[:, col["Fx"]], F[:, col["Fy"]] = Fres[0] / (t0 * L), Fres[1] / (t0 * L)
+    F[:, col["Mz"]] = Mres / (t0 * L * L)
+    F[:, col["ex"]], F[:, col["ey"]] = ext[0] / L, ext[1] / L
     load_angle = math.degrees(math.atan2(Fres[1], Fres[0])) if np.linalg.norm(Fres) > 0 else float("nan")
     blen = float(bnd.length.sum())
     fixed_edge = fixed[bnd.a] & fixed[bnd.b]

@@ -70,12 +70,41 @@ class LinearSolveReport:
 # --------------------------------------------------------------------------- availability
 
 
-def _have_pypardiso() -> bool:
+def _mkl_rt_hint() -> None:
+    """pypardiso locates libmkl_rt by scanning site-packages (~0.5 s, even at import time);
+    point it at the library directly when it sits in the usual pip location."""
+    if os.environ.get("PYPARDISO_MKL_RT"):
+        return
+    import glob
+    import site
+    import sys
+
+    dirs = [os.path.join(sys.prefix, "lib")]
     try:
-        import pypardiso  # noqa: F401
+        dirs.append(os.path.join(site.getuserbase(), "lib"))
     except Exception:
-        return False
-    return True
+        pass
+    for d in dirs:
+        hits = sorted(glob.glob(os.path.join(d, "libmkl_rt.so*")))
+        if hits:
+            os.environ["PYPARDISO_MKL_RT"] = hits[0]
+            return
+
+
+_HAVE_PARDISO: bool | None = None
+
+
+def _have_pypardiso() -> bool:
+    global _HAVE_PARDISO
+    if _HAVE_PARDISO is None:
+        try:
+            _mkl_rt_hint()
+            import pypardiso  # noqa: F401
+
+            _HAVE_PARDISO = True
+        except Exception:
+            _HAVE_PARDISO = False
+    return _HAVE_PARDISO
 
 
 def _cuda_device_count() -> int:
@@ -177,21 +206,7 @@ def _pardiso_solver(mtype: int):
     """One cached PyPardisoSolver per matrix type: creating one scans site-packages for
     libmkl_rt (~0.5 s), so point it at the library directly when we can find it cheaply."""
     if mtype not in _PARDISO:
-        if not os.environ.get("PYPARDISO_MKL_RT"):
-            import glob
-            import site
-            import sys
-
-            dirs = [os.path.join(sys.prefix, "lib")]
-            try:
-                dirs.append(os.path.join(site.getuserbase(), "lib"))
-            except Exception:
-                pass
-            for d in dirs:
-                hits = sorted(glob.glob(os.path.join(d, "libmkl_rt.so*")))
-                if hits:
-                    os.environ["PYPARDISO_MKL_RT"] = hits[0]
-                    break
+        _mkl_rt_hint()
         from pypardiso import PyPardisoSolver
 
         _PARDISO[mtype] = PyPardisoSolver(mtype=mtype)

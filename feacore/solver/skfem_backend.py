@@ -76,11 +76,11 @@ def _k_axi(u, v, w):
     return w.c * (w.lam * tu * tv + 2.0 * w.mu * (ddot(eu, ev) + hu * hv))
 
 
-@LinearForm
-def _f_dgrad(v, w):
-    """int c * d v / d x_i, with the component index i passed as a (constant) field."""
-    i = int(np.asarray(w.i).flat[0])
-    return w.c * v.grad[i]
+def _dgrad_form(i):
+    return LinearForm(lambda v, w: w.c * v.grad[i])
+
+
+_F_DGRAD = [_dgrad_form(i) for i in range(3)]  # int c * d v / d x_i
 
 
 @BilinearForm
@@ -374,7 +374,7 @@ def _assemble_elasticity(md: _Model):
     sth = _qp(sb, md.beta) * dT
     if np.any(sth != 0):  # int c * beta * alpha * dT * div(v)  (+ v_r / r axisymmetric)
         for i in range(dim):
-            f[md.split[i]] += _f_dgrad.assemble(sb, c=c * sth, i=_qp(sb, np.full(md.nel, float(i))))
+            f[md.split[i]] += _F_DGRAD[i].assemble(sb, c=c * sth)
         if md.axi:
             f[md.split[0]] += _f_scalar.assemble(sb, c=c, g=sth / md.xq[0])
     md.sth = sth
@@ -529,6 +529,7 @@ def _assemble_heat(md: _Model):
         g[mask] = _eval(ld.value, md.xq[:, mask])
         f += _f_scalar.assemble(sb, c=c, g=g)
     md.sth = None
+    md.has_robin = False
     cons = _Constraints()
     for i_bc, bc in enumerate(case.bcs):
         if bc.type in ("flux", "convection"):
@@ -541,6 +542,7 @@ def _assemble_heat(md: _Model):
             else:
                 h = np.full(cf.shape, float(bc.h))
                 K = K + _m_weighted.assemble(fb, c=cf, h=h)
+                md.has_robin = md.has_robin or float(bc.h) > 0
                 f += _f_scalar.assemble(fb, c=cf, g=h * float(bc.T_inf))
         elif bc.type == "temperature":
             if bc.point is not None:
@@ -564,8 +566,57 @@ def _recover_heat(md: _Model, T: np.ndarray, solver_opts: dict) -> dict:
 # --------------------------------------------------------------------------- driver
 
 
+def _check_rigid_modes(md: _Model, D: np.ndarray, has_robin: bool = False) -> None:
+    """Raise a clear error when the Dirichlet set leaves a rigid-body mode free (singular K)."""
+    X = md.sb.doflocs
+    ctr = X.mean(axis=1, keepdims=True)
+    L = max(md.md.bbox_diag, 1e-300)
+    Y = (X - ctr) / L
+    ns = md.sb.N
+    modes, names = [], []
+    if md.physics == "heat":
+        if has_robin:
+            return
+        modes.append(np.ones(ns))
+        names.append("constant temperature (no temperature or convection BC)")
+    elif md.axi:
+        z = np.zeros(2 * ns)
+        z[md.split[1]] = 1.0
+        modes.append(z)
+        names.append("translation z")
+    else:
+        dim = md.dim
+        for k in range(dim):
+            m_ = np.zeros(dim * ns)
+            m_[md.split[k]] = 1.0
+            modes.append(m_)
+            names.append("translation " + "xyz"[k])
+        rots = [(0, 1, "z")] if dim == 2 else [(0, 1, "z"), (1, 2, "x"), (2, 0, "y")]
+        for i, j, axis in rots:  # rotation in the (i, j) plane: u_i = -y_j, u_j = y_i
+            m_ = np.zeros(dim * ns)
+            m_[md.split[i]] = -Y[j]
+            m_[md.split[j]] = Y[i]
+            modes.append(m_)
+            names.append("rotation about " + axis)
+    R = np.column_stack(modes)[D] if len(D) else np.zeros((0, len(modes)))
+    if R.shape[0] == 0:
+        free = names
+    else:
+        u, sv, vt = np.linalg.svd(R, full_matrices=True)
+        tol = 1e-8 * max(1.0, sv.max() if sv.size else 1.0)
+        rank = int((sv > tol).sum())
+        if rank == len(modes):
+            return
+        null = vt[rank:]  # combinations of modes that the constraints do not touch
+        free = [names[int(np.argmax(np.abs(v)))] for v in null]
+    raise SolverError(f"insufficient constraints: the model can move as a rigid body ({', '.join(free)}). "
+                      f"Add Dirichlet BCs (fixed / displacement / symmetry"
+                      f"{' / temperature or convection' if md.physics == 'heat' else ''}) that remove it.")
+
+
 def solve(case: Case, **options) -> "SkfemResult":
     t0 = time.perf_counter()
+    case.check()
     opts = {**(case.analysis.options or {}), **options}
     md = _Model(case, opts)
     solver_opts = {"method": opts.get("linear_solver")}
@@ -574,6 +625,7 @@ def solve(case: Case, **options) -> "SkfemResult":
     else:
         K, f, cons = _assemble_heat(md)
     D, uD = cons.finalize(md.warnings)
+    _check_rigid_modes(md, D, has_robin=getattr(md, "has_robin", False))
     N = md.N
     x = np.zeros(N)
     x[D] = uD
@@ -722,11 +774,15 @@ class SkfemResult(Result):
         if t == "reaction":
             S = md.sdofs_of(qoi.group)
             k = int(qoi.component or 0)
-            if md.physics == "heat":
-                if k != 0:
-                    raise CaseError("heat reaction (heat flow into the body) has only component 0")
-                return float(self.reaction_vector[S].sum())
-            return float(self.reaction_vector[md.split[k][S]].sum())
+            if md.physics == "heat" and k != 0:
+                raise CaseError("heat reaction (heat flow into the body) has only component 0")
+            idx = md.split[k][S]
+            if not np.isin(idx, self.dirichlet_dofs).any():
+                msg = (f"reaction QoI {qoi.name!r}: group {qoi.group!r} has no Dirichlet constraint on "
+                       f"component {k}, so its reaction is ~0 (did you mean a supported group?)")
+                if msg not in self.info.warnings:
+                    self.info.warnings.append(msg)
+            return float(self.reaction_vector[idx].sum())
         if t in ("integral", "mean"):
             self._check_field(qoi.field)
             integ, meas = self._integral(qoi.field, qoi.group)
