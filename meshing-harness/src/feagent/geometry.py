@@ -23,7 +23,7 @@ from .gmsh_util import element_blocks, entity_tags, node_table, pinned_options
 from .graph import connected_groups
 from .types import (BBox, EdgeInfo, FaceInfo, Feature, GeometryModel, Hazard, Tessellation,
                     VolumeInfo)
-from .vec import bbox_diag, unit, unit_rows
+from .vec import bbox_diag, tri_area_vectors, unit, unit_rows
 
 SURFACE_KINDS = {
     "Plane": "plane", "Cylinder": "cylinder", "Cone": "cone", "Sphere": "sphere", "Torus": "torus",
@@ -460,7 +460,7 @@ def _orient_face_tris(fd: _Face, points: np.ndarray) -> tuple[np.ndarray, np.nda
     """Wind triangles along the exact getNormal of the face; return (tris, unit normals)."""
     tris = fd.tris.copy()
     p = points[tris]
-    cr = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
+    cr = tri_area_vectors(p)
     if fd.kind == "plane" and len(fd.raw):
         ref = np.broadcast_to(fd.raw[0], cr.shape)
     else:  # exact normal at each projected centroid
@@ -924,7 +924,7 @@ def _thin_wall_text(tags, t: float, h: float) -> tuple[str, str]:
     return (f"wall thickness {_f(t)} < 2*h = {_f(2 * h)} on faces {ids}; at size {_f(h)} there are "
             f"fewer than 2 elements through the wall",
             f"local size <= t/2 = {_f(t / 2)} on faces {ids} (spec: refine: [{{select: <query for these "
-            f"faces>, size: {_f(t / 2)}, distance: {_f(t)}}}]) or element order 2 (spec: element.order: "
+            f"faces>, size: {_f(t / 2)}, distance: {_f(2 * t)}}}]) or element order 2 (spec: element.order: "
             f"2); elements through the wall: size.thin_wall_layers")
 
 

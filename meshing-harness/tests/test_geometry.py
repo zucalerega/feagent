@@ -108,7 +108,7 @@ def test_thin_cup_thin_wall_hazard(parts_dir):
     for h in thin:
         assert h.value == pytest.approx(1.0, abs=0.1)
         assert h.threshold == pytest.approx(8.0)
-        assert h.suggestion
+        assert "distance: 2}" in h.suggestion  # the mesher's thin-wall reach is 2t
     faces = {t for h in thin for _, t in h.entities}
     # the five outer and five inner wall/floor faces are thin; the rim strips are not
     assert len(faces) == 10

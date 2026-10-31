@@ -228,6 +228,34 @@ def _md_problems(m: MeshResult) -> str:
     return "\n\n".join(parts)
 
 
+# --- text summaries (CLI and MCP share these) --------------------------------
+
+def mesh_summary(res: MeshResult) -> str:
+    """A mesh run: head line, mesher gate table, errors, mesher notes."""
+    head = (f"mesh ok: {res.n_elements} tets, {res.n_nodes} nodes -> {res.mesh_path}" if res.ok
+            else "mesh FAILED")
+    return "\n\n".join([head, gate_table(res.gates), *res.errors, *_notes(res.warnings)])
+
+
+def automesh_summary(r: CheckReport, mcp: bool = False) -> str:
+    """An automesh run: spec path, status, gate table, mesher notes, report path, next step
+    (worded as MCP tool calls when ``mcp``, else as CLI commands)."""
+    spec = r.spec_path
+    lines = [f"spec: {spec} (auto-generated starting point: add groups, bcs, refine)",
+             f"status: {r.status}", gate_table(r.gates), *_notes(r.mesh.warnings)]
+    if r.mesh.out_dir:
+        lines.append(f"report: {Path(r.mesh.out_dir) / 'REPORT.md'}")
+    nxt = (f'inspect_geometry("{spec}") for features and hazards; name the BC faces as groups by '
+           f'query (find_faces), add bcs:, then check_mesh("{spec}")' if mcp else
+           f"`feagent inspect {spec}` for features and hazards; name the BC faces as groups by "
+           f"query (`feagent faces`), add bcs:, then `feagent check {spec}`")
+    return "\n\n".join(lines + [f"next: {nxt}"])
+
+
+def _notes(warnings: list[str]) -> list[str]:
+    return ["mesher notes:\n" + "\n".join(f"- {w}" for w in warnings)] if warnings else []
+
+
 # --- state (read by the Stop hook) ------------------------------------------
 #
 # {"specs": {<abs spec path>: entry}, ...other top-level keys kept (e.g. "hook_blocks")}

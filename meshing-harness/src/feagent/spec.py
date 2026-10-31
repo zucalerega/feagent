@@ -9,13 +9,8 @@ from typing import Any, Callable
 
 import yaml
 
-from feagent.errors import SpecError
-
-_FALLBACK_QUERY_KEYS = (
-    "ids", "kind", "normal", "axis", "tol_deg", "radius", "radius_tol", "radius_min",
-    "radius_max", "area_min", "area_max", "concave", "at", "box", "near", "within",
-    "feature", "adjacent_to", "largest", "smallest", "any", "all", "not",
-)
+from feagent.errors import SpecError, for_frontend
+from feagent.select import QUERY_KEYS
 _EXPORTS = ("msh", "msh22", "inp", "vtk", "unv", "su2")
 _OPTIMIZE = ("none", "default", "netgen")
 _AXES = ("+x", "-x", "+y", "-y", "+z", "-z")
@@ -111,15 +106,6 @@ class MeshSpec:
 
     def out_dir(self) -> Path:
         return (self.path.parent / self.output).resolve()
-
-
-def _query_keys() -> tuple[str, ...]:
-    try:
-        from feagent.select import QUERY_KEYS
-
-        return tuple(QUERY_KEYS)
-    except ImportError:
-        return _FALLBACK_QUERY_KEYS
 
 
 def _err(path: str, msg: str, hint: str = "") -> SpecError:
@@ -297,7 +283,7 @@ def _parse_groups(data: dict, done: dict) -> dict:
     gd = {} if gd is None else gd
     if not isinstance(gd, dict):
         raise _err("groups", "expected a mapping of group name to {select, expect}")
-    qkeys = _query_keys()
+    qkeys = QUERY_KEYS
     return {"groups": {str(n): _parse_group(str(n), g, qkeys) for n, g in gd.items()}}
 
 
@@ -349,7 +335,7 @@ def _parse_size(data: dict, done: dict) -> dict:
 def _parse_refine(data: dict, done: dict) -> dict:
     items = data.get("refine")
     items = _list([] if items is None else items, "refine")
-    qkeys = _query_keys()
+    qkeys = QUERY_KEYS
     return {"refine": [_parse_refine_item(r, f"refine[{i}]", done["groups"], qkeys)
                        for i, r in enumerate(items)]}
 
@@ -444,7 +430,8 @@ def load_spec(path: str | Path) -> MeshSpec:
     if not p.is_file():
         raise _err("", f"spec file not found: {p}",
                    "pass the path of a mesh.yaml (relative to the current directory); "
-                   "`feagent automesh PART` writes a starting spec")
+                   + for_frontend("`feagent automesh PART`", "automesh(path)")
+                   + " writes a starting spec")
     try:
         data = yaml.safe_load(p.read_text())
     except yaml.YAMLError as exc:

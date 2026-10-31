@@ -1,10 +1,11 @@
 # Open box 60 x 40 x 20 mm with 1 mm walls (inspect: thin_wall hazard on every wall face).
 # Pattern: a thin_wall hazard needs elements through the thickness. Two linear layers (the
-# default thin_wall_min_elements: 2, size <= t/2) cost ~160k quadratic tets here, so this spec
-# takes the documented trade-off: ONE quadratic (order 2) tet through the wall -- its mid-side
-# nodes resolve a linear through-thickness stress (bending) -- with the gate lowered to 1 to match.
-# Do not lower the threshold with order 1 elements. gmsh overshoots the target size by ~10 %, so
-# the walls (every face except the rim at zmax) are refined to 0.8 < t.
+# default thin_wall_layers: 2 with thin_wall_min_elements: 2) cost ~300k quadratic tets here
+# (zero-config automesh), so this spec takes the documented trade-off: ONE quadratic (order 2)
+# tet through the wall -- its mid-side nodes resolve a linear through-thickness stress
+# (bending) -- with the gate lowered to 1 to match. Do not lower the threshold with order 1
+# elements. thin_wall_layers: 1 makes the mesher refine every thin-wall face to 0.8 * t (it
+# undershoots t because gmsh overshoots the target size), so no explicit refine is needed.
 name: thin_cup
 geometry: ../parts/thin_cup.step
 analysis: fea
@@ -12,8 +13,6 @@ groups:
   base: {select: {at: zmin, normal: [0, 0, -1]}, expect: 1}
   rim: {select: {at: zmax, normal: [0, 0, 1]}, expect: 1}
 size: {global: 2.0, thin_wall_layers: 1}
-refine:
-  - {select: {not: {at: zmax}}, size: 0.8, distance: 1}
 element: {order: 2}
 quality: {thin_wall_min_elements: 1}
 export: [msh, inp]

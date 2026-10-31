@@ -16,7 +16,7 @@ from . import gmsh_util as gu
 from .gates import failed, passed, skipped, threshold_gate, warned
 from .graph import connected_groups
 from .types import Gate, GeometryModel, MeshResult, Vec3, _Base
-from .vec import vec3
+from .vec import tri_area_vectors, vec3
 
 if TYPE_CHECKING:  # pragma: no cover
     from .meshdata import MeshData
@@ -155,10 +155,9 @@ def tet_non_ortho_skewness(points: np.ndarray, tets: np.ndarray) -> tuple[np.nda
 
 def _oriented_face_vectors(tri: np.ndarray, d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Face area vectors (pointing along ``d``) and centroids of triangles ``tri[n,3,3]``."""
-    p0, p1, p2 = tri[:, 0], tri[:, 1], tri[:, 2]
-    s = 0.5 * np.cross(p1 - p0, p2 - p0)
+    s = tri_area_vectors(tri)
     s[_rowdot(s, d) < 0] *= -1
-    return s, (p0 + p1 + p2) / 3.0
+    return s, tri.mean(axis=1)
 
 
 def _skewness(cp: np.ndarray, d: np.ndarray, dn: np.ndarray, n: np.ndarray,

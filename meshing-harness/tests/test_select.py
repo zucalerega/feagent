@@ -106,3 +106,28 @@ def test_explain_adjacent_to_names_inner_key(model):
     text = explain_miss(model, {"adjacent_to": {"ids": [7], "kind": "sphere"}}, 1)
     assert "sub-query 'adjacent_to'" in text
     assert "kind: 0 matched" in text and "ids: 1 matched" in text
+
+
+def test_unknown_kind_is_rejected_with_a_suggestion(model):
+    with pytest.raises(QueryError) as e:
+        select_faces(model, {"kind": "cylindr"})
+    assert "unknown face kind 'cylindr'" in e.value.message and "'cylinder'" in e.value.hint
+    with pytest.raises(QueryError):
+        select_faces(model, {"any": [{"kind": ["plane", "blob"]}]})
+
+
+def test_geometry_kinds_are_known_query_kinds():
+    from feagent.geometry import SURFACE_KINDS
+    from feagent.types import FACE_KINDS
+    assert set(SURFACE_KINDS.values()) | {"other"} <= set(FACE_KINDS)
+
+
+def test_face_lookup_is_cached_and_not_serialized(model):
+    import dataclasses
+    assert model.face(7).kind == "cylinder" and model._by_tag is not None
+    with pytest.raises(KeyError):
+        model.face(99)
+    assert "_by_tag" not in model.to_dict()
+    assert GeometryModel.from_dict(model.to_dict()) == model  # the cache does not affect eq
+    model.faces.append(dataclasses.replace(model.faces[0], tag=8))
+    assert model.face(8).tag == 8  # rebuilt when the faces list changes

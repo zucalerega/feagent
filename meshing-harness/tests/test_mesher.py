@@ -166,7 +166,7 @@ def test_thin_wall_refinement_scales_with_size_scale(tmp_path, parts_dir, bracke
         return [w.split(": auto-refined")[0] for w in res.warnings if w.startswith("thin wall")]
     res = run_mesh(load_spec(bracket_spec(tmp_path, parts_dir)), 1.3)
     assert walls(res) and walls(res) == walls(bracket[1])  # same faces at every scale
-    assert any("t=6 on faces" in w and "size 3.9 " in w for w in res.warnings)  # 6/2 * 1.3
+    assert any("t=6 on faces" in w and "size 3.12 " in w for w in res.warnings)  # 0.8 * 6/2 * 1.3
 
 
 def test_subprocess_matches(bracket):
@@ -302,3 +302,16 @@ def test_auto_spec_cfd_defaults(parts_dir):
     assert d["default_group"] == "walls" and d["domain"] == {"type": "internal"}
     assert d["element"]["order"] == 1 and d["export"] == ["msh", "msh22", "su2"]
     assert d["size"]["curvature"] == 24
+
+
+def test_group_warnings_for_ids_and_unchecked_multi_matches():
+    from feagent.mesher import _group_warnings
+    from feagent.spec import GroupSpec
+    spec = type("S", (), {"groups": {
+        "tagged": GroupSpec("tagged", {"not": {"ids": [3]}}, expect=2),
+        "holes": GroupSpec("holes", {"kind": "cylinder"}),
+        "one": GroupSpec("one", {"at": "xmin"})}})()
+    w = _group_warnings(spec, {"tagged": [1, 2], "holes": [4, 5, 6], "one": [7]})
+    assert len(w) == 2
+    assert "'tagged'" in w[0] and "ids" in w[0]
+    assert "'holes'" in w[1] and "groups.holes.expect: 3" in w[1]

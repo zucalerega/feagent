@@ -29,6 +29,8 @@ import yaml
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from .errors import FRONTEND_ENV
+
 CONTEXT_ENV = "FEAGENT_CONTEXT_DIR"
 _DEFAULT_CONTEXT = Path(__file__).resolve().parents[2] / "agent_context"
 TIMEOUT_S = {"inspect": 300.0, "faces": 300.0, "render": 300.0, "automesh": 1800.0,
@@ -52,7 +54,7 @@ def run_cli(args: list[str], timeout: float | None = None) -> tuple[int, Any]:
     limit = TIMEOUT_S.get(args[0], 600.0) if timeout is None else timeout
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=limit,
-                           stdin=subprocess.DEVNULL)
+                           stdin=subprocess.DEVNULL, env={**os.environ, FRONTEND_ENV: "mcp"})
     except subprocess.TimeoutExpired:
         raise ToolError(f"error: `feagent {args[0]}` timed out after {limit:g} s\nhint: coarsen "
                         "size.global or simplify the spec, then retry") from None
@@ -108,18 +110,19 @@ def render_view(path: str, view: str = "faces", highlight: list[int] | None = No
 
 
 def automesh(path: str, cfd: bool = False, output: str | None = None) -> str:
+    from .check import CheckReport, automesh_summary
+
     out = _out_path(output, Path(f"{Path(path).stem}_mesh"))
     _, data = run_cli(["automesh", path, "--no-render", "-o", out] + (["--cfd"] if cfd else []))
-    return _automesh_text(data)
+    return automesh_summary(CheckReport.from_dict(data), mcp=True)
 
 
 def mesh(spec_path: str, scale: float = 1.0) -> str:
-    from .check import gate_table
+    from .check import mesh_summary
+    from .types import MeshResult
 
     _, r = run_cli(["mesh", spec_path, "--scale", str(scale)])
-    head = (f"mesh ok: {r['n_elements']} tets, {r['n_nodes']} nodes -> {r['mesh_path']}"
-            if r["ok"] else "mesh FAILED")
-    return "\n\n".join([head, gate_table(_gates(r["gates"])), *r["errors"]])
+    return mesh_summary(MeshResult.from_dict(r))
 
 
 def check_mesh(spec_path: str) -> str:
@@ -132,25 +135,6 @@ def check_mesh(spec_path: str) -> str:
 def _out_path(output: str | None, default: Path) -> str:
     """``output`` (default: ``default``), absolute against the server's working directory."""
     return str((Path(output) if output else default).resolve())
-
-
-def _gates(items: list[dict]) -> list:
-    from .types import Gate
-
-    return [Gate.from_dict(g) for g in items]
-
-
-def _automesh_text(r: dict) -> str:
-    from .check import gate_table
-
-    spec, m = r["spec_path"], r["mesh"]
-    lines = [f"spec: {spec}", f"status: {r['status']}", "", gate_table(_gates(r["gates"]))]
-    if m["warnings"]:
-        lines += ["", "mesher notes:", *(f"- {w}" for w in m["warnings"])]
-    if m.get("out_dir"):
-        lines += ["", f"report: {Path(m['out_dir']) / 'REPORT.md'}"]
-    return "\n".join(lines + ["", f"next: inspect_geometry(\"{spec}\") for features and hazards; "
-                              "name BC groups by query, add bcs:, then check_mesh(spec)"])
 
 
 TOOLS: dict[str, Callable[..., Any]] = {

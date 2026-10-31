@@ -117,6 +117,7 @@ def test_cli_faces_expect_miss_exit2(parts_dir):
             '{"at":"xmin","kind":"cylinder"}', "--expect", "1")
     assert p.returncode == 2
     assert "0 matched" in p.stderr
+    assert "--expect" in p.stderr and "feagent render" in p.stderr  # CLI wording outside MCP
 
 
 def test_cli_faces_json(parts_dir):
@@ -276,3 +277,18 @@ def test_state_path_resolution(tmp_path, monkeypatch):
     assert state_path() == (root / "a").resolve() / ".feagent" / "state.json"
     monkeypatch.setenv("FEAGENT_STATE", str(tmp_path / "s.json"))
     assert state_path() == tmp_path / "s.json"
+
+
+def test_summaries_are_shared_and_frontend_worded(cantilever):
+    from dataclasses import replace
+
+    from feagent.check import automesh_summary, mesh_summary
+    _, r, _ = cantilever
+    r = replace(r, mesh=replace(r.mesh, warnings=["thin wall t=1 on faces [3]: auto-refined"]))
+    cli_text, mcp_text = automesh_summary(r), automesh_summary(r, mcp=True)
+    for text in (cli_text, mcp_text):
+        assert "status: pass" in text and "| pass | sicn |" in text
+        assert "mesher notes:\n- thin wall t=1" in text and "REPORT.md" in text
+    assert "`feagent check " in cli_text and "check_mesh(" in mcp_text and "`feagent" not in mcp_text
+    m = mesh_summary(r.mesh)
+    assert m.startswith("mesh ok") and "| pass | mesh_generated |" in m and "mesher notes" in m

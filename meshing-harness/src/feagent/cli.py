@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from .errors import FeagentError, QueryError
+from .errors import FeagentError, QueryError, for_frontend
 
 if TYPE_CHECKING:  # pragma: no cover
     from .meshdata import MeshData
@@ -25,7 +25,8 @@ EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
 EXIT_CODES = ("exit codes: 0 ok; 1 a gate failed or no mesh; 2 usage, spec, query or CAD error; "
               "3 internal error (traceback on stderr)")
 _SPEC_SUFFIXES = (".yaml", ".yml")
-_QUERY_HINT = 'pass a JSON object, e.g. --query \'{"at": "xmin", "kind": "plane"}\''
+_QUERY_EXAMPLE = '{"at": "xmin", "kind": "plane"}'
+_QUERY_HINT = f"pass a JSON object, e.g. --query '{_QUERY_EXAMPLE}'"
 _INTERNAL_HINT = "unexpected failure inside feagent (traceback above on stderr); please report it"
 
 
@@ -63,7 +64,8 @@ def _default_hint(e: FeagentError) -> str:
         return ""
     from .select import QUERY_KEYS
 
-    return f"fix the query value named above; query keys: {', '.join(QUERY_KEYS)}. {_QUERY_HINT}"
+    example = for_frontend(_QUERY_HINT, f"pass a JSON object, e.g. query={_QUERY_EXAMPLE}")
+    return f"fix the query value named above; query keys: {', '.join(QUERY_KEYS)}. {example}"
 
 
 def _error(as_json: bool, message: str, hint: str, code: int) -> int:
@@ -129,9 +131,12 @@ def _mesh_file(path: str) -> Path:
     p = load_spec(path).out_dir() / "mesh.msh" if _is_spec(path) else Path(path)
     if p.suffix.lower() != ".msh":
         raise FeagentError(f"not a gmsh mesh: {p}", "this view needs a .msh file or a mesh.yaml "
-                           "(uses its out/mesh.msh); use --view faces for CAD files")
+                           "(uses its out/mesh.msh); use "
+                           + for_frontend("--view faces", 'view="faces"') + " for CAD files")
     if not p.is_file():
-        raise FeagentError(f"mesh file not found: {p}", "run `feagent mesh SPEC` first")
+        raise FeagentError(f"mesh file not found: {p}", "run " + for_frontend(
+            "`feagent mesh SPEC` or `feagent check SPEC`", "mesh(spec_path) or check_mesh(spec_path)")
+            + " first")
     return p
 
 
@@ -158,9 +163,11 @@ def _cmd_faces(a: argparse.Namespace) -> int:
     model = _load_model(a.path)
     tags = select_faces(model, q)
     if (len(tags) != a.expect) if a.expect is not None else not tags:
-        raise QueryError(explain_miss(model, q, a.expect),
-                         "adjust the query (see the per-key breakdown) or --expect; "
-                         "`feagent render PATH --view faces` shows the face tags")
+        raise QueryError(explain_miss(model, q, a.expect), for_frontend(
+            "adjust the query (see the per-key breakdown) or --expect; "
+            "`feagent render PATH --view faces` shows the face tags",
+            "adjust the query (see the per-key breakdown) or expect; "
+            'render_view(path, view="faces") shows the face tags'))
     text = f"{len(tags)} face(s) matched: {tags}\n" + describe_faces(model, tags)
     data = {"query": q, "tags": tags, "faces": [model.face(t).to_dict() for t in tags]}
     return _emit(a, text, data)
@@ -215,16 +222,13 @@ _VIEWS: dict[str, Callable[[argparse.Namespace, Path], Any]] = {
 
 
 def _cmd_mesh(a: argparse.Namespace) -> int:
-    from .check import gate_table, load_checked_spec, record_state
+    from .check import load_checked_spec, mesh_summary, record_state
     from .mesher import run_mesh_subprocess
 
     spec, mtime = load_checked_spec(a.spec)
     res = run_mesh_subprocess(spec.path, a.scale)
     record_state(str(spec.path), "unchecked" if res.ok else "fail", spec_mtime=mtime)
-    head = (f"mesh ok: {res.n_elements} tets, {res.n_nodes} nodes -> {res.mesh_path}" if res.ok
-            else "mesh FAILED")
-    text = "\n\n".join([head, gate_table(res.gates), *res.errors])
-    return _emit(a, text, res.to_dict(), EXIT_OK if res.ok else EXIT_FAIL)
+    return _emit(a, mesh_summary(res), res.to_dict(), EXIT_OK if res.ok else EXIT_FAIL)
 
 
 def _cmd_check(a: argparse.Namespace) -> int:
@@ -235,19 +239,15 @@ def _cmd_check(a: argparse.Namespace) -> int:
 
 
 def _cmd_automesh(a: argparse.Namespace) -> int:
-    from .check import gate_table, run_check
+    from .check import automesh_summary, run_check
     from .mesher import auto_spec
-    from .spec import load_spec
 
     part = Path(a.part).resolve()
     out = Path(a.output) if a.output else part.parent / f"{part.stem}_mesh"
     spec_path = (out / "mesh.yaml").resolve()
     auto_spec(part, "cfd" if a.cfd else "fea", spec_path=spec_path)
     r = run_check(spec_path, render=not a.no_render)
-    text = (f"spec: {spec_path}\n(auto-generated starting point: add groups, bcs, refine; then "
-            f"`feagent check {spec_path}`)\n\nstatus: {r.status}\n\n{gate_table(r.gates)}\n\n"
-            f"report: {load_spec(spec_path).out_dir() / 'REPORT.md'}")
-    return _emit(a, text, r.to_dict(), EXIT_OK if r.status == "pass" else EXIT_FAIL)
+    return _emit(a, automesh_summary(r), r.to_dict(), EXIT_OK if r.status == "pass" else EXIT_FAIL)
 
 
 def _cmd_waive(a: argparse.Namespace) -> int:

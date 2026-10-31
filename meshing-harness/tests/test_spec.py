@@ -120,7 +120,8 @@ def test_cfd_walls_collision_hint_explains_default(tmp_path):
 def test_query_keys_come_from_select():
     from feagent import select, spec
 
-    assert spec._query_keys() == tuple(select.QUERY_KEYS)
+    assert spec.QUERY_KEYS is select.QUERY_KEYS
+    assert not hasattr(spec, "_FALLBACK_QUERY_KEYS")
 
 
 def test_file_and_yaml_errors_have_hints(tmp_path):

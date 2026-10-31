@@ -94,3 +94,22 @@ def test_pinned_options_restores_on_error():
                 raise RuntimeError("boom")
         assert gmsh.option.getNumber("Mesh.MeshSizeMax") == 7.0
         assert gmsh.option.getNumber("Mesh.ElementOrder") == 1
+
+
+def test_tri_area_vectors():
+    from feagent.vec import tri_area_vectors
+    tri = np.array([[[0, 0, 0], [2, 0, 0], [0, 1, 0]], [[0, 0, 0], [0, 0, 1], [0, 3, 0]]], float)
+    assert np.allclose(tri_area_vectors(tri), [[0, 0, 1.0], [-1.5, 0, 0]])
+
+
+def test_integrated_measure_matches_straight_and_curved_elements():
+    with gmsh_session():
+        gmsh.model.occ.addCylinder(0, 0, 0, 0, 0, 2, 1)
+        gmsh.model.occ.synchronize()
+        gmsh.option.setNumber("Mesh.MeshSizeMax", 0.6)
+        gmsh.model.mesh.generate(3)
+        linear = gu.integrated_measure(3)
+        gmsh.model.mesh.setOrder(2)
+        curved, side = gu.integrated_measure(3), gu.integrated_measure(2, 1)
+    assert linear < curved and curved == pytest.approx(2 * np.pi, rel=1e-3)
+    assert side == pytest.approx(4 * np.pi, rel=1e-3)  # lateral face 2*pi*r*h

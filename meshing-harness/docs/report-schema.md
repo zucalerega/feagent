@@ -72,6 +72,13 @@ elements, area}`; surface groups have `dim` 2, the volume group `domain` has `di
 Every group is exported under its own name: as a physical group in `.msh`, `.su2` and `.unv`, and
 as an NSET and ELSET in `.inp`. The solver finds the `bcs` groups by these names.
 
+**`mesh.inp` contains surface elements.** Besides the solid tets (C3D4 / C3D10, in the ELSET
+`domain`), `mesh.inp` holds the triangles of every surface group as CPS3 (order 1) or CPS6
+(order 2) elements, written per CAD face (`*ELEMENT, type=CPS6, ELSET=Surface<tag>`) and
+collected in the group's ELSET, so the solver can locate the faces. These surface elements must
+**not** get a section or a material: assign the solid section to `domain` only, and use the
+surface groups' NSETs (or the faces of `domain` elements) for loads and supports.
+
 ## Quality (`quality`)
 
 | field | meaning |

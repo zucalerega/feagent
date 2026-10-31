@@ -1,6 +1,6 @@
 # Plate 200 x 100 x 5 mm with a central r=10 hole, pulled in x (stress concentration Kt ~ 3).
 # Pattern: refine around the stress raiser (the hole). inspect reports the 5 mm thickness as a
-# thin-wall hazard; thin_wall_layers: 2 makes the mesher size those faces to t/2.
+# thin-wall hazard; thin_wall_layers: 2 makes the mesher size those faces to 0.8 * t/2.
 name: plate_hole
 geometry: ../parts/plate_hole.step
 analysis: fea

@@ -1,12 +1,15 @@
 """Shared data types. All dataclasses round-trip through to_dict()/from_dict()."""
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 import numpy as np
 
 Vec3 = tuple[float, float, float]
 BBox = tuple[Vec3, Vec3]
+# FaceInfo.kind values (geometry.SURFACE_KINDS maps gmsh surface types onto them)
+FACE_KINDS = ("plane", "cylinder", "cone", "sphere", "torus", "bspline", "revolution", "extrusion",
+              "other")
 
 
 def _v(x):
@@ -33,8 +36,9 @@ def _jsonable(x):
 
 class _Base:
     def to_dict(self) -> dict:
+        """Every field except the tessellation and private (``_``-prefixed) caches."""
         return {f.name: _jsonable(getattr(self, f.name)) for f in fields(self)  # type: ignore[arg-type]
-                if f.name != "tessellation"}
+                if f.name != "tessellation" and not f.name.startswith("_")}
 
 
 @dataclass
@@ -149,12 +153,17 @@ class GeometryModel(_Base):
     features: list[Feature]
     hazards: list[Hazard]
     tessellation: Tessellation | None = None
+    _by_tag: dict[int, FaceInfo] | None = field(default=None, init=False, repr=False, compare=False)
 
     def face(self, tag: int) -> FaceInfo:
-        for f in self.faces:
-            if f.tag == tag:
-                return f
-        raise KeyError(tag)
+        """The face with ``tag`` (KeyError if none); a dict built on first use, rebuilt if the
+        faces list changed length."""
+        if self._by_tag is None or len(self._by_tag) != len(self.faces):
+            self._by_tag = {f.tag: f for f in self.faces}
+        try:
+            return self._by_tag[tag]
+        except KeyError:
+            raise KeyError(tag) from None
 
     @classmethod
     def from_dict(cls, d: dict) -> GeometryModel:

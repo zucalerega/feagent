@@ -281,6 +281,19 @@ def test_tool_errors_carry_the_hint(parts_dir):
     assert "query key 'at'" in str(e.value) and "hint:" in str(e.value)
 
 
+def test_mcp_error_hints_name_mcp_tools(parts_dir, tmp_path):
+    step = str(parts_dir / "cantilever.step")
+    with pytest.raises(mcp_server.ToolError) as e:
+        mcp_server.find_faces(step, {"at": "xmin", "kind": "cylinder"}, expect=1)
+    assert "render_view" in str(e.value) and "--expect" not in str(e.value)
+    with pytest.raises(mcp_server.ToolError) as e:
+        mcp_server.render_view(step, view="groups", output=str(tmp_path / "g.png"))
+    assert 'view="faces"' in str(e.value) and "--view" not in str(e.value)
+    with pytest.raises(mcp_server.ToolError) as e:
+        mcp_server.check_mesh(str(tmp_path / "missing" / "mesh.yaml"))
+    assert "automesh(path)" in str(e.value) and "feagent automesh" not in str(e.value)
+
+
 def test_cli_timeout_is_reported(parts_dir):
     with pytest.raises(mcp_server.ToolError, match="timed out"):
         mcp_server.run_cli(["inspect", str(parts_dir / "bracket.step")], timeout=0.01)

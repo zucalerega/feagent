@@ -24,8 +24,8 @@ inspect_geometry: |
 
 find_faces: |
   Select faces by geometric query and confirm the count before using the query as a spec group.
-  query is a JSON object; all keys are AND-ed: kind ("plane"|"cylinder"|"cone"|"sphere"|"torus"|"revolution"|
-  "bspline", or a list), normal [x,y,z] (planes, tol_deg default 5), axis [x,y,z] (cylinders/cones),
+  query is a JSON object; all keys are AND-ed: kind ("plane"|"cylinder"|"cone"|"sphere"|"torus"|"bspline"|
+  "revolution"|"extrusion"|"other", or a list; an unknown kind is an error), normal [x,y,z] (planes, tol_deg default 5), axis [x,y,z] (cylinders/cones),
   radius (+radius_tol), radius_min/radius_max, area_min/area_max, concave (bool), at
   ("xmin"|"xmax"|"ymin"|"ymax"|"zmin"|"zmax": face lies on that bounding-box extreme), box
   [[x0,y0,z0],[x1,y1,z1]] (face centre inside), near [x,y,z] (+within distance), feature ("hole"|"round"|

@@ -41,6 +41,13 @@ def unit_rows(a) -> np.ndarray:
     return a / np.maximum(np.linalg.norm(a, axis=1), 1e-300)[:, None]
 
 
+def tri_area_vectors(tri) -> np.ndarray:
+    """Area vectors 0.5 * (p1 - p0) x (p2 - p0) of triangles ``tri[n, 3, 3]`` (right-hand normal,
+    length = area)."""
+    tri = np.asarray(tri, float)
+    return 0.5 * np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+
+
 def dist(a: Sequence[float], b: Sequence[float]) -> float:
     return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
 

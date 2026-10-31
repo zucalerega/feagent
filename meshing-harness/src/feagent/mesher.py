@@ -22,6 +22,7 @@ import gmsh
 import numpy as np
 import yaml
 
+from .check import mesh_summary
 from .errors import CadLoadError, FeagentError, QueryError, SpecError
 from .gates import failed, passed, skipped
 from .geometry import analyze, analyze_current_model
@@ -42,6 +43,10 @@ _MESH_FILES = ("mesh.msh", *_EXPORT_FILES.values())
 _CONTRACT = (*_MESH_FILES, "manifest.json", "mesh.log")
 
 RefineTarget = tuple[list[int], float, float]  # (face tags, size at the faces, distance)
+# gmsh overshoots a Threshold field's SizeMin by ~15-20 % on thin walls (t/2 gave 1.65 elements
+# across instead of 2), so thin-wall targets ask for this fraction of t/layers.
+THIN_WALL_SIZE_FACTOR = 0.8
+THIN_WALL_DISTANCE = 2.0  # thin-wall refinement reaches this many thicknesses from the faces
 
 
 @dataclass
@@ -247,6 +252,28 @@ def _unassigned_boundary(model: GeometryModel, groups: dict[str, list[int]]) -> 
     return sorted(f.tag for f in model.faces if len(f.volumes) == 1 and f.tag not in taken)
 
 
+def _group_warnings(spec: MeshSpec, faces: dict[str, list[int]]) -> list[str]:
+    """Groups that resolved but are fragile: picked by face tags, or unchecked multi-face matches."""
+    out = []
+    for name, g in spec.groups.items():
+        if _uses_ids(g.select):
+            out.append(f"group '{name}' selects faces by `ids:`: tags change with the CAD and the "
+                       f"domain; replace them with a geometric query (kind/radius/at/near/...)")
+        n = len(faces.get(name, []))
+        if g.expect is None and n > 1:
+            out.append(f"group '{name}' has no expect and matched {n} faces {faces[name]}: if "
+                       f"that is right, set groups.{name}.expect: {n} so a CAD change cannot "
+                       f"silently change it")
+    return out
+
+
+def _uses_ids(q: object) -> bool:
+    """True if the query or any sub-query (not/adjacent_to/any/all) has an ``ids`` key."""
+    if isinstance(q, dict):
+        return "ids" in q or any(_uses_ids(v) for v in q.values())
+    return isinstance(q, list) and any(_uses_ids(v) for v in q)
+
+
 def _refine_targets(run: _Run) -> list[RefineTarget]:
     out = []
     for i, r in enumerate(run.spec.refine):
@@ -259,7 +286,8 @@ def _refine_targets(run: _Run) -> list[RefineTarget]:
 
 
 def _thin_wall_targets(run: _Run) -> list[RefineTarget]:
-    """One target per thin_wall hazard: size thickness/layers within 2*thickness of its faces."""
+    """One target per thin_wall hazard: size THIN_WALL_SIZE_FACTOR * thickness/layers within
+    THIN_WALL_DISTANCE * thickness of its faces."""
     layers = run.spec.size.thin_wall_layers
     if layers <= 0:
         return []
@@ -270,8 +298,8 @@ def _thin_wall_targets(run: _Run) -> list[RefineTarget]:
         tags = [int(t) for d, t in z.entities if d == 2]
         # Hazards come from the unscaled ref size and the size scales with size_scale, so every
         # scale of a study refines the same faces by the same factor (a systematic refinement).
-        size = min(float(z.value) / layers * run.scale, run.h)
-        out.append((tags, size, 2.0 * float(z.value)))
+        size = min(THIN_WALL_SIZE_FACTOR * float(z.value) / layers * run.scale, run.h)
+        out.append((tags, size, THIN_WALL_DISTANCE * float(z.value)))
         run.warnings.append(f"thin wall t={z.value:.3g} on faces {tags}: auto-refined to size "
                             f"{size:.3g} (size.thin_wall_layers={layers})")
     return out
@@ -319,6 +347,7 @@ def _stage_groups(run: _Run) -> bool:
     dg = run.spec.default_group
     if dg and dg not in run.faces:
         run.warnings.append(f"default_group '{dg}' is empty: every boundary face is in a group")
+    run.warnings += _group_warnings(run.spec, run.faces)
     summary = ", ".join(f"{k}={len(v)}" for k, v in run.faces.items()) or "none"
     run.gates.append(passed("groups", _GATE_NAMES["groups"], f"{len(run.faces)} group(s) resolved "
                             f"(faces: {summary})", value=float(len(run.faces))))
@@ -484,14 +513,6 @@ def _failed(spec_path: str | Path, scale: float, message: str, gid: str,
 # ----------------------------------------------------------------------------------------------
 # CLI
 
-def _summary(res: MeshResult) -> str:
-    head = (f"ok: {res.n_elements} elements, {res.n_nodes} nodes -> {res.mesh_path}" if res.ok
-            else "FAILED")
-    lines = [f"  {g.id}: {g.status} - {g.message}" + (f"\n    hint: {g.hint}" if g.hint else "")
-             for g in res.gates]
-    return "\n".join([head, *lines])
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m feagent.mesher", description=__doc__.split("\n")[0])
     ap.add_argument("spec", help="path to the YAML mesh spec")
@@ -505,7 +526,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # --json must always yield exactly one document
         res = _failed(a.spec, a.scale, f"mesher crashed: {type(e).__name__}: {e}",
                       "mesh_generated")
-    sys.stdout.write((_dumps(res) if a.json else _summary(res)) + "\n")
+    sys.stdout.write((_dumps(res) if a.json else mesh_summary(res)) + "\n")
     sys.stdout.flush()
     return 0 if res.ok else 1
 

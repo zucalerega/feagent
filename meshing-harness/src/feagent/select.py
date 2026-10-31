@@ -4,7 +4,7 @@ from __future__ import annotations
 import difflib
 
 from .errors import QueryError
-from .types import FaceInfo, GeometryModel
+from .types import FACE_KINDS, FaceInfo, GeometryModel
 from .vec import angle_deg, axis_angle_deg, box_dist, dist, extreme_gap
 
 QUERY_KEYS = ("ids", "kind", "normal", "axis", "tol_deg", "radius", "radius_tol", "radius_min",
@@ -36,14 +36,18 @@ def _vec(v, key: str) -> tuple[float, float, float]:
 
 # --- validation: one checker per query key --------------------------------
 
+def _did_you_mean(word: str, valid: tuple[str, ...], what: str) -> str:
+    close = difflib.get_close_matches(word, valid, n=3, cutoff=0.6)
+    return (f"did you mean {', '.join(repr(c) for c in close)}? " if close else "") + \
+        f"valid {what}: {', '.join(valid)}"
+
+
 def _validate(q, path: str = "query") -> None:
     if not isinstance(q, dict):
         raise _bad(f"{path} must be a dict, got {type(q).__name__}")
     for k in q:
         if k not in QUERY_KEYS:
-            close = difflib.get_close_matches(str(k), QUERY_KEYS, n=3, cutoff=0.6)
-            hint = (f"did you mean {', '.join(repr(c) for c in close)}? " if close else "")
-            raise _bad(f"unknown query key '{k}'", hint + f"valid keys: {', '.join(QUERY_KEYS)}")
+            raise _bad(f"unknown query key '{k}'", _did_you_mean(str(k), QUERY_KEYS, "keys"))
     for k, v in q.items():
         _VALIDATORS[k](k, v, path)
 
@@ -57,6 +61,9 @@ def _v_kind(k, v, path) -> None:
     if not (isinstance(v, str) or (isinstance(v, (list, tuple))
                                    and all(isinstance(i, str) for i in v))):
         raise _bad("query key 'kind' must be a string or list of strings")
+    for kind in [v] if isinstance(v, str) else v:
+        if kind not in FACE_KINDS:
+            raise _bad(f"unknown face kind {kind!r}", _did_you_mean(kind, FACE_KINDS, "kinds"))
 
 
 def _v_direction(k, v, path) -> None:
