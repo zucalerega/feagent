@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+out/
+.feagent/
+examples/**/out/*.msh
+.pytest_cache/
