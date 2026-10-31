@@ -10,7 +10,9 @@ requires-python = ">=3.10"
 dependencies = ["numpy", "scipy", "scikit-fem>=10", "meshio>=5.3", "gmsh>=4.11"]
 
 [project.optional-dependencies]
-dev = ["pytest", "matplotlib", "sympy"]
+dev = ["pytest", "matplotlib", "sympy", "httpx"]
+ui = ["fastapi", "uvicorn", "python-multipart"]
+gpu = ["nvmath-python", "cupy-cuda12x"]
 
 [tool.setuptools.packages.find]
 include = ["feacore*"]

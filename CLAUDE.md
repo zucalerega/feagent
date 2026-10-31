@@ -70,6 +70,13 @@ Decisions:
   GPU check, validation, UI tunnel on port 8000): `docs/brev.md`. Check the GPU solve with
   `python scripts/gpu_check.py` before relying on cuDSS.
 
+- **UI + solver service:** `python -m feacore.ui --host 0.0.0.0 --port 8000` (`docs/ui.md`). The
+  harness can call `POST /api/solve` (multipart case JSON + .msh) or write run, study and submission
+  records with `feacore.runstore.RunStore` (`record_result`, `create_submission`). Records live under
+  `runs/` (`FEACORE_RUNS_DIR`) and are never committed. A submission is one agent's runs on 3+ of its own
+  meshes; the consensus view uses the median and MAD of each submission's best estimate. For display
+  only, the UI calls a QoI converged when both mesh-to-mesh changes are under 0.1%, even if `gci3`
+  can't assign an order. Verdicts still come from `feacore.verification`.
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
