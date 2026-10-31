@@ -1,94 +1,85 @@
-# Running feacore on NVIDIA Brev
+# Running feagent on NVIDIA Brev (any account)
 
-Steps for a person or an agent on a Brev GPU instance. CLI commands are from the Brev docs
-(https://docs.nvidia.com/brev/latest/cli/connectivity.md). The hackathon's own Brev notes
-(`kit/use-brev/` in the NVIDIA ScienceClaw docs) take precedence where they differ.
+The stack here is the mesh harness, the fixed solver, verification, benchmarks, and the UI with its
+solver service. It runs on any fresh Ubuntu box: your Brev instance, a teammate's Brev instance on
+their own account, a Launchable, or a DGX Spark. It doesn't depend on whose account the box is in.
 
-## 1. Instance
+## Quick start (any Brev account, about 5 minutes)
 
-Create one in the Brev console. Any single-GPU instance works; the GPU only speeds up large 3D
-linear solves. CPU cores matter more, because studies run in parallel, one process per mesh.
-Ubuntu 22.04 or 24.04, x86_64. Then, from your laptop:
+1. **Create an instance** in your Brev console. Use VM mode, Ubuntu 22.04 or 24.04, and size it as
+   below.
+2. **Open a terminal on it:** the instance's Jupyter → File → New → Terminal, or `brev shell <name>`
+   from a laptop with the Brev CLI.
+3. **Run one command:**
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash
+   ```
+   It clones the repo into `~/feagent`, installs everything (system libraries, CalculiX, a Python 3.12
+   environment, GPU extras if a GPU is visible), and starts the UI/solver service on port 8000. The
+   service restarts on failure, starts on boot, and updates itself from `main` within about a minute
+   of each push.
+4. **Open it:** Brev console → your instance → **HTTP Ports** → add port **8000**, then open the
+   `https://…` link it shows. Brev asks visitors to sign in, so no extra token is needed. Don't use the
+   "TCP/UDP → Open Port" dialog, which exposes the port to the whole internet without sign-in.
 
-```bash
-brev shell <instance>                      # or: ssh <instance>
-```
+Running the same command again is safe: it pulls, re-installs anything missing, and restarts the
+service.
 
-## 2. Code and setup (on the instance)
+## One-click for the whole team: a Launchable
 
-```bash
-git clone https://github.com/zucalerega/feagent && cd feagent
-git checkout fea-solver-benchmarks         # until it is merged
-bash scripts/setup_gpu_box.sh              # ~3-5 min: apt libs + CalculiX, uv Python 3.12 venv, GPU extras
-source .venv/bin/activate
-```
-
-The script installs `nvmath-python` (cuDSS) and CuPy matching the driver's CUDA version when
-`nvidia-smi` works.
-
-## 3. Check the GPU solve
-
-```bash
-python scripts/gpu_check.py
-```
-
-This solves the same systems with every available linear solver (SciPy, MKL PARDISO, cuDSS) and
-requires agreement with SciPy to 1e-8, both on a 3D Laplacian and on a 3D benchmark solved end to
-end. It must print `GPU CHECK PASSED` before cuDSS is used for anything that matters. To force a
-solver: `export FEACORE_LINEAR_SOLVER=cudss` (or `scipy`, `pardiso`); the default `auto` prefers
-cuDSS, then PARDISO, then SciPy.
-
-## 4. Validate and export the benchmarks
+In the Brev console: Launchables → Create Launchable → **VM mode**. Use this as the setup script:
 
 ```bash
-python scripts/validate.py --jobs $(nproc)          # every problem, 3-mesh GCI study, report in docs/
-python scripts/export_benchmarks.py                  # benchmarks/<id>/public + private
+#!/bin/bash
+curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash
 ```
 
-## 5. UI and solver service
+Pick the size (below), add port 8000 if the wizard offers exposed ports, and share the link. Anyone
+who opens it gets their own ready instance on their own Brev account, billed to them. New Launchables
+default to "anyone with the link".
+
+## Sizing
+
+For 4 agents on 3D benchmarks such as NAFEMS LE10, use 32 vCPUs, 128 GB RAM, 200 GB disk and one GPU
+(L40S / A100 / H100). The minimum is about 16 vCPUs / 64 GB. The FEA is mostly CPU-bound: the GPU only
+speeds up large 3D solves (cuDSS) and surrogate training. If you run local LLMs on the same box, give
+them the GPU and keep the FEA on the CPU with `export FEACORE_LINEAR_SOLVER=pardiso`.
+
+## Day to day (on the box, in `~/feagent`)
 
 ```bash
-export FEACORE_UI_TOKEN=$(openssl rand -hex 16)   # optional shared token; advised behind a tunnel
-bash scripts/serve.sh                              # systemd service on port 8000, starts on boot
-bash scripts/serve.sh logs                         # follow logs;  bash scripts/serve.sh stop
+bash scripts/serve.sh logs           # service log           (update-logs: the auto-update log)
+bash scripts/serve.sh                # re-install / restart the service
+bash scripts/serve.sh stop           # stop the service and the auto-update
+.venv/bin/python scripts/gpu_check.py        # check the linear solvers (and the GPU) agree
+.venv/bin/python scripts/validate.py --jobs $(nproc)   # reference GCI studies of every problem
 ```
 
-Expose port 8000 in one of two ways:
-- **Share with the team (browser):** Brev console → your instance → Access → "Using Tunnels" →
-  port 8000. You get a URL.
-- **Just you:** on your laptop, `brev port-forward <instance> --port 8000:8000`, then open
-  http://localhost:8000.
+- **Agents and scripts on the same box** call the solver at `http://localhost:8000` (`POST /api/solve`;
+  the UI's Connect page has examples). That needs no sign-in or tunnel.
+- **Teammates sharing one box** open its HTTP Ports link after you invite them to your Brev org
+  (console → Team → Invite Member). From a laptop, scripts can use
+  `brev port-forward <instance> --port 8000:8000` and then `http://localhost:8000`.
+- **Token:** only needed if you expose the service without Brev's sign-in. Set
+  `export FEACORE_UI_TOKEN=$(openssl rand -hex 16)` and re-run `bash scripts/serve.sh`; to remove it,
+  `unset FEACORE_UI_TOKEN; rm -f .feacore_token; bash scripts/serve.sh`.
+- **Auto-update** follows the branch checked out in `~/feagent` (`main` by default). It skips the
+  update if you've edited files on the box, and it never restarts the service while jobs are running.
 
-The mesh-harness / MCP side can call the solver over HTTP at the same address (see `docs/ui.md`).
+## GPU troubleshooting
 
-## Team access (nothing to install on anyone's computer)
+`nvidia-smi` should list the GPU. If it says it "couldn't communicate with the NVIDIA driver":
 
-- **Browser (everyone):** create a tunnel for port 8000 (console → instance → Access → Using Tunnels)
-  and share the URL, adding `?token=<FEACORE_UI_TOKEN>` if you set one. That gives the full UI
-  (benchmarks, studies, batch runs, viewer, consensus). Scripts and agents on any computer can call
-  the solver at the same URL: `POST <url>/api/solve` (case JSON + .msh); see the Connect panel and
-  `docs/ui.md`. If the tunnel asks visitors to sign in, they need to be members of your Brev org.
-- **Shell on the shared box:** invite teammates to your Brev org (console → Team → Invite Member).
-  They install the Brev CLI once (`brew install brevdev/homebrew-brev/brev && brev login`), then
-  run `brev shell <instance>`. Sharing rules for cloud instances can differ by org, so check the
-  console's sharing options if a member can't see the instance.
-- **Everyone gets their own identical box: a Launchable.** Console → Launchables → Create
-  Launchable → VM mode, then paste `scripts/brev_launchable_setup.sh` as the setup script (it
-  clones this public repo, runs the setup and starts the service on port 8000). Pick the GPU/CPU
-  size (see below) and share the link. New Launchables default to "anyone with the link"; each
-  deploy is a separate instance billed to whoever deploys it.
-
-Sizing for 4 agents on 3D benchmarks such as NAFEMS LE10: 32 vCPUs, 128 GB RAM, one 48-80 GB
-GPU, 200 GB disk (minimum about 16 vCPUs / 64 GB). The FEA is mostly CPU-bound; the GPU only
-speeds up large 3D solves (cuDSS) and surrogate training.
-
-## 6. Save credits
-
-Stop the instance when you're not using it (Brev console, or `brev stop <instance>`; check
-`brev --help` for the exact command in your CLI version). Commit and push results first: a stopped
-or deleted instance may lose local files.
+- `lspci | grep -i nvidia` lists nothing: the instance has no GPU, and everything runs on the CPU.
+- A GPU is listed: run `sudo reboot`, reconnect, then re-run the bootstrap command so it installs the
+  GPU solver.
 
 ## DGX Spark (aarch64)
 
-The same script works there and takes the conda-forge path for gmsh (PyPI has no Linux ARM wheel).
-MKL PARDISO is skipped; cuDSS and SciPy remain.
+The same bootstrap works. PyPI has no Linux ARM wheel for gmsh, so it comes from conda-forge, and MKL
+PARDISO is skipped; cuDSS and SciPy remain.
+
+## Save credits
+
+Stop the instance when you're not using it (Brev console, or `brev stop <instance>`). The service and
+the auto-update come back by themselves when it starts. Push anything you want to keep first.
