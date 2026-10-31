@@ -47,19 +47,41 @@ VENDOR_FILES = {  # local name -> pinned CDN url
 }
 
 
+NPM_TARBALL = f"https://registry.npmjs.org/three/-/three-{THREE_VERSION}.tgz"
+NPM_PATHS = {"three.module.min.js": "package/build/three.module.min.js",
+             "OrbitControls.js": "package/examples/jsm/controls/OrbitControls.js"}
+
+
 def vendor_dir() -> Path:
+    """Where ``--fetch-vendor`` writes (and the server looks first)."""
     return Path(os.environ.get("FEACORE_UI_VENDOR_DIR", STATIC_DIR / "vendor" / f"three-{THREE_VERSION}"))
 
 
 def fetch_vendor(dest: Path | None = None) -> Path:
-    """Download the pinned three.js files for offline use (needs internet once)."""
+    """Download the pinned three.js files: jsDelivr, else the npm registry tarball."""
+    import io
+    import tarfile
     import urllib.request
 
     dest = Path(dest or vendor_dir())
     dest.mkdir(parents=True, exist_ok=True)
-    for name, url in VENDOR_FILES.items():
-        with urllib.request.urlopen(url, timeout=60) as r:  # noqa: S310 - pinned https URL
-            (dest / name).write_bytes(r.read())
+
+    def put(name: str, data: bytes) -> None:
+        tmp = dest / f".{name}.tmp"
+        tmp.write_bytes(data)
+        tmp.replace(dest / name)
+
+    missing = [n for n in VENDOR_FILES if not (dest / n).exists()]
+    try:
+        for name in missing:
+            with urllib.request.urlopen(VENDOR_FILES[name], timeout=30) as r:  # noqa: S310 - pinned https URL
+                put(name, r.read())
+    except Exception:  # noqa: BLE001 - CDN blocked: same files from the npm registry
+        with urllib.request.urlopen(NPM_TARBALL, timeout=180) as r:  # noqa: S310
+            tar = tarfile.open(fileobj=io.BytesIO(r.read()), mode="r:gz")
+        for name in VENDOR_FILES:
+            if not (dest / name).exists():
+                put(name, tar.extractfile(NPM_PATHS[name]).read())
     return dest
 
 
@@ -320,23 +342,32 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
     @app.get("/", include_in_schema=False)
     def index():
         html = (STATIC_DIR / "index.html").read_text()
-        local = vendor_dir()
-        imports = {
-            "three": "/vendor/three.module.min.js" if (local / "three.module.min.js").exists()
-            else VENDOR_FILES["three.module.min.js"],
-            "three/addons/controls/OrbitControls.js": "/vendor/OrbitControls.js" if (local / "OrbitControls.js").exists()
-            else VENDOR_FILES["OrbitControls.js"],
-        }
+        # same-origin URLs: the browser never needs to reach the CDN itself (see /vendor below)
+        imports = {"three": "/vendor/three.module.min.js",
+                   "three/addons/controls/OrbitControls.js": "/vendor/OrbitControls.js"}
         html = html.replace("__IMPORTMAP__", json.dumps({"imports": imports}))
         return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
+    vendor_state = {"failed_at": 0.0, "lock": threading.Lock()}
+
     @app.get("/vendor/{name}", include_in_schema=False)
     def vendor(name: str):
+        """Pinned three.js: a vendored copy (``--fetch-vendor``), else a copy the server fetched
+        once into the run store cache, else a redirect to the pinned CDN URL."""
         if name not in VENDOR_FILES:
             raise HTTPException(404, "unknown vendor file")
-        p = vendor_dir() / name
-        if p.exists():
-            return FileResponse(p, media_type="text/javascript", headers={"Cache-Control": "max-age=86400"})
+        cache = store.cache_dir / "vendor" / f"three-{THREE_VERSION}"
+        for d in (vendor_dir(), cache):
+            if (d / name).exists():
+                return FileResponse(d / name, media_type="text/javascript", headers={"Cache-Control": "max-age=86400"})
+        with vendor_state["lock"]:
+            if not (cache / name).exists() and time.time() - vendor_state["failed_at"] > 300:
+                try:
+                    fetch_vendor(cache)
+                except Exception:  # noqa: BLE001 - offline: let the browser try the CDN
+                    vendor_state["failed_at"] = time.time()
+        if (cache / name).exists():
+            return FileResponse(cache / name, media_type="text/javascript", headers={"Cache-Control": "max-age=86400"})
         return RedirectResponse(VENDOR_FILES[name])
 
     app.mount("/static", NoCacheStatic(directory=STATIC_DIR), name="static")

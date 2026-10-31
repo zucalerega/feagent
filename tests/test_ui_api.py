@@ -176,13 +176,18 @@ def test_boundary_triangulation_tet4():
 # --------------------------------------------------------------------------- HTTP: static, health, problems
 
 
-def test_frontend_served(client):
+def test_frontend_served(client, tmp_path, monkeypatch):
     r = client.get("/")
-    assert r.status_code == 200 and "__IMPORTMAP__" not in r.text and '"three"' in r.text
+    assert r.status_code == 200 and "__IMPORTMAP__" not in r.text
+    assert '"three": "/vendor/three.module.min.js"' in r.text  # same-origin import map
     for path in ("/static/js/app.js", "/static/js/plot.js", "/static/js/mesh3d.js", "/static/css/app.css"):
         assert client.get(path).status_code == 200, path
-    r = client.get("/vendor/three.module.min.js", follow_redirects=False)
-    assert r.status_code in (200, 307)
+    vend = tmp_path / "vendor"  # a vendored copy is served as is (no network in tests)
+    vend.mkdir()
+    (vend / "three.module.min.js").write_text("export const REVISION = '170';")
+    monkeypatch.setenv("FEACORE_UI_VENDOR_DIR", str(vend))
+    r = client.get("/vendor/three.module.min.js")
+    assert r.status_code == 200 and "REVISION" in r.text
     assert client.get("/vendor/not-a-file.js").status_code == 404
 
 

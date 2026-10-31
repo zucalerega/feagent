@@ -49,6 +49,10 @@ AXI_OUTPUT_FACTOR = 180.0       # ccx RF / RFL / ELSE (2-degree wedge) -> schema
 
 _VOIGT = ("sxx", "syy", "szz", "sxy", "syz", "sxz")
 
+# Plane stress: internal CalculiX section thickness = PLANE_STRESS_RATIO x the shortest cell edge
+# (override with analysis.options["ccx_plane_stress_ratio"]); see _Deck.__init__.
+PLANE_STRESS_RATIO = 1e-3
+
 
 def solve(case: Case, **options) -> "CcxResult":
     t0 = time.perf_counter()
@@ -96,17 +100,32 @@ class _Deck:
         self.thermal = False
         self.warnings: list[str] = []
         self.has_thermal_load = any(l.type == "temperature" for l in case.loads)
+        # Plane stress: CalculiX expands CPS elements into a 3D slab of the section thickness whose
+        # faces are free, so only a slab that is thin compared with the cells is in plane stress
+        # (a thick slab carries transverse shear between cells and converges to a 3D plate
+        # solution). Run ccx with a thin internal section t_int and scale the loads by t_int / t:
+        # displacements, strains and stresses of plane stress do not depend on the thickness.
+        self.t_section = case.analysis.thickness
+        if self.form == "plane_stress":
+            e = model.conn[:, [0, 1, 2]]
+            lmin = float(np.min(np.linalg.norm(model.X[e] - model.X[np.roll(e, 1, axis=1)], axis=2)))
+            ratio = float(case.analysis.options.get("ccx_plane_stress_ratio", PLANE_STRESS_RATIO))
+            self.t_section = ratio * lmin
 
     # ----------------------------------------------------------- unit conversions
     @property
     def load_factor(self) -> float:
         """schema nodal load -> CalculiX *CLOAD / *CFLUX value."""
-        return AXI_CLOAD_FACTOR if self.axi else 1.0
+        if self.axi:
+            return AXI_CLOAD_FACTOR
+        return self.t_section / self.case.analysis.thickness
 
     @property
     def out_factor(self) -> float:
         """CalculiX RF / RFL / ELSE -> schema value (full 360 degrees for axisymmetric)."""
-        return AXI_OUTPUT_FACTOR if self.axi else 1.0
+        if self.axi:
+            return AXI_OUTPUT_FACTOR
+        return self.case.analysis.thickness / self.t_section
 
     def weight(self, x: np.ndarray) -> np.ndarray:
         """Integration weight of the physical body at points x (..., 3): thickness, 2 pi r or 1."""
@@ -259,7 +278,7 @@ class _Deck:
                     L += [f"*EXPANSION, ZERO={fnum(T_ref)}", fnum(mt.alpha)]
             L.append(f"*SOLID SECTION, ELSET={es}, MATERIAL=MAT{k + 1}")
             if self.plane:
-                L.append(fnum(c.analysis.thickness))
+                L.append(fnum(self.t_section))
 
     # ----------------------------------------------------------- elasticity
     def _elastic_step(self) -> list[str]:

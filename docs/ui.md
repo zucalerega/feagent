@@ -33,7 +33,13 @@ Options: `--runs-dir DIR` (default `$FEACORE_RUNS_DIR`, else `<repo>/runs`), `--
 
 Environment: `FEACORE_RUNS_DIR`, `FEACORE_UI_QUICK_WORKERS`, `FEACORE_UI_STUDY_WORKERS`, `FEACORE_UI_SOLVE_TIMEOUT` (s, default 1800), `FEACORE_UI_STUDY_TIMEOUT` (default 4 h), `FEACORE_EXTRA_PROBLEMS`, `FEACORE_UI_VENDOR_DIR`, `FEACORE_BENCHMARKS_DIR`.
 
-The browser loads three.js 0.170.0 from jsDelivr (pinned). For an offline demo (projector, flaky Wi-Fi), vendor it once: `python -m feacore.ui --fetch-vendor`. This writes `feacore/ui/static/vendor/three-0.170.0/`, about 720 kB, and the server then serves the local copy. Everything else is in the repo; no Node is needed.
+three.js (pinned 0.170.0, the only external JS) is served **same-origin** at `/vendor/...`, so the viewer's browser never needs to reach a CDN. The server serves the first copy it finds:
+
+1. a vendored copy (`python -m feacore.ui --fetch-vendor` writes `feacore/ui/static/vendor/three-0.170.0/`, about 720 kB);
+2. a copy it downloaded once into the run-store cache (`runs/cache/vendor/`), from jsDelivr or, if jsDelivr is blocked, the npm registry tarball;
+3. a redirect to jsDelivr, if the server itself is offline.
+
+No Node and no build step are needed.
 
 ## Run on Brev
 
