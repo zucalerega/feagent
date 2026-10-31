@@ -29,6 +29,7 @@ from feacore.case import BC, Analysis, Case, Load, Material, QoI
 from feacore.geometry.gmsh_tools import distance_threshold_field, use_min_field
 from feacore.problems.base import Problem, Reference
 from feacore.problems.nafems._common import (
+    FinerP1Studies,
     LE11_SHEET, STEEL, TNSB, entities_where, group, near, point_tag,
 )
 from feacore.problems.registry import register
@@ -120,7 +121,7 @@ class _LE11Base(Problem):
         )]
 
 
-class NafemsLE11Axisym(_LE11Base):
+class NafemsLE11Axisym(FinerP1Studies, _LE11Base):
     id = "nafems_le11_axisym"
     title = "NAFEMS LE11: cylinder/taper/sphere, thermal load (axisymmetric)"
     tags = ("nafems", "2d", "axisymmetric", "thermal_stress", "curved_boundary")

@@ -348,36 +348,42 @@ class Domain:
         add_group(self.dim, [t for _, t in gmsh.model.getEntities(self.dim)], "domain")
 
     def mesh(self, path: str | Path, h: float, order: int = 1, distort: float = 0.0,
-             seed: int = 0) -> dict:
+             seed: int = 0, refine: int = 0) -> dict:
         """Write a gmsh mesh (order 1: tri3/tet4, order 2: tri6/tet10 with curved boundary
-        nodes). ``distort`` > 0 moves interior nodes randomly by up to distort * h (P2: midside
-        nodes follow their edge and get an extra interior perturbation, i.e. curved interior
-        edges). Returns {"path", "n_cells", "n_nodes", "h_rep", "min_quality"}; cached on disk."""
+        nodes): unstructured at size h, then ``refine`` uniform splittings (gmsh puts the new
+        boundary nodes on the CAD curves / surfaces), so a refinement study is nested with an
+        exact ratio of 2. ``distort`` > 0 moves interior nodes randomly by up to distort * h
+        (P2: midside nodes follow their edge and get an extra interior perturbation, i.e. curved
+        interior edges). Returns {"path", "n_cells", "n_nodes", "h_rep", "min_quality"};
+        cached on disk."""
         import gmsh
 
         from feacore.geometry.gmsh_tools import gmsh_session, set_uniform_size
 
         path = Path(path)
         side = path.with_suffix(".json")
+        key = [self.name, h, order, distort, seed, refine]
         if path.exists() and side.exists():
             info = json.loads(side.read_text())
-            if info.get("key") == [self.name, h, order, distort, seed]:
+            if info.get("key") == key:
                 return info
         path.parent.mkdir(parents=True, exist_ok=True)
         with gmsh_session(f"mms_{self.name}"):
             self.build()
             set_uniform_size(h)
             gmsh.model.mesh.generate(self.dim)
+            for _ in range(refine):
+                gmsh.model.mesh.refine()
             if order >= 2:
                 gmsh.model.mesh.setOrder(2)
-            q = _distort(self.dim, h, distort, seed) if distort > 0 else None
+            q = _distort(self.dim, h / 2**refine, distort, seed) if distort > 0 else None
             etypes, etags, _ = gmsh.model.mesh.getElements(self.dim)
             n_cells = int(sum(len(t) for t in etags))
             tags = np.concatenate([np.asarray(t) for t in etags])
             qual = gmsh.model.mesh.getElementQualities(tags, "minSJ")
             n_nodes = len(gmsh.model.mesh.getNodes()[0])
             gmsh.write(str(path))
-        info = {"key": [self.name, h, order, distort, seed], "path": str(path), "n_cells": n_cells,
+        info = {"key": key, "path": str(path), "n_cells": n_cells,
                 "n_nodes": n_nodes, "h_rep": (self.measure / n_cells) ** (1.0 / self.dim),
                 "min_quality": float(np.min(qual)), "distort_quality": q}
         side.write_text(json.dumps(info))
@@ -1057,6 +1063,10 @@ T_AXI_SOLID = 20 + 5 * sp.exp(-0.6 * x**2) * sp.cos(1.1 * y + 0.2) + 2 * sp.cos(
 T_CUBE = (20 + 5 * sp.sin(1.2 * x + 0.3) * sp.cos(0.8 * y - 0.2 * z) * sp.exp(0.4 * z)
           + 2 * sp.cos(0.7 * x + 1.1 * y))
 
+# Default refinement studies: unstructured base mesh at H0, then uniform splitting (ratio 2).
+H0_2D, LEVELS_2D = 0.25, 4      # 2D: 4 levels, finest h ~ 1/32
+H0_3D, LEVELS_3D = 0.5, {1: 4, 2: 3}  # 3D: P1 4 levels, P2 3 levels (small sizes)
+# Independent (non-nested) unstructured meshes, used for the robustness variant.
 SIZES_2D = [0.25, 0.125, 0.0625, 0.03125]
 SIZES_3D = [0.5, 1 / 3, 2 / 9, 4 / 27]
 
@@ -1323,17 +1333,31 @@ def _finest_order(h, e, floor):
     return None, None
 
 
+def default_levels(dim: int, order: int) -> tuple[float, int]:
+    return (H0_3D, LEVELS_3D[order]) if dim == 3 else (H0_2D, LEVELS_2D)
+
+
 def run_convergence(problem: MMSProblem, order: int, backend: str = "skfem",
                     sizes: Sequence[float] | None = None, workdir: str | Path | None = None,
                     n_points: int | None = None, seed: int = 2024, geom_order: int | None = None,
                     solver: Callable | None = None, tol: float = 0.3, verbose: bool = False,
-                    options: dict | None = None) -> dict:
-    """Refinement study through the public API. Raises FeatureMissing on NotImplementedError."""
+                    options: dict | None = None, h0: float | None = None,
+                    levels: int | None = None) -> dict:
+    """Refinement study through the public API. Default: nested family (unstructured base mesh
+    of size h0, uniformly refined ``levels - 1`` times). ``sizes``: independent unstructured
+    meshes instead. Raises FeatureMissing when the backend raises NotImplementedError."""
     dom = problem.domain
-    sizes = list(sizes or (SIZES_3D if dom.dim == 3 else SIZES_2D))
+    d_h0, d_lv = default_levels(dom.dim, order)
+    if sizes is not None:
+        plan = [(float(hh), 0) for hh in sizes]
+        family = "independent"
+    else:
+        h0 = h0 or d_h0
+        plan = [(h0, i) for i in range(levels or d_lv)]
+        family = "nested"
     geom_order = order if geom_order is None else geom_order
     workdir = Path(workdir or DEFAULT_WORKDIR)
-    tag = f"{problem.name}_P{order}g{geom_order}_{backend}"
+    tag = f"{problem.name}_P{order}g{geom_order}_{backend}_{family}"
     case_dir = workdir / "cases" / tag
     npts = n_points or (2000 if dom.dim == 2 else 2500)
     pts = dom.sample(npts, seed)
@@ -1341,8 +1365,9 @@ def run_convergence(problem: MMSProblem, order: int, backend: str = "skfem",
     ex_s = np.stack([problem.exact(f, pts) for f in problem.s_fields], axis=1)
     nu_, ns_ = _rms(ex_u), _rms(ex_s)
     levels = []
-    for i, h in enumerate(sizes):
-        minfo = dom.mesh(workdir / "meshes" / f"{dom.name}_h{h:.5g}_g{geom_order}.msh", h, order=geom_order)
+    for i, (h, nref) in enumerate(plan):
+        minfo = dom.mesh(workdir / "meshes" / f"{dom.name}_h{h:.5g}_r{nref}_g{geom_order}.msh", h,
+                         order=geom_order, refine=nref)
         case = problem.case(minfo["path"], order, options)
         case.save(case_dir / f"level{i}.json")
         t0 = time.perf_counter()
@@ -1350,7 +1375,7 @@ def run_convergence(problem: MMSProblem, order: int, backend: str = "skfem",
         t_solve = time.perf_counter() - t0
         uh = _probe(res, problem.u_fields, pts)
         sh = _probe(res, problem.s_fields, pts)
-        lev = {"h": h, "h_rep": minfo["h_rep"], "n_cells": minfo["n_cells"], "n_nodes": minfo["n_nodes"],
+        lev = {"h": h / 2**nref, "h_rep": minfo["h_rep"], "n_cells": minfo["n_cells"], "n_nodes": minfo["n_nodes"],
                "mesh": minfo["path"], "case": str(case_dir / f"level{i}.json"),
                "t_solve": t_solve, "info": {k: v for k, v in asdict(res.info).items() if k != "warnings"},
                "warnings": list(res.info.warnings),
@@ -1380,7 +1405,8 @@ def run_convergence(problem: MMSProblem, order: int, backend: str = "skfem",
     floors = {"u": 1e-10, "s": 1e-10, "W": 1e-11}
     out = {"problem": problem.name, "physics": problem.physics, "formulation": problem.formulation,
            "domain": dom.name, "order": order, "geom_order": geom_order, "backend": backend,
-           "features": problem.features, "description": problem.description, "theory": theory,
+           "family": family, "features": problem.features, "description": problem.description,
+           "theory": theory,
            "levels": levels, "orders": {}, "observed": {}, "pass": {}}
     for key in ("u", "s", "W"):
         e = [l.get(f"e_{key}") for l in levels]
@@ -1389,6 +1415,8 @@ def run_convergence(problem: MMSProblem, order: int, backend: str = "skfem",
         out["orders"][key] = observed_orders(hs, e)
         p, _ = _finest_order(hs, e, floors[key])
         out["observed"][key] = p
+        lh, le = np.log(hs[-3:]), np.log(np.maximum(e[-3:], 1e-300))
+        out.setdefault("slope3", {})[key] = float(np.polyfit(lh, le, 1)[0]) if len(hs) >= 3 else None
         out["pass"][key] = bool(p is not None and p >= theory[key] - tol)
     if problem.physics == "elasticity" and problem.energy_physical is not None:
         # thermal case: 0.5 u.K.u is judged informationally only (contract ambiguity)

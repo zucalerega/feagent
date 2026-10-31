@@ -19,13 +19,13 @@ from pathlib import Path
 
 from feacore.case import BC, Analysis, Case, Material, QoI
 from feacore.problems.base import Problem, Reference
-from feacore.problems.nafems._common import entities_where, group, near
+from feacore.problems.nafems._common import FinerP1Studies, entities_where, group, near
 from feacore.problems.registry import register
 
 CORNERS = [(0.0, 0.0), (48.0, 44.0), (48.0, 60.0), (0.0, 44.0)]
 
 
-class CooksMembrane(Problem):
+class CooksMembrane(FinerP1Studies, Problem):
     id = "cooks_membrane"
     title = "Cook's membrane: tapered panel under end shear (plane stress)"
     family = "cooks_membrane"

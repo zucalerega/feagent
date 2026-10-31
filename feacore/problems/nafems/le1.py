@@ -19,6 +19,7 @@ from feacore.case import BC, Analysis, Case, Material, QoI
 from feacore.geometry.gmsh_tools import distance_threshold_field, use_min_field
 from feacore.problems.base import Problem, Reference
 from feacore.problems.nafems._common import (
+    FinerP1Studies,
     ELL_INNER, ELL_OUTER, STEEL, TNSB, entities_where, group, near, point_tag,
     quarter_elliptic_annulus,
 )
@@ -28,7 +29,7 @@ PRESSURE = 10e6      # Pa, outward (tensile) on the outer edge
 THICKNESS = 0.1      # m
 
 
-class NafemsLE1(Problem):
+class NafemsLE1(FinerP1Studies, Problem):
     id = "nafems_le1"
     title = "NAFEMS LE1: elliptic membrane (plane stress)"
     family = "nafems_le1"

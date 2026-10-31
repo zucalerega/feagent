@@ -16,14 +16,14 @@ from pathlib import Path
 
 from feacore.case import BC, Analysis, Case, Material, QoI
 from feacore.problems.base import Problem, Reference
-from feacore.problems.nafems._common import TNSB, entities_where, group, near
+from feacore.problems.nafems._common import FinerP1Studies, TNSB, entities_where, group, near
 from feacore.problems.registry import register
 
 W, H = 0.6, 1.0
 K, H_CONV, T_FIX, T_INF = 52.0, 750.0, 100.0, 0.0
 
 
-class NafemsT4(Problem):
+class NafemsT4(FinerP1Studies, Problem):
     id = "nafems_t4"
     title = "NAFEMS T4: 2D steady heat conduction with convection"
     family = "nafems_t4"
