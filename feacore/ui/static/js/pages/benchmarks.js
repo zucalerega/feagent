@@ -1,6 +1,6 @@
 // Benchmarks library: tag filter + cards; detail view with statement, 3D geometry preview and the
 // evaluator view (references, expectations, reference studies).
-import { api, h, clear, fmt, fmtPct, loading, errorBox, statusChip, qoiDesc, timeAgo, decode } from '../api.js';
+import { api, postJSON, h, clear, fmt, fmtPct, loading, errorBox, statusChip, qoiDesc, timeAgo, decode } from '../api.js';
 
 const BEHAVIOR = {
   smooth: ['good', 'smooth'],
@@ -109,7 +109,12 @@ async function renderDetail(el, id) {
         h('span', { class: 'badge' }, `${st.physics} · ${(st.formulation || '').replace(/_/g, ' ')}`),
         behaviorChip(ev.expected_behavior), ...(st.tags || []).map(t => h('span', { class: 'chip' }, t.replace(/_/g, ' '))))),
     h('div', { class: 'row' },
-      h('a', { class: 'btn primary', href: `#/study?problem=${encodeURIComponent(id)}` }, 'Run convergence study'),
+      h('button', { class: 'btn primary', title: 'reference study now: skfem, P2, the problem\u2019s default mesh sizes', onclick: async e => {
+        e.target.disabled = true;
+        try { const st = await postJSON('/api/studies', { problem_id: id, backend: 'skfem', order: 2 }); location.hash = `#/study/${st.study_id}`; }
+        catch (err) { e.target.disabled = false; alert(err.message); }
+      } }, 'Run with defaults'),
+      h('a', { class: 'btn', href: `#/study?problem=${encodeURIComponent(id)}` }, 'Run convergence study\u2026'),
       h('a', { class: 'btn', href: `#/consensus/${encodeURIComponent(id)}` }, `Consensus (${d.n_submissions})`))));
 
   const left = h('div', { class: 'stack' });

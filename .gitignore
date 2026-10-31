@@ -19,3 +19,4 @@ spooles.out
 runs/
 models/*
 !models/.gitignore
+.feacore_python

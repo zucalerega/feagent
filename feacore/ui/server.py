@@ -325,8 +325,23 @@ class _NpzCache:
 # --------------------------------------------------------------------------- app
 
 
+AUTH_HELP = ("this server requires a token: send 'Authorization: Bearer <token>', an 'X-Feacore-Token: <token>' "
+             "header, or '?token=<token>' (open the UI once as /?token=<token> to store it in the browser)")
+
+
+def _request_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() == "bearer ":
+        return auth[7:].strip()
+    return request.headers.get("x-feacore-token") or request.query_params.get("token")
+
+
 def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = None,
-               study_workers: int | None = None) -> FastAPI:
+               study_workers: int | None = None, token: str | None = None) -> FastAPI:
+    """``token`` (or env FEACORE_UI_TOKEN): if set, every /api/* request must carry it."""
+    import hmac
+
+    token = token if token is not None else (os.environ.get("FEACORE_UI_TOKEN") or None)
     store = RunStore(runs_dir)
     runner = JobRunner(store, quick_workers=quick_workers, study_workers=study_workers)
     backend_check = _BackendCheck()
@@ -348,6 +363,25 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
                   description="Fixed FEA solver service, solution verification (Richardson / GCI), "
                               "benchmark library and multi-agent consensus. See docs/ui.md.")
     app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=3)
+
+    def _token_ok(request: Request) -> bool:
+        given = _request_token(request)
+        return bool(given) and hmac.compare_digest(given.encode("utf-8"), token.encode("utf-8"))
+
+    @app.middleware("http")
+    async def require_token(request: Request, call_next):
+        # the page shell and static files stay open (the UI must load to accept ?token=)
+        if token and request.url.path.startswith("/api/") and request.url.path != "/api/auth":
+            if not _token_ok(request):
+                return SafeJSONResponse({"detail": AUTH_HELP}, status_code=401,
+                                        headers={"WWW-Authenticate": "Bearer"})
+        return await call_next(request)
+
+    @app.get("/api/auth")
+    def auth_status(request: Request):
+        """Whether this server needs a token, and whether the one sent (if any) is valid."""
+        return {"required": bool(token), "valid": (_token_ok(request) if token else True),
+                "methods": ["Authorization: Bearer <token>", "X-Feacore-Token: <token>", "?token=<token>"]}
     app.state.store = store
     app.state.runner = runner
 
@@ -723,7 +757,8 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
         status = ("running" if counts["running"] else "queued" if counts["queued"] else
                   "succeeded" if counts["succeeded"] == len(items) else "finished")
         out = {k: b.get(k) for k in ("batch_id", "created_at", "name", "settings", "meta")}
-        out.update(status=status, n_problems=len(items), n_done=done, counts=counts, outcomes=outcomes, items=items)
+        out.update(status=status, n_problems=len(items), n_done=done, counts=counts, outcomes=outcomes, items=items,
+                   server_time=time.time())
         if with_rows:
             out["rows"] = rows
         return out
@@ -811,6 +846,7 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
             except KeyError:
                 pass
         st["runs"] = runs_
+        st["server_time"] = time.time()
         if st.get("result"):  # always with the current interpretation rules
             st["interpretation"] = analysis.interpret_study(st["result"])
         try:

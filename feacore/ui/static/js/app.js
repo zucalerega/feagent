@@ -4,6 +4,7 @@ import { api, h, clear, errorBox } from './api.js';
 const ROUTES = {
   benchmarks: () => import('./pages/benchmarks.js'),
   study: () => import('./pages/study.js'),
+  batch: () => import('./pages/batch.js'),
   consensus: () => import('./pages/consensus.js'),
   viewer: () => import('./pages/viewer.js'),
   solve: () => import('./pages/solve.js'),
