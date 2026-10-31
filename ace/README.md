@@ -236,6 +236,9 @@ lengthened by 40 mm for wedge grips (the print files of `physical_tests/` on the
   on the front of the original stubs (y = 7.656 mm, z = 30.588 mm), a 54 mm gauge length.
 - **Reference:** 4.733e-5 m at 300 N (0.158 µm/N), from a P2 mesh study (h = 5 to 1.8 mm,
   Richardson; a 4-mesh fit agrees to 0.08%); tolerance 3%.
+- **Meshing it:** the 2.5 mm tube wall bends, so it needs small elements all around the tube,
+  not at one point. Uniform 2.2 mm gives −2.3% at 40k nodes (the cap is 60k). Grading from 4 mm
+  to the 1.65 mm size floor over the tube gives −2.75% at 23k nodes.
 
 Two consequences for the lab:
 - **Use the video extensometer.** The signal is about 47 µm at 300 N, which the crosshead cannot

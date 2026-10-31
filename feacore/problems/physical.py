@@ -63,7 +63,7 @@ class GoldPullTest(Problem):
     formulation = "3d"
     units = "SI (m, N, Pa)"
     expected_behavior = "smooth"
-    tags = ("physical", "3d", "gold", "pull_test", "printed")
+    tags = ("physical", "3d", "pull_test", "printed")      # not "gold": that tag means an imported gold set
     family = "physical"
     default_params = {
         "gold_set": "abc_00000003_bc0",       # the gold set whose STEP holds the part

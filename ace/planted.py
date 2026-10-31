@@ -32,6 +32,8 @@ GOOD_MESH = {
     "nafems_le11_axisym": {"h": 0.1, "order": 2, "refinements": [{"point": [1.0, 0.0], "size": 0.025, "radius": 0.2}]},  # 0.3%
     "nafems_le11_3d": {"h": 0.2, "order": 2, "refinements": [{"point": [0.0, 1.0, 0.0], "size": 0.05, "radius": 0.4}]},  # 0.8%
     "cooks_membrane": {"h": 4.0, "order": 2, "refinements": [{"point": [48.0, 52.0], "size": 1.0, "radius": 8.0}]},  # 0.06%
+    # the tube wall (2.5 mm) bends: it needs small elements everywhere around the tube, not at a point
+    "abc_00000003_pull": {"h": 0.0022, "order": 2, "refinements": []},  # 40187/60000 nodes, -2.3%
 }
 
 
