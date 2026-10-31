@@ -1,0 +1,142 @@
+{
+ "id": "verification/cantilever_tip_load",
+ "title": "Cantilever with an end shear load",
+ "description": "A steel bar 200 mm long (x), cross-section 10 mm (y) x 20 mm (z), centred on the x axis. The face x=0 is fully fixed. A total force of 1000 N in -z is applied to the free end face x=200 as a uniformly distributed traction.",
+ "units": {
+  "length": "mm",
+  "force": "N",
+  "stress": "MPa",
+  "mass": "tonne",
+  "time": "s",
+  "density": "tonne/mm^3",
+  "acceleration": "mm/s^2"
+ },
+ "geometry": {
+  "file": "geometry.step",
+  "format": "step",
+  "length_unit": "mm"
+ },
+ "analysis": {
+  "type": "static"
+ },
+ "materials": [
+  {
+   "name": "steel",
+   "E": 210000.0,
+   "nu": 0.3,
+   "density": 7.85e-09,
+   "applies_to": "all"
+  }
+ ],
+ "boundary_conditions": [
+  {
+   "id": "root",
+   "type": "fixed",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "label": "face x=0"
+   },
+   "description": "fully fixed"
+  }
+ ],
+ "loads": [
+  {
+   "id": "tip",
+   "type": "surface_force",
+   "force": [
+    0.0,
+    0.0,
+    -1000.0
+   ],
+   "region": {
+    "type": "plane",
+    "point": [
+     200.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "label": "end face x=200"
+   },
+   "description": "1000 N in -z as a uniform traction"
+  }
+ ],
+ "solver": {
+  "name": "calculix",
+  "version": "2.21",
+  "deck": "model.inp"
+ },
+ "evaluated_quantities": [
+  {
+   "id": "tip_deflection",
+   "kind": "region",
+   "description": "mean vertical displacement of the end face",
+   "field": "U",
+   "component": "z",
+   "region": {
+    "type": "plane",
+    "point": [
+     200.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "stat": "mean"
+  },
+  {
+   "id": "bending_stress_mid",
+   "kind": "point",
+   "description": "bending stress at the top surface, mid-span [100.0, 0, 10.0]",
+   "point": [
+    100.0,
+    0,
+    10.0
+   ],
+   "field": "S",
+   "component": "xx"
+  },
+  {
+   "id": "reaction_z",
+   "kind": "reaction",
+   "description": "vertical reaction at the root",
+   "component": "z",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   }
+  }
+ ],
+ "tags": [
+  "numerical",
+  "beam",
+  "traction"
+ ]
+}

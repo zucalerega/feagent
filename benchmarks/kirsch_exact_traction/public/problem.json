@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "id": "kirsch_exact_traction",
+  "title": "Plate with a circular hole, exact Kirsch tractions on a finite quarter domain (plane stress)",
+  "family": "kirsch",
+  "tags": [
+    "2d",
+    "plane_stress",
+    "analytical",
+    "stress_concentration",
+    "curved_boundary",
+    "expression_bc",
+    "symmetry"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "plane_stress",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "a": 0.05,
+    "L": 0.25,
+    "sigma0": 100000000.0,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "thickness": 0.002,
+    "h0": 0.04
+  },
+  "description": "Steel plate with a circular hole, plane stress. The plate stands for the classical infinite plate under remote uniaxial tension along x; a finite quarter of it is modelled and the outer edges carry the tractions that the infinite plate transmits across those lines, so the finite model behaves like the infinite plate.\nGeometry (STEP, planar face in the xy-plane): square [0, L] x [0, L] with L = 0.25 m minus the quarter disk of radius a = 0.05 m centred at the origin. Edges: x = 0 (from (0, a) to (0, L)), y = 0 (from (a, 0) to (L, 0)), x = L, y = L, and the quarter-circle hole edge.\nMaterial: linear elastic, E = 2e+11 Pa, nu = 0.3, thickness 0.002 m.\nLoads: remote stress sigma0 = 1e+08 Pa (100 MPa) along x, applied through these tractions (force per area in Pa, global axes, y and x in m):\n  edge x = L: t_x(y) = 100000000.0*(1 - 0.0025000000000000005/((0.25)**2 + y**2)*(1.5*cos(2*arctan2(y, (0.25))) + cos(4*arctan2(y, (0.25)))) + 1.5*6.250000000000001e-06/((0.25)**2 + y**2)**2*cos(4*arctan2(y, (0.25))))\n              t_y(y) = 100000000.0*(-0.0025000000000000005/((0.25)**2 + y**2)*(0.5*sin(2*arctan2(y, (0.25))) + sin(4*arctan2(y, (0.25)))) + 1.5*6.250000000000001e-06/((0.25)**2 + y**2)**2*sin(4*arctan2(y, (0.25))))\n  edge y = L: t_x(x) = 100000000.0*(-0.0025000000000000005/(x**2 + (0.25)**2)*(0.5*sin(2*arctan2((0.25), x)) + sin(4*arctan2((0.25), x))) + 1.5*6.250000000000001e-06/(x**2 + (0.25)**2)**2*sin(4*arctan2((0.25), x)))\n              t_y(x) = 100000000.0*(-0.0025000000000000005/(x**2 + (0.25)**2)*(0.5*cos(2*arctan2((0.25), x)) - cos(4*arctan2((0.25), x))) - 1.5*6.250000000000001e-06/(x**2 + (0.25)**2)**2*cos(4*arctan2((0.25), x)))\n  The hole edge is traction free.\nSupports: symmetry on x = 0 (u_x = 0) and on y = 0 (u_y = 0).\nReport (SI units):\n  sxx_hole_top   sigma_xx at the top of the hole (0, a) [Pa]\n  syy_hole_side  sigma_yy at the side of the hole (a, 0) [Pa]\n  ux_hole_side   u_x at (a, 0) [m]\n  uy_hole_top    u_y at (0, a) [m]\n  ux_right       u_x at (L, 0) [m]\n  vm_max         maximum von Mises stress [Pa]\n  strain_energy  total strain energy of the modelled quarter (given thickness) [J]",
+  "qois": [
+    {
+      "name": "sxx_hole_top",
+      "type": "point",
+      "field": "sxx",
+      "point": [
+        0.0,
+        0.05
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "syy_hole_side",
+      "type": "point",
+      "field": "syy",
+      "point": [
+        0.05,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "ux_hole_side",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.05,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "uy_hole_top",
+      "type": "point",
+      "field": "uy",
+      "point": [
+        0.0,
+        0.05
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "ux_right",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.25,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "strain_energy",
+      "type": "strain_energy",
+      "field": null,
+      "point": null,
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

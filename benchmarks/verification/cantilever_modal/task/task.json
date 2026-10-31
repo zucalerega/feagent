@@ -1,0 +1,78 @@
+{
+ "id": "verification/cantilever_modal",
+ "title": "Natural frequencies of a cantilever bar",
+ "description": "The steel bar of the cantilever case (200 x 10 x 20 mm, x along the length, 10 mm in y, 20 mm in z), fully fixed at x=0. Compute the lowest natural frequencies (Hz).",
+ "units": {
+  "length": "mm",
+  "force": "N",
+  "stress": "MPa",
+  "mass": "tonne",
+  "time": "s",
+  "density": "tonne/mm^3",
+  "acceleration": "mm/s^2"
+ },
+ "geometry": {
+  "file": "geometry.step",
+  "format": "step",
+  "length_unit": "mm"
+ },
+ "analysis": {
+  "type": "frequency",
+  "n_modes": 6
+ },
+ "materials": [
+  {
+   "name": "steel",
+   "E": 210000.0,
+   "nu": 0.3,
+   "density": 7.85e-09,
+   "applies_to": "all"
+  }
+ ],
+ "boundary_conditions": [
+  {
+   "id": "root",
+   "type": "fixed",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "label": "face x=0"
+   },
+   "description": "fully fixed"
+  }
+ ],
+ "loads": [],
+ "solver": {
+  "name": "calculix",
+  "version": "2.21",
+  "deck": "model.inp"
+ },
+ "evaluated_quantities": [
+  {
+   "id": "f1",
+   "kind": "frequency",
+   "description": "first natural frequency [Hz] (bending in y)",
+   "mode": 1
+  },
+  {
+   "id": "f2",
+   "kind": "frequency",
+   "description": "second natural frequency [Hz] (bending in z)",
+   "mode": 2
+  }
+ ],
+ "tags": [
+  "numerical",
+  "modal",
+  "density_units"
+ ]
+}

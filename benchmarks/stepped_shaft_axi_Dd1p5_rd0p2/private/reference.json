@@ -1,0 +1,98 @@
+{
+  "id": "stepped_shaft_axi_Dd1p5_rd0p2",
+  "expected_behavior": "stress_concentration",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "peak_stress_fillet",
+      "value": 170240000.0,
+      "kind": "converged_numerical",
+      "source": "feacore reference convergence study: scikit-fem P2 isoparametric (3 meshes, h0/h = 1, 2, 4, local refinement at the stress raiser), Richardson extrapolation (Celik et al. 2008); cross-checked with CalculiX on the finest mesh. Study of stepped_shaft_axi_Dd1p5_rd0p2; CalculiX on the finest mesh 170.31 MPa.",
+      "tolerance": 0.02,
+      "notes": "Uncertainty ~0.15 %. Handbook (Peterson / Pilkey fit, D/d = 1.5, r/d = 0.2, h/r = 1.25: Kt = 1.5543 on sigma_nom = 100.00 MPa.) gives 155.4 MPa, 9.5 % below this value: the published shoulder-fillet tension charts are unconservative for these geometries (cf. Tipton, Sorem & Rolovic, J. Mech. Des. 118, 1996). Kt(FE) = 1.702."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "axisymmetric",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "symmetry",
+        "group": "end_small",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "displacement",
+        "group": "axis",
+        "point": null,
+        "components": [
+          0
+        ],
+        "value": 0.0,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "traction",
+        "group": "end_large",
+        "point": null,
+        "components": null,
+        "value": [
+          0.0,
+          44444444.44444444
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "peak_stress_fillet",
+        "type": "max",
+        "field": "s1",
+        "point": null,
+        "group": "fillet",
+        "component": null
+      },
+      {
+        "name": "elongation",
+        "type": "mean",
+        "field": "uy",
+        "point": null,
+        "group": "end_large",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "stepped_shaft_axi_Dd1p5_rd0p2",
+      "reference_portion": "full"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.0025,
+    0.00125,
+    0.000625
+  ]
+}

@@ -1,0 +1,187 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# FICHIER DE COMMANDE DU TP FORMATION ASTER AVANCE
+# TP MECANIQUE DE LA RUPTURE, EXERCICE 5 : ZONES COHESIVES
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="EXCEPTION"), DEBUG=_F(SDVERI="OUI"))
+
+# MODELIDATION B : ELEMENTS INTERFACE
+
+tfin = 4.5
+nbarch = int(10 * tfin)
+
+young = 100
+nu = 0.0
+tenac = 0.9
+sigc = 3
+pen = 0.00001
+
+ri_gli = 10
+pen_lag = 100
+
+dc = 2 * tenac / sigc
+
+deply = 1.0
+deplx = 0.0
+deplz = 0.0
+
+# LECTURE DU MAILLAGE
+
+M = LIRE_MAILLAGE(FORMAT="MED")
+
+MA = CREA_MAILLAGE(MAILLAGE=M, LINE_QUAD=_F(TOUT="OUI"))
+
+MA = DEFI_GROUP(reuse=MA, MAILLAGE=MA, CREA_GROUP_NO=_F(NOM="DCB_GB", GROUP_MA="DCB_GB"))
+
+# ORIENTATION DES MAILLES SUR LESQUELLES ON AFFECTE LA CZM
+MA = MODI_MAILLAGE(reuse=MA, MAILLAGE=MA, ORIE_FISSURE=_F(GROUP_MA="DCB_J"))
+
+# AFFECTATION DU MODELE
+MO = AFFE_MODELE(
+    MAILLAGE=MA,
+    AFFE=(
+        _F(GROUP_MA=("DCB_1", "DCB_2"), PHENOMENE="MECANIQUE", MODELISATION="3D"),
+        _F(GROUP_MA="DCB_J", PHENOMENE="MECANIQUE", MODELISATION="3D_INTERFACE"),
+    ),
+)
+
+# AFFECTATION DES ANGLES NAUTIQUES : POSITION DE LA FISSURE DANS LE REPERE GLOBAL
+# POUR LES ELEMENTS D'INTERFACE UNIQUEMENT
+
+ORIEN_FI = AFFE_CARA_ELEM(MODELE=MO, MASSIF=(_F(GROUP_MA="DCB_J", ANGL_REP=(-90, 0, -90)),))
+
+# DEFINITION ET AFFECTATION DU MATERIAU
+ACIER = DEFI_MATERIAU(
+    ELAS=_F(E=young, NU=nu),
+    RUPT_FRAG=_F(GC=tenac, SIGM_C=sigc, PENA_ADHERENCE=pen, PENA_LAGR=pen_lag, RIGI_GLIS=ri_gli),
+)
+
+
+CM = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(GROUP_MA=("DCB_1", "DCB_2", "DCB_J"), MATER=ACIER))
+
+
+# CONDITIONS DE CHARGEMENT ET LIMITES
+SYMETRIE = AFFE_CHAR_MECA(MODELE=MO, DDL_IMPO=(_F(GROUP_MA="JOINT_B", DY=0)))
+
+
+TRACTION = AFFE_CHAR_MECA(
+    MODELE=MO, FACE_IMPO=(_F(GROUP_MA="DCB_GB", DY=deply, DX=deplx, DZ=deplz),)
+)
+
+# DEFINITION DES INSTANTS DE CALCUL
+DEF_LIST = DEFI_LIST_REEL(DEBUT=0, INTERVALLE=(_F(JUSQU_A=10, NOMBRE=200),))
+L_INST = DEFI_LIST_INST(
+    DEFI_LIST=_F(LIST_INST=DEF_LIST), ECHEC=_F(SUBD_METHODE="MANUEL", SUBD_PAS=10)
+)
+
+
+INS_ARCH = DEFI_LIST_REEL(DEBUT=0, INTERVALLE=(_F(JUSQU_A=tfin, NOMBRE=nbarch),))
+FCT = DEFI_FONCTION(NOM_PARA="INST", VALE=(-1, 0, 0, 0.0001, tfin, tfin))
+
+# REALISATION DU CALCUL MECANIQUE
+U = STAT_NON_LINE(
+    MODELE=MO,
+    CHAM_MATER=CM,
+    CARA_ELEM=ORIEN_FI,
+    EXCIT=(
+        _F(CHARGE=SYMETRIE),
+        _F(
+            CHARGE=TRACTION,
+            #                   FONC_MULT=FCT,
+            TYPE_CHARGE="FIXE_PILO",
+        ),
+    ),
+    COMPORTEMENT=(
+        _F(RELATION="ELAS", GROUP_MA=("DCB_1", "DCB_2")),
+        _F(RELATION="CZM_OUV_MIX", GROUP_MA="DCB_J"),
+    ),
+    INCREMENT=_F(LIST_INST=L_INST, INST_FIN=tfin),
+    NEWTON=_F(MATRICE="TANGENTE", REAC_ITER=1),
+    PILOTAGE=_F(
+        SELECTION="RESIDU", TYPE="PRED_ELAS", GROUP_MA="DCB_J", COEF_MULT=1, ETA_PILO_R_MIN=0.0
+    ),
+    CONVERGENCE=_F(RESI_REFE_RELA=1.0e-6, ITER_GLOB_MAXI=20),
+    CONVERGENCE_REFE=(
+        _F(GROUP_MA=("DCB_1", "DCB_2"), SIGM=sigc),
+        _F(GROUP_MA="DCB_J", SIGM=sigc, DEPL=dc),
+    ),
+    SOLVEUR=_F(METHODE="MUMPS", RENUM="METIS"),
+    ARCHIVAGE=_F(LIST_INST=INS_ARCH),
+)
+
+
+##########################################################################
+# POST-TRAITEMENT
+##########################################################################
+# CALCUL DES FORCES NODALES
+U = CALC_CHAMP(reuse=U, RESULTAT=U, FORCE="FORC_NODA", GROUP_MA="DCB_1")
+
+
+# RELEVE DU DEPLACEMENT IMPOSE
+DEP_IMP = POST_RELEVE_T(
+    ACTION=_F(
+        INTITULE="U_PILOTE",
+        OPERATION="EXTRACTION",
+        GROUP_NO="NO7",
+        NOM_CHAM="DEPL",
+        NOM_CMP="DY",
+        RESULTAT=U,
+        TOUT_ORDRE="OUI",
+    )
+)
+
+# RELEVE DE LA FORCE RESULTANTE DANS LA DIRECTION Y:
+FRES = POST_RELEVE_T(
+    ACTION=_F(
+        INTITULE="F_RESULTANTE",
+        OPERATION="EXTRACTION",
+        GROUP_NO="DCB_GB",
+        NOM_CHAM="FORC_NODA",
+        RESULTANTE="DY",
+        RESULTAT=U,
+        TOUT_ORDRE="OUI",
+    )
+)
+# IMPRESSION DES RESULTATS POUR TRACE COURBES f/deP
+IMPR_TABLE(TABLE=DEP_IMP)
+IMPR_TABLE(TABLE=FRES)
+
+# IMPRESSION DU RESULTAT POUR VISUALISATION MED
+MA2 = CREA_MAILLAGE(MAILLAGE=MA, RESTREINT=_F(GROUP_MA=("DCB_1", "DCB_2")))
+MO2 = AFFE_MODELE(
+    MAILLAGE=MA2, AFFE=(_F(GROUP_MA=("DCB_1", "DCB_2"), PHENOMENE="MECANIQUE", MODELISATION="3D"),)
+)
+U2 = EXTR_RESU(RESULTAT=U, RESTREINT=_F(MODELE=MO2))
+IMPR_RESU(FORMAT="MED", RESU=_F(RESULTAT=U2), UNITE=80)
+##########################################################################
+# TEST
+##########################################################################
+#
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=0.050000000000000003,
+    VALE_CALC=4.852245498,
+    VALE_REFE=4.71,
+    NOM_PARA="DY",
+    TABLE=FRES,
+    FILTRE=_F(NOM_PARA="INST", VALE=4.5),
+)
+
+FIN()

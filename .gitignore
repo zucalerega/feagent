@@ -1,0 +1,30 @@
+.venv/
+__pycache__/
+*.py[cod]
+out/
+.feagent/
+examples/**/out/*.msh
+.pytest_cache/
+build/
+dist/
+# feacore
+*.egg-info/
+/work/
+*.msh
+!benchmarks/**/*.msh
+*.vtu
+*.frd
+*.sta
+*.cvg
+*.12d
+spooles.out
+runs/
+models/*
+!models/.gitignore
+.feacore_python
+.feacore_token
+.feacore_autoupdate_deferrals
+# feabench: solver scratch; downloaded datasets (SimJEB etc.) are never committed (licensing + size)
+*.dat
+!benchmarks/**/*.dat.ref
+data/

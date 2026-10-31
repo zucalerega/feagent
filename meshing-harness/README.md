@@ -7,15 +7,18 @@ gates passes. Solving is out of scope; a separate solver consumes the exports an
 
 ## Quick start
 
+The package is shipped by the repo's single root `pyproject.toml` (together with `feacore` and
+`feabench`); `uv run` works from the repo root or from this directory.
+
 ```bash
-cd meshing-harness
-uv sync
+uv sync                                             # from the repo root
 uv run feagent parts /tmp/parts                     # 7 synthetic test parts
 uv run feagent automesh /tmp/parts/bracket.step     # zero-config mesh + gates -> editable mesh.yaml
 uv run feagent inspect /tmp/parts/bracket.step      # geometry digest: features, planar faces, hazards
 uv run feagent faces /tmp/parts/bracket.step --query '{"feature": "hole", "radius": 3.25}' --expect 4
 uv run feagent check /tmp/parts/bracket_mesh/mesh.yaml   # mesh + gates -> out/report.json, REPORT.md
-uv run pytest -q
+uv run pytest -q meshing-harness/tests             # harness tests (root `pytest` runs everything)
+uv run python -m feacore.adapters.mesh_harness /tmp/parts/bracket_mesh/out --out case.json  # → solver
 ```
 
 Every command takes `--json` (exactly one JSON document on stdout). Exit codes: 0 ok, 1 gate or

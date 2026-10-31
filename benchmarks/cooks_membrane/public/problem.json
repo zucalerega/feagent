@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "cooks_membrane",
+  "title": "Cook's membrane: tapered panel under end shear (plane stress)",
+  "family": "cooks_membrane",
+  "tags": [
+    "nafems",
+    "published_benchmark",
+    "2d",
+    "plane_stress",
+    "bending",
+    "corner_singularity"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "plane_stress",
+  "units": "consistent, dimensionless (E = 1)",
+  "params": {
+    "h0": 4.0
+  },
+  "description": "Cook's membrane (classic plane-stress benchmark; linear elastic, static). All quantities are in one consistent set of units (dimensionless).\nGeometry: a tapered quadrilateral panel in the xy-plane with corners (0, 0), (48, 44), (48, 60) and (0, 44). The left edge x = 0 runs from (0, 0) to (0, 44); the right edge x = 48 runs from (48, 44) to (48, 60); the bottom and top edges are the straight lines joining (0, 0)-(48, 44) and (0, 44)-(48, 60). Thickness 1. The STEP file holds this panel in the plane z = 0.\nMaterial: isotropic linear elastic, E = 1, Poisson's ratio 1/3; plane stress.\nSupports: the left edge (x = 0) is fully clamped (both displacement components zero).\nLoad: a shear force of total magnitude 1 in the +y direction, uniformly distributed along the right edge (x = 48, length 16, i.e. 1/16 per unit length). The top and bottom edges are free.\nReport: uy_C = vertical (y) displacement at point C = (48, 52), the midpoint of the loaded right edge.",
+  "qois": [
+    {
+      "name": "uy_C",
+      "type": "point",
+      "field": "uy",
+      "point": [
+        48.0,
+        52.0
+      ],
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

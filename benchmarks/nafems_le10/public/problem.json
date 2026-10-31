@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "nafems_le10",
+  "title": "NAFEMS LE10: thick plate under pressure (3D)",
+  "family": "nafems_le10",
+  "tags": [
+    "nafems",
+    "3d",
+    "solid",
+    "plate_bending",
+    "curved_boundary",
+    "symmetry",
+    "line_support"
+  ],
+  "dim": 3,
+  "physics": "elasticity",
+  "formulation": "3d",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "h0": 0.3
+  },
+  "description": "NAFEMS benchmark LE10, thick plate under pressure (3D linear elastic solid, static).\nGeometry (metres; the STEP file holds this quarter model): a plate of thickness 0.6 m, -0.3 <= z <= 0.3, whose plan (x >= 0, y >= 0) is a quarter of an elliptic annulus. Inner boundary (hole): the ellipse (x/2.0)^2 + (y/1.0)^2 = 1; outer boundary: the ellipse (x/3.25)^2 + (y/2.75)^2 = 1. Corner points on the upper surface z = +0.3: A = (0, 1.0, 0.3), B = (0, 2.75, 0.3), C = (3.25, 0, 0.3), D = (2.0, 0, 0.3); the primed points A', B', C', D' are the same (x, y) on the lower surface z = -0.3. Face ABA'B' lies on x = 0 and face DCD'C' on y = 0 (symmetry planes of the full plate). The outer curved face BCB'C' is split along its mid-plane line (the outer ellipse at z = 0); this edge is in the CAD.\nMaterial: isotropic linear elastic, E = 210 GPa, Poisson's ratio 0.3.\nLoad: uniform normal pressure of 1 MPa on the upper surface (z = +0.3), pushing down into the plate (towards -z). All other faces carry no load.\nSupports: face DCD'C' (y = 0): zero y-displacement. Face ABA'B' (x = 0): zero x-displacement. Outer curved face BCB'C': zero x- and y-displacement on the whole face, and zero z-displacement only along its mid-plane line (outer ellipse at z = 0). The elliptic hole face and the lower surface are free.\nReport: syy_D = direct stress sigma_yy at point D = (2.0, 0.0, 0.3) on the upper surface, in Pa.",
+  "qois": [
+    {
+      "name": "syy_D",
+      "type": "point",
+      "field": "syy",
+      "point": [
+        2.0,
+        0.0,
+        0.3
+      ],
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

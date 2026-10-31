@@ -1,0 +1,82 @@
+{
+  "id": "cooks_membrane",
+  "expected_behavior": "singular",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "uy_C",
+      "value": 23.96,
+      "kind": "converged_numerical",
+      "source": "Cook (1974) J. Struct. Div. ASCE 100(ST9):1851-1863 (problem); converged vertical displacement at the mid-point of the loaded edge 23.96 (64x64 incompatible Q4), 23.92 (64x64 compatible Q4), best value 23.9 per Bergan & Felippa (1985) CMAME 50:25-69, as reproduced in ENERCALC 3D verification C-04 (https://media.enercalc.com/ec3d_verification/c-04-(cook-membrane-problem).htm)",
+      "tolerance": 0.01,
+      "notes": "No closed form. Literature values 23.9 (Bergan & Felippa), 23.91 (smoothed-FEM papers), 23.92-23.96 (64x64 meshes); 1% tolerance covers the spread. Checked here: structured compatible Q4 meshes reproduce the published 4x4/8x8/16x16/64x64 values (18.29, 22.08, 23.43, 23.92) at (48, 52); Q9 32x32 gives 23.961."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "plane_stress",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "mat": {
+        "E": 1.0,
+        "nu": 0.3333333333333333,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "fixed",
+        "group": "clamped",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "force",
+        "group": "loaded",
+        "point": null,
+        "components": null,
+        "value": [
+          0.0,
+          1.0
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "uy_C",
+        "type": "point",
+        "field": "uy",
+        "point": [
+          48.0,
+          52.0
+        ],
+        "group": null,
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "cooks_membrane",
+      "units": "dimensionless"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    4.0,
+    2.0,
+    1.0
+  ]
+}

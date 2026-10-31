@@ -1,0 +1,210 @@
+{
+ "id": "verification/angle_bracket",
+ "title": "Filleted angle bracket loaded through a pin hole",
+ "description": "A steel angle bracket: base plate 100 x 80 x 10 mm (x, y, z) and an upright wall 100 x 10 x 90 mm along the edge y in [0, 10], joined by an 8 mm fillet on the inside corner. Two 11 mm bolt holes through the base at (25, 55) and (75, 55); a 16 mm pin hole through the wall at x=50, z=65 (axis along y). The bolt-hole surfaces are fully fixed (idealised rigid bolts). A force of 3000 N in -y (pulling the wall away from the base, opening the angle) is applied through the pin hole as a uniform traction on its cylindrical surface.",
+ "units": {
+  "length": "mm",
+  "force": "N",
+  "stress": "MPa",
+  "mass": "tonne",
+  "time": "s",
+  "density": "tonne/mm^3",
+  "acceleration": "mm/s^2"
+ },
+ "geometry": {
+  "file": "geometry.step",
+  "format": "step",
+  "length_unit": "mm"
+ },
+ "analysis": {
+  "type": "static"
+ },
+ "materials": [
+  {
+   "name": "steel",
+   "E": 210000.0,
+   "nu": 0.3,
+   "density": 7.85e-09,
+   "applies_to": "all"
+  }
+ ],
+ "boundary_conditions": [
+  {
+   "id": "bolts",
+   "type": "fixed",
+   "region": {
+    "type": "or",
+    "regions": [
+     {
+      "type": "cylinder",
+      "point": [
+       25.0,
+       55.0,
+       0.0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "radius": 5.5,
+      "range": [
+       0.0,
+       10.0
+      ]
+     },
+     {
+      "type": "cylinder",
+      "point": [
+       75.0,
+       55.0,
+       0.0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "radius": 5.5,
+      "range": [
+       0.0,
+       10.0
+      ]
+     }
+    ],
+    "label": "both bolt-hole surfaces"
+   },
+   "description": "fully fixed"
+  }
+ ],
+ "loads": [
+  {
+   "id": "pin_load",
+   "type": "surface_force",
+   "force": [
+    0.0,
+    -3000.0,
+    0.0
+   ],
+   "region": {
+    "type": "cylinder",
+    "point": [
+     50.0,
+     0.0,
+     65.0
+    ],
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "radius": 8.0,
+    "range": [
+     0.0,
+     10.0
+    ],
+    "label": "pin hole (diameter 16 mm, axis along y through (50, *, 65))"
+   },
+   "description": "3000 N in -y as a uniform traction"
+  }
+ ],
+ "solver": {
+  "name": "calculix",
+  "version": "2.21",
+  "deck": "model.inp"
+ },
+ "evaluated_quantities": [
+  {
+   "id": "pin_disp_y",
+   "kind": "region",
+   "description": "mean y-displacement of the pin-hole surface",
+   "field": "U",
+   "component": "y",
+   "region": {
+    "type": "cylinder",
+    "point": [
+     50.0,
+     0.0,
+     65.0
+    ],
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "radius": 8.0,
+    "range": [
+     0.0,
+     10.0
+    ],
+    "label": "pin hole (diameter 16 mm, axis along y through (50, *, 65))"
+   },
+   "stat": "mean"
+  },
+  {
+   "id": "fillet_mises_max",
+   "kind": "max",
+   "description": "peak von Mises stress in the fillet, 10 <= x <= 90 (away from the side faces)",
+   "field": "S",
+   "component": "mises",
+   "within": {
+    "type": "box",
+    "min": [
+     10.0,
+     9.0,
+     9.0
+    ],
+    "max": [
+     90.0,
+     22.0,
+     22.0
+    ]
+   }
+  },
+  {
+   "id": "reaction_y",
+   "kind": "reaction",
+   "description": "total y-reaction at the bolts",
+   "component": "y",
+   "within": {
+    "type": "or",
+    "regions": [
+     {
+      "type": "cylinder_solid",
+      "point": [
+       25.0,
+       55.0,
+       0.0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "radius": 5.6
+     },
+     {
+      "type": "cylinder_solid",
+      "point": [
+       75.0,
+       55.0,
+       0.0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "radius": 5.6
+     }
+    ]
+   }
+  }
+ ],
+ "tags": [
+  "numerical",
+  "fillet",
+  "stress_concentration",
+  "complex_geometry"
+ ]
+}

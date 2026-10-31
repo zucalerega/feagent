@@ -1,0 +1,163 @@
+{
+  "id": "lame_cylinder_axisym",
+  "expected_behavior": "smooth",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "ur_bore",
+      "value": 9.533333333333335e-05,
+      "kind": "analytical",
+      "source": "Lam\u00e9 thick-walled cylinder: S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'Stress distribution symmetrical about an axis' (stresses) and 'Displacements for symmetrical stress distributions' (u_r); J.R. Barber, Elasticity, 3rd ed., Springer (2010), Ch. 8; u_r(a), constrained ends (= plane strain)",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "hoop_bore",
+      "value": 166666666.6666667,
+      "kind": "analytical",
+      "source": "Lam\u00e9 thick-walled cylinder: S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'Stress distribution symmetrical about an axis' (stresses) and 'Displacements for symmetrical stress distributions' (u_r); J.R. Barber, Elasticity, 3rd ed., Springer (2010), Ch. 8; s_tt(a) = K (1 + b^2/a^2)",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "szz_bore",
+      "value": 20000000.0,
+      "kind": "analytical",
+      "source": "Lam\u00e9 thick-walled cylinder: S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'Stress distribution symmetrical about an axis' (stresses) and 'Displacements for symmetrical stress distributions' (u_r); J.R. Barber, Elasticity, 3rd ed., Springer (2010), Ch. 8; s_zz = 2 nu K (eps_z = 0)",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "vm_max",
+      "value": 231324687.63863295,
+      "kind": "analytical",
+      "source": "Lam\u00e9 thick-walled cylinder: S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'Stress distribution symmetrical about an axis' (stresses) and 'Displacements for symmetrical stress distributions' (u_r); J.R. Barber, Elasticity, 3rd ed., Springer (2010), Ch. 8; von Mises K sqrt(3 b^4/a^4 + (1-2nu)^2) at r = a (constrained ends (= plane strain))",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "strain_energy",
+      "value": 149.74924982111352,
+      "kind": "analytical",
+      "source": "Clapeyron: U = 1/2 p u_r(a) (2 pi a H), constrained ends (= plane strain); u_r(a) from Lam\u00e9 thick-walled cylinder: S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'Stress distribution symmetrical about an axis' (stresses) and 'Displacements for symmetrical stress distributions' (u_r); J.R. Barber, Elasticity, 3rd ed., Springer (2010), Ch. 8",
+      "tolerance": 0.01,
+      "notes": ""
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "axisymmetric",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "symmetry",
+        "group": "bottom",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "top",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "pressure",
+        "group": "bore",
+        "point": null,
+        "components": null,
+        "value": 100000000.0,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [
+      {
+        "group": "domain",
+        "material": "steel"
+      }
+    ],
+    "qois": [
+      {
+        "name": "ur_bore",
+        "type": "point",
+        "field": "ux",
+        "point": [
+          0.1,
+          0.025
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "hoop_bore",
+        "type": "point",
+        "field": "stt",
+        "point": [
+          0.1,
+          0.025
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "szz_bore",
+        "type": "point",
+        "field": "syy",
+        "point": [
+          0.1,
+          0.025
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "vm_max",
+        "type": "max",
+        "field": "von_mises",
+        "point": null,
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "strain_energy",
+        "type": "strain_energy",
+        "field": null,
+        "point": null,
+        "group": null,
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "lame_cylinder_axisym",
+      "setup": "reference"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.0125,
+    0.00625,
+    0.003125
+  ]
+}
