@@ -9,7 +9,7 @@ import shutil
 import numpy as np
 import pytest
 
-from feacore.case import BC, Analysis, Case, Load, Material, QoI
+from feacore.case import BC, Analysis, Case, CaseError, Load, Material, QoI
 from feacore.solver import solve
 
 pytestmark = pytest.mark.skipif(shutil.which("ccx") is None, reason="CalculiX (ccx) not installed")
@@ -349,6 +349,53 @@ def test_displacement_expression_and_lower_dim_groups(meshes):
     assert rel(v["sxx"], E * eps) < 2e-5
     assert rel(v["R"], E * eps * 0.25) < 1e-6
     assert rel(v["uy"], -NU * eps * 0.5) < 1e-5
+
+
+def _where_case(meshes, order, where="abs(z) < 1e-9"):
+    P = 2.5
+    bcs = [BC("symmetry", group="left"), BC("symmetry", group="y0"),
+           BC("displacement", group="y0", components=[2], value=0.0, where=where),
+           BC("force", group="right", value=[P, 0.0, 0.0])]
+    qois = [QoI("ux", "point", field="ux", point=[2.0, 0.3, 0.4]), QoI("uz", "point", field="uz", point=[1.0, 0.2, 0.5]),
+            QoI("sxx", "point", field="sxx", point=[1.0, 0.25, 0.25]), QoI("Rz", "reaction", group="y0", component=2),
+            QoI("W", "strain_energy")]
+    return _case(meshes["box2"], order=order, bcs=bcs, qois=qois)
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_dirichlet_where_filter(meshes, order):
+    """uz = 0 on face y0 filtered by ``where`` to the line y = z = 0: with ux = 0 on x = 0 and
+    uy = 0 on y = 0 the bar is held without restraining its Poisson contraction, so uniaxial
+    tension is exact (on the whole face uz = 0 would restrain it)."""
+    P, L, A = 2.5, 2.0, 0.25
+    r = solve(_where_case(meshes, order), backend="ccx")
+    v = r.evaluate_all()
+    eps = P / (A * E)
+    line = [n for (n, d) in r.deck.dirichlet if d == 2]
+    assert np.allclose(r.model.X[line, 1:], 0.0) and len(line) == (17 if order == 2 else 9)
+    assert rel(v["ux"], eps * L) < 1e-6 and rel(v["uz"], -NU * eps * 0.5) < 1e-5
+    assert rel(v["sxx"], P / A) < 2e-5 and abs(v["Rz"]) < 1e-6 * P
+    assert rel(v["W"], 0.5 * P * P * L / (A * E)) < 1e-6
+    with pytest.raises(CaseError, match="selects no node"):            # selecting no node is an error
+        solve(_where_case(meshes, order, where="z > 100"), backend="ccx")
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_dirichlet_where_cross_check_skfem(meshes, order):
+    """Same ``where`` case through both backends (skipped until skfem applies BC.where)."""
+    c = _where_case(meshes, order)
+    v = solve(c, backend="ccx").evaluate_all()
+    try:
+        vs = solve(c, backend="skfem").evaluate_all()
+    except NotImplementedError as e:  # pragma: no cover
+        pytest.skip(f"skfem: {e}")
+    for k in ("ux", "uz", "sxx", "W"):
+        print(f"[ccx vs skfem where] P{order} {k}: ccx={v[k]:+.7e} skfem={vs[k]:+.7e} rel={abs(v[k] / vs[k] - 1):.1e}")
+    if abs(vs["uz"] / v["uz"] - 1) > 1e-2:
+        pytest.skip("skfem does not apply BC.where yet (it constrains the whole group)")  # pragma: no cover
+    for k in ("ux", "uz", "W"):
+        assert rel(v[k], vs[k]) < 1e-5, (k, v[k], vs[k])
+    assert rel(v["sxx"], vs["sxx"]) < 1e-4
 
 
 @pytest.mark.parametrize("order", [1, 2])

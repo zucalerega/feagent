@@ -1,0 +1,221 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+DEBUT(CODE="OUI")
+
+MAIL = LIRE_MAILLAGE(FORMAT="MED")
+
+#
+# DEFINITION DES GROUPES DE NOEUDS
+MAIL = DEFI_GROUP(
+    reuse=MAIL,
+    MAILLAGE=MAIL,
+    CREA_GROUP_NO=(
+        _F(GROUP_MA="ENCAST"),
+        _F(GROUP_MA="FACE_TR"),
+        _F(GROUP_MA="RESU_DEP"),
+        _F(GROUP_MA="RESU_CON"),
+    ),
+)
+
+#
+# DEFINITION DU MODELE MECANIQUE
+MODELE = AFFE_MODELE(MAILLAGE=MAIL, AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="3D"))
+
+#
+# DEFINITION DU MATERIAU
+ACIER = DEFI_MATERIAU(ELAS=_F(E=2.1e11, NU=0.3, ALPHA=1.0e-5, RHO=7800.0))
+
+#
+# ATTRIBUTION DU MATERIAU
+CHMAT = AFFE_MATERIAU(MAILLAGE=MAIL, AFFE=_F(TOUT="OUI", MATER=ACIER))
+
+#
+F_Y = DEFI_FONCTION(
+    NOM_PARA="Y",
+    VALE=(0.0, 0.0, 0.0999999, -0.0714e-5),
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+)
+
+# DEFINITION DES DEPLACEMENTS IMPOSES
+CHARGT1 = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    DDL_IMPO=(_F(GROUP_NO="ENCAST", DX=0.0, DY=0.0, DZ=0.0), _F(GROUP_NO="FACE_TR", DY=0.952e-5)),
+)
+
+CHARGT2 = AFFE_CHAR_MECA_F(MODELE=MODELE, DDL_IMPO=_F(GROUP_NO="FACE_TR", DX=F_Y))
+
+# RESOLUTION
+DEF = MECA_STATIQUE(MODELE=MODELE, CHAM_MATER=CHMAT, EXCIT=(_F(CHARGE=CHARGT1), _F(CHARGE=CHARGT2)))
+
+
+# CALCUL DES CONTRAINTES
+DEF = CALC_CHAMP(reuse=DEF, RESULTAT=DEF, CONTRAINTE=("SIGM_ELNO"))
+
+
+T1 = POST_RELEVE_T(
+    ACTION=_F(
+        GROUP_NO="RESU_DEP",
+        INTITULE="DEP",
+        RESULTAT=DEF,
+        NUME_ORDRE=1,
+        NOM_CHAM="DEPL",
+        NOM_CMP=("DX", "DY", "DZ"),
+        OPERATION="EXTRACTION",
+    )
+)
+
+#
+T2 = POST_RELEVE_T(
+    ACTION=_F(
+        GROUP_NO="RESU_CON",
+        INTITULE="SIG",
+        RESULTAT=DEF,
+        NUME_ORDRE=1,
+        NOM_CHAM="SIGM_ELNO",
+        NOM_CMP=("SIXX", "SIYY", "SIZZ"),
+        OPERATION="EXTRACTION",
+    )
+)
+
+#
+TEST_TABLE(
+    VALE_REFE=9.52e-06,
+    VALE_CALC=9.52e-06,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DY",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="22"),
+)
+
+TEST_TABLE(
+    VALE_REFE=9.52e-06,
+    VALE_CALC=9.52e-06,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DY",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="31"),
+)
+
+TEST_TABLE(
+    VALE_REFE=9.52e-06,
+    VALE_CALC=9.52e-06,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DY",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="41"),
+)
+
+TEST_TABLE(
+    VALE_REFE=9.52e-06,
+    VALE_CALC=9.52e-06,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DY",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="38"),
+)
+
+TEST_TABLE(
+    VALE_REFE=7.14e-07,
+    VALE_CALC=7.1400071400071e-07,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DX",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="22"),
+)
+
+TEST_TABLE(
+    VALE_REFE=7.14e-07,
+    VALE_CALC=7.1400071400071e-07,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DX",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="31"),
+)
+
+TEST_TABLE(
+    VALE_REFE=-7.14e-07,
+    VALE_CALC=-7.1400071400071e-07,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DX",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="41"),
+)
+
+TEST_TABLE(
+    VALE_REFE=-7.14e-07,
+    VALE_CALC=-7.1400071400071e-07,
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-4,
+    NOM_PARA="DX",
+    TABLE=T1,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="38"),
+)
+
+#
+TEST_TABLE(
+    PRECISION=0.104,
+    VALE_CALC=1.65515466e05,
+    VALE_REFE=1.500e5,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIXX",
+    TABLE=T2,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="1"),
+)
+
+TEST_TABLE(
+    PRECISION=0.104,
+    VALE_CALC=1.65515466e05,
+    VALE_REFE=1.500e5,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIXX",
+    TABLE=T2,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="2"),
+)
+
+TEST_TABLE(
+    PRECISION=0.104,
+    VALE_CALC=-1.65515466e05,
+    VALE_REFE=-1.500e5,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIXX",
+    TABLE=T2,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="3"),
+)
+
+TEST_TABLE(
+    PRECISION=0.104,
+    VALE_CALC=-1.65515466e05,
+    VALE_REFE=-1.500e5,
+    REFERENCE="ANALYTIQUE",
+    NOM_PARA="SIXX",
+    TABLE=T2,
+    FILTRE=_F(NOM_PARA="NOEUD", VALE_K="4"),
+)
+
+FIN()
+#

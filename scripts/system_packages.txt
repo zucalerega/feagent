@@ -1,0 +1,23 @@
+# apt packages: gmsh's shared-library dependencies (ldd libgmsh.so), CalculiX, and tools
+libgomp1
+libglu1-mesa
+libgl1
+libglx0
+libopengl0
+libx11-6
+libxext6
+libxfixes3
+libxcursor1
+libxft2
+libxinerama1
+libxrender1
+libxi6
+libfontconfig1
+libfreetype6
+calculix-ccx
+curl
+bzip2
+git
+tmux
+python3-venv
+xvfb

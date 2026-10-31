@@ -1,0 +1,216 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+#       MODELE AVEC 160 ELEMENTS DANS LE SECTEUR DE BASE
+#       SOUMIS A UNE ROTATION DE 2000 RAD/SEC.
+# VALIDATION INDEPENDANTE PAR SAMTECH (H.DRION)
+# CAS_TEST__: SDLV301B
+#################################################################
+#
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="ALARME"), DEBUG=_F(SDVERI="OUI"), IGNORE_ALARM="ALGORITH16_57")
+
+#
+MAT = DEFI_MATERIAU(ELAS=_F(RHO=7.8e03, NU=0.3, E=2.1e11))
+
+#
+MAYA = LIRE_MAILLAGE(FORMAT="MED", UNITE=20)
+
+#
+CHMAT = AFFE_MATERIAU(MAILLAGE=MAYA, AFFE=_F(TOUT="OUI", MATER=MAT))
+
+#
+ROUET = AFFE_MODELE(MAILLAGE=MAYA, AFFE=_F(TOUT="OUI", MODELISATION="3D", PHENOMENE="MECANIQUE"))
+
+#
+# CONDITIONS AUX LIMITES
+#
+#
+LIMIT = AFFE_CHAR_MECA(
+    MODELE=ROUET,
+    DDL_IMPO=(
+        _F(GROUP_NO="FIXAT", DX=0.0, DY=0.0, DZ=0.0),
+        #
+        #  INTERFACE DE CRAIG BAMPTON --> FIXATION DE L'INTERFACE
+        #                                 POUR CALCUL DYNAMIQUE
+        #
+        _F(GROUP_NO="GAUCHE", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="DROITE", DX=0.0, DY=0.0, DZ=0.0),
+    ),
+    ROTATION=_F(VITESSE=2000.0, AXE=(0.0, 0.0, 1.0)),
+)
+
+#
+# CALCUL DE LA MATRICE DE RIGIDITE ELEMENTAIRE SOUS CHARGE STATIQUE
+#
+K_ELEM = CALC_MATR_ELEM(MODELE=ROUET, CHAM_MATER=CHMAT, OPTION="RIGI_MECA", CHARGE=(LIMIT,))
+
+#
+# CALCUL DE LA MATRICE DE RAIDEUR CENTRIFUGE ELEMENTAIRE SOUS
+# CHARGE STATIQUE
+#
+C_ELEM = CALC_MATR_ELEM(MODELE=ROUET, CHAM_MATER=CHMAT, OPTION="RIGI_ROTA", CHARGE=(LIMIT,))
+
+#
+# CALCUL DE LA MATRICE DE MASSES ELEMENTAIRE
+#
+M_ELEM = CALC_MATR_ELEM(MODELE=ROUET, CHAM_MATER=CHMAT, OPTION="MASS_MECA", CHARGE=(LIMIT,))
+
+#
+# NUMEROTATION
+#
+NUM = NUME_DDL(MATR_RIGI=(K_ELEM, C_ELEM))
+
+#
+# ASSEMBLAGE DES MATRICES DE RIGIDITE ET DE RAIDEUR CENTRIFUGE
+#
+K_ASSE = ASSE_MATRICE(MATR_ELEM=K_ELEM, NUME_DDL=NUM)
+
+#
+C_ASSE = ASSE_MATRICE(MATR_ELEM=C_ELEM, NUME_DDL=NUM)
+
+#
+#  RECOMBINAISON DES MATRISSES ASSEMBLEES
+#
+R_COMB = COMB_MATR_ASSE(COMB_R=(_F(MATR_ASSE=K_ASSE, COEF_R=1.0), _F(MATR_ASSE=C_ASSE, COEF_R=1.0)))
+
+#
+# ASSEMBALGE DE LA MATRICE DE MASSES
+#
+M_ASSE = ASSE_MATRICE(MATR_ELEM=M_ELEM, NUME_DDL=NUM)
+
+#
+MODES = CALC_MODES(MATR_RIGI=R_COMB, MATR_MASS=M_ASSE, CALC_FREQ=_F(NMAX_FREQ=10))
+
+
+#
+INTERF = DEFI_INTERF_DYNA(
+    NUME_DDL=NUM,
+    INTERFACE=(
+        _F(NOM="GAUCHE", TYPE="CRAIGB", GROUP_NO="GAUCHE"),
+        _F(NOM="DROITE", TYPE="CRAIGB", GROUP_NO="DROITE"),
+    ),
+)
+
+#
+BAMO = DEFI_BASE_MODALE(CLASSIQUE=_F(INTERF_DYNA=INTERF, MODE_MECA=MODES, NMAX_MODE=10))
+
+#
+MOCYCL = MODE_ITER_CYCL(
+    BASE_MODALE=BAMO,
+    NB_MODE=10,
+    NB_SECTEUR=21,
+    LIAISON=_F(DROITE="DROITE", GAUCHE="GAUCHE"),
+    CALCUL=_F(OPTION="BANDE", FREQ=(400.0, 5000.0), NB_DIAM=1),
+)
+
+#
+SQUEL = DEFI_SQUELETTE(CYCLIQUE=_F(MODE_CYCL=MOCYCL), SECTEUR=_F(TOUT="OUI"))
+
+#
+DYNAM = REST_SOUS_STRUC(RESU_GENE=MOCYCL, SQUELETTE=SQUEL)
+
+#
+TEST_RESU(
+    RESU=(
+        _F(
+            PARA="FREQ",
+            NUME_MODE=1,
+            RESULTAT=DYNAM,
+            VALE_CALC=418.351388546,
+            VALE_REFE=409.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=2,
+            RESULTAT=DYNAM,
+            VALE_CALC=418.351388546,
+            VALE_REFE=409.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=3,
+            RESULTAT=DYNAM,
+            VALE_CALC=1.47230066e03,
+            VALE_REFE=1431.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=4,
+            RESULTAT=DYNAM,
+            VALE_CALC=1.47230066e03,
+            VALE_REFE=1431.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=5,
+            RESULTAT=DYNAM,
+            VALE_CALC=3.41258540e03,
+            VALE_REFE=3335.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=6,
+            RESULTAT=DYNAM,
+            VALE_CALC=3.41258540e03,
+            VALE_REFE=3335.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=7,
+            RESULTAT=DYNAM,
+            VALE_CALC=4.95222647e03,
+            VALE_REFE=4852.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+        _F(
+            PARA="FREQ",
+            NUME_MODE=8,
+            RESULTAT=DYNAM,
+            VALE_CALC=4.95222647e03,
+            VALE_REFE=4852.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=0.029999999999999999,
+        ),
+    )
+)
+
+#
+FIN()
+#

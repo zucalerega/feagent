@@ -1,25 +1,36 @@
 .venv/
 __pycache__/
+*.py[cod]
 out/
 .feagent/
 examples/**/out/*.msh
 .pytest_cache/
+build/
+dist/
 # feacore
 *.egg-info/
 /work/
 *.msh
 !benchmarks/**/*.msh
+# gold-benchmark reference meshes: large, listed with sha256 in benchmarks/gold/index.json
+benchmarks/gold/_meshes/
 *.vtu
 *.frd
 *.sta
 *.cvg
 *.12d
 spooles.out
-.venv/
 ace_runs/
 runs/
 models/*
 !models/.gitignore
+.feacore_python
+.feacore_token
+.feacore_autoupdate_deferrals
+# feabench: solver scratch; downloaded datasets (SimJEB etc.) are never committed (licensing + size)
+*.dat
+!benchmarks/**/*.dat.ref
+data/
 
 # ACE: cached field-error references and baselines (rebuilt with python -m ace.field_error --precompute)
 ace/field_refs/

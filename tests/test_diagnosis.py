@@ -67,8 +67,14 @@ def test_unit_error_also_breaks_sanity_bounds(planted_runs, cal):
 @pytest.mark.parametrize("pid", list(TASKS))
 def test_no_oracle_fails_on_the_reference_setup(pid, cal, tmp_path):
     problem = fea.get_problem(pid)
+    if fea.is_flow(problem):
+        from feacore.solver._foam_env import find_openfoam
+
+        if find_openfoam() is None:
+            pytest.skip("flow problem: OpenFOAM not found (on a Mac: scripts/openfoam_docker.sh)")
     req = planted.GOOD_MESH[pid]
-    m = fea.make_mesh(problem, tmp_path / "m.msh", h=req["h"], order=req["order"], refinements=req["refinements"])
+    m = fea.make_mesh(problem, tmp_path / "m.msh", h=req["h"], order=req.get("order", 1),
+                      refinements=req.get("refinements"), quads=req.get("quads", False))
     setup = reference_setup(problem)
     value = fea.run_solve(problem, m, setup, TASKS[pid]["qoi"])["value"]
     orc = oracles.evaluate(pid, m, req, setup, value, cal[pid]["target_err"])

@@ -78,7 +78,9 @@ def collect(run_dir: Path, log: Path | None = None) -> dict:
     log = log or next((p for p in (run_dir / "run.log", run_dir.parent / f"{run_dir.name}.log") if p.exists()), None)
     log_text = log.read_text(errors="replace") if log else ""
     done_in_log = set(re.findall(r"run (g\d+-\S+) done", log_text))
-    problems = config.TRAIN + config.HOLDOUT
+    split = _json(run_dir / "run_config.json") or {}          # written by run_loop (suite, train, holdout)
+    train, holdout = split.get("train", config.TRAIN), split.get("holdout", config.HOLDOUT)
+    problems = train + holdout
     gens = []
     g = 0
     while (gdir := run_dir / f"gen{g}").exists():
@@ -115,7 +117,7 @@ def collect(run_dir: Path, log: Path | None = None) -> dict:
     phase = "finished" if finished else ("stopped by budget" if budget_stop else
                                           "reflecting" if gens and all(r["state"] != "running" for r in gens[-1]["runs"]) and gens[-1]["runs"] else "agents running")
     return {
-        "run": run_dir.name, "phase": phase, "problems": problems, "train": config.TRAIN, "holdout": config.HOLDOUT,
+        "run": run_dir.name, "phase": phase, "problems": problems, "train": train, "holdout": holdout,
         "tasks": config.TASKS, "models": config.MODELS, "max_solves": config.MAX_SOLVES,
         "score_floor": config.SCORE_FLOOR, "score_ceil": config.SCORE_CEIL,
         "generations": gens, "usd": sum(by_role.values()), "usd_by_role": by_role, "calls": len(cost),

@@ -4,6 +4,7 @@ Backends are modules exposing ``solve(case: Case, **options) -> Result``:
   skfem  scikit-fem, the primary (fixed) solver
   ccx    CalculiX, an independent second solver for cross-checks
   nn     neural surrogate (optional, GPU); fast but unverified, never the reference
+  openfoam  OpenFOAM, incompressible flow (physics "flow")
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ BACKENDS = {
     "skfem": "feacore.solver.skfem_backend",
     "ccx": "feacore.solver.ccx_backend",
     "nn": "feacore.solver.nn_backend",
+    "openfoam": "feacore.solver.openfoam_backend",
 }
 
 

@@ -1,0 +1,363 @@
+{
+ "case": "verification/lame_cylinder",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 25.0,
+   "n_nodes": 736,
+   "n_dof": 2208,
+   "solver_cpu_s": 0.068889,
+   "solver_wall_s": 0.06138938399999461,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.04536171561167507,
+     "error": 0.0007733973651997755,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.028879593792151773,
+     "error": 0.0003217533485927779,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 166.70969002813487,
+     "error": 0.00025814016880912046,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 66.52158120170992,
+     "error": 0.002176281974351255,
+     "passed": true,
+     "failure": null
+    },
+    "axial_mid": {
+     "value": 20.173006423202416,
+     "error": 0.008650321160120811,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -100038.42095,
+     "error": 0.0003842094999999972,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 2,
+   "h": 12.0,
+   "n_nodes": 1194,
+   "n_dof": 3582,
+   "solver_cpu_s": 0.12451,
+   "solver_wall_s": 0.10154780999982904,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.045464903021913416,
+     "error": 0.0014996120211694254,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.028893085886416724,
+     "error": 0.00014528068365550427,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 164.3166978897687,
+     "error": 0.014099812661387885,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 66.74180168106602,
+     "error": 0.0011270252159902583,
+     "passed": true,
+     "failure": null
+    },
+    "axial_mid": {
+     "value": 20.00493100478949,
+     "error": 0.00024655023947453005,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -100028.32991,
+     "error": 0.0002832991000000038,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 7.0,
+   "n_nodes": 4255,
+   "n_dof": 12765,
+   "solver_cpu_s": 0.7733709999999999,
+   "solver_wall_s": 0.6055346610000925,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.04539866118734906,
+     "error": 4.0438742304225135e-05,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.028888564134185776,
+     "error": 1.12415089542361e-05,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 166.7499779014097,
+     "error": 0.0004998674084580443,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 66.71604392496889,
+     "error": 0.0007406588745332243,
+     "passed": true,
+     "failure": null
+    },
+    "axial_mid": {
+     "value": 19.925127114102136,
+     "error": 0.0037436442948932227,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -100003.95860141999,
+     "error": 3.958601419988554e-05,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 4.0,
+   "n_nodes": 15556,
+   "n_dof": 46668,
+   "solver_cpu_s": 5.186889999999999,
+   "solver_wall_s": 3.6382658849997824,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.04539641041786272,
+     "error": 9.141144982241537e-06,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.028888976624668466,
+     "error": 3.03700775429514e-06,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 167.06493568428644,
+     "error": 0.0023896141057185216,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 66.66271157369731,
+     "error": 5.932639454044874e-05,
+     "passed": true,
+     "failure": null
+    },
+    "axial_mid": {
+     "value": 20.043866077514963,
+     "error": 0.0021933038757481426,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -100000.91163559999,
+     "error": 9.116355999867664e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 2.5,
+   "n_nodes": 55287,
+   "n_dof": 165861,
+   "solver_cpu_s": 54.187011,
+   "solver_wall_s": 35.13434089200018,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.04539718850587711,
+     "error": 7.998556033982967e-06,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.02888886668636061,
+     "error": 7.685490561267683e-07,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 166.64832645721444,
+     "error": 0.00011004125671348673,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 66.66127713351587,
+     "error": 8.084299726206722e-05,
+     "passed": true,
+     "failure": null
+    },
+    "axial_mid": {
+     "value": 20.00338681644974,
+     "error": 0.00016934082248702963,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -100000.160971208,
+     "error": 1.6097120799531695e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "ur_inner": {
+   "q_fine": 0.04539718850587711,
+   "monotone": false,
+   "value": 0.04539718850587711,
+   "order": null,
+   "uncertainty": 9.139415432641543e-07,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "ur_outer": {
+   "q_fine": 0.02888886668636061,
+   "monotone": false,
+   "value": 0.02888886668636061,
+   "order": null,
+   "uncertainty": 1.2913344620204232e-07,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "hoop_inner": {
+   "q_fine": 166.64832645721444,
+   "monotone": false,
+   "value": 166.64832645721444,
+   "order": null,
+   "uncertainty": 0.9405008793634922,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "hoop_outer": {
+   "q_fine": 66.66127713351587,
+   "monotone": true,
+   "value": 66.66127713351587,
+   "order": null,
+   "uncertainty": 0.0032382678163934337,
+   "method": "finest value (no observed order); GCI Fs=3"
+  },
+  "axial_mid": {
+   "q_fine": 20.00338681644974,
+   "monotone": false,
+   "value": 20.00338681644974,
+   "order": null,
+   "uncertainty": 0.09138247103981266,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "reaction_x": {
+   "q_fine": -100000.160971208,
+   "monotone": true,
+   "value": -99999.90191129052,
+   "order": 3.2183167233201235,
+   "uncertainty": 0.32382489684114085,
+   "method": "richardson"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   2208,
+   3582,
+   12765,
+   46668,
+   165861
+  ],
+  "accuracy": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.07,
+   0.12,
+   0.77,
+   5.19,
+   54.19
+  ]
+ }
+}

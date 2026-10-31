@@ -1,0 +1,276 @@
+{
+ "id": "verification/lame_cylinder",
+ "title": "Thick-walled cylinder under internal pressure (plane strain)",
+ "description": "A quarter (90 degree) segment of a thick-walled steel tube, inner radius 50 mm, outer radius 100 mm, axial length 20 mm (axis = z). The planes x=0 and y=0 are planes of symmetry of the full tube. Both end faces (z=0 and z=20) are held between frictionless rigid platens: no axial displacement, free in-plane motion (plane strain). An internal pressure of 100 MPa acts on the bore.",
+ "units": {
+  "length": "mm",
+  "force": "N",
+  "stress": "MPa",
+  "mass": "tonne",
+  "time": "s",
+  "density": "tonne/mm^3",
+  "acceleration": "mm/s^2"
+ },
+ "geometry": {
+  "file": "geometry.step",
+  "format": "step",
+  "length_unit": "mm"
+ },
+ "analysis": {
+  "type": "static"
+ },
+ "materials": [
+  {
+   "name": "steel",
+   "E": 210000.0,
+   "nu": 0.3,
+   "density": 7.85e-09,
+   "applies_to": "all"
+  }
+ ],
+ "boundary_conditions": [
+  {
+   "id": "sym_x",
+   "type": "symmetry",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ],
+    "label": "face x=0"
+   },
+   "description": "symmetry plane x=0: ux = 0"
+  },
+  {
+   "id": "sym_y",
+   "type": "symmetry",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     1.0,
+     0.0
+    ],
+    "label": "face y=0"
+   },
+   "description": "symmetry plane y=0: uy = 0"
+  },
+  {
+   "id": "end_z0",
+   "type": "symmetry",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "label": "end face z=0"
+   },
+   "description": "frictionless platen: uz = 0"
+  },
+  {
+   "id": "end_zL",
+   "type": "symmetry",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     20.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "label": "end face z=20"
+   },
+   "description": "frictionless platen: uz = 0"
+  }
+ ],
+ "loads": [
+  {
+   "id": "p_inner",
+   "type": "pressure",
+   "value": 100.0,
+   "region": {
+    "type": "cylinder",
+    "point": [
+     0,
+     0,
+     0
+    ],
+    "axis": [
+     0,
+     0,
+     1
+    ],
+    "radius": 50.0,
+    "label": "bore (inner cylindrical face r=50)"
+   },
+   "description": "internal pressure 100 MPa"
+  }
+ ],
+ "solver": {
+  "name": "calculix",
+  "version": "2.21",
+  "deck": "model.inp"
+ },
+ "evaluated_quantities": [
+  {
+   "id": "ur_inner",
+   "kind": "point",
+   "description": "radial displacement of the bore at 45 deg, mid-length [35.35533905932738, 35.35533905932738, 10.0]",
+   "point": [
+    35.35533905932738,
+    35.35533905932738,
+    10.0
+   ],
+   "field": "U",
+   "component": "r",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "ur_outer",
+   "kind": "point",
+   "description": "radial displacement of the outer surface at [70.71067811865476, 70.71067811865476, 10.0]",
+   "point": [
+    70.71067811865476,
+    70.71067811865476,
+    10.0
+   ],
+   "field": "U",
+   "component": "r",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "hoop_inner",
+   "kind": "point",
+   "description": "hoop stress at the bore [35.35533905932738, 35.35533905932738, 10.0]",
+   "point": [
+    35.35533905932738,
+    35.35533905932738,
+    10.0
+   ],
+   "field": "S",
+   "component": "tt",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "hoop_outer",
+   "kind": "point",
+   "description": "hoop stress at the outer surface [70.71067811865476, 70.71067811865476, 10.0]",
+   "point": [
+    70.71067811865476,
+    70.71067811865476,
+    10.0
+   ],
+   "field": "S",
+   "component": "tt",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "axial_mid",
+   "kind": "point",
+   "description": "axial (plane-strain) stress mid-wall [53.033008588991066, 53.033008588991066, 10.0]",
+   "point": [
+    53.033008588991066,
+    53.033008588991066,
+    10.0
+   ],
+   "field": "S",
+   "component": "zz"
+  },
+  {
+   "id": "reaction_x",
+   "kind": "reaction",
+   "description": "sum of x-reactions on x=0",
+   "component": "x",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   }
+  }
+ ],
+ "tags": [
+  "exact",
+  "pressure",
+  "symmetry",
+  "plane_strain"
+ ]
+}

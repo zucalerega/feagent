@@ -75,7 +75,9 @@ def convergence_study(problem: Problem, sizes: list[float] | None = None, order:
     for q in qois:
         vals = [r["qois"][q.name] for r in runs]
         p_th = problem.expected_order(q, order)
-        p_th = default_expected_order(q, order) if p_th is None else p_th
+        if p_th is None:
+            # finite-volume flow: formal order = scheme order for every field; FE: by field type
+            p_th = float(order) if problem.physics == "flow" else default_expected_order(q, order)
         entry = {"name": q.name, "type": q.type, "field": q.field, "values": vals,
                  "p_theory": p_th, "expectation": expect.get(q.name, "converge")}
         if len(runs) >= 3:

@@ -6,18 +6,24 @@ spec key to change. ``QualitySpec`` is duck-typed (attributes only).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .types import Gate, MeshResult, Vec3, _Base
+from . import gmsh_util as gu
+from .gates import failed, passed, skipped, threshold_gate, warned
+from .types import Gate, GeometryModel, MeshResult, Vec3, _Base
+from .vec import vec3
 
 if TYPE_CHECKING:  # pragma: no cover
+    from .meshdata import MeshData
     from .spec import QualitySpec
 
 NON_ORTHO_WARN = 65.0
 N_WORST = 10
+_MEASURES = ("minSICN", "gamma", "minSJ", "volume")
 
 
 @dataclass
@@ -79,9 +85,21 @@ def _stats(a: np.ndarray) -> Stats:
                  [float(e) for e in edges], [int(h) for h in hist])
 
 
+def _mean(a: np.ndarray) -> float:
+    return float(a.mean()) if a.size else 0.0
+
+
 # --- topology / OpenFOAM-style face metrics -------------------------------
 
 _TET_FACES = ((1, 2, 3), (0, 3, 2), (0, 1, 3), (0, 2, 1))  # outward-oriented for positive tets
+
+
+def _tet_faces(tets: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """All 4n tet faces, each face's unique-face index, and each unique face's count."""
+    faces = np.concatenate([tets[:, list(f)] for f in _TET_FACES])  # (4n,3)
+    _, inv, counts = np.unique(np.sort(faces, axis=1), axis=0, return_inverse=True,
+                               return_counts=True)
+    return faces, inv.ravel(), counts
 
 
 def _internal_faces(tets: np.ndarray):
@@ -89,17 +107,23 @@ def _internal_faces(tets: np.ndarray):
     n = len(tets)
     if n == 0:
         return np.zeros(0, int), np.zeros(0, int), np.zeros((0, 3), int)
-    faces = np.concatenate([tets[:, list(f)] for f in _TET_FACES])  # (4n,3)
+    faces, inv, counts = _tet_faces(tets)
     owner = np.tile(np.arange(n), 4)
-    key = np.sort(faces, axis=1)
-    _, inv, counts = np.unique(key, axis=0, return_inverse=True, return_counts=True)
-    inv = inv.ravel()
     order = np.argsort(inv, kind="stable")
-    sorted_inv = inv[order]
-    first = np.searchsorted(sorted_inv, np.arange(len(counts)))
+    first = np.searchsorted(inv[order], np.arange(len(counts)))
     two = np.nonzero(counts == 2)[0]
     a, b = order[first[two]], order[first[two] + 1]
     return owner[a], owner[b], faces[a]
+
+
+def _boundary_faces(tets: np.ndarray) -> np.ndarray:
+    """Tet faces not shared with another tet."""
+    faces, inv, counts = _tet_faces(tets)
+    return faces[counts[inv] == 1]
+
+
+def _rowdot(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    return np.einsum("ij,ij->i", a, b)
 
 
 def tet_non_ortho_skewness(points: np.ndarray, tets: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -117,28 +141,33 @@ def tet_non_ortho_skewness(points: np.ndarray, tets: np.ndarray) -> tuple[np.nda
     pts = np.asarray(points, float)
     cent = pts[tets].mean(axis=1)
     d = cent[N] - cent[P]
-    p0, p1, p2 = pts[fn[:, 0]], pts[fn[:, 1]], pts[fn[:, 2]]
-    s = 0.5 * np.cross(p1 - p0, p2 - p0)
-    flip = np.einsum("ij,ij->i", s, d) < 0
-    s[flip] *= -1
-    xf = (p0 + p1 + p2) / 3.0
-    sn = np.linalg.norm(s, axis=1)
-    dn = np.linalg.norm(d, axis=1)
+    s, xf = _oriented_face_vectors(pts[fn], d)
+    sn, dn = np.linalg.norm(s, axis=1), np.linalg.norm(d, axis=1)
     ok = (sn > 0) & (dn > 0)
-    sn = np.where(ok, sn, 1.0)
+    n = s / np.where(ok, sn, 1.0)[:, None]
     dn = np.where(ok, dn, 1.0)
-    n = s / sn[:, None]
-    cosang = np.clip(np.einsum("ij,ij->i", n, d) / dn, -1.0, 1.0)
-    non_ortho = np.degrees(np.arccos(cosang))
-    dd = np.einsum("ij,ij->i", d, n)
-    dd = np.where(np.abs(dd) < 1e-300, 1e-300, dd)
-    t = np.einsum("ij,ij->i", xf - cent[P], n) / dd
-    xi = cent[P] + d * t[:, None]
-    skew = np.linalg.norm(xf - xi, axis=1) / dn
+    non_ortho = np.degrees(np.arccos(np.clip(_rowdot(n, d) / dn, -1.0, 1.0)))
+    skew = _skewness(cent[P], d, dn, n, xf)
     # degenerate faces are as bad as it gets
-    non_ortho = np.where(ok, non_ortho, 90.0)
-    skew = np.where(ok, skew, np.inf)
-    return non_ortho, skew
+    return np.where(ok, non_ortho, 90.0), np.where(ok, skew, np.inf)
+
+
+def _oriented_face_vectors(tri: np.ndarray, d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Face area vectors (pointing along ``d``) and centroids of triangles ``tri[n,3,3]``."""
+    p0, p1, p2 = tri[:, 0], tri[:, 1], tri[:, 2]
+    s = 0.5 * np.cross(p1 - p0, p2 - p0)
+    s[_rowdot(s, d) < 0] *= -1
+    return s, (p0 + p1 + p2) / 3.0
+
+
+def _skewness(cp: np.ndarray, d: np.ndarray, dn: np.ndarray, n: np.ndarray,
+              xf: np.ndarray) -> np.ndarray:
+    """|x_f - x_i| / |d| with x_i where the line cp + t*d meets the face plane."""
+    dd = _rowdot(d, n)
+    dd = np.where(np.abs(dd) < 1e-300, 1e-300, dd)
+    t = _rowdot(xf - cp, n) / dd
+    xi = cp + d * t[:, None]
+    return np.linalg.norm(xf - xi, axis=1) / dn
 
 
 def _components(tets: np.ndarray) -> int:
@@ -153,7 +182,7 @@ def _components(tets: np.ndarray) -> int:
     return int(connected_components(g, directed=False)[0])
 
 
-def _expected_components(geometry) -> int:
+def _expected_components(geometry: GeometryModel | None) -> int:
     if geometry is None or not geometry.volumes:
         return 1
     parent = {v.tag: v.tag for v in geometry.volumes}
@@ -173,266 +202,284 @@ def _expected_components(geometry) -> int:
 
 # --- gmsh-side measurements -----------------------------------------------
 
-def _face_edge_lengths(face_tags: list[int], tets: np.ndarray, node_tag_to_idx: dict,
-                       points: np.ndarray) -> dict[int, float | None]:
-    """Mean surface-triangle edge length per CAD face (None if no triangles found)."""
+@dataclass
+class _GmshMeasures:
+    qualities: dict[str, np.ndarray]  # gmsh measure name -> per-tet values
+    worst: list[WorstElement]
+    thin: dict[int, tuple[float, float | None]]  # face -> (thickness, mean edge length)
+
+
+def _gmsh_measures(mesh_path: str | Path, md: MeshData,
+                   thin_faces: dict[int, float]) -> _GmshMeasures:
     import gmsh
 
+    from .gmsh_session import gmsh_session
+
+    with gmsh_session():
+        gmsh.open(str(mesh_path))
+        qual = gu.element_qualities(md.tet_tags, _MEASURES)
+        worst = _worst_elements(md, qual["minSICN"], qual["gamma"])
+        edges = _face_edge_lengths(sorted(thin_faces), md.tets, md.points) if thin_faces else {}
+    thin = {f: (t, edges.get(f)) for f, t in sorted(thin_faces.items())}
+    return _GmshMeasures(qual, worst, thin)
+
+
+def _worst_elements(md: MeshData, sicn: np.ndarray, gamma: np.ndarray) -> list[WorstElement]:
+    return [WorstElement(tag=int(md.tet_tags[i]), sicn=float(sicn[i]), gamma=float(gamma[i]),
+                         centroid=vec3(md.points[md.tets[i]].mean(axis=0)),
+                         faces=gu.element_faces(md.tet_tags[i]))
+            for i in np.argsort(sicn, kind="stable")[:N_WORST]]
+
+
+def _thin_wall_faces(geo: GeometryModel | None) -> dict[int, float]:
+    """CAD face -> wall thickness, from the geometry's thin-wall hazards."""
+    if geo is None:
+        return {}
+    return {int(tag): float(h.value) for h in geo.hazards if h.kind == "thin_wall" and h.value
+            for dim, tag in h.entities if dim == 2}
+
+
+def _face_edge_lengths(face_tags: list[int], tets: np.ndarray,
+                       points: np.ndarray) -> dict[int, float | None]:
+    """Mean surface-triangle edge length per CAD face (None if no triangles found)."""
+    node_tags, _, lookup = gu.node_table()
+    boundary: np.ndarray | None = None  # tet-mesh skin, for msh files without face elements
     out: dict[int, float | None] = {}
-    # boundary triangles of the tet mesh, as fallback when the msh stores no face elements
-    bfaces = None
     for ft in face_tags:
-        tris = []
-        types, _, enodes = gmsh.model.mesh.getElements(2, ft)
-        for t, en in zip(types, enodes):
-            if t in (2, 9):
-                nn = gmsh.model.mesh.getElementProperties(t)[3]
-                tris.append(np.array([[node_tag_to_idx[int(x)] for x in row[:3]]
-                                      for row in np.asarray(en).reshape(-1, nn)]))
-        tri = np.concatenate(tris) if tris else np.zeros((0, 3), int)
+        tri = gu.corner_rows(2, ft, gu.TRI_TYPES, 3, lookup)
         if len(tri) == 0 and len(tets):
-            if bfaces is None:
-                allf = np.concatenate([tets[:, list(f)] for f in _TET_FACES])
-                key = np.sort(allf, axis=1)
-                _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
-                bfaces = allf[cnt[inv.ravel()] == 1]
-            allowed = {(2, ft)}
-            for dim, tag in gmsh.model.getBoundary([(2, ft)], combined=False, oriented=False,
-                                                   recursive=True):
-                allowed.add((dim, tag))
-            idx_to_tag = {v: k for k, v in node_tag_to_idx.items()}
-            cls: dict[int, tuple[int, int]] = {}
-            keep = []
-            for row in bfaces:
-                ok = True
-                for i in row:
-                    i = int(i)
-                    if i not in cls:
-                        _, _, dim, tag = gmsh.model.mesh.getNode(idx_to_tag[i])
-                        cls[i] = (dim, tag)
-                    if cls[i] not in allowed:
-                        ok = False
-                        break
-                if ok:
-                    keep.append(row)
-            tri = np.array(keep, int).reshape(-1, 3)
-        if len(tri) == 0:
-            out[ft] = None
-            continue
-        e = np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]])
-        e = np.unique(np.sort(e, axis=1), axis=0)
-        out[ft] = float(np.linalg.norm(points[e[:, 0]] - points[e[:, 1]], axis=1).mean())
+            boundary = _boundary_faces(tets) if boundary is None else boundary
+            tri = _triangles_on_face(ft, boundary, node_tags)
+        out[ft] = _mean_edge_length(tri, points) if len(tri) else None
     return out
 
 
-def _g(id_, name, status, value, threshold, message, hint=""):
-    return Gate(id=id_, name=name, status=status, value=value, threshold=threshold,
-                message=message, hint=hint)
+def _triangles_on_face(face: int, tris: np.ndarray, node_tags: np.ndarray) -> np.ndarray:
+    """Rows of ``tris`` whose nodes all lie on ``face`` or its boundary curves/points."""
+    allowed = gu.closure(2, face)
+
+    @cache
+    def on_face(i: int) -> bool:
+        return gu.node_entity(node_tags[i]) in allowed
+
+    keep = [row for row in tris if all(on_face(int(i)) for i in row)]
+    return np.array(keep, int).reshape(-1, 3)
+
+
+def _mean_edge_length(tri: np.ndarray, points: np.ndarray) -> float:
+    e = np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [2, 0]]])
+    e = np.unique(np.sort(e, axis=1), axis=0)
+    return float(np.linalg.norm(points[e[:, 0]] - points[e[:, 1]], axis=1).mean())
+
+
+# --- report ---------------------------------------------------------------
+
+def _volumes(tet_volume: np.ndarray, geo: GeometryModel | None) -> tuple[float, float, float]:
+    """(CAD volume, mesh volume, relative error)."""
+    mesh = float(tet_volume.sum())
+    cad = float(sum(v.volume for v in geo.volumes)) if geo is not None else 0.0
+    return cad, mesh, abs(mesh - cad) / cad if cad > 0 else 0.0
+
+
+def _tri_area(points: np.ndarray, tri: np.ndarray) -> float:
+    p0, p1, p2 = points[tri[:, 0]], points[tri[:, 1]], points[tri[:, 2]]
+    return float(0.5 * np.linalg.norm(np.cross(p1 - p0, p2 - p0), axis=1).sum())
+
+
+def _cad_area(geo: GeometryModel, tags: list[int]) -> float:
+    total = 0.0
+    for t in tags:
+        try:
+            total += geo.face(t).area
+        except KeyError:
+            pass
+    return total
+
+
+def _group_areas(md: MeshData, result: MeshResult) -> dict[str, tuple[float, float, float]]:
+    """Surface group -> (CAD area, mesh area, relative error); a group absent from the mesh
+    gets error 1.0 so it is never silently dropped."""
+    geo = result.geometry
+    if geo is None:
+        return {}
+    out = {}
+    for name, gr in result.groups.items():
+        if gr.dim == 2:
+            mesh = _tri_area(md.points, md.tris.get(name, np.zeros((0, 3), int)))
+            cad = _cad_area(geo, gr.tags)
+            err = 1.0 if name not in md.tris else (abs(mesh - cad) / cad if cad > 0 else 0.0)
+            out[name] = (float(cad), mesh, float(err))
+    return out
+
+
+def _report(md: MeshData, result: MeshResult, gm: _GmshMeasures,
+            cfd: tuple[np.ndarray, np.ndarray] | None) -> QualityReport:
+    qual = gm.qualities
+    v_cad, v_mesh, v_err = _volumes(qual["volume"], result.geometry)
+    return QualityReport(
+        n_nodes=len(md.points), n_tets=len(md.tets), sicn=_stats(qual["minSICN"]),
+        gamma=_stats(qual["gamma"]), sj=_stats(qual["minSJ"]),
+        inverted=int(np.sum(qual["minSJ"] <= 0)),
+        worst=gm.worst, volume_cad=v_cad, volume_mesh=v_mesh, volume_error=float(v_err),
+        group_area=_group_areas(md, result), components=_components(md.tets),
+        expected_components=_expected_components(result.geometry),
+        non_ortho=_stats(cfd[0]) if cfd else None, skewness=_stats(cfd[1]) if cfd else None,
+        sicn_per_tet=qual["minSICN"])
 
 
 def assess_mesh(mesh_path: str | Path, result: MeshResult, q: "QualitySpec",
                 analysis: str) -> QualityReport:
-    import gmsh
-
-    from .gmsh_session import gmsh_session
+    """Measure a .msh file against the CAD in ``result`` and evaluate the mesh gates."""
     from .meshdata import read_msh
 
     md = read_msh(mesh_path)
-    tets, tags = md.tets, md.tet_tags
-    n_tets = len(tets)
+    gm = _gmsh_measures(mesh_path, md, _thin_wall_faces(result.geometry))
+    cfd = tet_non_ortho_skewness(md.points, md.tets) if analysis == "cfd" else None
+    rep = _report(md, result, gm, cfd)
+    no_mean, sk_mean = (_mean(cfd[0]), _mean(cfd[1])) if cfd else (0.0, 0.0)
+    missing = {n for n in result.groups if n not in md.tris}
+    ctx = _GateInputs(rep, q, missing, gm.thin, no_mean, sk_mean)
+    rep.gates = [g(ctx) for g in _GATES + (_CFD_GATES if cfd else ())]
+    return rep
 
-    with gmsh_session():
-        gmsh.open(str(mesh_path))
-        ntags, _, _ = gmsh.model.mesh.getNodes()
-        node_tag_to_idx = {int(t): i for i, t in enumerate(ntags)}
-        tl = [int(t) for t in tags]
-        if n_tets:
-            sicn = np.asarray(gmsh.model.mesh.getElementQualities(tl, "minSICN"), float)
-            gamma = np.asarray(gmsh.model.mesh.getElementQualities(tl, "gamma"), float)
-            sj = np.asarray(gmsh.model.mesh.getElementQualities(tl, "minSJ"), float)
-            vol = np.asarray(gmsh.model.mesh.getElementQualities(tl, "volume"), float)
-        else:
-            sicn = gamma = sj = vol = np.zeros(0)
 
-        worst: list[WorstElement] = []
-        for i in np.argsort(sicn, kind="stable")[:N_WORST]:
-            _, nodes, _, _ = gmsh.model.mesh.getElement(tl[i])
-            fs = set()
-            for nt in nodes:
-                _, _, dim, tag = gmsh.model.mesh.getNode(int(nt))
-                if dim == 2:
-                    fs.add(int(tag))
-            c = md.points[tets[i]].mean(axis=0)
-            worst.append(WorstElement(tag=int(tags[i]), sicn=float(sicn[i]), gamma=float(gamma[i]),
-                                      centroid=(float(c[0]), float(c[1]), float(c[2])),
-                                      faces=sorted(fs)))
+# --- gates ----------------------------------------------------------------
 
-        geo = result.geometry
-        hz_faces: dict[int, float] = {}
-        if geo is not None:
-            for h in geo.hazards:
-                if h.kind == "thin_wall" and h.value:
-                    for dim, tag in h.entities:
-                        if dim == 2:
-                            hz_faces[int(tag)] = float(h.value)
-        edge_len = _face_edge_lengths(sorted(hz_faces), tets, node_tag_to_idx, md.points) \
-            if hz_faces else {}
+@dataclass
+class _GateInputs:
+    rep: QualityReport
+    q: "QualitySpec"
+    missing_groups: set[str]  # result groups with no triangles in the mesh
+    thin: dict[int, tuple[float, float | None]]  # face -> (thickness, mean edge length)
+    non_ortho_mean: float
+    skewness_mean: float
 
-    inverted = int(np.sum(sj <= 0)) if n_tets else 0
-    volume_mesh = float(vol.sum())
-    volume_cad = float(sum(v.volume for v in geo.volumes)) if geo else 0.0
-    volume_error = abs(volume_mesh - volume_cad) / volume_cad if volume_cad > 0 else 0.0
 
-    group_area: dict[str, tuple[float, float, float]] = {}
-    pts = md.points
-    for name, gr in result.groups.items():
-        if gr.dim != 2 or geo is None:
-            continue
-        tri = md.tris.get(name, np.zeros((0, 3), int))
-        if len(tri):
-            a = 0.5 * np.linalg.norm(np.cross(pts[tri[:, 1]] - pts[tri[:, 0]],
-                                              pts[tri[:, 2]] - pts[tri[:, 0]]), axis=1).sum()
-        else:
-            a = 0.0
-        cad = 0.0
-        for t in gr.tags:
-            try:
-                cad += geo.face(t).area
-            except KeyError:
-                pass
-        missing = name not in md.tris  # group absent from the mesh: never silently dropped
-        err = 1.0 if missing else (float(abs(a - cad) / cad) if cad > 0 else 0.0)
-        group_area[name] = (float(cad), float(a), err)
+def _inverted_gate(c: _GateInputs) -> Gate:
+    r = c.rep
+    return threshold_gate(
+        "inverted", "No inverted elements", float(r.inverted), 0.0,
+        message_fmt="{n} of {n_tets} tets have non-positive scaled Jacobian (min SJ {sj:.3g})",
+        n=r.inverted, n_tets=r.n_tets, sj=r.sj.min,
+        hint="Inverted elements: lower size.global, try algorithm.mesh3d: 1 (Delaunay) or "
+             "element.optimize: netgen; check the worst elements' faces for CAD defects "
+             "(heal: true).")
 
-    components = _components(tets)
-    expected = _expected_components(geo)
 
-    no_stats = sk_stats = None
-    no_arr = sk_arr = np.zeros(0)
-    if analysis == "cfd":
-        no_arr, sk_arr = tet_non_ortho_skewness(md.points, tets)
-        no_stats, sk_stats = _stats(no_arr), _stats(sk_arr)
+def _sicn_gate(c: _GateInputs) -> Gate:
+    s, faces = c.rep.sicn, c.rep.worst[0].faces if c.rep.worst else []
+    return threshold_gate(
+        "sicn", "Minimum SICN", s.min, c.q.min_sicn, worse="below",
+        message_fmt="min SICN {value:.3f} (threshold {limit}); p01 {p01:.3f}, median {median:.3f}",
+        p01=s.p01, median=s.median,
+        hint=f"Worst elements touch faces {faces}: add a `refine` entry there, lower "
+             "size.global, enable element.optimize: netgen, or relax quality.min_sicn.")
 
-    s_sicn, s_gamma, s_sj = _stats(sicn), _stats(gamma), _stats(sj)
-    gates: list[Gate] = []
 
-    gates.append(_g(
-        "inverted", "No inverted elements", "fail" if inverted > 0 else "pass",
-        float(inverted), 0.0,
-        f"{inverted} of {n_tets} tets have non-positive scaled Jacobian (min SJ {s_sj.min:.3g})",
-        "Inverted elements: lower size.global, try algorithm.mesh3d: 1 (Delaunay) or element.optimize: netgen; "
-        "check the worst elements' faces for CAD defects (heal: true)." if inverted else ""))
+def _gamma_gate(c: _GateInputs) -> Gate:
+    s = c.rep.gamma
+    return threshold_gate(
+        "gamma", "Minimum gamma", s.min, c.q.min_gamma, worse="below", fail_status="warn",
+        message_fmt="min gamma {value:.3f} (threshold {limit}); median {median:.3f}",
+        median=s.median,
+        hint="Low inscribed/circumscribed radius ratio (slivers): lower size.global, set "
+             "element.optimize: netgen, or adjust quality.min_gamma.")
 
-    gates.append(_g(
-        "sicn", "Minimum SICN", "fail" if s_sicn.min < q.min_sicn else "pass",
-        s_sicn.min, float(q.min_sicn),
-        f"min SICN {s_sicn.min:.3f} (threshold {q.min_sicn}); p01 {s_sicn.p01:.3f}, "
-        f"median {s_sicn.median:.3f}",
-        f"Worst elements touch faces {worst[0].faces if worst else []}: add a `refine` entry "
-        "there, lower size.global, enable element.optimize: netgen, or relax quality.min_sicn."
-        if s_sicn.min < q.min_sicn else ""))
 
-    gates.append(_g(
-        "gamma", "Minimum gamma", "warn" if s_gamma.min < q.min_gamma else "pass",
-        s_gamma.min, float(q.min_gamma),
-        f"min gamma {s_gamma.min:.3f} (threshold {q.min_gamma}); median {s_gamma.median:.3f}",
-        "Low inscribed/circumscribed radius ratio (slivers): lower size.global, set "
-        "element.optimize: netgen, or adjust quality.min_gamma." if s_gamma.min < q.min_gamma else ""))
+def _volume_gate(c: _GateInputs) -> Gate:
+    r, limit = c.rep, c.q.max_volume_error
+    if r.volume_cad <= 0:
+        return skipped("volume_fidelity", "Volume fidelity",
+                       "no CAD volume available (geometry missing or zero volume)",
+                       threshold=float(limit))
+    return threshold_gate(
+        "volume_fidelity", "Volume fidelity", r.volume_error, limit,
+        message_fmt="mesh volume {mesh:.6g} vs CAD {cad:.6g}: relative error {value:.3g} "
+                    "(threshold {limit})", mesh=r.volume_mesh, cad=r.volume_cad,
+        hint="Geometry is poorly resolved (curved boundaries): raise size.curvature, lower "
+             "size.global, use element.order: 2, or relax quality.max_volume_error.")
 
-    ve_bad = volume_error > q.max_volume_error
-    if volume_cad <= 0:
-        gates.append(_g("volume_fidelity", "Volume fidelity", "skip", None,
-                        float(q.max_volume_error),
-                        "no CAD volume available (geometry missing or zero volume)", ""))
-    else:
-        gates.append(_g(
-            "volume_fidelity", "Volume fidelity", "fail" if ve_bad else "pass",
-            volume_error, float(q.max_volume_error),
-            f"mesh volume {volume_mesh:.6g} vs CAD {volume_cad:.6g}: relative error "
-            f"{volume_error:.3g} (threshold {q.max_volume_error})",
-            "Geometry is poorly resolved (curved boundaries): raise size.curvature, lower "
-            "size.global, use element.order: 2, or relax quality.max_volume_error."
-            if ve_bad else ""))
 
-    if not group_area:
-        gates.append(_g("area_fidelity", "Group area fidelity", "skip", None,
-                        float(q.max_area_error), "no surface groups to compare", ""))
-    else:
-        wn, (wc, wm, we) = max(group_area.items(), key=lambda kv: kv[1][2])
-        bad = we > q.max_area_error
-        gates.append(_g(
-            "area_fidelity", "Group area fidelity", "fail" if bad else "pass", we,
-            float(q.max_area_error),
-            f"worst group '{wn}'{' (missing from mesh)' if wn not in md.tris else ''}: mesh area {wm:.6g} vs CAD {wc:.6g}, relative error {we:.3g} "
-            f"(threshold {q.max_area_error})",
-            f"Group '{wn}' is poorly resolved: add a `refine` entry for it, raise size.curvature, "
-            "lower size.global, or relax quality.max_area_error." if bad else ""))
+def _area_gate(c: _GateInputs) -> Gate:
+    limit = c.q.max_area_error
+    if not c.rep.group_area:
+        return skipped("area_fidelity", "Group area fidelity", "no surface groups to compare",
+                       threshold=float(limit))
+    name, (cad, mesh, err) = max(c.rep.group_area.items(), key=lambda kv: kv[1][2])
+    return threshold_gate(
+        "area_fidelity", "Group area fidelity", err, limit,
+        message_fmt="worst group '{group}'{missing}: mesh area {mesh:.6g} vs CAD {cad:.6g}, "
+                    "relative error {value:.3g} (threshold {limit})",
+        group=name, mesh=mesh, cad=cad,
+        missing=" (missing from mesh)" if name in c.missing_groups else "",
+        hint=f"Group '{name}' is poorly resolved: add a `refine` entry for it, raise "
+             "size.curvature, lower size.global, or relax quality.max_area_error.")
 
-    gates.append(_g(
-        "connectivity", "Mesh connectivity",
-        "fail" if components != expected else "pass",
-        float(components), float(expected),
-        f"mesh has {components} face-connected component(s), geometry expects {expected}",
-        "Mesh is split (or merged) relative to the CAD: check for tiny gaps or unfused bodies; "
-        "set heal: true or lower size.global / size.min so thin necks are resolved."
-        if components != expected else ""))
 
-    if not hz_faces:
-        gates.append(_g("thin_walls", "Thin-wall resolution", "skip", None,
-                        float(q.thin_wall_min_elements), "no thin-wall hazards in geometry", ""))
-    else:
-        bad_f, unmeasured, worst_ratio = [], [], None
-        for ft, th in sorted(hz_faces.items()):
-            el = edge_len.get(ft)
-            if el is None:
-                unmeasured.append(ft)
-                continue
-            ratio = th / el  # elements across the wall (approx.)
-            worst_ratio = ratio if worst_ratio is None else min(worst_ratio, ratio)
-            if el > th / q.thin_wall_min_elements:
-                bad_f.append((ft, th, el))
-        if bad_f:
-            lst = ", ".join(f"face {f} (t={t:.3g}, mean edge {e:.3g})" for f, t, e in bad_f)
-            gates.append(_g(
-                "thin_walls", "Thin-wall resolution", "warn", worst_ratio,
-                float(q.thin_wall_min_elements),
-                f"fewer than {q.thin_wall_min_elements} elements across thickness on: {lst}",
-                "Raise size.thin_wall_layers, add a `refine` entry with size <= thickness/"
-                f"{q.thin_wall_min_elements} on those faces, or use element.order: 2."))
-        elif worst_ratio is None:
-            gates.append(_g("thin_walls", "Thin-wall resolution", "skip", None,
-                            float(q.thin_wall_min_elements),
-                            f"no surface triangles found on thin-wall faces {unmeasured}", ""))
-        else:
-            msg = (f"min thickness/edge ratio {worst_ratio:.2f} "
-                   f"(need >= {q.thin_wall_min_elements})")
-            if unmeasured:
-                msg += f"; unmeasured faces {unmeasured}"
-            gates.append(_g("thin_walls", "Thin-wall resolution", "pass", worst_ratio,
-                            float(q.thin_wall_min_elements), msg, ""))
+def _connectivity_gate(c: _GateInputs) -> Gate:
+    have, want = c.rep.components, c.rep.expected_components
+    args = ("connectivity", "Mesh connectivity",
+            f"mesh has {have} face-connected component(s), geometry expects {want}",
+            float(have), float(want))
+    if have == want:
+        return passed(*args)
+    return failed(*args, hint="Mesh is split (or merged) relative to the CAD: check for tiny gaps "
+                  "or unfused bodies; set heal: true or lower size.global / size.min so thin "
+                  "necks are resolved.")
 
-    if analysis == "cfd":
-        mx = no_stats.max if no_stats else 0.0
-        st = "fail" if mx > q.max_non_ortho else ("warn" if mx > NON_ORTHO_WARN else "pass")
-        gates.append(_g(
-            "non_ortho", "Non-orthogonality", st, mx, float(q.max_non_ortho),
-            f"max non-orthogonality {mx:.1f} deg (fail > {q.max_non_ortho}, warn > "
-            f"{NON_ORTHO_WARN}); mean {float(no_arr.mean()) if no_arr.size else 0.0:.1f}",
-            "Reduce non-orthogonality: lower size.global, add `refine` near the offending region, "
-            "use algorithm.mesh3d: 1 / element.optimize: netgen, or adjust quality.max_non_ortho."
-            if st != "pass" else ""))
-        sx = sk_stats.max if sk_stats else 0.0
-        bad = sx > q.max_skewness
-        gates.append(_g(
-            "skewness", "Skewness", "fail" if bad else "pass", sx, float(q.max_skewness),
-            f"max skewness {sx:.2f} (threshold {q.max_skewness}); mean "
-            f"{float(sk_arr.mean()) if sk_arr.size else 0.0:.2f}",
-            "Reduce skewness: lower size.global, add `refine`, use element.optimize: netgen, or adjust "
-            "quality.max_skewness." if bad else ""))
 
-    return QualityReport(
-        n_nodes=len(md.points), n_tets=n_tets, sicn=s_sicn, gamma=s_gamma, sj=s_sj,
-        inverted=inverted, worst=worst, volume_cad=volume_cad, volume_mesh=volume_mesh,
-        volume_error=float(volume_error), group_area=group_area, components=components,
-        expected_components=expected, non_ortho=no_stats, skewness=sk_stats,
-        sicn_per_tet=sicn, gates=gates)
+def _thin_wall_ratio(thin: dict[int, tuple[float, float | None]],
+                     n: int) -> tuple[float | None, list[tuple[int, float, float]], list[int]]:
+    """(min thickness/edge ratio over measured faces or None, faces with fewer than ``n``
+    elements across as (face, thickness, edge), unmeasured faces)."""
+    measured = {f: (t, e) for f, (t, e) in thin.items() if e is not None}
+    unmeasured = [f for f, (_, e) in thin.items() if e is None]
+    ratio = min((t / e for t, e in measured.values()), default=None)  # elements across wall
+    under = [(f, t, e) for f, (t, e) in measured.items() if e > t / n]
+    return ratio, under, unmeasured
+
+
+def _thin_wall_gate(c: _GateInputs) -> Gate:
+    n, name = c.q.thin_wall_min_elements, "Thin-wall resolution"
+    if not c.thin:
+        return skipped("thin_walls", name, "no thin-wall hazards in geometry", threshold=float(n))
+    ratio, under, unmeasured = _thin_wall_ratio(c.thin, n)
+    if ratio is None:
+        return skipped("thin_walls", name,
+                       f"no surface triangles found on thin-wall faces {unmeasured}",
+                       threshold=float(n))
+    if under:
+        faces = ", ".join(f"face {f} (t={t:.3g}, mean edge {e:.3g})" for f, t, e in under)
+        return warned("thin_walls", name, f"fewer than {n} elements across thickness on: {faces}",
+                      ratio, float(n), "Raise size.thin_wall_layers, add a `refine` entry with "
+                      f"size <= thickness/{n} on those faces, or use element.order: 2.")
+    msg = f"min thickness/edge ratio {ratio:.2f} (need >= {n})"
+    msg += f"; unmeasured faces {unmeasured}" if unmeasured else ""
+    return passed("thin_walls", name, msg, ratio, float(n))
+
+
+def _non_ortho_gate(c: _GateInputs) -> Gate:
+    mx, limit = c.rep.non_ortho.max if c.rep.non_ortho else 0.0, c.q.max_non_ortho
+    make = failed if mx > limit else (warned if mx > NON_ORTHO_WARN else passed)
+    return make(
+        "non_ortho", "Non-orthogonality",
+        f"max non-orthogonality {mx:.1f} deg (fail > {limit}, warn > {NON_ORTHO_WARN}); "
+        f"mean {c.non_ortho_mean:.1f}", mx, float(limit),
+        "" if make is passed else "Reduce non-orthogonality: lower size.global, add `refine` "
+        "near the offending region, use algorithm.mesh3d: 1 / element.optimize: netgen, or "
+        "adjust quality.max_non_ortho.")
+
+
+def _skewness_gate(c: _GateInputs) -> Gate:
+    mx = c.rep.skewness.max if c.rep.skewness else 0.0
+    return threshold_gate(
+        "skewness", "Skewness", mx, c.q.max_skewness,
+        message_fmt="max skewness {value:.2f} (threshold {limit}); mean {mean:.2f}",
+        mean=c.skewness_mean,
+        hint="Reduce skewness: lower size.global, add `refine`, use element.optimize: netgen, "
+             "or adjust quality.max_skewness.")
+
+
+_GATES = (_inverted_gate, _sicn_gate, _gamma_gate, _volume_gate, _area_gate,
+          _connectivity_gate, _thin_wall_gate)
+_CFD_GATES = (_non_ortho_gate, _skewness_gate)

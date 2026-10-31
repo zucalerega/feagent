@@ -334,8 +334,10 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--problems", default=",".join(config.TRAIN), help="train problems (reflected on)")
-    ap.add_argument("--holdout", default=",".join(config.HOLDOUT), help="held-out problems (evaluated only)")
+    ap.add_argument("--suite", choices=sorted(config.SUITES), default="fea",
+                    help="default train / held-out problems: fea (elasticity) or cfd (laminar flow, OpenFOAM)")
+    ap.add_argument("--problems", default=None, help="train problems (reflected on); default: the suite's")
+    ap.add_argument("--holdout", default=None, help="held-out problems (evaluated only); default: the suite's")
     ap.add_argument("--runs-per-problem", type=int, default=config.RUNS_PER_PROBLEM)
     ap.add_argument("--generations", type=int, default=config.GENERATIONS)
     ap.add_argument("--budget-usd", type=float, default=config.BUDGET_USD)
@@ -367,10 +369,12 @@ def main(argv=None) -> int:
     config.TEACHER_MODE = args.teacher
     peers = args.split if args.peers is None else args.peers
 
-    train = [p for p in args.problems.split(",") if p]
-    holdout = [p for p in args.holdout.split(",") if p]
+    suite_train, suite_holdout = config.SUITES[args.suite]
+    train = [p for p in (args.problems if args.problems is not None else ",".join(suite_train)).split(",") if p]
+    holdout = [p for p in (args.holdout if args.holdout is not None else ",".join(suite_holdout)).split(",") if p]
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
+    (out / "run_config.json").write_text(json.dumps({"suite": args.suite, "train": train, "holdout": holdout}, indent=1))
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()

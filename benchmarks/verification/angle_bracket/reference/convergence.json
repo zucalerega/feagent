@@ -1,0 +1,249 @@
+{
+ "case": "verification/angle_bracket",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 12.0,
+   "n_nodes": 5336,
+   "n_dof": 16008,
+   "solver_cpu_s": 0.820754,
+   "solver_wall_s": 0.6089849089994459,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "pin_disp_y": {
+     "value": -0.35391279741774484,
+     "error": 0.0137590691109225,
+     "passed": false,
+     "failure": null
+    },
+    "fillet_mises_max": {
+     "value": 122.59829060490964,
+     "error": 0.09562713562050958,
+     "passed": false,
+     "failure": null
+    },
+    "reaction_y": {
+     "value": 2999.9964999999993,
+     "error": 1.166666666904348e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 0.7124489224907284,
+   "all_within_tolerance": false
+  },
+  {
+   "level": 2,
+   "h": 8.0,
+   "n_nodes": 13661,
+   "n_dof": 40983,
+   "solver_cpu_s": 3.540773,
+   "solver_wall_s": 2.459929595000176,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "pin_disp_y": {
+     "value": -0.355872708928644,
+     "error": 0.008297427240177119,
+     "passed": true,
+     "failure": null
+    },
+    "fillet_mises_max": {
+     "value": 130.82257318572894,
+     "error": 0.03495893251275723,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_y": {
+     "value": 3000.0032499999998,
+     "error": 1.0833333332508725e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 5.5,
+   "n_nodes": 35320,
+   "n_dof": 105960,
+   "solver_cpu_s": 20.836258,
+   "solver_wall_s": 13.378101541000433,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "pin_disp_y": {
+     "value": -0.35716503627173785,
+     "error": 0.004696127340411469,
+     "passed": true,
+     "failure": null
+    },
+    "fillet_mises_max": {
+     "value": 132.3690074814845,
+     "error": 0.023551324733508832,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_y": {
+     "value": 2999.9951140000007,
+     "error": 1.6286666664200311e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 4.0,
+   "n_nodes": 83199,
+   "n_dof": 249597,
+   "solver_cpu_s": 97.53188399999999,
+   "solver_wall_s": 60.33908015900033,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "pin_disp_y": {
+     "value": -0.35817596795322343,
+     "error": 0.0018789864800408398,
+     "passed": true,
+     "failure": null
+    },
+    "fillet_mises_max": {
+     "value": 135.21560986760764,
+     "error": 0.002552745218366785,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_y": {
+     "value": 2999.9952663,
+     "error": 1.5779000000293308e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 3.0,
+   "n_nodes": 187910,
+   "n_dof": 563730,
+   "solver_cpu_s": 475.483965,
+   "solver_wall_s": 275.9668029449995,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "pin_disp_y": {
+     "value": -0.3585680480373838,
+     "error": 0.0007863856190186962,
+     "passed": true,
+     "failure": null
+    },
+    "fillet_mises_max": {
+     "value": 135.56166425783567,
+     "error": 0.0,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_y": {
+     "value": 2999.9969109999993,
+     "error": 1.0296666669091792e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "pin_disp_y": {
+   "q_fine": -0.3585680480373838,
+   "monotone": true,
+   "value": -0.35885024270763044,
+   "order": 3.207355364017662,
+   "uncertainty": 0.00035274333780833207,
+   "method": "richardson"
+  },
+  "fillet_mises_max": {
+   "q_fine": 135.56166425783567,
+   "monotone": true,
+   "value": 135.56166425783567,
+   "order": null,
+   "uncertainty": 1.439047146499195,
+   "method": "finest value (implausible order 7.32); GCI Fs=3"
+  },
+  "reaction_y": {
+   "q_fine": 2999.9969109999993,
+   "monotone": true,
+   "value": 2999.9969109999993,
+   "order": null,
+   "uncertainty": 0.006839389725318267,
+   "method": "finest value (no observed order); GCI Fs=3"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   16008,
+   40983,
+   105960,
+   249597,
+   563730
+  ],
+  "accuracy": [
+   0.7124,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   false,
+   true,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.82,
+   3.54,
+   20.84,
+   97.53,
+   475.48
+  ]
+ }
+}

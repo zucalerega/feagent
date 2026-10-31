@@ -32,31 +32,42 @@ CALIBRATION_PATH = Path(__file__).with_name("calibration.json")
 # --------------------------------------------------------------------------- calibration
 
 
-def reference_setup(problem) -> dict:
-    """The problem's own (correct) setup, in the same shape the agent submits."""
-    rc = problem.case("REF.msh").to_dict()
+def reference_setup(problem, order: int = 2) -> dict:
+    """The problem's own (correct) setup, in the same shape the agent submits. For flow, `order`
+    picks the convection scheme (1 upwind, 2 linearUpwind), the one setup choice that is ours."""
+    rc = problem.case("REF.msh", order=order).to_dict()
+    bcs = [{k: v for k, v in bc.items() if v is not None} for bc in rc["bcs"]]
+    if fea.is_flow(problem):
+        mat = next(iter(rc["materials"].values()))
+        conv = next(k for k, v in fea.CONVECTION.items() if v == rc["analysis"]["order"])
+        return {"formulation": rc["analysis"]["formulation"], "thickness": rc["analysis"]["thickness"],
+                "fluid": {"rho": mat["rho"], "mu": mat["mu"]}, "convection": conv, "bcs": bcs}
     return {
         "formulation": rc["analysis"]["formulation"],
         "thickness": rc["analysis"]["thickness"],
         "material": next(iter(rc["materials"].values())),
-        "bcs": [{k: v for k, v in bc.items() if v is not None} for bc in rc["bcs"]],
+        "bcs": bcs,
         "loads": rc["loads"],
         "T_ref": rc["analysis"]["T_ref"],
     }
 
 
 def _uniform_error(problem, qoi, h, order, workdir) -> tuple[int, float]:
+    """Nodes and error of a uniform mesh of size h. Elasticity: `order` is the element order;
+    flow: the mesh is linear and `order` is the convection scheme."""
     mesh = fea.make_mesh(problem, Path(workdir) / "uniform.msh", h=h, order=order)
-    sol = fea.run_solve(problem, mesh, reference_setup(problem), qoi)
+    sol = fea.run_solve(problem, mesh, reference_setup(problem, order), qoi)
+    if not sol["ok"]:
+        raise RuntimeError(f"calibration solve failed for {problem.id} at h = {h:.4g}: {sol['error']}")
     ref = fea.reference_value(problem, qoi)
     return mesh["nodes"], abs(sol["value"] - ref) / abs(ref)
 
 
 def _calibrate_order(problem, qoi, cap, order, tmp) -> dict:
-    lo, hi = problem.params["h0"] / 20, problem.params["h0"] * 20   # bisection on h
+    lo, hi = problem.params["h0"] / 20, problem.params["h0"] * 20   # bisection on h: meshing only
     for _ in range(25):
         h = math.sqrt(lo * hi)
-        n, _ = _uniform_error(problem, qoi, h, order, tmp)
+        n = fea.make_mesh(problem, Path(tmp) / "uniform.msh", h=h, order=order)["nodes"]
         lo, hi = (h, hi) if n > cap else (lo, h)
     nodes, errs = [], []
     for f in (1.0, 1.05, 1.1, 1.15, 1.2):
@@ -73,7 +84,8 @@ def calibrate(problem_id: str) -> dict:
     For each element order, find the uniform size that just fits the cap. Point and peak errors
     on coarse meshes jump around with node placement, so average (geometric mean) over five
     slightly coarser sizes that all fit. The baseline is the better of the two orders, so an
-    agent gets no credit for merely choosing quadratic elements.
+    agent gets no credit for merely choosing quadratic elements (flow: the second-order
+    convection scheme).
     """
     task = TASKS[problem_id]
     problem = fea.get_problem(problem_id)
@@ -138,7 +150,9 @@ def bc_report(problem, setup: dict) -> dict:
             flipped = False
         if flipped:
             sign_flips.append(f"{k[1]} on {k[0]}: reversed relative to the reference")
-    mat, ref_mat = setup.get("material") or {}, ref["material"]
+    key = "fluid" if fea.is_flow(problem) else "material"
+    props = ("rho", "mu") if key == "fluid" else ("E", "nu", "alpha")
+    mat, ref_mat = setup.get(key) or {}, ref[key]
     return {
         "missing": [f"{t} on {g}" for g, t in ref_bcs.keys() - got_bcs.keys()],
         "unexpected": [f"{t} on {g}" for g, t in got_bcs.keys() - ref_bcs.keys()],
@@ -146,7 +160,7 @@ def bc_report(problem, setup: dict) -> dict:
         "formulation_ok": setup.get("formulation") == ref["formulation"],
         "thickness_ok": math.isclose(float(setup.get("thickness", 1.0)), ref["thickness"], rel_tol=1e-6),
         "material_ok": all(math.isclose(float(mat.get(k, 0)), ref_mat[k], rel_tol=1e-3, abs_tol=1e-12)
-                           for k in ("E", "nu", "alpha")),
+                           for k in props),
     }
 
 
