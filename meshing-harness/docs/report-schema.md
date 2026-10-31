@@ -80,8 +80,8 @@ as an NSET and ELSET in `.inp`. The solver finds the `bcs` groups by these names
 | `sicn`, `gamma`, `sj` | Stats `{min, p01, p05, median, max, bins (11 edges), hist (10 counts)}` per tet. |
 | `inverted` | Tets with scaled Jacobian ≤ 0. |
 | `worst` | The 10 lowest-SICN tets: `{tag, sicn, gamma, centroid, faces}`, where `faces` are the CAD faces each tet touches. |
-| `volume_cad`, `volume_mesh`, `volume_error` | Volume fidelity (relative error). |
-| `group_area` | name → `[cad_area, mesh_area, relative_error]`. |
+| `volume_cad`, `volume_mesh`, `volume_error` | Volume fidelity (relative error). The mesh volume is integrated by Gauss quadrature of the element Jacobian, so curved order-2 tets are measured exactly (not as straight-sided tets). |
+| `group_area` | name → `[cad_area, mesh_area, relative_error]`. Mesh areas are integrated the same way. |
 | `components`, `expected_components` | Connectivity. |
 | `non_ortho`, `skewness` | Stats (cfd), else `null`. |
 

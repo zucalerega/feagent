@@ -229,3 +229,47 @@ def test_thin_wall_fallback_matches_surface_triangles(tmp_path):
         gmsh.open(str(p))
         got = _face_edge_lengths(sorted(ref), md.tets, md.points)
     assert got == pytest.approx(ref)
+
+
+@pytest.fixture
+def cylinder_order2(tmp_path):
+    """Coarse quadratic r=5, h=10 cylinder: straight-sided tets would miss ~2 % of the volume."""
+    p = tmp_path / "cyl2.msh"
+    with gmsh_session():
+        gmsh.model.occ.addCylinder(0, 0, 0, 0, 0, 10, 5)
+        gmsh.model.occ.synchronize()
+        gmsh.model.addPhysicalGroup(2, [1, 2, 3], name="skin")
+        gmsh.model.addPhysicalGroup(3, [1], name="domain")
+        gmsh.option.setNumber("Mesh.MeshSizeMax", 3)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.write(str(p))
+    return p
+
+
+def _cyl_result(p):
+    area = 2 * np.pi * 5 * 10 + 2 * np.pi * 25
+    faces = [_face(1, 2 * np.pi * 5 * 10, [1]), _face(2, np.pi * 25, [1]), _face(3, np.pi * 25, [1])]
+    r = _result(p, [_vol(1, np.pi * 25 * 10)], faces,
+                {"skin": GroupResult("skin", 2, [1, 2, 3], 0, area)})
+    r.order = 2
+    return r
+
+
+def test_order2_volume_and_area_are_integrated(cylinder_order2):
+    rep = assess_mesh(cylinder_order2, _cyl_result(cylinder_order2), Q, "fea")
+    assert rep.volume_error < 1e-4, rep.volume_error
+    assert rep.group_area["skin"][2] < 1e-4, rep.group_area
+
+
+def test_hints_skip_settings_already_active(cylinder_order2):
+    q = SimpleNamespace(**{**vars(Q), "min_sicn": 2.0, "min_gamma": 2.0, "max_volume_error": 0.0})
+    gates = {g.id: g for g in assess_mesh(cylinder_order2, _cyl_result(cylinder_order2), q, "fea",
+                                          optimize="netgen").gates}
+    assert gates["volume_fidelity"].status == "fail" and "element.order" not in gates[
+        "volume_fidelity"].hint
+    assert "netgen" not in gates["sicn"].hint + gates["gamma"].hint
+    assert "near: [" in gates["sicn"].hint and "within:" in gates["sicn"].hint
+    linear = assess_mesh(cylinder_order2, _cyl_result(cylinder_order2), q, "fea", optimize="none")
+    hints = {g.id: g.hint for g in linear.gates}
+    assert "element.optimize: netgen" in hints["sicn"] and "element.optimize: netgen" in hints["gamma"]

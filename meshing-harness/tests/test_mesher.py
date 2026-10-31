@@ -252,6 +252,16 @@ def test_auto_spec_rejects_unknown_analysis(parts_dir):
         auto_spec(parts_dir / "bracket.step", "thermal")
 
 
+AUTO_EXPECTED_FAILS = {"sliver": {"sicn"}}  # a 0.05 mm sliver face forces flat tets at zero config
+
+
+def _failing_gates(res, analysis):
+    from feagent.quality import assess_mesh
+    from feagent.spec import QualitySpec
+    return {g.id for g in assess_mesh(res.mesh_path, res, QualitySpec(), analysis).gates
+            if g.status == "fail"}
+
+
 @pytest.mark.parametrize("name", PARTS)
 def test_auto_mesh_every_part(tmp_path, parts_dir, name):
     analysis = "cfd" if name == "tee" else "fea"
@@ -259,6 +269,18 @@ def test_auto_mesh_every_part(tmp_path, parts_dir, name):
     assert res.ok, res.errors
     assert res.n_elements > 0 and res.order == (1 if analysis == "cfd" else 2)
     assert (tmp_path / name / "mesh.yaml").is_file()
+    assert _failing_gates(res, analysis) == AUTO_EXPECTED_FAILS.get(name, set())
+
+
+def test_tee_fea_automesh_passes(tmp_path, parts_dir):
+    """Order-2 tets are curved: their volume is integrated (det J), not taken from the corners."""
+    from feagent.quality import assess_mesh
+    from feagent.spec import QualitySpec
+    res = auto_mesh(parts_dir / "tee.step", "fea", out_dir=tmp_path)
+    assert res.ok and res.order == 2, res.errors
+    q = assess_mesh(res.mesh_path, res, QualitySpec(), "fea")
+    assert all(g.status != "fail" for g in q.gates), [(g.id, g.message) for g in q.gates]
+    assert q.volume_error < 1e-3
 
 
 def test_auto_spec_roundtrips_through_load_spec(tmp_path, parts_dir):

@@ -92,6 +92,20 @@ def element_qualities(tags: Iterable[int], measures: Iterable[str]) -> dict[str,
     return {m: np.asarray(get(tl, m), float) if tl else np.zeros(0) for m in measures}
 
 
+def integrated_measure(dim: int, tag: int = -1, rule: str = "Gauss4") -> float:
+    """Length / area / volume of the mesh elements of dimension ``dim`` on entity ``tag`` (all if -1)
+    by Gauss quadrature of the Jacobian determinant: exact for curved (order-2) elements, where
+    corner-node formulas measure the straight-sided element instead."""
+    import gmsh
+
+    total = 0.0
+    for etype in gmsh.model.mesh.getElementTypes(dim, tag):
+        pts, w = gmsh.model.mesh.getIntegrationPoints(etype, rule)
+        _, det, _ = gmsh.model.mesh.getJacobians(etype, pts, tag)
+        total += float((np.asarray(det).reshape(-1, len(w)) @ np.asarray(w)).sum())
+    return total
+
+
 @contextmanager
 def pinned_options(opts: dict[str, float]) -> Iterator[None]:
     """Set numeric gmsh options for the block; the previous values are restored afterwards."""

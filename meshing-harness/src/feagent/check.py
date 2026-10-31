@@ -95,7 +95,7 @@ def _assess(mesh: MeshResult, spec: MeshSpec) -> QualityReport | None:
         return None
     from .quality import assess_mesh
 
-    return assess_mesh(mesh.mesh_path, mesh, spec.quality, spec.analysis)
+    return assess_mesh(mesh.mesh_path, mesh, spec.quality, spec.analysis, spec.optimize)
 
 
 def _renders(mesh: MeshResult, qrep: QualityReport, out: Path) -> list[RenderResult]:
