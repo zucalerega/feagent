@@ -466,6 +466,13 @@ def _symmetry_axis(md: _Model, F, group, i_bc) -> int:
 
 
 def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
+    S, _ = qp_stress_elasticity(md, u)
+    return _project(md, S, solver_opts)
+
+
+def qp_stress_elasticity(md: _Model, u: np.ndarray) -> tuple[dict, np.ndarray]:
+    """Raw (unrecovered) stresses at the quadrature points, {component: (nel, nqp)}, and the strain
+    tensor e (dim, dim, nel, nqp). Also used by ``feacore.diagnostics`` (error estimation)."""
     Uk = [md.sb.interpolate(u[md.split[k]]) for k in range(md.dim)]
     G = np.stack([np.asarray(U.grad) for U in Uk])  # G[i, j] = d u_i / d x_j, (dim, dim, nel, nqp)
     lam, mu = _qp(md.sb, md.lam), _qp(md.sb, md.mu)
@@ -494,7 +501,7 @@ def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
         S["sxy"] = 2 * mu * e[0, 1]
         if md.form == "plane_strain":
             S["szz"] = _qp(md.sb, md.lam3) * tr - sth
-    return _project(md, S, solver_opts)
+    return S, e
 
 
 def _project(md: _Model, S: dict, solver_opts: dict) -> dict:
