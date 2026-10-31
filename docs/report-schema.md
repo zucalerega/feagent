@@ -100,6 +100,22 @@ group's face count.
 Units are mm, N and MPa. `force` is the total force on the group in N. For cfd, faces in no group
 go to `default_group`, which is `walls` by default.
 
+Optional fea keys. Each appears only when the spec declares it, so existing reports keep their shape:
+
+```json
+{"fea": {"fixed": [], "loads": [], "E": 210000.0, "nu": 0.3,
+         "symmetry": ["sym_x", "sym_y"],
+         "pressure": [{"group": "top", "value": 1.0}],
+         "displacement": [{"group": "outer", "components": [0, 1], "value": 0.0, "where": null},
+                          {"group": "outer", "components": [2], "value": 0.0, "where": "abs(z) < 1e-6"}]}}
+```
+
+- `symmetry`: zero normal displacement on planar faces.
+- `pressure`: traction = -value × outward normal, in MPa. A positive value pushes into the part.
+- `displacement`: prescribed components (0 = x, 1 = y, 2 = z) in mm. `where` is an optional node
+  filter in x, y, z, using the solver's expression syntax; it gives e.g. a line support on a face
+  without an edge group.
+
 ## Render (`renders[]`)
 
 `{path, caption}`. `groups.png` shows the surface groups over a translucent shell.
