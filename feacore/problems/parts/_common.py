@@ -41,11 +41,6 @@ def fmt_mm(x_m: float) -> str:
     return f"{s} mm"
 
 
-def fmt_si(x: float, unit: str, scale: float = 1.0, digits: int = 4) -> str:
-    v = x / scale
-    return f"{v:.{digits}g} {unit}"
-
-
 # --------------------------------------------------------------------------- handbook fits
 
 
@@ -102,13 +97,6 @@ def lame_hoop_stress(p: float, ri: float, ro: float, r: float) -> float:
 
 
 # --------------------------------------------------------------------------- gmsh helpers
-
-TOL = 1e-7
-
-
-def faces_of_type(kind: str, dim: int = 2) -> list[int]:
-    return [t for _, t in gmsh.model.getEntities(dim) if gmsh.model.getType(dim, t) == kind]
-
 
 def com(dim: int, tag: int) -> tuple[float, float, float]:
     return gmsh.model.occ.getCenterOfMass(dim, tag)
@@ -172,15 +160,9 @@ class PartProblem(Problem):
             gmsh.write(str(path))
         return path
 
-    # convenience
-    @property
-    def p(self) -> dict:
-        return self.params
-
 
 __all__ = [
-    "AL6061", "MM", "PartProblem", "STEEL", "TOL", "add_group", "bbox", "com",
-    "entities_on_plane", "faces_of_type", "finish_sizing", "fmt_mm", "fmt_si",
-    "kt_opposite_u_notches_tension", "kt_shoulder_fillet_round_bar_tension", "lame_hoop_stress",
-    "material", "threshold",
+    "AL6061", "MM", "PartProblem", "STEEL", "add_group", "bbox", "com", "entities_on_plane",
+    "finish_sizing", "fmt_mm", "kt_opposite_u_notches_tension", "kt_shoulder_fillet_round_bar_tension",
+    "lame_hoop_stress", "material", "threshold",
 ]

@@ -1,5 +1,5 @@
 // Solve: upload a case JSON + gmsh mesh, run the fixed solver (or a cross-check backend), see results.
-import { api, h, clear, fmt, fmtInt, fmtTime, loading, errorBox, runStatusChip, timeAgo } from '../api.js';
+import { api, authFetch, withToken, h, clear, fmt, fmtInt, fmtTime, loading, errorBox, runStatusChip, timeAgo } from '../api.js';
 
 export async function render(el) {
   el.append(loading());
@@ -36,7 +36,7 @@ export async function render(el) {
     btn.disabled = true;
     out.append(h('div', { class: 'card' }, h('span', { class: 'spinner' }), ' Solving in a worker process…'));
     try {
-      const res = await fetch('/api/solve', { method: 'POST', body: fd });
+      const res = await authFetch('/api/solve', { method: 'POST', body: fd });
       const body = await res.json();
       clear(out);
       if (res.status === 422 && body.errors) {
@@ -93,8 +93,8 @@ function result(r) {
     (i.warnings || []).length || (r.warnings || []).length ? h('div', { class: 'small secondary', style: { marginTop: '10px' } }, [...(i.warnings || []), ...(r.warnings || [])].join('; ')) : null,
     h('div', { class: 'row', style: { marginTop: '14px' } },
       r.fields ? h('a', { class: 'btn primary', href: `#/viewer/${r.run_id}` }, 'Open in field viewer') : null,
-      h('a', { class: 'btn', href: `/api/runs/${r.run_id}`, target: '_blank' }, 'Run record (JSON)'),
-      h('a', { class: 'btn', href: `/api/runs/${r.run_id}/log`, target: '_blank' }, 'Worker log')));
+      h('a', { class: 'btn', href: withToken(`/api/runs/${r.run_id}`), target: '_blank' }, 'Run record (JSON)'),
+      h('a', { class: 'btn', href: withToken(`/api/runs/${r.run_id}/log`), target: '_blank' }, 'Worker log')));
 }
 
 function curlCard() {

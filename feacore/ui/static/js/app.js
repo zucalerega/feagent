@@ -1,13 +1,15 @@
 // Hash router + header health pill. Pages are ES modules loaded on demand (no build step).
-import { api, h, clear, errorBox } from './api.js';
+import { api, h, clear, errorBox, getToken, setToken } from './api.js';
 
 const ROUTES = {
   benchmarks: () => import('./pages/benchmarks.js'),
   study: () => import('./pages/study.js'),
+  batch: () => import('./pages/batch.js'),
   consensus: () => import('./pages/consensus.js'),
   viewer: () => import('./pages/viewer.js'),
   solve: () => import('./pages/solve.js'),
   health: () => import('./pages/health.js'),
+  connect: () => import('./pages/connect.js'),
 };
 
 let cleanup = null;
@@ -63,6 +65,41 @@ async function health() {
   }
 }
 
+// ?token=... (in the query or the hash) is stored once and removed from the address bar
+function captureToken() {
+  const url = new URL(location.href);
+  let t = url.searchParams.get('token');
+  url.searchParams.delete('token');
+  let hash = url.hash;
+  const i = hash.indexOf('?');
+  if (i >= 0) {
+    const hp = new URLSearchParams(hash.slice(i + 1));
+    if (hp.get('token')) { t = t || hp.get('token'); hp.delete('token'); hash = hash.slice(0, i) + (hp.toString() ? `?${hp}` : ''); }
+  }
+  if (t) {
+    setToken(t);
+    history.replaceState(null, '', url.pathname + url.search + hash);
+  }
+}
+
+let prompted = false;
+window.addEventListener('feacore-unauthorized', () => {
+  if (prompted) return;
+  prompted = true;
+  const input = h('input', { type: 'text', placeholder: 'paste the access token', style: { width: '100%' } });
+  const box = h('div', { style: { position: 'fixed', inset: 0, background: 'rgba(11,11,11,0.35)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+    h('div', { class: 'card stack', style: { width: '480px' } },
+      h('h2', {}, 'Access token required'),
+      h('p', { class: 'secondary' }, getToken() ? 'The stored token was rejected by this server.' : 'This server is shared with a token. Ask the person who shared the link, or open the link that ends in ?token=\u2026'),
+      input,
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', onclick: () => { setToken(input.value.trim()); location.reload(); } }, 'Save and reload'),
+        h('button', { class: 'btn', onclick: () => { box.remove(); } }, 'Close'))));
+  document.body.append(box);
+  input.focus();
+});
+
+captureToken();
 window.addEventListener('hashchange', render);
 if (!location.hash) history.replaceState(null, '', '#/benchmarks');
 render();

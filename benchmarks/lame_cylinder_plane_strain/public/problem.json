@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "lame_cylinder_plane_strain",
+  "title": "Thick-walled cylinder under internal pressure (plane strain, quarter model)",
+  "family": "lame_cylinder",
+  "tags": [
+    "2d",
+    "plane_strain",
+    "analytical",
+    "pressure_vessel",
+    "curved_boundary",
+    "symmetry"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "plane_strain",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "a": 0.1,
+    "b": 0.2,
+    "p": 100000000.0,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "thickness": 1.0,
+    "h0": 0.0125
+  },
+  "description": "Long thick-walled steel cylinder (pipe) under internal pressure, analysed in plane strain (axial strain zero: the ends are restrained axially). By symmetry only the quarter cross-section in the first quadrant is modelled (STEP: a planar face in the xy-plane).\nGeometry: quarter annulus centred on the origin, bore radius a = 0.1 m, outer radius b = 0.2 m, x >= 0 and y >= 0. Edges: straight edge on y = 0 from (a, 0) to (b, 0); outer arc r = b; straight edge on x = 0 from (0, b) to (0, a); bore arc r = a.\nMaterial: linear elastic, E = 2e+11 Pa, nu = 0.3. Out-of-plane thickness 1.0 m (report energies per this thickness).\nLoads: uniform internal pressure p = 1e+08 Pa (100 MPa) on the bore arc. The outer arc is traction free.\nSupports: symmetry on x = 0 (u_x = 0) and on y = 0 (u_y = 0); nothing else.\nReport (SI units):\n  ur_bore      radial displacement at the bore, u_x at (a, 0) [m]\n  hoop_bore    hoop stress at the bore, sigma_yy at (a, 0) [Pa]\n  szz_bore     out-of-plane (axial) stress sigma_zz at (a, 0) [Pa]\n  vm_max       maximum von Mises stress in the section (including sigma_zz) [Pa]\n  strain_energy total strain energy of the modelled quarter, for the given thickness [J]",
+  "qois": [
+    {
+      "name": "ur_bore",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.1,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "hoop_bore",
+      "type": "point",
+      "field": "syy",
+      "point": [
+        0.1,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "szz_bore",
+      "type": "point",
+      "field": "szz",
+      "point": [
+        0.1,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "strain_energy",
+      "type": "strain_energy",
+      "field": null,
+      "point": null,
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

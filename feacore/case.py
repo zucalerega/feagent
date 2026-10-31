@@ -24,7 +24,11 @@ Boundary conditions (``BC.type``)
 ---------------------------------
 ``group`` is normally a facet group (edges in 2D, faces in 3D). Dirichlet types (fixed,
 displacement, temperature) may also use lower-dimensional groups (points in 2D; curves or
-points in 3D), constraining every node on them.
+points in 3D), constraining every node on them. They may also carry ``where``: an expression in
+x, y, z (same syntax as values) that keeps only the group's nodes where it is true (nonzero). For
+example ``{"type": "displacement", "group": "outer", "components": [2], "value": 0,
+"where": "abs(z) < 1e-6"}`` constrains the line where the outer face meets z = 0, so no edge group
+is needed. Selecting no node is an error.
 elasticity:
   fixed         all displacement components = 0 on ``group`` (or the node nearest ``point``)
   displacement  prescribed ``components`` (0=x, 1=y, 2=z) = ``value`` (scalar for all listed
@@ -147,6 +151,7 @@ class BC:
     point: list[float] | None = None    # alternative to group: node nearest to this point
     components: list[int] | None = None
     value: Value | None = None
+    where: str | None = None            # Dirichlet node filter, e.g. "abs(z) < 1e-6"
     h: float | None = None              # convection coefficient
     T_inf: float | None = None          # convection ambient temperature
 
@@ -285,6 +290,14 @@ class Case:
                 errs.append(f"{tag}: give exactly one of group / point")
             if b.point is not None and b.type not in ("fixed", "displacement", "temperature"):
                 errs.append(f"{tag}: point BCs only for fixed / displacement / temperature")
+            if b.where is not None:
+                if b.type not in ("fixed", "displacement", "temperature") or b.group is None:
+                    errs.append(f"{tag}: where only for fixed / displacement / temperature on a group")
+                else:
+                    try:
+                        _compile(b.where)
+                    except (CaseError, SyntaxError) as e:
+                        errs.append(f"{tag}: bad where expression: {e}")
             if b.type == "displacement":
                 if not b.components or any(c not in range(ncomp) for c in b.components):
                     errs.append(f"{tag}: components must be a non-empty subset of {list(range(ncomp))}")

@@ -263,6 +263,19 @@ class _Model:
             return np.unique(sb.dofs.nodal_dofs[:, g.index].ravel())
         raise CaseError(f"unsupported group kind {g.kind}")  # pragma: no cover
 
+    def where_filter(self, S: np.ndarray, bc, i_bc: int) -> np.ndarray:
+        """Keep the nodes S of a Dirichlet BC's group where ``bc.where`` is nonzero (evaluated at the
+        node coordinates; axisymmetric x = r, y = z). Selecting nothing is a CaseError."""
+        if not bc.where:
+            return S
+        v = _eval(bc.where, self.sb.doflocs[:, S])
+        keep = np.isfinite(v) & (v != 0)
+        if not keep.any():
+            raise CaseError(f"bcs[{i_bc}] {bc.type} on group {bc.group!r}: where {bc.where!r} selects none of "
+                            f"the group's {len(S)} nodes (check the expression and tolerance against the "
+                            f"group's coordinates)")
+        return S[keep]
+
     def nearest_sdof(self, point) -> tuple[int, float]:
         p = np.asarray(point, dtype=float)[: self.dim]
         d = np.linalg.norm(self.sb.doflocs - p[:, None], axis=0)
@@ -422,8 +435,9 @@ def _assemble_elasticity(md: _Model):
             else:
                 S = md.sdofs_of(bc.group)
                 gname = bc.group
-            if len(S) == 0:
-                raise CaseError(f"bcs[{i_bc}] {bc.type}: group {bc.group!r} has no nodes")
+                if len(S) == 0:
+                    raise CaseError(f"bcs[{i_bc}] {bc.type}: group {bc.group!r} has no nodes")
+                S = md.where_filter(S, bc, i_bc)
             if bc.type == "fixed":
                 for k in range(dim):
                     cons.add(md.split[k][S], 0.0, gname)
@@ -466,6 +480,13 @@ def _symmetry_axis(md: _Model, F, group, i_bc) -> int:
 
 
 def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
+    S, _ = qp_stress_elasticity(md, u)
+    return _project(md, S, solver_opts)
+
+
+def qp_stress_elasticity(md: _Model, u: np.ndarray) -> tuple[dict, np.ndarray]:
+    """Raw (unrecovered) stresses at the quadrature points, {component: (nel, nqp)}, and the strain
+    tensor e (dim, dim, nel, nqp). Also used by ``feacore.diagnostics`` (error estimation)."""
     Uk = [md.sb.interpolate(u[md.split[k]]) for k in range(md.dim)]
     G = np.stack([np.asarray(U.grad) for U in Uk])  # G[i, j] = d u_i / d x_j, (dim, dim, nel, nqp)
     lam, mu = _qp(md.sb, md.lam), _qp(md.sb, md.mu)
@@ -494,7 +515,7 @@ def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
         S["sxy"] = 2 * mu * e[0, 1]
         if md.form == "plane_strain":
             S["szz"] = _qp(md.sb, md.lam3) * tr - sth
-    return _project(md, S, solver_opts)
+    return S, e
 
 
 def _project(md: _Model, S: dict, solver_opts: dict) -> dict:
@@ -555,6 +576,7 @@ def _assemble_heat(md: _Model):
                 S, gname = np.array([s]), None
             else:
                 S, gname = md.sdofs_of(bc.group), bc.group
+                S = md.where_filter(S, bc, i_bc)
             cons.add(S, _eval(bc.value, md.sb.doflocs[:, S]), gname)
     return K, f, cons
 
@@ -801,9 +823,10 @@ class SkfemResult(Result):
             if md.physics == "heat" and k != 0:
                 raise CaseError("heat reaction (heat flow into the body) has only component 0")
             idx = md.split[k][S]
-            if not np.isin(idx, self.dirichlet_dofs).any():
+            idx = idx[np.isin(idx, self.dirichlet_dofs)]  # constrained DOFs only (e.g. a where-filtered BC)
+            if len(idx) == 0:
                 msg = (f"reaction QoI {qoi.name!r}: group {qoi.group!r} has no Dirichlet constraint on "
-                       f"component {k}, so its reaction is ~0 (did you mean a supported group?)")
+                       f"component {k}, so its reaction is 0 (did you mean a supported group?)")
                 if msg not in self.info.warnings:
                     self.info.warnings.append(msg)
             return float(self.reaction_vector[idx].sum())

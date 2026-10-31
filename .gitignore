@@ -1,6 +1,11 @@
+.venv/
 __pycache__/
-*.egg-info/
+out/
+.feagent/
+examples/**/out/*.msh
 .pytest_cache/
+# feacore
+*.egg-info/
 /work/
 *.msh
 !benchmarks/**/*.msh
@@ -10,3 +15,10 @@ __pycache__/
 *.cvg
 *.12d
 spooles.out
+.venv/
+runs/
+models/*
+!models/.gitignore
+.feacore_python
+.feacore_token
+.feacore_autoupdate_deferrals

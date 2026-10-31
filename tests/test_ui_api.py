@@ -35,7 +35,7 @@ def runs_dir(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def client(runs_dir):
-    app = create_app(runs_dir=runs_dir)
+    app = create_app(runs_dir=runs_dir, token="")  # no auth, whatever FEACORE_UI_TOKEN says
     with TestClient(app) as c:
         yield c
 
@@ -145,6 +145,11 @@ def test_interpretation_flags():
     it3 = interpret_entry(e3)
     assert it3["verdict"] == "plateau" and "divergent" not in it3["flags"]
     assert analyze_submission(None, [{"h": 0.1, "qois": {"u": 1.0}}])["qois"][0]["interpretation"]["verdict"] == "insufficient"
+    # point-stress scatter (< 2 %, no trend) on unstructured meshes is not a singularity
+    e6 = {"name": "s", "type": "point", "field": "syy", "values": [-5.380, -5.430, -5.395], "p_theory": 2.0,
+          "gci": {"convergence": "oscillatory_divergent", "flags": ["divergent"], "p": None, "phi_ext": None, "gci_fine": None}}
+    it6 = interpret_entry(e6)
+    assert it6["verdict"] == "scatter" and "singular_suspected" not in it6["flags"] and it6["status"] == "warning"
     # gci3's noise floor ("converged") is a good state
     e4 = {"name": "u", "type": "point", "field": "ux", "values": [1.0, 1.0 + 1e-8, 1.0], "p_theory": 3.0,
           "gci": {"convergence": "converged", "flags": ["converged_within_noise"], "p": None, "phi_ext": 1.0,
@@ -176,13 +181,18 @@ def test_boundary_triangulation_tet4():
 # --------------------------------------------------------------------------- HTTP: static, health, problems
 
 
-def test_frontend_served(client):
+def test_frontend_served(client, tmp_path, monkeypatch):
     r = client.get("/")
-    assert r.status_code == 200 and "__IMPORTMAP__" not in r.text and '"three"' in r.text
+    assert r.status_code == 200 and "__IMPORTMAP__" not in r.text
+    assert '"three": "/vendor/three.module.min.js"' in r.text  # same-origin import map
     for path in ("/static/js/app.js", "/static/js/plot.js", "/static/js/mesh3d.js", "/static/css/app.css"):
         assert client.get(path).status_code == 200, path
-    r = client.get("/vendor/three.module.min.js", follow_redirects=False)
-    assert r.status_code in (200, 307)
+    vend = tmp_path / "vendor"  # a vendored copy is served as is (no network in tests)
+    vend.mkdir()
+    (vend / "three.module.min.js").write_text("export const REVISION = '170';")
+    monkeypatch.setenv("FEACORE_UI_VENDOR_DIR", str(vend))
+    r = client.get("/vendor/three.module.min.js")
+    assert r.status_code == 200 and "REVISION" in r.text
     assert client.get("/vendor/not-a-file.js").status_code == 404
 
 
@@ -191,6 +201,7 @@ def test_health(client):
     assert r.status_code == 200
     d = r.json()
     assert d["ok"] and "skfem" in d["backends"]
+    assert isinstance(d["active_jobs"], int) and d["active_jobs"] >= 0 and d["auth_required"] is False
     assert d["cpu"]["count"] >= 1 and "gpus" in d["gpu"]
     assert set(d["jobs"]["workers"]) == {"quick", "study"}
 
@@ -279,8 +290,13 @@ def test_solve_nowait(client, case_and_mesh, solver_ok):
     case, mesh = case_and_mesh
     r = _post_solve(client, case, mesh, wait="false", fields="false")
     assert r.status_code == 202
+    assert client.get("/api/health").json()["active_jobs"] >= 1  # queued or running right now
     rec = _wait(client, f"/api/runs/{r.json()['run_id']}")
     assert rec["status"] == "succeeded" and rec["fields"] is None
+    t0 = time.time()
+    while client.get("/api/health").json()["active_jobs"] and time.time() - t0 < 30:
+        time.sleep(0.2)  # the record is written just before the worker process exits
+    assert client.get("/api/health").json()["active_jobs"] == 0
 
 
 def test_import_run(client):
@@ -346,3 +362,103 @@ def test_submissions_and_consensus(client, finished_study, problem):
     assert len(q0["submissions"]) >= 2 and q0["consensus"]["median"] is not None
     assert q0["reference_studies"]  # the study above is the fixed-solver reference row
     assert client.get("/api/consensus/definitely_not_a_problem").status_code == 404
+
+
+# --------------------------------------------------------------------------- HTTP: benchmark batches
+
+
+def _wait_batch(client, bid, timeout=300):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        b = client.get(f"/api/batches/{bid}").json()
+        if b["status"] not in ("queued", "running"):
+            return b
+        time.sleep(0.5)
+    raise AssertionError(f"timeout waiting for batch {bid}")
+
+
+def test_batch_run_and_downloads(client, problem, solver_ok):
+    import csv
+    import io
+
+    from feacore.ui.analysis import CSV_COLUMNS, OUTCOMES
+
+    r = client.post("/api/batches", json={"problem_ids": [problem.id], "backend": "skfem", "order": 2,
+                                          "levels": 3, "ratio": 2.0, "name": "test batch"})
+    assert r.status_code == 202, r.text
+    b = r.json()
+    assert b["n_problems"] == 1 and b["items"][0]["problem_id"] == problem.id
+    b = _wait_batch(client, b["batch_id"])
+    assert b["status"] == "succeeded" and b["n_done"] == 1
+    item = b["items"][0]
+    assert item["finest_run_id"] and item["elapsed"] > 0 and item["progress"]["done"] == 3
+    rows = b["rows"]
+    assert {r["qoi"] for r in rows} == {q.name for q in problem.qois()}
+    for row in rows:
+        assert row["outcome"] in OUTCOMES and row["study_id"] == item["study_id"]
+        assert row["n_meshes"] == 3 and row["finest"] is not None
+    assert sum(b["outcomes"].values()) == len(rows)
+    # downloads
+    c = client.get(f"/api/batches/{b['batch_id']}/results.csv")
+    assert c.status_code == 200 and "attachment" in c.headers["content-disposition"]
+    parsed = list(csv.DictReader(io.StringIO(c.text)))
+    assert list(parsed[0].keys()) == CSV_COLUMNS and len(parsed) == len(rows)
+    j = client.get(f"/api/batches/{b['batch_id']}/results.json").json()
+    assert len(j["rows"]) == len(rows) and j["settings"]["levels"] == 3
+    assert client.get(f"/api/batches/{b['batch_id']}/results.xml").status_code == 404
+    listed = client.get("/api/batches").json()
+    assert b["batch_id"] in [x["batch_id"] for x in listed["batches"]] and listed["study_workers"] >= 1
+    # the study belongs to the batch
+    st = client.get(f"/api/studies/{item['study_id']}").json()
+    assert st["batch_id"] == b["batch_id"] and st["elapsed"] > 0
+
+
+def test_batch_validation_and_cancel(client, problem, solver_ok):
+    assert client.post("/api/batches", json={"problem_ids": []}).status_code == 422
+    assert client.post("/api/batches", json={"problem_ids": ["no_such_problem"]}).status_code == 404
+    assert client.post("/api/batches", json={"problem_ids": [problem.id], "backend": "nope"}).status_code == 422
+    assert client.get("/api/batches/batch-missing").status_code == 404
+    r = client.post("/api/batches", json={"problem_ids": [problem.id, problem.id], "levels": 3})
+    assert r.status_code == 202 and r.json()["n_problems"] == 1  # duplicates collapse
+    r = client.post("/api/batches", json={"problem_ids": [problem.id], "levels": 3})
+    r2 = client.post("/api/batches", json={"problem_ids": [problem.id], "levels": 4})
+    bid = r2.json()["batch_id"]
+    c = client.post(f"/api/batches/{bid}/cancel").json()
+    assert c["cancelled"] == 1
+    b = _wait_batch(client, bid)
+    assert b["counts"]["cancelled"] == 1 and b["items"][0]["status"] == "cancelled"
+    _wait_batch(client, r.json()["batch_id"])
+
+
+# --------------------------------------------------------------------------- shared-token auth
+
+
+def test_token_auth(tmp_path):
+    app = create_app(runs_dir=tmp_path / "runs", token="s3cret-token")
+    with TestClient(app) as c:
+        assert c.get("/").status_code == 200  # the page shell stays open (it accepts ?token=)
+        assert c.get("/static/js/app.js").status_code == 200
+        r = c.get("/api/problems")
+        assert r.status_code == 401 and "token" in r.json()["detail"]
+        assert r.headers["www-authenticate"] == "Bearer"
+        assert c.get("/api/problems", headers={"Authorization": "Bearer s3cret-token"}).status_code == 200
+        assert c.get("/api/problems", headers={"X-Feacore-Token": "s3cret-token"}).status_code == 200
+        assert c.get("/api/problems", params={"token": "s3cret-token"}).status_code == 200
+        assert c.get("/api/problems", headers={"Authorization": "Bearer s3cret-tokeN"}).status_code == 401
+        assert c.get("/api/problems", params={"token": ""}).status_code == 401
+        assert c.post("/api/runs", json={"qois": {"q": 1.0}}).status_code == 401
+        assert c.post("/api/runs", json={"qois": {"q": 1.0}},
+                      headers={"Authorization": "Bearer s3cret-token"}).status_code == 201
+        a = c.get("/api/auth").json()
+        assert a["required"] is True and a["valid"] is False
+        # health stays reachable for deploy scripts, but reveals only the job count without a token
+        h = c.get("/api/health")
+        assert h.status_code == 200 and h.json() == {"ok": True, "active_jobs": 0, "auth_required": True}
+        full = c.get("/api/health", headers={"Authorization": "Bearer s3cret-token"}).json()
+        assert full["active_jobs"] == 0 and "hostname" in full and "store" in full
+        assert c.get("/api/auth", params={"token": "s3cret-token"}).json()["valid"] is True
+
+
+def test_no_token_configured(client):
+    a = client.get("/api/auth").json()
+    assert a["required"] is False and a["valid"] is True

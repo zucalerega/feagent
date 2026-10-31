@@ -48,7 +48,9 @@ python scripts/export_benchmarks.py                  # benchmarks/<id>/public + 
 ## 5. UI and solver service
 
 ```bash
-tmux new -d -s ui 'python -m feacore.ui --host 0.0.0.0 --port 8000'
+export FEACORE_UI_TOKEN=$(openssl rand -hex 16)   # optional shared token; advised behind a tunnel
+bash scripts/serve.sh                              # systemd service on port 8000, starts on boot
+bash scripts/serve.sh logs                         # follow logs;  bash scripts/serve.sh stop
 ```
 
 Expose port 8000 in one of two ways:
@@ -58,6 +60,27 @@ Expose port 8000 in one of two ways:
   http://localhost:8000.
 
 The mesh-harness / MCP side can call the solver over HTTP at the same address (see `docs/ui.md`).
+
+## Team access (nothing to install on anyone's computer)
+
+- **Browser (everyone):** create a tunnel for port 8000 (console → instance → Access → Using Tunnels)
+  and share the URL, adding `?token=<FEACORE_UI_TOKEN>` if you set one. That gives the full UI
+  (benchmarks, studies, batch runs, viewer, consensus). Scripts and agents on any computer can call
+  the solver at the same URL: `POST <url>/api/solve` (case JSON + .msh); see the Connect panel and
+  `docs/ui.md`. If the tunnel asks visitors to sign in, they need to be members of your Brev org.
+- **Shell on the shared box:** invite teammates to your Brev org (console → Team → Invite Member).
+  They install the Brev CLI once (`brew install brevdev/homebrew-brev/brev && brev login`), then
+  run `brev shell <instance>`. Sharing rules for cloud instances can differ by org, so check the
+  console's sharing options if a member can't see the instance.
+- **Everyone gets their own identical box: a Launchable.** Console → Launchables → Create
+  Launchable → VM mode, then paste `scripts/brev_launchable_setup.sh` as the setup script (it
+  clones this public repo, runs the setup and starts the service on port 8000). Pick the GPU/CPU
+  size (see below) and share the link. New Launchables default to "anyone with the link"; each
+  deploy is a separate instance billed to whoever deploys it.
+
+Sizing for 4 agents on 3D benchmarks such as NAFEMS LE10: 32 vCPUs, 128 GB RAM, one 48-80 GB
+GPU, 200 GB disk (minimum about 16 vCPUs / 64 GB). The FEA is mostly CPU-bound; the GPU only
+speeds up large 3D solves (cuDSS) and surrogate training.
 
 ## 6. Save credits
 

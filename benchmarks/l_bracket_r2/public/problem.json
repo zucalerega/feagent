@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "id": "l_bracket_r2",
+  "title": "Bolted L-bracket, inside fillet r = 2 mm",
+  "family": "l_bracket",
+  "tags": [
+    "part",
+    "3d",
+    "bolted",
+    "bending",
+    "l_bracket",
+    "fillet",
+    "stress_concentration"
+  ],
+  "dim": 3,
+  "physics": "elasticity",
+  "formulation": "3d",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "thickness": 0.008,
+    "width": 0.05,
+    "base_length": 0.08,
+    "upright_height": 0.06,
+    "fillet_radius": 0.002,
+    "hole_diameter": 0.009000000000000001,
+    "hole_x": 0.055,
+    "hole_y": [
+      0.013000000000000001,
+      0.037
+    ],
+    "force": 1000.0,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "h0": 0.004
+  },
+  "description": "Bolted steel angle bracket (L-bracket) with a transverse load on its upright leg. 3D solid.\nGeometry file (STEP): the full bracket in mm-scale dimensions written in metres.\nPurpose: a machined L-bracket of constant thickness 8 mm and width 50 mm (y from 0 to 50 mm). The base leg lies on z = 0 .. 8 mm and extends from x = 0 to x = 80 mm; the upright leg lies on x = 0 .. 8 mm and rises from z = 0 to z = 60 mm. The outside corner (x = 0, z = 0) is square. The inside corner between the legs is blended by a fillet of radius r = 2 mm (axis along y, tangent to the top face of the base leg z = 8 mm and the inner face of the upright x = 8 mm). Two through holes of diameter 9 mm (M8 bolt clearance) pass vertically through the base leg, centred at (x, y) = (55 mm, 13 mm) and (55 mm, 37 mm).\nMaterial: steel, linear elastic and isotropic, E = 200 GPa, Poisson's ratio 0.3.\nSupports: the base leg is bolted down; model the bolts by fixing the two bolt-hole bores (the cylindrical hole surfaces): all displacement components zero there.\nLoad: a total force of 1 kN in the -x direction (pulling the upright away from the base leg, opening the angle), uniformly distributed over the top end face of the upright leg (the face z = 60 mm).\nAnalysis: linear static, small displacements.\nReport:\n  max_vm_corner: the maximum von Mises stress on the fillet surface [Pa];\n  load_displacement: the average x-displacement of the loaded face z = 60 mm [m].",
+  "qois": [
+    {
+      "name": "max_vm_corner",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": "fillet",
+      "component": null
+    },
+    {
+      "name": "load_displacement",
+      "type": "mean",
+      "field": "ux",
+      "point": null,
+      "group": "load_face",
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

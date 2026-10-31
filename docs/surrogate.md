@@ -89,8 +89,11 @@ CPU proof of concept (dev container, 4 shared cores; dataset generation takes ab
 export OMP_NUM_THREADS=1
 python scripts/make_surrogate_dataset.py --out /tmp/surrogate/ds1 --split id  --n 600 --workers 3
 python scripts/make_surrogate_dataset.py --out /tmp/surrogate/ds1 --split ood --n 12  --workers 3
-python scripts/train_surrogate.py --data /tmp/surrogate/ds1 --out models/surrogate/cpu --device cpu --threads 2 \
+python scripts/train_surrogate.py --data /tmp/surrogate/ds1 --out /tmp/surrogate/runs/cpu2 --device cpu --threads 2 \
     --epochs 40 --max-minutes 25 --hidden 64 --layers 8 --batch-size 2
+# second cosine cycle, warm-started (the loss was still falling when the first schedule ended)
+python scripts/train_surrogate.py --data /tmp/surrogate/ds1 --out models/surrogate/cpu --device cpu --threads 2 \
+    --epochs 40 --max-minutes 20 --hidden 64 --layers 8 --batch-size 2 --lr 5e-4 --init /tmp/surrogate/runs/cpu2/best.pt
 python -m feacore.surrogate.evaluate --ckpt models/surrogate/cpu/best.pt --data /tmp/surrogate/ds1 \
     --out models/surrogate/cpu/eval --img docs/img/surrogate --scaling --benchmarks
 ```

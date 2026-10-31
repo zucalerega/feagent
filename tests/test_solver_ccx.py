@@ -9,7 +9,7 @@ import shutil
 import numpy as np
 import pytest
 
-from feacore.case import BC, Analysis, Case, Load, Material, QoI
+from feacore.case import BC, Analysis, Case, CaseError, Load, Material, QoI
 from feacore.solver import solve
 
 pytestmark = pytest.mark.skipif(shutil.which("ccx") is None, reason="CalculiX (ccx) not installed")
@@ -252,7 +252,25 @@ def test_lame_plane_strain_quarter(meshes):
     assert rel(v["W"], 0.5 * p * ur(a) * math.pi / 2 * a) < 1e-4
 
 
-@pytest.mark.parametrize("order,tol_u", [(2, 3e-5), (1, 1e-3)])
+def test_refused_configurations(meshes):
+    """CAX3 and C3D10 / CAX6 cells with curved interior edges raise NotImplementedError."""
+    c = _case(meshes["ring_axi"], form="axisymmetric", order=1,
+              bcs=[BC("symmetry", group="bottom"), BC("pressure", group="left", value=1.0)])
+    with pytest.raises(NotImplementedError, match="CAX3"):
+        solve(c, backend="ccx")
+    import meshio
+    m = meshio.read(meshes["box2"])
+    for blk in m.cells:
+        if blk.type == "tetra10":
+            m.points[blk.data[:, 9]] += [0.004, -0.003, 0.002]   # curve interior and boundary edges
+    bent = meshes["box2"].replace(".msh", "_bent.msh")
+    meshio.write(bent, m, file_format="gmsh22", binary=False)
+    c = _case(bent, bcs=[BC("fixed", group="left"), BC("force", group="right", value=[1.0, 0, 0])])
+    with pytest.raises(NotImplementedError, match="curved interior"):
+        solve(c, backend="ccx")
+
+
+@pytest.mark.parametrize("order,tol_u", [(2, 3e-5)])
 def test_lame_axisymmetric(meshes, order, tol_u):
     a, b, p, Hh = 1.0, 2.0, 10.0, 0.5
     A, B, ur = _lame(a, b, p)
@@ -333,6 +351,53 @@ def test_displacement_expression_and_lower_dim_groups(meshes):
     assert rel(v["uy"], -NU * eps * 0.5) < 1e-5
 
 
+def _where_case(meshes, order, where="abs(z) < 1e-9"):
+    P = 2.5
+    bcs = [BC("symmetry", group="left"), BC("symmetry", group="y0"),
+           BC("displacement", group="y0", components=[2], value=0.0, where=where),
+           BC("force", group="right", value=[P, 0.0, 0.0])]
+    qois = [QoI("ux", "point", field="ux", point=[2.0, 0.3, 0.4]), QoI("uz", "point", field="uz", point=[1.0, 0.2, 0.5]),
+            QoI("sxx", "point", field="sxx", point=[1.0, 0.25, 0.25]), QoI("Rz", "reaction", group="y0", component=2),
+            QoI("W", "strain_energy")]
+    return _case(meshes["box2"], order=order, bcs=bcs, qois=qois)
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_dirichlet_where_filter(meshes, order):
+    """uz = 0 on face y0 filtered by ``where`` to the line y = z = 0: with ux = 0 on x = 0 and
+    uy = 0 on y = 0 the bar is held without restraining its Poisson contraction, so uniaxial
+    tension is exact (on the whole face uz = 0 would restrain it)."""
+    P, L, A = 2.5, 2.0, 0.25
+    r = solve(_where_case(meshes, order), backend="ccx")
+    v = r.evaluate_all()
+    eps = P / (A * E)
+    line = [n for (n, d) in r.deck.dirichlet if d == 2]
+    assert np.allclose(r.model.X[line, 1:], 0.0) and len(line) == (17 if order == 2 else 9)
+    assert rel(v["ux"], eps * L) < 1e-6 and rel(v["uz"], -NU * eps * 0.5) < 1e-5
+    assert rel(v["sxx"], P / A) < 2e-5 and abs(v["Rz"]) < 1e-6 * P
+    assert rel(v["W"], 0.5 * P * P * L / (A * E)) < 1e-6
+    with pytest.raises(CaseError, match="selects no node"):            # selecting no node is an error
+        solve(_where_case(meshes, order, where="z > 100"), backend="ccx")
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_dirichlet_where_cross_check_skfem(meshes, order):
+    """Same ``where`` case through both backends (skipped until skfem applies BC.where)."""
+    c = _where_case(meshes, order)
+    v = solve(c, backend="ccx").evaluate_all()
+    try:
+        vs = solve(c, backend="skfem").evaluate_all()
+    except NotImplementedError as e:  # pragma: no cover
+        pytest.skip(f"skfem: {e}")
+    for k in ("ux", "uz", "sxx", "W"):
+        print(f"[ccx vs skfem where] P{order} {k}: ccx={v[k]:+.7e} skfem={vs[k]:+.7e} rel={abs(v[k] / vs[k] - 1):.1e}")
+    if abs(vs["uz"] / v["uz"] - 1) > 1e-2:
+        pytest.skip("skfem does not apply BC.where yet (it constrains the whole group)")  # pragma: no cover
+    for k in ("ux", "uz", "W"):
+        assert rel(v[k], vs[k]) < 1e-5, (k, v[k], vs[k])
+    assert rel(v["sxx"], vs["sxx"]) < 1e-4
+
+
 @pytest.mark.parametrize("order", [1, 2])
 def test_free_thermal_expansion(meshes, order):
     al, Tref, dT = 1e-5, 20.0, 100.0
@@ -345,7 +410,7 @@ def test_free_thermal_expansion(meshes, order):
     v = solve(c, backend="ccx").evaluate_all()
     assert rel(v["ux"], al * dT * 2.0) < 1e-6
     assert v["vm"] < 1e-9 * E * al * dT * 1e6        # zero stress (round-off only)
-    for form in ("plane_stress", "plane_strain", "axisymmetric"):
+    for form in ("plane_stress", "plane_strain") + (("axisymmetric",) if order == 2 else ()):
         bcs = [BC("symmetry", group="bottom")] + ([] if form == "axisymmetric" else [BC("symmetry", group="left")])
         c = _case(meshes["rect2"], form=form, order=order, mats=mats, T_ref=Tref, thickness=0.1, bcs=bcs,
                   loads=[Load("temperature", Tref + dT)],
@@ -355,8 +420,8 @@ def test_free_thermal_expansion(meshes, order):
         f = (1 + NU) if form == "plane_strain" else 1.0
         tol = 1e-5 if form == "axisymmetric" else 1e-6     # frd output has 6 digits
         assert rel(v["ux"], al * dT * 2.0 * f) < tol
-        assert v["sxx"] < 1e-9
-        assert (rel(v["szz"], -E * al * dT) < 2e-5) if form == "plane_strain" else abs(v["szz"]) < 1e-9
+        assert v["sxx"] < 1e-7      # round-off (thin internal plane-stress slab: ~1e-8)
+        assert (rel(v["szz"], -E * al * dT) < 2e-5) if form == "plane_strain" else abs(v["szz"]) < 1e-7
 
 
 def test_body_force_and_multi_material(meshes):

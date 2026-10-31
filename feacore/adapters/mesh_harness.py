@@ -9,6 +9,17 @@ a dim-3 group ``domain``), ``manifest.json`` (its MeshResult, incl. ``mesh_path`
 ``force`` is a total force spread uniformly over the group's area, which is exactly feacore's
 ``force`` BC. Units are whatever the part uses (the harness parts are mm / N / MPa).
 
+Optional richer keys (feacore BC types; the harness spec can add them when it needs them):
+
+    symmetry: [group, ...]                                  # zero normal displacement (axis-aligned planes)
+    pressure: [{group, value}]                              # traction = -value * outward normal
+    traction: [{group, value: [tx, ty, tz]}]                # force per area
+    displacement: [{group, components: [0, 2], value: 0.0, where: "abs(z) < 1e-6"}]  # where optional
+
+``case_from_spec`` reads the harness YAML spec directly (needs the ``feagent`` package):
+
+    python -m feacore.adapters.mesh_harness path/to/mesh.yaml --out case.json
+
     python -m feacore.adapters.mesh_harness path/to/out_dir --out case.json [--order 2]
 """
 
@@ -52,34 +63,62 @@ def case_from_mesh_harness(out_dir: str | Path, order: int | None = None,
     if fea is None:
         decl = report.get("bcs") or report.get("solve") or {}
         fea = decl.get("fea") if isinstance(decl, dict) and "fea" in decl else decl
-    if not fea or "fixed" not in fea:
+    if not fea or not any(k in fea for k in ("fixed", "symmetry", "displacement")):
         raise ValueError(f"no FEA boundary-condition declaration (bcs.fea) found in {out_dir}")
     mesh_path = Path(mesh or manifest.get("mesh_path") or out_dir / "mesh.msh")
     if not mesh_path.is_absolute() and not mesh_path.is_file():
         mesh_path = out_dir / mesh_path
     order = int(order or manifest.get("order") or 2)
-    fixed = list(fea["fixed"])
+    fixed = list(fea.get("fixed", []))
     loads = [{"group": ld["group"], "force": [float(f) for f in ld["force"]]} for ld in fea.get("loads", [])]
+    extra = [BC("symmetry", group=g) for g in fea.get("symmetry", [])]
+    extra += [BC("pressure", group=d["group"], value=d["value"]) for d in fea.get("pressure", [])]
+    extra += [BC("traction", group=d["group"], value=list(d["value"])) for d in fea.get("traction", [])]
+    extra += [BC("displacement", group=d["group"], components=list(d["components"]),
+                 value=d.get("value", 0.0), where=d.get("where")) for d in fea.get("displacement", [])]
     return Case(
         mesh=str(mesh_path.resolve()),
         analysis=Analysis(physics="elasticity", formulation="3d", order=order),
         materials={"material": Material(E=float(fea.get("E", 210000.0)), nu=float(fea.get("nu", 0.3)))},
         bcs=[BC("fixed", group=g) for g in fixed]
-        + [BC("force", group=ld["group"], value=ld["force"]) for ld in loads],
+        + [BC("force", group=ld["group"], value=ld["force"]) for ld in loads] + extra,
         qois=default_qois(fixed, loads),
         meta={"source": "mesh-harness", "out_dir": str(out_dir.resolve()),
               "spec_path": manifest.get("spec_path")},
     )
 
 
+def case_from_spec(spec_path: str | Path, order: int | None = None, mesh: str | Path | None = None) -> Case:
+    """Case from a mesh-harness YAML spec (``solve.fea``) and the mesh it writes to ``out/mesh.msh``."""
+    from dataclasses import asdict
+
+    from feagent.spec import load_spec
+
+    spec = load_spec(spec_path)
+    fea = getattr(spec, "bcs_fea", None) or getattr(spec, "fea", None)  # bcs: (new) / solve: (old)
+    if fea is None:
+        raise ValueError(f"{spec_path}: no bcs.fea section")
+    out = spec.out_dir()
+    case = case_from_mesh_harness(out, order=order or spec.order, fea=asdict(fea),
+                                  mesh=mesh or out / "mesh.msh")
+    case.meta["spec_path"] = str(Path(spec_path).resolve())
+    return case
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("out_dir")
+    ap.add_argument("out_dir", help="harness output directory, or its YAML spec")
     ap.add_argument("--out", default=None, help="case JSON path (default: <out_dir>/case.json)")
     ap.add_argument("--order", type=int, default=None)
     args = ap.parse_args(argv)
-    case = case_from_mesh_harness(args.out_dir, order=args.order).check()
-    path = case.save(args.out or Path(args.out_dir) / "case.json")
+    src = Path(args.out_dir)
+    if src.suffix in (".yaml", ".yml"):
+        case = case_from_spec(src, order=args.order).check()
+        default = Path(case.mesh).parent / "case.json"
+    else:
+        case = case_from_mesh_harness(src, order=args.order).check()
+        default = src / "case.json"
+    path = case.save(args.out or default)
     print(path)
     return 0
 

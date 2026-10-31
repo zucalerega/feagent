@@ -11,46 +11,68 @@ Pages (single-page app, no build step, `feacore/ui/static/`):
 
 | page | what it shows |
 |---|---|
-| Benchmarks `#/benchmarks` | problem library, tag filter, detail with statement, 3D CAD preview with named groups, **evaluator view** (references, expectations, reference setup, studies) |
+| Benchmarks `#/benchmarks` | problem library, tag filter, detail with statement, 3D CAD preview with named groups, **evaluator view** (references, expectations, reference setup, studies); **Run with defaults** starts the reference study (skfem, P2, the problem's sizes) and opens its live view |
+| Run benchmarks `#/batch` | select many problems (by tag, family, ticked rows, "all with references"), choose backend / order / nested / meshes, queue one convergence study each; live per-problem progress; results table (reference, finest, extrapolated, p vs theory, GCI, error, pass / fail / divergence detected as expected, runtime) with links to each study's plot and finest-mesh field; CSV / JSON download. Batches persist in the run store |
 | Run study `#/study` | pick problem / backend / element order / refinement; live progress; per QoI: QoI vs log h with the Richardson extrapolation, the GCI band and the reference; error vs h (log-log, observed vs theoretical slope); verdict and flags in plain words |
 | Consensus `#/consensus/<problem>` | forest plot per QoI: each submission's finest-mesh value ± GCI, extrapolated value, consensus median, reference ± tolerance; per-submission verdicts and flags |
 | Field viewer `#/viewer/<run>` | 2D mesh / 3D boundary surface coloured by any field, colour bar, mesh edges, deformed shape with scale, study-level switcher. Tested smooth at 230k display triangles |
 | Solve `#/solve` | upload case + mesh, run, see QoIs / SolveInfo / errors, open in the viewer |
+| Connect `#/connect` | API base URL as the browser sees it, the (masked) token, copy-paste curl / httpx / requests examples for solving and submitting runs |
 | Health `#/health` | backends (import check), CPU / GPU (`nvidia-smi`), versions, jobs |
 
 Screenshots: `docs/ui_screenshots/`.
 
-## Run locally
+## Access the UI
+
+Locally:
 
 ```bash
-pip install -e ".[dev]"
-pip install fastapi uvicorn python-multipart httpx   # UI deps (httpx: tests / clients only)
-export OMP_NUM_THREADS=1                              # on a shared box
-python -m feacore.ui --host 127.0.0.1 --port 8000     # open http://localhost:8000
+pip install -e ".[ui]"                 # fastapi, uvicorn, python-multipart (httpx for the tests: dev group)
+export OMP_NUM_THREADS=1               # on a shared box
+python -m feacore.ui --port 8000       # then open http://localhost:8000
 ```
 
-Options: `--runs-dir DIR` (default `$FEACORE_RUNS_DIR`, else `<repo>/runs`), `--quick-workers N` (parallel solves / geometry previews, default 1), `--study-workers N` (parallel studies, default 1), `--threads N` (sets OMP/MKL/OPENBLAS threads for the worker processes), `--extra-problems a.py,b.py` (register scratch problems that are not in the repo), `--fetch-vendor` (see below).
+Options: `--host` (default 127.0.0.1; 0.0.0.0 to expose), `--runs-dir DIR` (default `$FEACORE_RUNS_DIR`, else `<repo>/runs`), `--quick-workers N` (parallel solves / geometry previews, default 1), `--study-workers N` (parallel studies; default one per 4 cores, at most 4), `--token T` (shared-token auth, `auto` generates one; see below), `--threads N` (sets OMP/MKL/OPENBLAS threads for the worker processes), `--extra-problems a.py,b.py` (register scratch problems that are not in the repo), `--fetch-vendor` (see below).
 
-Environment: `FEACORE_RUNS_DIR`, `FEACORE_UI_QUICK_WORKERS`, `FEACORE_UI_STUDY_WORKERS`, `FEACORE_UI_SOLVE_TIMEOUT` (s, default 1800), `FEACORE_UI_STUDY_TIMEOUT` (default 4 h), `FEACORE_EXTRA_PROBLEMS`, `FEACORE_UI_VENDOR_DIR`, `FEACORE_BENCHMARKS_DIR`.
+Environment: `FEACORE_RUNS_DIR`, `FEACORE_UI_TOKEN`, `FEACORE_UI_QUICK_WORKERS`, `FEACORE_UI_STUDY_WORKERS`, `FEACORE_UI_SOLVE_TIMEOUT` (s, default 1800), `FEACORE_UI_STUDY_TIMEOUT` (default 4 h), `FEACORE_EXTRA_PROBLEMS`, `FEACORE_UI_VENDOR_DIR`, `FEACORE_BENCHMARKS_DIR`.
 
-The browser loads three.js 0.170.0 from jsDelivr (pinned). For an offline demo (projector, flaky Wi-Fi), vendor it once: `python -m feacore.ui --fetch-vendor`. This writes `feacore/ui/static/vendor/three-0.170.0/`, about 720 kB, and the server then serves the local copy. Everything else is in the repo; no Node is needed.
+three.js (pinned 0.170.0, the only external JS) is served **same-origin** at `/vendor/...`, so the viewer's browser never needs to reach a CDN. The server serves the first copy it finds:
+
+1. a vendored copy (`python -m feacore.ui --fetch-vendor` writes `feacore/ui/static/vendor/three-0.170.0/`, about 720 kB);
+2. a copy it downloaded once into the run-store cache (`runs/cache/vendor/`), from jsDelivr or, if jsDelivr is blocked, the npm registry tarball;
+3. a redirect to jsDelivr, if the server itself is offline.
+
+No Node and no build step are needed.
 
 ## Run on Brev
 
-On the instance (setup per CLAUDE.md, then the UI deps above):
+On the instance (setup per CLAUDE.md / `docs/brev.md`), in tmux or with nohup:
 
 ```bash
-cd feagent && tmux new -s ui          # or nohup ... &
-python -m feacore.ui --host 0.0.0.0 --port 8000 --threads 4 --quick-workers 2
+python -m feacore.ui --host 0.0.0.0 --port 8000 --threads 4 --token auto   # prints the share URL with ?token=
 ```
 
-Then reach port 8000 in one of these ways:
+Then reach port 8000:
 
-1. **Port-forward with the CLI** (best for scripts, the agent harness and API calls): `brev port-forward <instance-name> --port 8000:8000`, then open `http://localhost:8000`. Use `--port 9000:8000` if local 8000 is taken.
-2. **Shareable URL** (for the demo audience): in the Brev web console, open the instance's *Access* section → *Using Tunnels*, and expose port 8000. The tunnel runs through Cloudflare and asks for browser authentication on first access. So scripted API clients should use (1) instead.
-3. Plain SSH: `ssh -L 8000:localhost:8000 <instance-name>`, using the SSH config that `brev` writes.
+- **Console tunnel** (to share with the team): in the Brev console, open the instance's *Access* section → *Using Tunnels* and expose port 8000. Brev tunnels can require a browser login (Cloudflare) on first access. Scripts cannot do that login: either make the tunnel public and rely on `--token`, or use the port-forward.
+- **Port-forward** (your laptop, scripts, the agent harness): `brev port-forward <instance> --port 8000:8000`, then use http://localhost:8000.
+- SSH also works: `ssh -L 8000:localhost:8000 <instance>`.
 
-The steps come from the Brev connectivity docs (docs.nvidia.com/brev, *CLI → connectivity*). Check the console menu names there; they could not be fetched from the dev container. The server has **no authentication**. Share the tunnel URL only with the team, and do not bind 0.0.0.0 on a machine with a public IP unless a firewall is in front of it.
+The Brev steps come from the Brev CLI connectivity docs. docs.nvidia.com was not reachable from the dev container, so check the console menu names there.
+
+### Shared-token auth (for public tunnels)
+
+If `FEACORE_UI_TOKEN` or `--token` is set, every `/api/*` request must carry the token in one of three forms:
+
+- `Authorization: Bearer <token>`
+- an `X-Feacore-Token: <token>` header
+- `?token=<token>`
+
+A missing or wrong token gets **401** with an explanation. The comparison is constant-time.
+
+The page shell and static files stay open, so the UI can load. Share the UI as `https://<tunnel>/?token=<token>`: the browser stores the token in localStorage, removes it from the address bar, and sends it on every API call. Download links get `?token=`. Without a token the UI shows a prompt.
+
+`GET /api/auth` (always open) reports `{required, valid}`. `GET /api/health` is open too, so deploy scripts can poll it locally. Without a valid token it returns only `{"ok": true, "active_jobs": N, "auth_required": true}`; with one, the full payload. With no token configured, nothing changes. The **Connect** page (`#/connect`) shows the base URL, the masked token (click to reveal) and copy-paste examples for teammates.
 
 ## Architecture
 
@@ -66,7 +88,7 @@ All responses are strict JSON (NaN/inf become `null`). Large arrays are typed ar
 
 ```bash
 S=http://localhost:8000
-curl $S/api/health                         # backends (import check), CPU/GPU, versions, jobs
+curl $S/api/health                         # active_jobs (queued + running solves/studies), backends, CPU/GPU, versions
 curl "$S/api/problems?tag=nafems&tag=2d"   # list (tags AND-ed), tag counts, import errors
 curl $S/api/problems/nafems_le1            # statement + evaluator view (references, expectations, reference case, studies)
 curl $S/api/problems/nafems_le1/geometry   # coarse CAD triangulation + named groups (gmsh in a worker, cached)
@@ -132,6 +154,29 @@ curl "$S/api/studies?problem_id=nafems_le1"
 
 `result` is exactly the `convergence_study(...)` dict from `feacore.verification.study`. `interpretation` gives, per QoI, `{verdict, status, label, flags, explanations[{flag, severity, title, text}], fine, band_abs, phi_ext, extrapolation_reliable, p, p_theory, summary}`.
 
+### Benchmark batches
+
+```bash
+curl -X POST $S/api/batches -H 'Content-Type: application/json' -d '{
+  "problem_ids": ["nafems_le1", "nafems_le10", "kirsch_exact_traction"],
+  "backend": "skfem", "order": 2, "nested": false, "levels": null, "name": "nightly"}'
+#   levels: meshes per study (null = the problem's own sizes), ratio: refinement ratio with levels
+curl $S/api/batches                    # recent batches (status, counts, outcomes)
+curl $S/api/batches/BATCH_ID           # items[] (live progress per problem) + rows[] (results table)
+curl -O $S/api/batches/BATCH_ID/results.csv     # or results.json
+curl -X POST $S/api/batches/BATCH_ID/cancel     # cancel queued / running studies
+```
+
+A batch queues one convergence study per problem in the study lane, which runs `--study-workers` at a time. Each `rows[]` entry is one QoI of one problem, with these fields:
+
+- `reference`, `tolerance_pct`, `finest`, `extrapolated`, `extrapolation_reliable`
+- `p_observed`, `p_theory`, `gci_pct`
+- `error_pct` and `error_basis`: the error uses the extrapolated value when the extrapolation is reliable, otherwise the finest mesh, as in `study._judge`
+- `outcome`: `pass` / `fail` / `divergence_detected` / `divergence_missed` / `no_reference`
+- `verdict`, `runtime_s`, `study_id`, `finest_run_id`
+
+Single studies take `"nested": true` too (`POST /api/studies`). That meshes once at the coarsest size and splits it with ratio 2 per level, which gives cleaner observed orders. Each 3D split multiplies the cells by 8.
+
 ### Submissions and consensus
 
 A **submission** is one agent's answer to one problem: its runs on a sequence of its own meshes (three or more meshes for a GCI estimate).
@@ -166,7 +211,9 @@ runs/
   studies/<study_id>/study.json
   studies/<study_id>/meshes/    the study's meshes
   submissions/<submission_id>.json
+  batches/<batch_id>.json       benchmark batch: settings + [{problem_id, study_id}]
   cache/geometry/               CAD previews
+  cache/vendor/                 three.js fetched once by the server
 ```
 
 IDs look like `run-20261031-024430-4b88dc` (UTC time + random suffix, so they sort by creation time). Custom ids are allowed: `[A-Za-z0-9][A-Za-z0-9._-]*`.
@@ -191,6 +238,8 @@ IDs look like `run-20261031-024430-4b88dc` (UTC time + random suffix, so they so
 **`fields.npz`** holds: `points` float32 (n, 3) (2D: z = 0); `triangles` uint32 (m, 3); `edges` uint32 (k, 2) (element edges, curved for P2); `disp` float32 (n, 3) (elasticity only); `f_<field>` float32 (n,); `meta` (JSON string).
 
 **`study.json`** (`feacore.study/1`) holds: `study_id, created_at, started_at, finished_at, status, source, problem_id, backend, order, geom_order, sizes, progress{done, total, stage, message, levels[{index, h, status, run_id, n_cells, n_dofs, h_rep, wall_time, qois}]}, run_ids, result` (the `convergence_study` dict), plus `interpretation, error, traceback, meta`.
+
+**`batches/<id>.json`** (`feacore.batch/1`) holds `batch_id, created_at, name, settings{backend, order, nested, levels, ratio, study_workers}, items[{problem_id, study_id}], meta`. Progress and results are derived from the studies when the batch is read. Each study also records `batch_id`, `nested` and `elapsed` (s), and its `progress` has `stage` (meshing / solving / storing / solved), `stage_started_at` and per-level `started_at` (epoch s), so long 3D levels show a running clock.
 
 **`submissions/<id>.json`** (`feacore.submission/1`) holds: `submission_id, created_at, problem_id, agent_id, run_ids, levels[{run_id, h, qois, n_dofs, n_cells, order, backend}], order, notes, meta, analysis{order, n_levels, qois[{name, type, field, h[], values[], run_ids[], p_theory, expectation, gci, fit, interpretation}]}`. Here `h` is `info.h_rep` of each run. `gci` / `fit` come from `feacore.verification.gci.analyze`, and `p_theory` from `Problem.expected_order` or `default_expected_order`.
 
@@ -220,6 +269,7 @@ The GCI classification comes from `gci3` (Celik et al. 2008). The UI adds verdic
 | `converged` | monotone convergence, order defined, asymptotic |
 | `converged_noise` | `gci3` convergence `converged`: changes below 1e-6 (round-off) |
 | `plateau` | **UI rule**: both mesh-to-mesh changes below 0.1 % although `gci3` reports oscillatory or divergent. These are noise-level wiggles (e.g. a max over a recovered field), not a singularity. The band shown is \|fine − medium\| |
+| `scatter` | **UI rule**: divergent per `gci3`, but the changes are below 2% and \|value\| does not grow monotonically. This is typical of point stresses on independently remeshed 3D tet meshes (e.g. LE10 `syy_D`: 0.6-0.9%), not a singularity. Judge against the reference tolerance |
 | `converging` | monotone but `not_asymptotic` |
 | `slow` | `p_far_below_theory` |
 | `oscillating` | `gci3` oscillatory |
@@ -229,7 +279,7 @@ The GCI classification comes from `gci3` (Celik et al. 2008). The UI adds verdic
 
 Derived flags:
 
-- `singular_suspected`: a stress-type QoI that diverges, or converges with p < ½ p_theory.
+- `singular_suspected`: a stress-type QoI that diverges (beyond the scatter rule), or converges with p < ½ p_theory.
 - `extrapolation_unreliable`: the same rule as the contract's `extrapolation_reliable` (`study._judge`). The finest-mesh value is used instead.
 - `outlier_vs_consensus`: see the consensus rule above.
 
@@ -241,13 +291,14 @@ Each flag carries a one-paragraph explanation (`feacore/ui/analysis.py`, `FLAG_I
 python -m pytest tests/test_ui_api.py -q
 ```
 
-The tests use FastAPI's TestClient on a temporary store and cover every endpoint, including real solves through `POST /api/solve` and a real three-level study, submissions and consensus. They skip if no 2D elasticity problem is registered or `skfem` does not import.
+The tests use FastAPI's TestClient on a temporary store and cover every endpoint. That includes real solves through `POST /api/solve`, a real three-level study, a benchmark batch (run, CSV / JSON, cancel), submissions, consensus and the token auth. They skip if no 2D elasticity problem is registered or `skfem` does not import.
 
-The screenshots were made with headless Chromium (Playwright) against a scratch store. The consensus screenshot shows **scripted test agents**: deterministic scripts (`agent_id` `scripted-*`) that mesh the CAD themselves, change the reference setup (P1 vs P2, other mesh sizes, two meshes only, a symmetry edge clamped by mistake) and solve through `POST /api/solve`. Every number is a real solve. None of them is an LLM agent.
+The screenshots were made with headless Chromium (Playwright) against a scratch store. `batch_*.png` show a real batch (8 fast 2D benchmarks + NAFEMS LE10); `study_live_le10.png` / `study_le10.png` show LE10 started with *Run with defaults*. The consensus screenshot shows **scripted test agents**: deterministic scripts (`agent_id` `scripted-*`) that mesh the CAD themselves, change the reference setup (P1 vs P2, other mesh sizes, two meshes only, a symmetry edge clamped by mistake) and solve through `POST /api/solve`. Every number is a real solve. None of them is an LLM agent.
 
 ## Known gaps
 
-- No authentication or rate limiting. Uploads are trusted; the size limit is whatever the proxy allows.
+- Auth is a single shared token (optional), with no users, roles or rate limiting. Uploads are trusted; the size limit is whatever the proxy allows.
+- A batch has no priority over single studies: everything shares the study lane in FIFO order. Cancel stops queued and running studies but keeps finished ones.
 - Each job starts a fresh Python process (about 1 s overhead). That is fine for meshes that take seconds to solve, but wasteful for thousands of tiny solves.
 - List endpoints scan the store directory on each call. That is fine up to a few thousand runs; past that, add an index.
 - The viewer shows the boundary surface only (no cut planes or interior clipping in 3D). Axisymmetric results are shown as the 2D meridian section.

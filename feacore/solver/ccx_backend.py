@@ -22,7 +22,7 @@ import time
 
 import numpy as np
 
-from feacore.case import BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field
+from feacore.case import BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field, eval_expr
 from feacore.solver._ccx_fem import Locator, _bary, interpolate, map_points, quadrature, shape
 from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_totals, parse_frd, run_ccx
 from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh  # noqa: F401
@@ -49,13 +49,23 @@ AXI_OUTPUT_FACTOR = 180.0       # ccx RF / RFL / ELSE (2-degree wedge) -> schema
 
 _VOIGT = ("sxx", "syy", "szz", "sxy", "syz", "sxz")
 
+# Plane stress: internal CalculiX section thickness = PLANE_STRESS_RATIO x the shortest cell edge
+# (override with analysis.options["ccx_plane_stress_ratio"]); see _Deck.__init__.
+PLANE_STRESS_RATIO = 1e-3
+
 
 def solve(case: Case, **options) -> "CcxResult":
     t0 = time.perf_counter()
     case.check()
     a = case.analysis
+    if a.formulation == "axisymmetric" and a.order == 1:
+        raise NotImplementedError(
+            "ccx backend: axisymmetric order 1 (CAX3) is refused: CalculiX's 2-degree wedge "
+            "expansion of CAX3 is ~2e-4 too stiff and its face loads / films are distributed "
+            "inconsistently, so it fails the patch test (use analysis.order = 2)")
     gm = read_gmsh(case.mesh_path())
     model = build_model(gm, case.dim, a.order, axisymmetric=(a.formulation == "axisymmetric"))
+    _check_curvature(model, a.formulation)
     deck = _Deck(case, model)
     inp = deck.build()
     keep = bool(options.get("keep", False)) or options.get("workdir") is not None
@@ -72,6 +82,67 @@ def solve(case: Case, **options) -> "CcxResult":
         shutil.rmtree(run.workdir, ignore_errors=True)
         res.workdir = None
     return res
+
+
+# Quadratic cells whose interior edges are curved by more than this (midside offset / edge length)
+# are refused for C3D10 and CAX6 (see _check_curvature).
+CURVED_INTERIOR_TOL = 1e-3
+
+
+def _check_curvature(model: FEModel, formulation: str) -> None:
+    """CalculiX integrates C3D10 (4 points) and the CAX6 wedge with rules that are not exact on
+    curved isoparametric cells: on meshes with strongly curved interior edges the patch test fails
+    (6e-5 for C3D10, up to 4e-3 for CAX6), while CPS6 / CPE6 pass. gmsh keeps interior edges
+    straight and curves only boundary edges (offset O(h^2 / R)), for which the error is a
+    discretization-level difference that vanishes under refinement: accepted with a warning."""
+    if model.order != 2 or not (model.dim == 3 or formulation == "axisymmetric"):
+        return
+    from feacore.solver._ccx_mesh import TET_EDGES, TRI_EDGES, _encode
+
+    ed = TRI_EDGES if model.dim == 2 else TET_EDGES
+    a = model.conn[:, ed[:, 0]].ravel()
+    b = model.conn[:, ed[:, 1]].ravel()
+    mid = model.conn[:, model.n_corners:].ravel()
+    Xa, Xb, Xm = model.X[a], model.X[b], model.X[mid]
+    rel = np.linalg.norm(Xm - 0.5 * (Xa + Xb), axis=1) / np.maximum(np.linalg.norm(Xb - Xa, axis=1), 1e-300)
+    # boundary edges: edges of faces that belong to one cell only
+    fl = model.faces_local[:, : model.dim]
+    fc = np.sort(model.conn[:, fl].reshape(-1, model.dim), axis=1)
+    uf, cnt = np.unique(fc, axis=0, return_counts=True)
+    bf = uf[cnt == 1]
+    pairs = [(0, 1)] if model.dim == 2 else [(0, 1), (1, 2), (0, 2)]
+    be = np.unique(np.sort(np.vstack([bf[:, list(p)] for p in pairs]), axis=1), axis=0)
+    base = model.n_nodes + 1
+    on_b = np.isin(_encode(np.sort(np.c_[a, b], axis=1), base), _encode(be, base))
+    worst_int = float(rel[~on_b].max()) if np.any(~on_b) else 0.0
+    worst_b = float(rel[on_b].max()) if np.any(on_b) else 0.0
+    kind = "C3D10" if model.dim == 3 else "CAX6"
+    if worst_int > CURVED_INTERIOR_TOL:
+        raise NotImplementedError(
+            f"ccx backend: {kind} cells with curved interior edges (midside offset up to "
+            f"{worst_int:.2g} x edge length) are refused: CalculiX's {kind} quadrature is not exact on "
+            "curved isoparametric cells (patch test fails). Use a mesh with straight interior edges "
+            "(gmsh default) or the skfem backend")
+    if worst_b > 1e-6:
+        model.warnings.append(
+            f"{kind} cells with curved boundary edges (midside offset up to {worst_b:.2g} x edge length): "
+            "CalculiX's quadrature is inexact on curved cells; expect discretization-level differences "
+            "from skfem that vanish under refinement")
+
+
+def axi_radial_factor(model: FEModel) -> np.ndarray:
+    """Per-node factor c with (reported 2D radial displacement) = c * u_r for CAX elements.
+
+    ccx expands CAX elements into a wedge spanning -1..+1 degree and reports, as the 2D radial
+    displacement, the x-component of expanded nodes: u_r cos(1 deg) at nodes that only exist on
+    the +-1 degree faces (CAX6 midside nodes, all CAX3 nodes) and the (1, 4, 1)/6 average over
+    -1, 0, +1 degree, u_r (4 + 2 cos 1 deg) / 6, at CAX6 corner nodes. Measured to 2e-6 on exact
+    linear fields (uniform thermal expansion)."""
+    c1 = math.cos(math.radians(1.0))
+    c = np.full(model.n_nodes, c1)
+    if model.order == 2:
+        c[np.unique(model.conn[:, :3])] = (4.0 + 2.0 * c1) / 6.0
+    return c
 
 
 # ============================================================================ deck
@@ -96,17 +167,32 @@ class _Deck:
         self.thermal = False
         self.warnings: list[str] = []
         self.has_thermal_load = any(l.type == "temperature" for l in case.loads)
+        # Plane stress: CalculiX expands CPS elements into a 3D slab of the section thickness whose
+        # faces are free, so only a slab that is thin compared with the cells is in plane stress
+        # (a thick slab carries transverse shear between cells and converges to a 3D plate
+        # solution). Run ccx with a thin internal section t_int and scale the loads by t_int / t:
+        # displacements, strains and stresses of plane stress do not depend on the thickness.
+        self.t_section = case.analysis.thickness
+        if self.form == "plane_stress":
+            e = model.conn[:, [0, 1, 2]]
+            lmin = float(np.min(np.linalg.norm(model.X[e] - model.X[np.roll(e, 1, axis=1)], axis=2)))
+            ratio = float(case.analysis.options.get("ccx_plane_stress_ratio", PLANE_STRESS_RATIO))
+            self.t_section = ratio * lmin
 
     # ----------------------------------------------------------- unit conversions
     @property
     def load_factor(self) -> float:
         """schema nodal load -> CalculiX *CLOAD / *CFLUX value."""
-        return AXI_CLOAD_FACTOR if self.axi else 1.0
+        if self.axi:
+            return AXI_CLOAD_FACTOR
+        return self.t_section / self.case.analysis.thickness
 
     @property
     def out_factor(self) -> float:
         """CalculiX RF / RFL / ELSE -> schema value (full 360 degrees for axisymmetric)."""
-        return AXI_OUTPUT_FACTOR if self.axi else 1.0
+        if self.axi:
+            return AXI_OUTPUT_FACTOR
+        return self.case.analysis.thickness / self.t_section
 
     def weight(self, x: np.ndarray) -> np.ndarray:
         """Integration weight of the physical body at points x (..., 3): thickness, 2 pi r or 1."""
@@ -185,7 +271,16 @@ class _Deck:
                 self.warnings.append(f"{bc.type} BC at point {bc.point}: nearest node is {d[i]:.3g} away "
                                      f"(cell size ~{h:.3g})")
             return np.array([i])
-        return self.m.nodes_of(bc.group)
+        nodes = self.m.nodes_of(bc.group)
+        where = getattr(bc, "where", None)
+        if where is not None:
+            # keep the group's nodes where the expression is nonzero (axisymmetric: x = r, y = z)
+            X = self.m.X[nodes]
+            keep = np.asarray(eval_expr(where, X[:, 0], X[:, 1], X[:, 2])) != 0
+            nodes = nodes[keep]
+            if len(nodes) == 0:
+                raise CaseError(f"{bc.type} BC on group {bc.group!r}: where {where!r} selects no node")
+        return nodes
 
     def set_dirichlet(self, nodes, dof: int, values):
         values = np.broadcast_to(np.asarray(values, dtype=float), (len(nodes),))
@@ -259,7 +354,7 @@ class _Deck:
                     L += [f"*EXPANSION, ZERO={fnum(T_ref)}", fnum(mt.alpha)]
             L.append(f"*SOLID SECTION, ELSET={es}, MATERIAL=MAT{k + 1}")
             if self.plane:
-                L.append(fnum(c.analysis.thickness))
+                L.append(fnum(self.t_section))
 
     # ----------------------------------------------------------- elasticity
     def _elastic_step(self) -> list[str]:
@@ -459,17 +554,7 @@ class CcxResult(Result):
             if Sg is None:
                 raise CcxError("no STRESS block in the .frd")
             if a.formulation == "axisymmetric":
-                # ccx expands CAX elements into a wedge spanning -1..+1 degree and reports, as the 2D
-                # radial displacement, the x-component of expanded nodes: u_r cos(1 deg) at nodes that
-                # only exist on the +-1 degree faces (CAX6 midside nodes, all CAX3 nodes) and the
-                # (1, 4, 1)/6 average over -1, 0, +1 degree, u_r (4 + 2 cos 1deg) / 6, at CAX6 corner
-                # nodes. Measured to 2e-6 on exact linear fields (uniform expansion); undone here.
-                c1 = math.cos(math.radians(1.0))
-                if model.order == 2:
-                    U[np.unique(model.conn[:, :3]), 0] /= (4.0 + 2.0 * c1) / 6.0
-                    U[np.unique(model.conn[:, 3:]), 0] /= c1
-                else:
-                    U[:, 0] /= c1
+                U[:, 0] /= axi_radial_factor(model)
             self.U = U
             self.RF = nodal_block("FORC", 3)
             self.S = self._map_stress(Sg)

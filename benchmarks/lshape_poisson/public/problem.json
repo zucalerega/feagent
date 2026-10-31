@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "lshape_poisson",
+  "title": "Laplace equation on an L-shaped domain with a re-entrant corner (exact r^(2/3) solution)",
+  "family": "lshape_poisson",
+  "tags": [
+    "2d",
+    "heat",
+    "poisson",
+    "analytical",
+    "singular",
+    "reentrant_corner",
+    "expression_bc"
+  ],
+  "dim": 2,
+  "physics": "heat",
+  "formulation": "2d",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "k": 1.0,
+    "h0": 0.2
+  },
+  "description": "Steady heat conduction / Laplace equation (k = 1, no heat source) on an L-shaped plate with a re-entrant corner. Units: lengths in m, T in K (the problem is dimensionless in effect).\nGeometry (STEP, planar face in the xy-plane): the square (-1, 1) x (-1, 1) m with the quadrant [0, 1] x [-1, 0] removed. Vertices (0, 0), (1, 0), (1, 1), (-1, 1), (-1, -1), (0, -1); the re-entrant (270 degree) corner is at the origin.\nMaterial: conductivity k = 1.0 W/(m K).\nBoundary conditions (Dirichlet everywhere):\n  the two edges meeting at the re-entrant corner, y = 0 for 0 <= x <= 1 and x = 0 for -1 <= y <= 0: T = 0;\n  the four outer edges (T in K, coordinates in m):\n    x = 1 (0 <= y <= 1): T = ((1.0)**2 + y**2)**(1/3)*cos(2/3*arctan2(-(1.0) - y, y - (1.0)))\n    y = 1 (-1 <= x <= 1): T = (x**2 + (1.0)**2)**(1/3)*cos(2/3*arctan2(-x - (1.0), (1.0) - x))\n    x = -1 (-1 <= y <= 1): T = ((-1.0)**2 + y**2)**(1/3)*cos(2/3*arctan2(-(-1.0) - y, y - (-1.0)))\n    y = -1 (-1 <= x <= 0): T = (x**2 + (-1.0)**2)**(1/3)*cos(2/3*arctan2(-x - (-1.0), (-1.0) - x))\nReport:\n  T_point     temperature at (-0.5, 0.5) [K]\n  q_max       maximum heat-flux magnitude |q| = k |grad T| over the domain [W/m^2]\n  T_integral  integral of T over the domain [K m^2]",
+  "qois": [
+    {
+      "name": "T_point",
+      "type": "point",
+      "field": "T",
+      "point": [
+        -0.5,
+        0.5
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "q_max",
+      "type": "max",
+      "field": "q_mag",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "T_integral",
+      "type": "integral",
+      "field": "T",
+      "point": null,
+      "group": "domain",
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

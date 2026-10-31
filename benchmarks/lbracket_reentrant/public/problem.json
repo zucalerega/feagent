@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "id": "lbracket_reentrant",
+  "title": "L-shaped bracket with a sharp re-entrant corner (plane stress, singular stress)",
+  "family": "lbracket_reentrant",
+  "tags": [
+    "2d",
+    "plane_stress",
+    "singular",
+    "reentrant_corner",
+    "no_reference"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "plane_stress",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "b": 0.04,
+    "H": 0.12,
+    "L": 0.12,
+    "F": 200.0,
+    "E": 70000000000.0,
+    "nu": 0.33,
+    "thickness": 0.002,
+    "h0": 0.01
+  },
+  "description": "Aluminium L-shaped bracket, plane stress. The inner (re-entrant) corner is sharp (no fillet).\nGeometry (STEP, planar face in the xy-plane): the union of a vertical leg [0, 0.04] x [0, 0.12] m and a horizontal leg [0, 0.12] x [0, 0.04] m. Vertices (0, 0), (0.12, 0), (0.12, 0.04), (0.04, 0.04), (0.04, 0.12), (0, 0.12); the re-entrant corner is at (0.04, 0.04). Thickness 0.002 m.\nMaterial: linear elastic, E = 7e+10 Pa, nu = 0.33.\nSupports: the top end of the vertical leg, y = 0.12 m (0 <= x <= 0.04), is fully clamped.\nLoads: total force F = 200 N in the -y direction, uniformly distributed over the free end of the horizontal leg, x = 0.12 m (0 <= y <= 0.04). All other edges are free.\nReport (SI units):\n  vm_max         maximum von Mises stress [Pa]\n  tip_uy         u_y at the middle of the loaded end, (0.12, 0.02) [m]\n  strain_energy  total strain energy (given thickness) [J]",
+  "qois": [
+    {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "tip_uy",
+      "type": "point",
+      "field": "uy",
+      "point": [
+        0.12,
+        0.02
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "strain_energy",
+      "type": "strain_energy",
+      "field": null,
+      "point": null,
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

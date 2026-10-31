@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "nafems_t4",
+  "title": "NAFEMS T4: 2D steady heat conduction with convection",
+  "family": "nafems_t4",
+  "tags": [
+    "nafems",
+    "2d",
+    "heat",
+    "steady",
+    "convection"
+  ],
+  "dim": 2,
+  "physics": "heat",
+  "formulation": "2d",
+  "units": "SI (m, W, degC)",
+  "params": {
+    "h0": 0.05
+  },
+  "description": "NAFEMS benchmark T4, two-dimensional steady-state heat conduction with convection.\nGeometry (metres; the STEP file holds it in the plane z = 0): the rectangle 0 <= x <= 0.6, 0 <= y <= 1.0. Two-dimensional conduction (no variation through the thickness, no heat flow out of the plane).\nMaterial: isotropic thermal conductivity k = 52 W/(m degC). No internal heat generation.\nBoundary conditions: bottom edge (y = 0): prescribed temperature 100 degC. Left edge (x = 0): insulated (zero heat flux). Right edge (x = 0.6) and top edge (y = 1.0): convection to an ambient temperature of 0 degC with film coefficient h = 750 W/(m^2 degC).\nReport: T_E = temperature at point E = (0.6, 0.2) on the right edge, in degC.",
+  "qois": [
+    {
+      "name": "T_E",
+      "type": "point",
+      "field": "T",
+      "point": [
+        0.6,
+        0.2
+      ],
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

@@ -113,23 +113,49 @@ class Locator:
         lam_b = _bary(self.Xc[elem], pts)
         xi = lam_b[:, 1:]
         if self.order == 2:
-            xi = self._newton(elem, pts, xi)
+            elem, xi, sc = self._curved(pts, elem, cand, score)
         return elem, xi, sc
 
-    def _newton(self, elem, pts, xi, iters: int = 12):
+    def _curved(self, pts, elem, cand, score, kk: int = 8):
+        """Curved (isoparametric) cells: a point inside a cell's straight-sided simplex can lie in a
+        neighbour's curved cell. Invert the map in the best few candidates and keep a converged
+        inverse inside the reference cell (else the converged one closest to it)."""
+        m = len(pts)
+        kk = int(min(kk, cand.shape[1]))
+        order_c = np.argsort(-score, axis=1)[:, :kk]
+        cands = np.concatenate([elem[:, None], cand[np.arange(m)[:, None], order_c]], axis=1)
+        E = cands.ravel()
+        P = np.repeat(pts, cands.shape[1], axis=0)
+        xi0 = _bary(self.Xc[E], P)[:, 1:]
+        xi, res = self._newton(E, P, xi0, return_residual=True)
+        lam = np.concatenate([1.0 - xi.sum(axis=1, keepdims=True), xi], axis=1).min(axis=1)
+        size = np.linalg.norm(self.Xc[E, 1] - self.Xc[E, 0], axis=1)
+        conv = res <= 1e-9 * np.maximum(size, 1e-300)
+        key = np.where(conv, lam, -1e300 - res)              # converged first, then most inside
+        key = key.reshape(m, -1)
+        best = np.argmax(key, axis=1)
+        j = np.arange(m) * cands.shape[1] + best
+        return E[j], xi[j], lam[j]
+
+    def _newton(self, elem, pts, xi, iters: int = 30, return_residual: bool = False):
         Xe = self.X[self.conn[elem]]                        # (m, nen, d)
         for _ in range(iters):
             N, dN = shape(self.dim, 2, xi)                  # (m, nen), (m, nen, d)
             x = np.einsum("ma,mai->mi", N, Xe)
             J = np.einsum("mas,mai->mis", dN, Xe)
             r = x - pts
-            try:
-                dx = np.linalg.solve(J, r[..., None])[..., 0]
-            except np.linalg.LinAlgError:                   # pragma: no cover
-                break
+            det = np.linalg.det(J)
+            bad = np.abs(det) < 1e-300
+            J[bad] = np.eye(self.dim)
+            dx = np.linalg.solve(J, r[..., None])[..., 0]
+            dx = np.clip(dx, -0.5, 0.5)                     # damp steps (folded maps far outside)
             xi = xi - dx
-            if np.max(np.abs(dx)) < 1e-13:
+            if np.max(np.abs(dx)) < 1e-14:
                 break
+        if return_residual:
+            N, _ = shape(self.dim, 2, xi)
+            res = np.linalg.norm(np.einsum("ma,mai->mi", N, Xe) - pts, axis=1)
+            return xi, res
         return xi
 
 

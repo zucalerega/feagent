@@ -10,7 +10,7 @@ loads, interpolation at probe points, and QoI integrals.
 
 Files: `feacore/solver/ccx_backend.py` (deck + result), `_ccx_mesh.py` (gmsh → CalculiX
 model), `_ccx_fem.py` (shape functions, quadrature, point location), `_ccx_io.py` (run,
-`.frd` / `.dat` parsers). Tests: `tests/test_solver_ccx.py` (38 tests, about 4 s).
+`.frd` / `.dat` parsers). Tests: `tests/test_solver_ccx.py` (42 tests, about 3 s).
 
 Options: `workdir` (keep the run there), `keep=True`, `ccx` (executable; also `$FEACORE_CCX`),
 `threads` (default `$OMP_NUM_THREADS` or 1), `timeout`. Scratch runs go under
@@ -21,10 +21,10 @@ on failure; the `CcxError` message names it.
 
 | case | CalculiX |
 |---|---|
-| plane_stress / plane_strain / axisymmetric / 3d, order 1 / 2 | CPS3/CPS6, CPE3/CPE6, CAX3/CAX6, C3D4/C3D10; thickness on `*SOLID SECTION` |
+| plane_stress / plane_strain / axisymmetric / 3d, order 1 / 2 | CPS3/CPS6 (thin internal section, see below), CPE3/CPE6, CAX6 (CAX3 refused), C3D4/C3D10; thickness on `*SOLID SECTION` |
 | heat 2d / axisymmetric / 3d | same element types, `*HEAT TRANSFER, STEADY STATE`, `*CONDUCTIVITY` |
 | materials + regions | one `*MATERIAL` + `*SOLID SECTION` per material; each cell takes the first matching region (as `Case.material_for`) |
-| fixed / displacement / symmetry / temperature | `*BOUNDARY` per node and dof (expressions evaluated at nodes). Later BCs override earlier ones on the same node/dof. `point` = nearest node. Symmetry: the normal is the axis along which the group's coordinates do not vary (otherwise `CaseError`) |
+| fixed / displacement / symmetry / temperature | `*BOUNDARY` per node and dof (expressions evaluated at nodes). Later BCs override earlier ones on the same node/dof. `point` = nearest node. `where` (expression in x, y, z; axisymmetric x = r, y = z) keeps the group's nodes where it is nonzero, midside nodes included; selecting no node raises `CaseError`. Symmetry: the normal is the axis along which the group's coordinates do not vary (otherwise `CaseError`) |
 | pressure (constant) | `*DLOAD elem, Pk` on the element faces of the group |
 | pressure (expression; also any CAX3 pressure), traction, force | consistent nodal loads ∫N·t dA (exact quadrature on the isoparametric faces, ×thickness or ×2πr) → `*CLOAD` |
 | body_force (constant) | `*DLOAD elset, BX/BY/BZ` (force per volume) |
@@ -100,6 +100,41 @@ CalculiX expands CAX elements into a 3D wedge from −1° to +1°. Measured agai
   uses ccx's face integration and is untested. CAX3 is also about 2e-4 stiffer in the axial
   direction. CAX stresses are not corrected for the ±1° projection; that artifact is below
   sin²(1°)·|σθθ − σrr| ≈ 3e-4·|σθθ − σrr|.
+
+## Refused configurations (raise `NotImplementedError`, so verification skips them)
+
+Found by the independent MMS / patch tests (`tests/test_code_verification.py`). Refused because
+CalculiX cannot do them exactly:
+
+* **Axisymmetric order 1 (CAX3)**, elasticity and heat. The 2-degree wedge expansion is about
+  2e-4 too stiff, and its face loads and films are split inconsistently over the nodes (heat with
+  convection: 1e-2). Use `order = 2`.
+* **C3D10 or CAX6 cells with curved interior edges** (midside offset > 1e-3 × edge length,
+  `CURVED_INTERIOR_TOL`). CalculiX's quadrature (C3D10: 4 points) is not exact on curved
+  isoparametric cells, and the patch test fails: 6e-5 for C3D10, up to 4e-3 for CAX6. CPS6 / CPE6
+  pass. gmsh keeps interior edges straight and curves only boundary edges, by O(h²/R); those
+  meshes are accepted with a warning, and the remaining difference from skfem is at
+  discretization level and vanishes under refinement (quarter cylinder, h/R = 0.3: u_r 8e-5).
+
+## Fixes after code verification
+
+* **Plane stress** is no longer the thick slab. CPS elements are 3D slabs with free faces, so a
+  thick slab carries transverse shear between cells and converges to a 3D plate, not plane
+  stress. The MMS order was about 0 with body forces, and the result was 1-3% off skfem. ccx now
+  runs with an internal section thickness `t' = 1e-3 × shortest cell edge`
+  (`analysis.options["ccx_plane_stress_ratio"]`). Loads are scaled by t'/t, and RF / ELSE are
+  scaled back by t/t'. Displacements and stresses of plane stress don't depend on the thickness.
+  The MMS convergence studies (E-ps-square-dirichlet / -mixed, E-ps-annulus-lame, P1 and P2) now
+  reach the theoretical orders. A residual difference from skfem on a given mesh remains,
+  2e-4 to 1e-3 at P1 on coarse meshes: in the thin-slab limit ε_zz is continuous between cells,
+  whereas discrete plane stress makes it cell-wise. It converges at the optimal rate.
+* **probe in curved P2 cells**: a point inside a cell's straight-sided triangle can lie in a
+  neighbour's curved cell. The map is now inverted (damped Newton) in up to 9 candidate cells,
+  and a converged inverse inside the reference cell is kept. Error went from 4e-4 to 1e-7.
+* **Remaining CAX6 limit**: on straight-sided cells with radial surface loads (`*CLOAD` radial
+  components) the axisymmetric patch test shows u 4e-5 and σ 9e-5 errors; the strain energy is
+  exact. Thermal and axial-load patches are exact, and Lamé with `*DLOAD` pressure converges.
+  Treat axisymmetric ccx results as accurate to about 1e-4.
 
 ## Verification (tests/test_solver_ccx.py)
 
