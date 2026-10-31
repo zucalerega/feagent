@@ -680,6 +680,11 @@ def main(argv=None) -> int:
 
     try:
         for gen in range(args.generations):
+            # Early stop without killing the process: `touch <out>/STOP` ends the run cleanly before the
+            # next generation starts (nothing more is spent; the summary and plot are still written).
+            if (out / "STOP").exists():
+                print(f"\nSTOP file found in {out}; stopping before generation {gen}.")
+                break
             gdir = out / f"gen{gen}"
             (gdir / "runs").mkdir(parents=True, exist_ok=True)
             playbook.save(out / f"playbook_gen{gen}.json")
