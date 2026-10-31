@@ -57,8 +57,10 @@ CLI exit codes: 0 ok, 1 a gate failed, 2 usage/spec/query/CAD error (message + h
 - **Never pick faces by a remembered tag.** Tags belong to one gmsh session and change when the
   CAD or the domain changes. Use queries with `expect` in the spec. `ids:` is only for a one-off
   look in `find_faces`/`render_view`.
-- **Never claim done while a gate fails.** The Stop hook blocks finishing while any spec you
-  meshed or checked is `fail`, `unchecked`, or edited since its last check. If a failure is
+- **Never claim done while a gate fails.** The Stop hook blocks finishing while any spec meshed
+  or checked in this session (since the session's first transcript entry; every recorded spec if
+  the hook gets no transcript) is `fail`, `unchecked`, or edited since its last check. After 3
+  blocks for the same unchanged specs it lets you stop; that is not a pass. If a failure is
   acceptable (for example a coarse preview the user asked for), run
   `feagent waive SPEC --reason "<why>"` and repeat the reason to the user. Editing the spec
   invalidates the waiver.

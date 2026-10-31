@@ -26,7 +26,7 @@ mesh failure, 2 usage/spec/query error (message + hint on stderr), 3 internal er
 - **MCP server:** `uv run feagent-mcp` (configured in `.mcp.json`). Tools: `automesh`,
   `inspect_geometry`, `find_faces`, `render_view`, `mesh`, `check_mesh`; prompt `meshing_workflow`.
 - **Claude Code:** launch it from this directory to get the `fe-mesh` skill and a Stop hook that
-  blocks finishing while a tracked spec is failing or unchecked (`feagent waive SPEC --reason ...`
+  blocks finishing while a spec of this session is failing or unchecked (`feagent waive SPEC --reason ...`
   to accept a known failure).
 - **Improver-editable context:** `agent_context/` holds `SKILL.md` (workflow), `tools.yaml` (MCP
   tool descriptions) and `examples/` (passing specs). Point a server at another copy with

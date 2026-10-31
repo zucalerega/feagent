@@ -81,7 +81,7 @@ def load_checked_spec(spec_path: str | Path) -> tuple[MeshSpec, float | None]:
     from .errors import SpecError
     from .spec import load_spec
 
-    mtime = _mtime(Path(spec_path))
+    mtime = spec_mtime(Path(spec_path))
     try:
         return load_spec(spec_path), mtime
     except SpecError as e:
@@ -267,13 +267,13 @@ def record_state(spec_path: str, status: str, waiver: str | None = None, *,
     spec to avoid recording an edit made during the run. ``waiver`` sets a waiver for that mtime;
     with no waiver a "pass" clears any earlier one and other statuses keep it."""
     p = Path(spec_path).resolve()
-    mtime = _mtime(p) if spec_mtime is None else spec_mtime
+    mtime = _current_mtime(p) if spec_mtime is None else spec_mtime  # (the kwarg shadows the function)
     data = load_state()
     old = data["specs"].get(str(p), {})
     entry = {"status": status, "checked_at": time.time(), "spec_mtime": mtime, "error": error,
              "report_created_at": report_created_at, **_waiver_fields(old, status, waiver, mtime)}
     data["specs"][str(p)] = entry
-    _write_state(data)
+    write_state(data)
     return entry
 
 
@@ -289,14 +289,15 @@ def waive(spec_path: str, reason: str) -> dict:
     """Waive the spec's current result (status kept; "unchecked" entry if none) at its mtime."""
     key = str(Path(spec_path).resolve())
     entry = load_state()["specs"].get(key) or record_state(spec_path, "unchecked")
-    entry.update(waiver=reason, waiver_spec_mtime=_mtime(Path(key)))
+    entry.update(waiver=reason, waiver_spec_mtime=spec_mtime(Path(key)))
     data = load_state()
     data["specs"][key] = entry
-    _write_state(data)
+    write_state(data)
     return entry
 
 
-def _write_state(data: dict) -> None:
+def write_state(data: dict) -> None:
+    """Write the whole state file atomically (temp file + rename)."""
     path = state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
@@ -304,8 +305,12 @@ def _write_state(data: dict) -> None:
     os.replace(tmp, path)
 
 
-def _mtime(p: Path) -> float | None:
+def spec_mtime(p: Path) -> float | None:
+    """The file's mtime (epoch seconds), None if it does not exist."""
     try:
         return p.stat().st_mtime
     except OSError:
         return None
+
+
+_current_mtime = spec_mtime

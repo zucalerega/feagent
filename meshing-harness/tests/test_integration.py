@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 from feagent import hook, mcp_server
-from feagent.check import load_state, record_state, run_check, waive
+from feagent.check import load_state, record_state, run_check, waive, write_state
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTEXT = ROOT / "agent_context"
@@ -60,7 +60,63 @@ def test_hook_allows_after_three_consecutive_blocks(spec, capsys):
     record_state(str(spec), "unchecked")
     assert [hook.main("{}") for _ in range(4)] == [2, 2, 2, 0]
     assert "3" in capsys.readouterr().err.splitlines()[-1]
-    assert hook.main("{}") == 2  # a new stop attempt gets three blocks again
+
+
+def test_hook_escape_persists_for_unchanged_set(spec, capsys):
+    record_state(str(spec), "fail")
+    assert [hook.main("{}") for _ in range(5)] == [2, 2, 2, 0, 0]
+    assert "already reported" in capsys.readouterr().err.splitlines()[-1]
+    record_state(str(spec), "fail")  # re-checked, same mtime and status: still the same set
+    assert hook.main("{}") == 0
+
+
+def test_hook_rearms_on_a_new_failing_spec_or_an_edit(spec, tmp_path):
+    record_state(str(spec), "fail")
+    assert [hook.main("{}") for _ in range(4)] == [2, 2, 2, 0]
+    other = tmp_path / "other.yaml"
+    other.write_text("# other\n")
+    record_state(str(other), "fail")
+    assert [hook.main("{}") for _ in range(4)] == [2, 2, 2, 0]
+    _bump_mtime(spec)  # the escaped set changed: blocks again
+    assert hook.main("{}") == 2
+
+
+def _transcript(tmp_path: Path, started: float) -> str:
+    from datetime import datetime, timezone
+    p = tmp_path / "session.jsonl"
+    stamp = datetime.fromtimestamp(started, timezone.utc).isoformat().replace("+00:00", "Z")
+    p.write_text(json.dumps({"type": "mode"}) + "\n" + json.dumps({"timestamp": stamp}) + "\n")
+    return json.dumps({"transcript_path": str(p), "stop_hook_active": False})
+
+
+def test_hook_ignores_entries_of_older_sessions(spec, tmp_path):
+    import time
+    record_state(str(spec), "fail")
+    data = load_state()
+    data["specs"][str(spec.resolve())]["checked_at"] = time.time() - 3600
+    write_state(data)
+    payload = _transcript(tmp_path, time.time() - 60)
+    assert hook.main(payload) == 0  # recorded before this session started
+    assert hook.main("{}") == 2  # no transcript: every entry counts
+    record_state(str(spec), "fail")  # recorded in this session
+    assert hook.main(payload) == 2
+
+
+def test_hook_fresh_stop_attempt_restarts_the_count(spec):
+    record_state(str(spec), "fail")
+    active = json.dumps({"stop_hook_active": True})
+    assert [hook.main(active) for _ in range(2)] == [2, 2]
+    assert hook.main(json.dumps({"stop_hook_active": False})) == 2
+    assert load_state()["hook_blocks"]["count"] == 1
+    assert hook.main('{"stop_hook_active": "odd", "transcript_path": 5}') == 2  # never crashes
+
+
+@pytest.mark.parametrize("state", [{"specs": []}, {"specs": {"/x/mesh.yaml": "fail"}}])
+def test_hook_allows_on_malformed_state(state_file, state, capsys):
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps(state))
+    assert hook.main("{}") == 0
+    assert "malformed" in capsys.readouterr().err
 
 
 def test_hook_counter_restarts_when_blocking_set_changes(spec, tmp_path):

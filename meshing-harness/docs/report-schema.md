@@ -141,6 +141,22 @@ kept.
 | `report_created_at` | `created_at` of the `report.json` this entry describes (`check` only), else `null`. |
 | `waiver`, `waiver_spec_mtime` | Set by `feagent waive SPEC --reason`. A waiver applies only while the spec's mtime equals `waiver_spec_mtime`, so editing the spec makes it stale again. A passing check clears the waiver; a failing check or a mesh run keeps it. |
 
+### Stop hook (`feagent hook-stop`)
+
+The hook reads the Claude Code Stop payload from stdin (`transcript_path`, `stop_hook_active`).
+**Scope:** the session starts at the first timestamped entry of the transcript, and only entries
+whose `checked_at` is at or after that time can block; entries from earlier sessions are ignored.
+Without a payload or a readable transcript every entry counts. An entry blocks when the spec file
+exists and the entry is `fail`, `unchecked` or stale (spec mtime changed), unless a valid waiver
+covers it. Blocking means exit code 2 with the reasons on stderr.
+
+**Escape:** after 3 consecutive blocks for the same blocking set (the exact `[spec, spec mtime,
+status]` triples) the hook allows the stop and keeps allowing that set; it blocks again only when
+the set changes (an edit, a new status, a new failing spec). `stop_hook_active: false` marks a
+fresh stop attempt and restarts the count. The counter is the top-level `hook_blocks` key:
+`{"count": n, "blocking": [[spec, mtime, status], ...] | null, "allowed": [...] | null}`. A
+malformed state file (`specs` or an entry not a mapping) never blocks; the hook says so on stderr.
+
 ## Exit codes (every `feagent` command)
 
 | code | meaning |
