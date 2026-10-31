@@ -128,7 +128,8 @@ def run_bcset(step, part: Part, bcset: BCSet, meshes: list[dict], out: Path,
         vals = res.evaluate_all()
         dt = time.perf_counter() - t0
         row = {"id": bcset.id, "level": k, "h": m["h"], "h_rep": res.info.h_rep, "n_dofs": res.info.n_dofs,
-               "solve_s": res.info.wall_time, "total_s": dt, "qois": vals}
+               "solve_s": res.info.wall_time, "total_s": dt, "qois": vals,
+               "linear": [w for w in res.info.warnings if "linear solver" in w or "GPU slot" in w]}
         if k == len(meshes) - 1:
             rep = diagnose_result(res)
             row["diagnostics"] = {"status": rep.status, "flags": rep.ids(),

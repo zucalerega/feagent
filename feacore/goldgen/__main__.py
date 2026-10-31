@@ -184,6 +184,8 @@ def cmd_run(a) -> int:
     t_start = time.perf_counter()
     # two pools: gmsh meshes parts on CPU cores while solve workers keep the GPU busy; each part's
     # BC sets enter the solve pool the moment its meshes are ready
+    if a.gpu_slots:                                 # inherited by the solve workers (forked below)
+        os.environ["FEACORE_GPU_SLOTS"] = str(a.gpu_slots)
     limit_gb = float(os.environ.get("GMN_MEMORY_LIMIT_BYTES", 0)) / 1e9 or _host_memory_gb()
     budget = 0.8 * limit_gb - 1.5 * a.mesh_workers               # what the solve workers may use together
     print(f"memory: limit {limit_gb:.0f} GB, solve budget {budget:.0f} GB", flush=True)
@@ -303,6 +305,8 @@ def main(argv=None) -> int:
     r.add_argument("step_dir", help="unused; STEP paths come from the screen file (kept for compatibility)")
     r.add_argument("--mesh-workers", type=int, default=1, help="parallel gmsh processes (CPU)")
     r.add_argument("--solve-workers", type=int, default=1, help="parallel solve processes sharing the GPU")
+    r.add_argument("--gpu-slots", type=int, default=2,
+                   help="max concurrent GPU factorisations across solve workers (0 = no limit)")
     r.add_argument("--linear-solver", default=None)
     r.set_defaults(func=cmd_run)
     a = ap.parse_args(argv)
