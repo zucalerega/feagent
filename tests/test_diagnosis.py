@@ -233,3 +233,63 @@ def test_curator_keeps_only_evidence_backed_lessons_and_counterfactual_goes_firs
     pb = Playbook([Bullet("mesh-0001", "meshing", "contrast one", helpful=3, evidence_type="contrast"),
                    Bullet("mesh-0002", "meshing", "proven one", evidence_type="counterfactual")])
     assert pb.render().index("mesh-0002") < pb.render().index("mesh-0001")
+
+
+# --------------------------------------------------------------------------- teacher modes (ACE_TEACHER)
+
+from ace import config  # noqa: E402
+
+
+@pytest.mark.parametrize("mode,has_rerun,has_inspect", [("rerun", True, False), ("inspect", False, True),
+                                                         ("both", True, True)])
+def test_tool_specs_per_mode(mode, has_rerun, has_inspect, monkeypatch):
+    monkeypatch.setattr(config, "TEACHER_MODE", mode)
+    names = {t["name"] for t in diagnoser.tool_specs()}           # no argument: the current mode
+    assert ("rerun_from_stage" in names) == has_rerun
+    assert {"get_error_map", "get_mesh_layout"} <= names if has_inspect else not names & {"get_error_map", "get_mesh_layout"}
+    assert ("rerun_from_stage" in diagnoser.system_prompt()) == has_rerun
+
+
+def test_inspect_mode_refuses_rerun_and_needs_none(lame_runs, cal, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TEACHER_MODE", "inspect")
+    tools = diagnoser.DiagnoserTools("lame_cylinder_plane_strain", lame_runs, Playbook(), 0.04, tmp_path, fake_rerun(True))
+    out, is_err = tools.call("rerun_from_stage", {"run_id": lame_runs[1]["run_id"], "stage": "mesh",
+                                                  "change": {"name": "refine_mesh", "args": {"factor": 2}}})
+    assert is_err and not tools.reruns
+    res = _session(lame_runs, cal, tmp_path, flip=True)            # submits without a rerun: not refused
+    assert not any(e["tool"] == "rerun_from_stage" for e in res["log"])
+    assert not any("rerun_from_stage before submitting" in e["output"] for e in res["log"])
+    d = res["diagnosis"]
+    assert d is not None and not any(les.evidence_type == "counterfactual" for les in d.lessons)
+
+
+def test_ideas_to_try_parse(lame_runs, cal, tmp_path):
+    d = _session(lame_runs, cal, tmp_path, flip=True)["diagnosis"]
+    assert d.agent_advice and all(len(a.ideas_to_try) >= 2 for a in d.agent_advice)
+    assert diagnoser.AgentAdvice(agent="a0", section="meshing", content="c").ideas_to_try == []
+
+
+def test_inspect_tools_on_a_coarse_cooks_membrane(tmp_path, monkeypatch):
+    from ace import inspect_tools
+    from ace.field_error import CACHE
+    if not (CACHE / "cooks_membrane.npz").exists() or not (CACHE / "cooks_membrane_points.json").exists():
+        pytest.skip("no cached field reference for cooks_membrane")
+    pid = "cooks_membrane"
+    p = fea.get_problem(pid)
+    req = {"h": 2 * p.params["h0"], "order": 1, "refinements": []}
+    m = fea.make_mesh(p, tmp_path / "run.msh", **req)
+    run = {"run_id": "g0-cooks_membrane-a0", "problem_id": pid, "submitted": 0, "meshes": [{**m, "request": req}],
+           "solves": [{"mesh": m, "mesh_index": 0, "setup": reference_setup(p), "result": {"ok": True}}]}
+    assert "error" in inspect_tools.error_map(pid, run, tmp_path)   # point mode: not available
+    monkeypatch.setattr(config, "SCORE", "field")
+    em = inspect_tools.error_map(pid, run, tmp_path)
+    assert 0.01 < em["field_error"] < 1 and 1 <= len(em["hotspots"]) <= inspect_tools.MAX_HOTSPOTS
+    from ace.field_error import errors_of_setup                     # the per-point energies sum to the field error
+    assert em["field_error"] == pytest.approx(errors_of_setup(pid, m, reference_setup(p))["field"], rel=0.01)
+    shares = [h["share"] for h in em["hotspots"]]
+    assert shares == sorted(shares, reverse=True) and sum(shares) <= 1.01
+    assert {h["nearest_group"] for h in em["hotspots"]} <= {"clamped", "loaded", "top", "bottom"}
+    assert len(em["check_points"]) == config.PROBE_POINTS and set(em["worst_hidden"]) <= set(range(config.PROBE_DISCLOSED, config.PROBE_POINTS))
+    lay = inspect_tools.mesh_layout(pid, run, tmp_path)
+    assert lay["mesh_request"] == req and set(lay["groups"]) == {"clamped", "loaded", "top", "bottom"}
+    assert all(g["elements_touching"] > 0 and g["h_near"] > 0 for g in lay["groups"].values())

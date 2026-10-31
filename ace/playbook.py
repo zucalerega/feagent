@@ -25,6 +25,10 @@ class Bullet:
     # How the lesson was established: "counterfactual" (a rerun confirmed it), "contrast"
     # (best-vs-worst comparison), or None (older single-call Reflector lessons).
     evidence_type: str | None = None
+    # --deep only (ace/organizer.py): what kind of note this is ("fix" | "idea" | "keep" | "avoid" |
+    # "highlight") and who wrote it ("teacher", "self", "peer:a2", ...). Older files load with None.
+    kind: str | None = None
+    source: str | None = None
 
     @property
     def net(self) -> int:

@@ -21,7 +21,7 @@ from ace.curator import CuratorOutput, Decision
 from ace.cost import usage_record
 from ace.reflector import BulletVote, Lesson, Reflection
 
-BULLET_ID = re.compile(r"\[((?:a\d+-)?[a-z]+-\d{4})\]")
+BULLET_ID = re.compile(r"\[((?:[ap]\d+-)?[a-z]+-\d{4})\]")
 
 
 def _usage(inp: int, out: int):
@@ -36,7 +36,9 @@ class MockLLM:
     # ---------------------------------------------------------------- generator
     def agent_turn(self, system: str, messages: list, tools: list, run_id: str = "", role: str = "generator"):
         if role == "diagnoser":
-            return self._diagnoser_turn(messages)
+            return self._diagnoser_turn(messages, {t["name"] for t in tools})
+        if role == "big_generator":
+            return self._big_turn(system, messages, tools, run_id)
         from ace import fea   # local import: only needed by the mock generator
 
         problem_id = messages[0]["content"].splitlines()[0].removeprefix("Problem id: ").strip()
@@ -80,14 +82,41 @@ class MockLLM:
             return tool("submit", {"solve": last["solve"]}), self._rec(run_id)
         return _response([NS(type="text", text="Done.")], "end_turn", "generator"), self._rec(run_id)
 
+    def _big_turn(self, system: str, messages: list, tools: list, run_id: str):
+        """The single-agent baseline (ace/single_loop.py): every task in one conversation, each tool
+        call carrying a `task`. Works the tasks in order: replays the conversation so far on the first
+        unsubmitted task as a one-task conversation, lets the generator script above pick the next
+        call, and tags it with that task."""
+        tasks = re.findall(r"^Problem id: (\S+)", messages[0]["content"], re.M)
+        results = {r["tool_use_id"]: r for m in messages[1:] if m["role"] == "user" for r in m["content"]}
+        calls = [b for m in messages if m["role"] == "assistant" for b in m["content"] if b.type == "tool_use"]
+        done = {c.input["task"] for c in calls if c.name == "submit" and not results[c.id]["is_error"]}
+        task = next((t for t in tasks if t not in done), None)
+        rec = self._rec(run_id, "big_generator")
+        if task is None:
+            return _response([NS(type="text", text="Done.")], "end_turn", "big_generator"), rec
+        sub = [{"role": "user", "content": f"Problem id: {task}"}]
+        for c in calls:
+            if c.input.get("task") == task:
+                sub += [{"role": "assistant", "content": [c]}, {"role": "user", "content": [results[c.id]]}]
+        resp, _ = self.agent_turn(system, sub, tools, run_id=f"{run_id}-{task}")
+        turn = sum(1 for m in messages if m["role"] == "assistant")
+        for b in resp.content:
+            if b.type == "tool_use":            # unique ids across tasks; the task argument
+                b.id, b.input = f"b{turn}", {**b.input, "task": task}
+        return resp, rec
+
     def _rec(self, run_id, role="generator"):
         return usage_record(role, MODELS[role], _usage(1500, 200), run_id)
 
     # ---------------------------------------------------------------- diagnoser
-    def _diagnoser_turn(self, messages: list):
+    def _diagnoser_turn(self, messages: list, offered: set):
         """Scripted session: list_runs -> stage report of the worst run -> diff best/worst ->
-        one rerun of the worst run -> submit a diagnosis that CLAIMS the rerun confirmed the
-        cause (so tests can check that code downgrades the claim when the rerun did not flip)."""
+        one rerun of the worst run (if reruns are offered) -> its error map (if offered, field
+        mode) -> submit. With a rerun, the diagnosis CLAIMS the rerun confirmed the cause (so
+        tests can check that code downgrades the claim when the rerun did not flip); without one
+        (inspect mode) it claims only contrast evidence."""
+        from ace import config
         turn = sum(1 for m in messages if m["role"] == "assistant")
         rec = self._rec("diagnoser", "diagnoser")
 
@@ -101,21 +130,33 @@ class MockLLM:
         stage = "bcs" if worst["first_failing_stage"] == "bcs" else "mesh"
         change = {"name": "refine_mesh", "args": {"scope": "global", "factor": 1.5}} if stage == "mesh" else \
                  {"name": "convert_units", "args": {"target": "E", "factor": 1.0}}
-        if turn == 1:
-            return tool("get_stage_report", {"run_id": worst["run_id"]})
-        if turn == 2:
-            return tool("diff_runs", {"run_a": best["run_id"], "run_b": worst["run_id"]})
-        if turn == 3:
-            return tool("rerun_from_stage", {"run_id": worst["run_id"], "stage": stage, "change": change})
+        rerun = "rerun_from_stage" in offered
+        steps = [("get_stage_report", {"run_id": worst["run_id"]}),
+                 ("diff_runs", {"run_a": best["run_id"], "run_b": worst["run_id"]})]
+        if rerun:
+            steps.append(("rerun_from_stage", {"run_id": worst["run_id"], "stage": stage, "change": change}))
+        if "get_error_map" in offered and config.SCORE == "field":
+            steps.append(("get_error_map", {"run_id": worst["run_id"]}))
+        if turn <= len(steps):
+            return tool(*steps[turn - 1])
         cited = sorted({c for r in listing for c in r["cited"]})
+        agents = {r["run_id"]: r["run_id"].rsplit("-", 1)[-1] for r in (best, worst)}
         return tool("submit_diagnosis", {
             "divergence": "mock: the worst run diverged at its mesh",
-            "runs": [{"run_id": worst["run_id"], "diagnosis_status": "confirmed", "stage": stage,
-                      "category": "mesh_too_coarse" if stage == "mesh" else "units", "cause": "mock cause",
-                      "evidence": "mock rerun", "hypotheses_tested": [
-                          {"stage": stage, "intervention": change, "result": "confirmed"}]}],
+            "runs": [{"run_id": worst["run_id"], "diagnosis_status": "confirmed" if rerun else "contrast_only",
+                      "stage": stage, "category": "mesh_too_coarse" if stage == "mesh" else "units",
+                      "cause": "mock cause", "evidence": "mock rerun" if rerun else "mock error map",
+                      "hypotheses_tested": [{"stage": stage, "intervention": change, "result": "confirmed"}] if rerun
+                      else []}],
+            "agent_advice": [{"agent": a, "section": "meshing", "run_ids": [rid],
+                              "content": "When a mesh is refined, refine where the error is, because the score "
+                                         "covers the whole field.",
+                              "ideas_to_try": ["refine along the loaded boundary at half the global size",
+                                               "try a coarser global size with one local refinement"]}
+                             for rid, a in agents.items()],
             "lessons": [
-                {"section": "meshing", "scope": "general", "evidence": "mock", "evidence_type": "counterfactual",
+                {"section": "meshing", "scope": "general", "evidence": "mock",
+                 "evidence_type": "counterfactual" if rerun else "contrast",
                  "confidence": "high", "run_ids": [worst["run_id"]],
                  "content": "When the scored quantity is a point stress, use quadratic (order 2) elements, "
                             "because they resolve stress gradients with fewer nodes."},
@@ -156,7 +197,67 @@ class MockLLM:
                 else Decision(lesson_index=i, action="DUPLICATE", duplicate_of="#0", content="")
                 for i in range(n)
             ]), rec
+        text = user if isinstance(user, str) else "\n".join(b["text"] for b in user if b["type"] == "text")
+        if schema.__name__ in ("AgentFeedback", "CrossRunFeedback", "SelfReflection", "OrganizerOutput"):
+            return getattr(self, "_" + schema.__name__)(text, schema), rec
         raise ValueError(f"mock has no canned answer for {schema}")
+
+    # ---------------------------------------------------------------- --deep roles
+    # Deterministic answers that name the run ids / agents in the prompt, so the code downstream
+    # (memory updates, output files) is exercised. Notes mention order 2 so mock scores can move.
+
+    @staticmethod
+    def _note(section="meshing", kind="fix", content="mock: use quadratic (order 2) elements"):
+        return {"section": section, "kind": kind, "content": content}
+
+    def warm_cache(self, *args, **kwargs):
+        pass                                        # no cache to warm in mock mode
+
+    def _AgentFeedback(self, text: str, schema):
+        rid = re.search(r"^FOR RUN (\S+)", text, re.M).group(1)
+        task = re.search(r"^TASK (\S+)", text, re.M).group(1)
+        call = {"h": 0.1, "order": 2, "refinements": [{"group": None, "point": [0.0, 0.0], "size": 0.02,
+                                                       "radius": 0.2}]}
+        return schema.model_validate({
+            "agent": rid.rsplit("-", 1)[-1], "run_id": rid, "diagnosis": f"mock: {rid} error near the corner",
+            "step_critique": [{"step": "mesh call 1", "what_it_did": "uniform mesh", "verdict": "mistake",
+                               "correction": "mock: refine the corner to h/4"}],
+            "promised_items_check": [], "strengths": ["mock strength"], "mistakes": ["mock mistake"],
+            "next_mesh_call": call,
+            "notes": [{**self._note(content=f"mock teacher note {i} for {rid}: refine the hotspot to h/4, order 2"),
+                       "task": task} for i in range(8)]})
+
+    def _CrossRunFeedback(self, text: str, schema):
+        run_ids = list(dict.fromkeys(re.findall(r"^=== RUN (\S+) ", text, re.M)))
+        return schema.model_validate({
+            "task_summary": "mock: the best run used quadratic elements", "setup_warnings": [],
+            "contested_regions": [{"region": "mock corner", "why_contested": "mock", "which_agents_differ": [],
+                                   "what_to_do": "mock: refine there"}],
+            "highlights": [{"agent": rid.rsplit("-", 1)[-1], "run_id": rid, "what": "mock idea", "why_it_works": "mock",
+                            "how_to_copy": "mock"} for rid in run_ids[:1]],
+            "shared_lessons": [self._note(kind="idea", content=f"mock shared lesson {i}: order 2 near hotspots")
+                               for i in range(6)],
+            "bullet_ratings": [{"bullet_id": b, "rating": "useful", "why": "mock"}
+                               for b in sorted(set(BULLET_ID.findall(text)))]})
+
+    def _SelfReflection(self, text: str, schema):
+        rid = re.search(r"^MY RUN (\S+)", text, re.M).group(1)
+        return schema.model_validate({
+            "what_happened": f"mock: in {rid} I meshed uniformly",
+            "what_i_learned": [self._note(kind="idea", content=f"mock self note {i} from {rid}: order 2")
+                               for i in range(5)],
+            "plan_next": "mock: refine the hotspot", "next_mesh_call": {"h": 0.1, "order": 2, "refinements": []}})
+
+    def _OrganizerOutput(self, text: str, schema):
+        # Keep every current note (with its id) and add every incoming one as new: the notes are
+        # the one-line JSON objects organizer.build_user writes.
+        notes = []
+        for line in text.splitlines():
+            if line.startswith("{"):
+                n = json.loads(line)
+                notes.append({"id": n.get("id"), "section": n["section"], "kind": n.get("kind") or "idea",
+                              "source": n.get("source") or "mock", "content": n["content"]})
+        return schema.model_validate({"notes": notes})
 
 
 def fake_rerun(flip: bool = True):

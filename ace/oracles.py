@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import functools
 import math
+import os
 import tempfile
 from pathlib import Path
 
@@ -62,7 +63,10 @@ def baseline_fail_flags(problem_id: str) -> frozenset:
     if fea.is_flow(problem):
         return frozenset()
     with tempfile.TemporaryDirectory() as tmp:
-        m = fea.make_mesh(problem, Path(tmp) / "ref.msh", h=problem.params["h0"], order=2)
+        if "h0" in problem.params:
+            m = fea.make_mesh(problem, Path(tmp) / "ref.msh", h=problem.params["h0"], order=2)
+        else:    # gold CAD problems have no default size: use their own coarsest study mesh
+            m = {"path": str(problem.mesh_file(0)), "order": 2}
         rep, _ = diagnose(fea.build_case(problem, m, reference_setup(problem), TASKS[problem_id]["qoi"]))
     return frozenset(f.id for f in rep.flags if f.severity == "fail")
 
@@ -105,7 +109,11 @@ def mesh_convergence(problem, request: dict | None, setup: dict, qoi: str, targe
                      nodes: int | None = None) -> dict:
     """Refinement study of the agent's own setup. Fails if the scored quantity is singular or
     oscillating, or its estimated error is above the accuracy target (the reference tolerance)
-    (under a node cap, demanding the reference tolerance would fail nearly every run)."""
+    (under a node cap, demanding the reference tolerance would fail nearly every run).
+    ACE_SKIP_CONVERGENCE=1 skips it (the --deep loop: the study's extra solves are the slowest part
+    of scoring, and the field error already measures the mesh)."""
+    if os.environ.get("ACE_SKIP_CONVERGENCE") == "1":
+        return unavailable("skipped (ACE_SKIP_CONVERGENCE)")
     if not request:
         return unavailable("the mesh request was not recorded for this run")
     if problem.dim == 3 and (nodes or 0) > STUDY_MAX_NODES_3D:

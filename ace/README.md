@@ -65,6 +65,25 @@ The budget is checked before each agent run is started and after each Reflector 
 overshoot by the runs already in flight (at most `--concurrency` runs). Mock mode logs fake token
 counts so the cost code is exercised; those dollars are not real.
 
+### Swarm vs a single agent (the baseline)
+
+`ace/single_loop.py` is the swarm's moving baseline: ONE big agent (config role `big_generator`,
+Opus at max effort) does every task in one conversation each generation, with the whole swarm's
+solve and turn budget, and learns through the same teacher, self-reflection and organizer (see the
+module docstring for what is the same and what differs). Run it next to a `--deep` swarm on the
+same tasks, then compare (base score against generations, cumulative $ and wall time):
+
+```bash
+ACE_SCORE=field .venv/bin/python -m ace.single_loop --mock --generations 2          # free
+ACE_SCORE=field .venv/bin/python -m ace.single_loop --problems cooks_membrane,nafems_le11_axisym \
+  --generations 20 --budget-usd 60 --out ace_runs/single1 --swarm-dir ace_runs/deep2
+.venv/bin/python -m ace.compare ace_runs/deep2 ace_runs/single1                     # compare.md, compare.png
+```
+
+`run_loop --personas` gives agents a fixed exploration style: the flag alone = every agent,
+`--personas a0,a3,a5` or `--persona-count 3` = only some (default: none). Who has which style is
+written to `<out>/personas.json`.
+
 ## Watch it evolve
 
 Live, while a run is going (refreshes itself every few seconds):

@@ -10,7 +10,14 @@ Design principle: the LLM proposes hypotheses; code and the solver provide proof
     lesson that claims counterfactual evidence it does not have.
 
 One session per problem per generation, limited to DIAGNOSER_MAX_TOOL_CALLS tool calls and
-DIAGNOSER_MAX_RERUNS reruns. The output (Diagnosis) extends the Reflector's schema, so the
+DIAGNOSER_MAX_RERUNS reruns.
+
+Teacher modes (ace.config.TEACHER_MODE, env ACE_TEACHER), for the ablation "can the teacher diagnose
+without experiments, from a detailed look?":
+  rerun    the above: reruns, at least DIAGNOSER_MIN_RERUNS of them (default)
+  inspect  no reruns; inspection tools instead (ace/inspect_tools.py: where each run's stress
+           error is, how its mesh is laid out). Lessons can then only be "contrast" / "oracle_only".
+  both     inspection tools and reruns; reruns optional. The output (Diagnosis) extends the Reflector's schema, so the
 Curator consumes it the same way.
 """
 
@@ -23,9 +30,11 @@ from typing import Literal
 import pydantic
 from pydantic import BaseModel, Field
 
+from ace import config
 from ace import counterfactual as cf
-from ace.config import (DIAGNOSER_MAX_RERUNS, DIAGNOSER_MAX_TOOL_CALLS, MAX_SOLVES, TASKS, TRACE_FIELD_CHARS,
-                        TRACE_PAGE)
+from ace import inspect_tools
+from ace.config import (DIAGNOSER_MAX_RERUNS, DIAGNOSER_MAX_TOOL_CALLS, DIAGNOSER_MIN_RERUNS, MAX_SOLVES, PROBE_DISCLOSED,
+                        PROBE_POINTS, SCORE, TASKS, TRACE_FIELD_CHARS, TRACE_PAGE)
 from ace.reflector import BulletVote, Lesson, Section  # noqa: F401  (Section re-exported for the schema)
 
 Stage = Literal["geometry", "mesh", "bcs", "solve", "postprocess"]
@@ -68,10 +77,22 @@ class DiagnosisLesson(Lesson):
     run_ids: list[str] = Field(default_factory=list, description="runs whose evidence supports the lesson")
 
 
+class AgentAdvice(BaseModel):
+    agent: str = Field(description='the agent, as at the end of its run_id, e.g. "a3"')
+    section: Section
+    content: str = Field(description='advice for THIS agent from its own run: "When X, do Y, because Z.", at most 40 words')
+    run_ids: list[str] = Field(default_factory=list, description="the run(s) of this agent it is based on")
+    ideas_to_try: list[str] = Field(default_factory=list,
+                                    description="2-4 concrete, untested ideas for THIS agent to try next time, "
+                                                "deliberately different from what the other agents did")
+
+
 class Diagnosis(BaseModel):
     divergence: str = Field(description="where the best and worst runs first diverged")
     runs: list[RunDiagnosis]
-    lessons: list[DiagnosisLesson] = Field(description="1 to 3 lessons")
+    lessons: list[DiagnosisLesson] = Field(description="1 to 3 overall lessons, for every agent on this problem")
+    agent_advice: list[AgentAdvice] = Field(default_factory=list,
+                                            description="one piece of advice for EACH agent whose run you saw")
     bullet_votes: list[BulletVote] = Field(default_factory=list)
     verification_notes: list[str] = Field(default_factory=list, description="leave empty; filled in by code")
 
@@ -111,22 +132,108 @@ Procedure:
    contrast evidence (evidence_type "contrast", confidence "medium"). Form: "When X, do Y,
    because Z.", at most 40 words, with a scope (general / problem_class / one_off). List the
    supporting run_ids. Never put a reference value or numeric answer of this problem in a lesson.
-8. Vote helpful / harmful / neutral on each playbook bullet the runs cited, with a reason.
+8. Write agent_advice: for EACH agent (the a<k> at the end of its run_id), one piece of advice
+   specific to its own run: what it should change, or keep doing, to beat the other agents next
+   time. Agents keep this advice across problems, so make it about how the agent works, not
+   about this problem's numbers. Lessons (step 7) are the overall advice for everyone. Also give
+   it 2-4 ideas_to_try: concrete, untested ideas (a different refinement target, element order,
+   size ratio, ...) deliberately different from what the other agents did, so the agents explore
+   instead of all copying the best run.
+9. Vote helpful / harmful / neutral on each playbook bullet the runs cited, with a reason.
 
-Limits: at most {DIAGNOSER_MAX_TOOL_CALLS} tool calls and {DIAGNOSER_MAX_RERUNS} reruns per session.
+Limits: at most {DIAGNOSER_MAX_TOOL_CALLS} tool calls and {DIAGNOSER_MAX_RERUNS} reruns per session. Run at
+least {DIAGNOSER_MIN_RERUNS} rerun before submitting: even when every run looks fine, test the change most
+likely to beat the best run (e.g. refining where its error is, or a cheaper mesh).
 When you are done, or a limit is reached, call submit_diagnosis with your result. Report the
 results of reruns exactly as the tool returned them; code checks every claim against the reruns
 that actually ran.
 """
 
 
+if SCORE == "field":   # field mode: the score is against the automesher (ace.config, ace.checks)
+    SYSTEM = SYSTEM.replace(
+        "The score is the team's speed/accuracy metric: accuracy = min(1, tolerance /\nerror) times efficiency = DOFs of the cheapest run on this problem that met the tolerance / this\nrun's DOFs. 1 = the cheapest mesh that is accurate enough; a run that is accurate but uses many\nmore DOFs than needed, or cheap but outside the tolerance, scores lower; invalid runs score 0.",
+        "rel_error = max(field error, probe error): the energy-norm error of the run's whole stress field\n"
+        f"vs a fine reference, and the RMS von Mises error at {PROBE_POINTS} check points ({PROBE_DISCLOSED} told to the agent,\n"
+        f"{PROBE_POINTS - PROBE_DISCLOSED} hidden; get_oracles/list_runs show field_error and probe_error separately). The score\n"
+        "is against an automesher (gmsh default sizes, quadratic): gain g = automesher error / rel_error,\n"
+        "accuracy A = (g/2)^2 below the 2x target (tolerance = automesher error / 2), g/2 above it;\n"
+        "efficiency = automesher DOFs / run DOFs; score = A x efficiency (1 = 2x the automesher's accuracy\n"
+        "at its DOFs; invalid runs score 0), plus a bonus of up to 0.25 for having the smallest error\n"
+        "on the hidden check points among the runs (a tie pays nobody). Where the mesh puts its elements is\n"
+        "what matters.")
+    assert "automesher" in SYSTEM
+
+
+# Inspect mode: the same procedure with the experiment steps (4, 5, 7 and the limits) replaced by
+# a diagnosis from a detailed look.
+INSPECT_STEPS = {
+    "Find out WHY the weaker runs did worse, by experiment, and turn confirmed causes into\nshort lessons":
+    "Find out WHY the weaker runs did worse, by a detailed look (where their error is, how\ntheir meshes are laid out, their setups), and turn the causes you find into\nshort lessons",
+    """4. Test the most important hypothesis with rerun_from_stage. If the outcome flips (the first
+   failing stage moves later, or for an accuracy failure the error falls 2x or more) it is
+   CONFIRMED; otherwise REJECTED, and test the second hypothesis if you have reruns left.
+   Reruns report DOFs too: for a run that was accurate but expensive, a cheaper mesh that stays
+   within tolerance is also a finding (score depends on both).
+5. If nothing is confirmed, mark the run "unexplained" (or "contrast_only" if the best-vs-worst
+   contrast still points clearly at a cause). Do not invent a cause.""":
+    """4. You cannot rerun anything: diagnose from a detailed look. Use get_error_map (where each
+   run's stress error is: hotspots, the named group nearest each, the local element size there,
+   the error at every check point) and get_mesh_layout (where the run put its elements, group by
+   group) on the best and the weak runs, and read their setups (diff_runs). Name concrete causes
+   ("too coarse along the loaded edge", "refined a corner that carries no error", "wrong
+   temperature field") and the concrete fix for each (which group or point, what size).
+5. Mark a run "contrast_only" when the evidence points clearly at a cause, else "unexplained";
+   never "confirmed" (that needs a rerun), and leave hypotheses_tested empty. Do not invent a cause.""",
+    """7. Write 1-3 lessons only from confirmed causes (evidence_type "counterfactual") or strong
+   contrast evidence (evidence_type "contrast", confidence "medium").""":
+    """7. Write 1-3 lessons from the evidence you saw: evidence_type "contrast" (error maps, mesh
+   layouts, best-vs-worst) or "oracle_only" (an oracle result alone),
+   never "counterfactual".""",
+    f"""Limits: at most {DIAGNOSER_MAX_TOOL_CALLS} tool calls and {DIAGNOSER_MAX_RERUNS} reruns per session. Run at
+least {DIAGNOSER_MIN_RERUNS} rerun before submitting: even when every run looks fine, test the change most
+likely to beat the best run (e.g. refining where its error is, or a cheaper mesh).""":
+    f"""Limits: at most {DIAGNOSER_MAX_TOOL_CALLS} tool calls per session.""",
+}
+# Both: inspection tools and reruns, reruns optional.
+BOTH_LIMITS = f"""Limits: at most {DIAGNOSER_MAX_TOOL_CALLS} tool calls and {DIAGNOSER_MAX_RERUNS} reruns per session. Reruns are
+optional: get_error_map and get_mesh_layout show where each run's error is and where its elements
+are; rerun to test a cause when the look alone is not conclusive."""
+
+INSPECT_TOOLS = ("get_error_map", "get_mesh_layout")
+
+
+def teacher_mode() -> str:
+    """Read at call time, so a process that set ACE_TEACHER before importing ace.config gets it."""
+    mode = config.TEACHER_MODE
+    if mode not in ("rerun", "inspect", "both"):
+        raise ValueError(f"ACE_TEACHER must be rerun, inspect or both, not {mode!r}")
+    return mode
+
+
+def system_prompt(mode: str | None = None) -> str:
+    mode = mode or teacher_mode()
+    text = SYSTEM
+    if mode == "inspect":
+        for old, new in INSPECT_STEPS.items():
+            assert old in text
+            text = text.replace(old, new)
+    elif mode == "both":
+        old = list(INSPECT_STEPS)[-1]
+        assert old in text
+        text = text.replace(old, BOTH_LIMITS)
+    return text
+
+
 def _intervention_help() -> str:
     return "; ".join(f"{k} [{v[0]}]: {v[1]}" for k, v in cf.INTERVENTIONS.items())
 
 
-def tool_specs() -> list[dict]:
+def tool_specs(mode: str | None = None) -> list[dict]:
+    """The tools offered in this teacher mode (default: the current one)."""
+    mode = mode or teacher_mode()
     run_id = {"type": "string"}
-    return [
+    specs = [
         {"name": "list_runs", "description": "All runs on this problem, best to worst: score, error, first failing "
                                              "stage, failed checks, mesh size, solves, cited bullets.",
          "input_schema": {"type": "object", "properties": {}}},
@@ -157,7 +264,19 @@ def tool_specs() -> list[dict]:
         # free-form `args` / `before` / `after` objects); pydantic validates the submission anyway.
         {"name": "submit_diagnosis", "description": "Submit the final diagnosis (ends the session).",
          "input_schema": Diagnosis.model_json_schema()},
+        {"name": "get_error_map", "description": "Where a run's stress error is (its scored solve vs the fine "
+                                                 "reference): the field error, up to 6 hotspots (centroid, share of "
+                                                 "the error energy, nearest named group and distance, local element "
+                                                 "size, reference von Mises and the run's relative error there), and "
+                                                 "the von Mises error at every check point, hidden ones included.",
+         "input_schema": {"type": "object", "properties": {"run_id": run_id}, "required": ["run_id"]}},
+        {"name": "get_mesh_layout", "description": "Where a run put its elements: its mesh request (h, order, "
+                                                   "refinements), nodes, DOFs, and for each named group the elements "
+                                                   "touching and near it and their mean size vs the mesh's median.",
+         "input_schema": {"type": "object", "properties": {"run_id": run_id}, "required": ["run_id"]}},
     ]
+    drop = {"rerun": set(INSPECT_TOOLS), "inspect": {"rerun_from_stage"}, "both": set()}[mode]
+    return [t for t in specs if t["name"] not in drop]
 
 
 # --------------------------------------------------------------------------- the tools
@@ -173,8 +292,9 @@ class DiagnoserTools:
     the final diagnosis can be checked against what actually happened."""
 
     def __init__(self, problem_id: str, runs: list[dict], playbook, target_err: float, workdir: Path,
-                 rerun_fn=None):
+                 rerun_fn=None, mode: str | None = None):
         self.problem_id = problem_id
+        self.mode = mode or teacher_mode()
         self.runs = {r["run_id"]: r for r in runs}
         self.playbook = playbook
         self.target_err = target_err
@@ -195,8 +315,12 @@ class DiagnoserTools:
             if self.calls > DIAGNOSER_MAX_TOOL_CALLS:
                 return {"error": f"tool-call limit ({DIAGNOSER_MAX_TOOL_CALLS}) reached: call submit_diagnosis now "
                                  "with what you have"}, True
+        fn = getattr(self, f"_{name}", None)
+        names = {s["name"] for s in tool_specs(self.mode)}
+        if fn is None or name not in names:   # the model named a tool that doesn't exist (in this mode)
+            return {"error": f"unknown tool {name!r}; available: {sorted(names)}"}, True
         try:
-            return getattr(self, f"_{name}")(**a), False
+            return fn(**a), False
         except (KeyError, TypeError, cf.InterventionError) as e:
             return {"error": f"{type(e).__name__}: {e}"}, True
 
@@ -208,6 +332,7 @@ class DiagnoserTools:
                       for x in st.get(s, {}).get("checks", []) if not x["ok"]]
             rows.append({"run_id": r["run_id"], "score": round(c["score"], 3), "accuracy": c.get("accuracy"),
                          "efficiency": c.get("efficiency"), "dofs": c.get("dofs"), "rel_error": c.get("rel_error"),
+                         **({"field_error": c.get("field_error"), "probe_error": c.get("probe_error")} if SCORE == "field" else {}),
                          "first_failing_stage": st.get("first_failing_stage"), "failed_checks": failed,
                          "nodes": c.get("nodes"), "node_cap": c.get("node_cap"), "order": c.get("order"),
                          "n_meshes": c.get("n_meshes"), "n_solves": c.get("n_solves"), "cited": r.get("cited", [])})
@@ -262,6 +387,19 @@ class DiagnoserTools:
                 "after": {k: r["after"].get(k) for k in keep}, "notes": r.get("notes", []),
                 "reruns_left": DIAGNOSER_MAX_RERUNS - len(self.reruns)}
 
+    def _inspect(self, fn, run_id: str) -> dict:
+        run = self._run(run_id)
+        try:
+            return fn(self.problem_id, run, self.workdir / f"inspect_{run_id}")
+        except Exception as e:  # noqa: BLE001  e.g. no successful solve, mesh gone: tell the teacher
+            return {"error": f"{type(e).__name__}: {e}"}
+
+    def _get_error_map(self, run_id: str) -> dict:
+        return self._inspect(inspect_tools.error_map, run_id)
+
+    def _get_mesh_layout(self, run_id: str) -> dict:
+        return self._inspect(inspect_tools.mesh_layout, run_id)
+
     def _get_playbook_bullets(self, ids: list[str]) -> dict:
         return {i: (b.content if (b := self.playbook.get(i)) else "(not in the playbook)") for i in ids}
 
@@ -311,16 +449,17 @@ def diagnose_problem(problem_id: str, runs: list[dict], playbook, llm, target_er
                      rerun_fn=None, usage: list | None = None) -> dict:
     """Run one diagnoser session. Returns {"diagnosis": Diagnosis | None, "log": [...],
     "reruns": [...], "solver_seconds": float}; token usage goes into `usage` as it happens."""
-    tools = DiagnoserTools(problem_id, runs, playbook, target_err, workdir, rerun_fn)
-    specs = tool_specs()
+    mode = teacher_mode()
+    tools = DiagnoserTools(problem_id, runs, playbook, target_err, workdir, rerun_fn, mode)
+    specs, system = tool_specs(mode), system_prompt(mode)
     usage = [] if usage is None else usage
     messages: list = [{"role": "user", "content":
                        f"Diagnose the {len(runs)} runs on problem {problem_id} (scored quantity "
                        f"{TASKS[problem_id]['qoi']}, node cap {TASKS[problem_id]['node_cap']}). Start with list_runs."}]
-    log, diag, bad_submits = [], None, 0
+    log, diag, bad_submits, refused = [], None, 0, False
     # Room for the tool-call limit, plus a few turns to submit after hitting it.
     for _turn in range(DIAGNOSER_MAX_TOOL_CALLS + 4):
-        resp, rec = llm.agent_turn(SYSTEM, messages, specs, run_id=f"diagnose-{problem_id}", role="diagnoser")
+        resp, rec = llm.agent_turn(system, messages, specs, run_id=f"diagnose-{problem_id}", role="diagnoser")
         usage.append(rec)
         messages.append({"role": "assistant", "content": resp.content})
         calls = [b for b in resp.content if b.type == "tool_use"]
@@ -329,7 +468,13 @@ def diagnose_problem(problem_id: str, runs: list[dict], playbook, llm, target_er
             continue
         results = []
         for b in calls:
-            if b.name == "submit_diagnosis":
+            if (b.name == "submit_diagnosis" and mode == "rerun" and not refused
+                    and len(tools.reruns) < DIAGNOSER_MIN_RERUNS and tools.calls < DIAGNOSER_MAX_TOOL_CALLS):
+                # Refused once: lessons should rest on at least one experiment, not only on reading.
+                refused = True
+                out, err = {"error": f"run at least {DIAGNOSER_MIN_RERUNS} rerun_from_stage before submitting: "
+                                     "test the change most likely to beat the best run, then submit"}, True
+            elif b.name == "submit_diagnosis":
                 try:
                     diag = Diagnosis.model_validate(b.input)
                     out, err = {"submitted": True}, False

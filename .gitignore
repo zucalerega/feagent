@@ -31,3 +31,7 @@ models/*
 *.dat
 !benchmarks/**/*.dat.ref
 data/
+
+# ACE: cached field-error references and baselines (rebuilt with python -m ace.field_error --precompute)
+ace/field_refs/
+ace/field_refs_gpu/

@@ -9,9 +9,14 @@ some checks need a solve to evaluate (e.g. mesh resolution) but still belong to 
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+from pathlib import Path
+
 from ace import checkpoint as ckpt
 from ace import fea, oracles
-from ace.config import MIN_QUALITY, TASKS
+from ace.config import MIN_QUALITY, SCORE, TASKS
 
 STAGES = ["geometry", "mesh", "bcs", "solve", "postprocess"]
 
@@ -36,7 +41,62 @@ def run_oracles(run: dict, target_err: float) -> dict | None:
     if cp is None:
         return None
     value = run["solves"][cp["solve_index"]]["result"].get("value")
-    return oracles.evaluate(run["problem_id"], cp["mesh"], cp["request"], cp["setup"], value, target_err)
+    args = (run["problem_id"], cp["mesh"], cp["request"], cp["setup"], value, target_err)
+    f = None if os.environ.get("ACE_NO_ORACLE_CACHE") == "1" else _oracle_cache_file(*args)
+    if f is not None and f.exists():
+        return json.loads(f.read_text())
+    orc = oracles.evaluate(*args)
+    if f is not None:
+        _write_json(f, orc)
+    return orc
+
+
+# --------------------------------------------------------------------------- oracle cache
+# The oracles re-solve the run and run a refinement study (4 extra solves, ~15 s in 3D), and the
+# teacher's reruns ask for the same (mesh, setup) again, so results are cached on disk, keyed by
+# everything evaluate() reads. Cached values come back through JSON: numpy floats as floats, tuples
+# as lists, which is also what the run record on disk holds. Opt out with ACE_NO_ORACLE_CACHE=1.
+ORACLE_CACHE = Path(__file__).with_name("field_refs") / "oracles"
+# Part of the key: a change to the oracle code makes new cache entries instead of serving old results.
+_ORACLE_CODE = hashlib.sha256(Path(oracles.__file__).read_bytes()).hexdigest()[:16]
+
+
+def _mesh_hash(mesh: dict) -> str | None:
+    """The mesh's fingerprint: its recorded sha256, else the hash of its .msh file (None if gone)."""
+    if mesh.get("sha256"):
+        return mesh["sha256"]
+    path = Path(mesh.get("path") or "")
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
+def _oracle_cache_file(problem_id, mesh, request, setup, value, target_err) -> Path | None:
+    h = _mesh_hash(mesh)
+    if h is None:
+        return None
+    key = json.dumps([problem_id, h, request, setup, value, target_err, SCORE, _ORACLE_CODE],
+                     sort_keys=True, default=str)
+    return ORACLE_CACHE / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
+
+
+def _jsonable(x):
+    import numpy as np
+    if isinstance(x, np.generic):
+        return x.item()
+    if isinstance(x, np.ndarray):
+        return x.tolist()
+    raise TypeError(f"not JSON-safe: {type(x).__name__}")
+
+
+def _write_json(f: Path, obj) -> None:
+    """Write atomically (parallel workers may write the same entry); skip anything not JSON-safe."""
+    try:
+        text = json.dumps(obj, default=_jsonable)
+    except (TypeError, ValueError):
+        return
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, f)
 
 
 def stage_report(run: dict, orc: dict | None, target_err: float) -> dict:

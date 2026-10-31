@@ -25,7 +25,7 @@ gpu = ["nvmath-python", "cupy-cuda12x"]
 pardiso = ["pypardiso"]
 cfd = ["foamlib"]
 feabench = ["h5py"]   # code_aster MED meshes
-ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib"]
+ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib", "streamlit", "plotly", "altair"]
 
 [project.scripts]
 feagent = "feagent.cli:main"
