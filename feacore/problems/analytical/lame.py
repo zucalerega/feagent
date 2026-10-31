@@ -31,7 +31,7 @@ import numpy as np
 
 from feacore.case import BC, QoI
 from feacore.geometry.gmsh_tools import add_group
-from feacore.problems.analytical._common import BARBER, STEEL, TG, ExactProblem, quarter_annulus
+from feacore.problems.analytical._common import BARBER, STEEL, TG, ExactProblem, group_entities, quarter_annulus
 from feacore.problems.base import Reference
 from feacore.problems.registry import register
 
@@ -425,6 +425,17 @@ class LameSphere3D(LameSphereAxisym):
         for name, tags in groups.items():
             add_group(2, tags, name)
         add_group(3, vol, "domain")
+
+    def apply_sizing(self, h: float) -> None:
+        # graded towards the bore (stress ~ b^3/r^3): 0.4 h on the bore, 1.2 h on the outer face. With a
+        # uniform mesh the P2-tet bore stresses stay pre-asymptotic (errors of a few % that change sign
+        # from node to node) at any affordable h.
+        from feacore.geometry.gmsh_tools import distance_threshold_field, use_min_field
+
+        p = self.params
+        t = distance_threshold_field(surfaces=group_entities("bore"), size_min=0.4 * h, size_max=1.2 * h,
+                                     dist_min=0.0, dist_max=p["b"] - p["a"], sampling=60)
+        use_min_field([t], h_max=1.2 * h)
 
     def qois(self) -> list[QoI]:
         a = self.params["a"]

@@ -77,21 +77,10 @@ def _k_axi(u, v, w):
 
 
 @LinearForm
-def _f_vector(v, w):
-    out = w.g0 * v[0] + w.g1 * v[1]
-    if v.shape[0] == 3:
-        out = out + w.g2 * v[2]
-    return w.c * out
-
-
-@LinearForm
-def _f_thermal(v, w):
-    return w.c * w.sth * trace(sym_grad(v))
-
-
-@LinearForm
-def _f_thermal_axi(v, w):
-    return w.c * w.sth * (trace(sym_grad(v)) + v[0] / w.x[0])
+def _f_dgrad(v, w):
+    """int c * d v / d x_i, with the component index i passed as a (constant) field."""
+    i = int(np.asarray(w.i).flat[0])
+    return w.c * v.grad[i]
 
 
 @BilinearForm
@@ -208,16 +197,10 @@ class _Model:
         self.sb = Basis(self.mesh, self.selem, intorder=self.intorder)
         self._check_jacobians()
         self.ncomp = self.dim if self.physics == "elasticity" else 1
-        if self.physics == "elasticity":
-            self.ub = Basis(self.mesh, ElementVector(self.selem), intorder=self.intorder)
-            self.split = [np.asarray(i) for i in self.ub.split_indices()]
-            for i in self.split:  # vector dof k-th component <-> scalar dof ordering
-                if not np.allclose(self.ub.doflocs[:, i], self.sb.doflocs):
-                    raise SolverError("internal error: vector/scalar dof ordering mismatch")  # pragma: no cover
-        else:
-            self.ub = self.sb
-            self.split = [np.arange(self.sb.N)]
-        self.N = self.ub.N
+        ns = self.sb.N
+        # vector unknowns are interleaved per node: dof = ncomp * scalar_dof + component
+        self.split = [np.arange(ns, dtype=np.int64) * self.ncomp + k for k in range(self.ncomp)]
+        self.N = ns * self.ncomp
         self.xq = _coords(self.sb)
         self.nel = self.mesh.nelements
         self._materials()
@@ -315,9 +298,8 @@ class _Model:
                 self.beta = (3 * self.lam3 + 2 * self.mu) * self.alpha       # = E alpha / (1 - 2 nu)
 
     # ---- facet bases
-    def facet_basis(self, facets, vector: bool):
-        elem = ElementVector(self.selem) if (vector and self.physics == "elasticity") else self.selem
-        return FacetBasis(self.mesh, elem, facets=facets, intorder=self.intorder)
+    def facet_basis(self, facets):
+        return FacetBasis(self.mesh, self.selem, facets=facets, intorder=self.intorder)
 
 
 # --------------------------------------------------------------------------- Dirichlet collection
@@ -362,11 +344,15 @@ class _Constraints:
 
 
 def _assemble_elasticity(md: _Model):
-    case, ub, sb = md.case, md.ub, md.sb
+    case, sb = md.case, md.sb
     c = md.wfac(md.xq)
     lam, mu = _qp(sb, md.lam), _qp(sb, md.mu)
-    if md.opts.get("assembly", "fast") == "skfem":
-        K = (_k_axi if md.axi else _k_elastic).assemble(ub, lam=lam, mu=mu, c=c)
+    if md.opts.get("assembly", "fast") == "skfem":  # reference implementation (slow)
+        ub = Basis(md.mesh, ElementVector(md.selem), intorder=md.intorder)
+        perm = np.empty(md.N, dtype=np.int64)
+        for k, ik in enumerate(ub.split_indices()):
+            perm[md.split[k]] = ik
+        K = (_k_axi if md.axi else _k_elastic).assemble(ub, lam=lam, mu=mu, c=c)[perm][:, perm].tocsr()
     else:
         K = fast.elastic_stiffness(sb, md.split, lam, mu, c, md.axi, r=md.xq[0])
     f = np.zeros(md.N)
@@ -379,17 +365,18 @@ def _assemble_elasticity(md: _Model):
         mask = np.zeros(md.nel, dtype=bool)
         mask[E] = True
         if ld.type == "body_force":
-            g = {}
             for i in range(dim):
                 gi = np.zeros_like(c)
                 gi[mask] = _eval(ld.value[i], md.xq[:, mask])
-                g[f"g{i}"] = gi
-            f += _f_vector.assemble(ub, c=c, **g)
+                f[md.split[i]] += _f_scalar.assemble(sb, c=c, g=gi)
         elif ld.type == "temperature":
             dT[mask] = _eval(ld.value, md.xq[:, mask]) - md.a.T_ref
     sth = _qp(sb, md.beta) * dT
-    if np.any(sth != 0):
-        f += (_f_thermal_axi if md.axi else _f_thermal).assemble(ub, c=c, sth=sth)
+    if np.any(sth != 0):  # int c * beta * alpha * dT * div(v)  (+ v_r / r axisymmetric)
+        for i in range(dim):
+            f[md.split[i]] += _f_dgrad.assemble(sb, c=c * sth, i=_qp(sb, np.full(md.nel, float(i))))
+        if md.axi:
+            f[md.split[0]] += _f_scalar.assemble(sb, c=c, g=sth / md.xq[0])
     md.sth = sth
     md.dT = dT
 
@@ -398,7 +385,7 @@ def _assemble_elasticity(md: _Model):
         if bc.type not in ("pressure", "traction", "force"):
             continue
         F = md.facets_of(bc.group)
-        fb = md.facet_basis(F, vector=True)
+        fb = md.facet_basis(F)
         xf = _coords(fb)
         cf = md.wfac(xf)
         if bc.type == "pressure":
@@ -407,15 +394,16 @@ def _assemble_elasticity(md: _Model):
                                 f"so the outward normal is undefined; use a boundary group or traction")
             p = _eval(bc.value, xf)
             n = fb.normals
-            g = {f"g{i}": -p * n[i] for i in range(dim)}
+            g = [-p * n[i] for i in range(dim)]
         elif bc.type == "traction":
-            g = {f"g{i}": _eval(bc.value[i], xf) for i in range(dim)}
+            g = [_eval(bc.value[i], xf) for i in range(dim)]
         else:  # force: total force spread uniformly per area (area incl. thickness / 2 pi r)
             meas = _measure_w.assemble(fb, c=cf)
             if meas <= 0:
                 raise CaseError(f"bcs[{i_bc}] force: group {bc.group!r} has zero measure")
-            g = {f"g{i}": np.full(cf.shape, float(bc.value[i]) / meas) for i in range(dim)}
-        f += _f_vector.assemble(fb, c=cf, **g)
+            g = [np.full(cf.shape, float(bc.value[i]) / meas) for i in range(dim)]
+        for i in range(dim):
+            f[md.split[i]] += _f_scalar.assemble(fb, c=cf, g=g[i])
 
     # Dirichlet BCs
     cons = _Constraints()
@@ -475,8 +463,8 @@ def _symmetry_axis(md: _Model, F, group, i_bc) -> int:
 
 
 def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
-    U = md.ub.interpolate(u)
-    G = np.asarray(U.grad)  # (dim, dim, nel, nqp)
+    Uk = [md.sb.interpolate(u[md.split[k]]) for k in range(md.dim)]
+    G = np.stack([np.asarray(U.grad) for U in Uk])  # G[i, j] = d u_i / d x_j, (dim, dim, nel, nqp)
     lam, mu = _qp(md.sb, md.lam), _qp(md.sb, md.mu)
     sth = md.sth
     e = 0.5 * (G + np.swapaxes(G, 0, 1))
@@ -490,7 +478,7 @@ def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
         S["syz"] = 2 * mu * e[1, 2]
         S["sxz"] = 2 * mu * e[0, 2]
     elif md.axi:
-        ett = np.asarray(U)[0] / md.xq[0]
+        ett = np.asarray(Uk[0]) / md.xq[0]
         tr = e[0, 0] + e[1, 1] + ett
         S["sxx"] = lam * tr + 2 * mu * e[0, 0] - sth
         S["syy"] = lam * tr + 2 * mu * e[1, 1] - sth
@@ -545,7 +533,7 @@ def _assemble_heat(md: _Model):
     for i_bc, bc in enumerate(case.bcs):
         if bc.type in ("flux", "convection"):
             F = md.facets_of(bc.group)
-            fb = md.facet_basis(F, vector=False)
+            fb = md.facet_basis(F)
             xf = _coords(fb)
             cf = md.wfac(xf)
             if bc.type == "flux":

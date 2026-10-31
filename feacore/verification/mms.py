@@ -1175,7 +1175,7 @@ def convergence_catalog() -> list[dict]:
     for pid, (_, slow) in _conv_specs().items():
         dim = 3 if "-3d-" in pid else 2
         out.append({"id": pid, "slow": slow, "dim": dim,
-                    "sizes": {1: SIZES_3D if dim == 3 else SIZES_2D, 2: SIZES_3D if dim == 3 else SIZES_2D}})
+                    "levels": {k: default_levels(dim, k) for k in (1, 2)}})
     return out
 
 
