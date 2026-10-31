@@ -47,6 +47,13 @@ MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clo
 MAX_TURNS = 25                    # model calls per run
 MIN_QUALITY = 0.1                 # gate: minimum element quality (gmsh minSICN) of the mesh
 
+# --------------------------------------------------------------------------- mesh harness (opt-in)
+# ACE_HARNESS=1: on 3D problems the agent's inspect_geometry also returns the feagent geometry digest
+# (faces labelled by group, features, hazards) and each mesh call the feagent mesh gates (ace/harness.py).
+# Off by default: prompts, tools, results and scores are then exactly as without it. An environment
+# variable, so the agent worker processes see it too.
+HARNESS = os.environ.get("ACE_HARNESS") == "1"
+
 # --------------------------------------------------------------------------- score
 # The team's speed/accuracy score (feacore.diagnostics.score.score_population, docs/failure-modes.md):
 #   accuracy   = min(1, tolerance / error)        1 when the scored quantity is within tolerance

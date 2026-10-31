@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from ace import fea, ui_bridge
+from ace import fea, harness, ui_bridge
 from ace.checks import tolerance
 from ace.config import MAX_SOLVES, MAX_TURNS, SCORE, TASKS
 
@@ -159,6 +159,11 @@ CITATION = re.compile(r"\[using ((?:[ap]\d+-)?[a-z]+-\d{4})\]")
 BULLET_ID = re.compile(r"^(?:[ap]\d+-)?[a-z]+-\d{4}$")       # shared "mesh-0001" / "p1-mesh-0001" (task 1), private "a3-mesh-0001"
 
 
+def tool_specs(problem) -> list[dict]:
+    """TOOLS, with the mesh harness's extra result fields described when it applies (ace/harness.py)."""
+    return harness.tool_specs(TOOLS) if harness.applies(problem) else TOOLS
+
+
 def system_prompt(playbook_text: str) -> str:
     return BASE_PROMPT + "\n" + (playbook_text or "(the playbook is empty)")
 
@@ -232,11 +237,15 @@ class Tools:
         self.solves: list[dict] = []
         self.submitted: int | None = None   # index into self.solves
         self.ui = ui                        # ace.ui_bridge context of this run; None = off
+        self.harness = harness.applies(self.problem)   # extra feagent fields in the results (opt-in)
 
     def call(self, name: str, args: dict) -> tuple[dict, bool]:
         """Returns (result, is_error)."""
         if name == "inspect_geometry":
-            return fea.geometry_summary(self.problem), False
+            out = fea.geometry_summary(self.problem)
+            if self.harness:
+                out["harness"] = harness.inspect(self.problem)
+            return out, False
         if name == "mesh":
             return self._mesh(args)
         if name == "solve":
@@ -272,6 +281,8 @@ class Tools:
             out["hint"] = (f"over the cap by {m['nodes'] - cap} nodes; try h = {m['h_used'] * factor:.4g}"
                            + (f" and refinement sizes = [{sizes}]" if sizes else "")
                            + f" (the sizes used, times {factor:.2f})")
+        if self.harness:
+            out["quality"] = harness.quality(self.problem, m["path"])
         return out, False
 
     def _solve(self, args: dict) -> tuple[dict, bool]:
@@ -310,6 +321,7 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
     tokens of a run that crashes halfway are still counted. `ui`: ace.ui_bridge.settings(...)
     to also record each solve in the feacore run store (None = off)."""
     tools = Tools(problem_id, workdir, ui_bridge.for_run(ui, run_id, generation))
+    specs = tool_specs(tools.problem)
     system = system_prompt(playbook_text)
     messages: list = [{"role": "user", "content": task_prompt(problem_id)}]
     trace: list[dict] = []
@@ -317,7 +329,7 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
     stop = "max_turns"
 
     for turn in range(MAX_TURNS):
-        resp, rec = llm.agent_turn(system, messages, TOOLS, run_id=run_id)
+        resp, rec = llm.agent_turn(system, messages, specs, run_id=run_id)
         usage.append(rec)
         # Append the response content unchanged (thinking blocks must be passed back as-is).
         messages.append({"role": "assistant", "content": resp.content})
