@@ -10,7 +10,8 @@ Patterns
   supports: one clamped face | two clamped faces | clamped face + roller (normal) on a planar face
   loads:    pressure | normal force | shear force | bearing force on a cylinder (perpendicular to
             its axis) | two loads
-Magnitudes are fixed (1 MPa, 1 kN): linear analysis, so gold values scale exactly with the load.
+Magnitudes: total forces log-uniform in 1-50 kN, pressures the same factor times 1 MPa (1-50 MPa),
+drawn from their own seed so the supports and load faces don't depend on them.
 """
 
 from __future__ import annotations
@@ -24,8 +25,9 @@ import numpy as np
 from feacore.case import BC
 from feacore.goldgen.parts import Face, Part
 
-PRESSURE = 1e6       # Pa
-FORCE = 1e3          # N
+PRESSURE = 1e6       # Pa, at scale 1
+FORCE = 1e3          # N, at scale 1
+LOAD_SCALE = (1.0, 50.0)  # per load: FORCE x 1..50 (1-50 kN), PRESSURE x 1..50 (1-50 MPa)
 MIN_AREA_FRAC = 0.02  # of the part's total surface area, for a support / load face
 MIN_SEPARATION = 0.25  # load-face centroid at least this x bbox diagonal from every support face
 
@@ -71,6 +73,12 @@ def _round(v) -> list[float]:
     return [float(round(x, 9)) + 0.0 for x in v]
 
 
+def _scale(rng: random.Random) -> float:
+    """Load multiplier, log-uniform over LOAD_SCALE, rounded to 0.1 (so 1.0 .. 50.0)."""
+    lo, hi = np.log(LOAD_SCALE[0]), np.log(LOAD_SCALE[1])
+    return round(float(np.exp(rng.uniform(lo, hi))), 1)
+
+
 def _seed(part_id: str, attempt: int) -> int:
     return int.from_bytes(hashlib.sha256(f"{part_id}:{attempt}".encode()).digest()[:8], "big")
 
@@ -106,12 +114,14 @@ def _one(part: Part, attempt: int) -> BCSet | None:
     if not loadable:
         return None
     n_loads = 2 if (rng.random() < 0.25 and len(loadable) >= 2) else 1
+    mag = random.Random(_seed(part.id, attempt) ^ 0x10AD)       # own stream: same faces as before
     for f in rng.sample(loadable, n_loads):
+        scale = _scale(mag)
         kinds = {"plane": ["pressure", "normal", "shear"], "cylinder": ["bearing", "pressure"]}.get(f.kind, ["pressure"])
         kind = rng.choice(kinds)
         if kind == "pressure":
-            bcs.append(BC("pressure", group=group(f), value=PRESSURE))
-            words.append(f"Uniform pressure {PRESSURE / 1e6:g} MPa pushing into the part on {_describe(f)}.")
+            bcs.append(BC("pressure", group=group(f), value=PRESSURE * scale))
+            words.append(f"Uniform pressure {PRESSURE * scale / 1e6:g} MPa pushing into the part on {_describe(f)}.")
         else:
             if kind == "normal":
                 d = -np.asarray(f.normal) * rng.choice([1, -1])
@@ -119,7 +129,7 @@ def _one(part: Part, attempt: int) -> BCSet | None:
                 d = _perpendicular(np.asarray(f.normal), rng)
             else:
                 d = _perpendicular(np.asarray(f.axis), rng)
-            vec = _round(FORCE * d)
+            vec = _round(FORCE * scale * d)
             bcs.append(BC("force", group=group(f), value=vec))
             words.append(f"Total force ({', '.join(f'{v:.1f}' for v in vec)}) N spread uniformly over "
                          f"{_describe(f)}.")
