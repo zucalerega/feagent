@@ -1,4 +1,5 @@
 #!/bin/bash
+# Needs: uv sync --extra pardiso  (without pypardiso the solve is >15 min instead of ~30 s)
 # Prepare + run the platen-compression experiment from a fresh clone (CPU only).
 #   experiments/physical/prepare.sh [WORKDIR] [part ...]       default WORKDIR=experiments/physical/work, parts: abc_00000003 abc_00000065
 # Env: COMP_E_PA (Young's modulus in Pa, default 2.23e9 = Alpha Fast Resin), COMP_FORCE_N (default 100).
