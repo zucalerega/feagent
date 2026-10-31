@@ -101,6 +101,17 @@ PROBE_DISCLOSED = int(os.environ.get("ACE_PROBE_DISCLOSED", 4))
 # "Be the best" bonus: on each hidden probe point, the run with the smallest error among that
 # generation's runs on the problem wins 1/n_hidden of BEST_BONUS (a tie pays nobody), added to the score.
 BEST_BONUS = 0.25
+# Diversity bonus: a valid run whose mesh recipe is structurally different from every other run of
+# its generation on the problem, and whose base score is at least DIVERSITY_MARGIN x the best base
+# score there, gets +DIVERSITY_BONUS. Different = another element order, or global h off by more than
+# DIVERSITY_H_RATIO, or Jaccard distance >= DIVERSITY_JACCARD between the sets of refinement targets
+# (groups, edges, and boxes/points rounded to a grid of DIVERSITY_GRID x the part's diagonal).
+# Why: agents on a task converged on one recipe, so the swarm explored little (results/scaling_gold_2026-10-31).
+DIVERSITY_BONUS = 0.1
+DIVERSITY_MARGIN = 0.9
+DIVERSITY_H_RATIO = 1.5
+DIVERSITY_JACCARD = 0.5
+DIVERSITY_GRID = 0.05
 FIELD_ERR_FLOOR = 0.005   # errors below this count as this: the reference itself is good to ~0.3%
 SCORE_FLOOR = 0.0
 SCORE_CEIL = 1.0

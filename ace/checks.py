@@ -16,13 +16,16 @@ the node cap; the mock agent uses that to pick plausible mesh sizes.
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import tempfile
 from pathlib import Path
 
 from ace import fea
-from ace.config import AUTO_GAIN_TARGET, BEST_BONUS, FIELD_ERR_FLOOR, MIN_QUALITY, PROBE_DISCLOSED, SCORE, TASKS
+from ace.config import (AUTO_GAIN_TARGET, BEST_BONUS, DIVERSITY_BONUS, DIVERSITY_GRID, DIVERSITY_H_RATIO,
+                        DIVERSITY_JACCARD, DIVERSITY_MARGIN, FIELD_ERR_FLOOR, MIN_QUALITY, PROBE_DISCLOSED,
+                        SCORE, TASKS)
 
 DEFAULT_TOL = 0.02
 
@@ -261,8 +264,10 @@ def _score_vs_automesher(runs: list[dict], rows: list[dict]) -> None:
         acc = (g / G) ** 2 if g < G else g / G
         eff = auto["dofs"] / c["dofs"]
         c.update(score=acc * eff, accuracy=acc, efficiency=eff, gain=g, valid=True, invalid_because=None,
-                 auto_error=auto["error"], auto_dofs=auto["dofs"], best_bonus=0.0, best_points=0.0)
+                 auto_error=auto["error"], auto_dofs=auto["dofs"], best_bonus=0.0, best_points=0.0,
+                 diversity_bonus=0.0)
     _best_bonus(runs)
+    _diversity_bonus(runs)
 
 
 def _best_bonus(runs: list[dict]) -> None:
@@ -286,3 +291,67 @@ def _best_bonus(runs: list[dict]) -> None:
             c["best_bonus"] = BEST_BONUS * c["best_points"] / len(hidden)
             c["base_score"] = c["score"]
             c["score"] += c["best_bonus"]
+
+
+@functools.cache
+def _diagonal(problem_id: str) -> float:
+    """The part's bounding-box diagonal, from the (cached) reference's integration points."""
+    from ace.field_error import reference
+    pts = reference(problem_id)["pts"]
+    return float(math.dist(pts.min(axis=0), pts.max(axis=0)))
+
+
+def _recipe(run: dict, grid: float) -> tuple | None:
+    """(element order, global h, set of refinement targets) of the run's scored mesh, or None.
+    Targets are named groups and edges as they are; boxes and points are rounded to the grid, so
+    the same region moved slightly still counts as the same target."""
+    from ace.checkpoint import checkpoint
+    cp = checkpoint(run)
+    req = cp and cp["request"]
+    if not req:
+        return None
+    targets = set()
+    for ref in req.get("refinements") or []:
+        for kind in ("group", "edge", "box", "point"):
+            if kind in ref:
+                v = ref[kind]
+                targets.add((kind, tuple(round(float(x) / grid) for x in v) if kind in ("box", "point") else v))
+                break
+    h = float(req.get("h") or cp["mesh"].get("h_used"))
+    return cp["mesh"]["order"], h, frozenset(targets)
+
+
+def _different(a: tuple, b: tuple) -> bool:
+    """Structurally different mesh recipes: another order, h off by a large factor, or mostly
+    different refinement targets (Jaccard distance |A Δ B| / |A ∪ B|, 0 for two empty sets)."""
+    (oa, ha, ta), (ob, hb, tb) = a, b
+    union = ta | tb
+    jaccard = len(ta ^ tb) / len(union) if union else 0.0
+    return oa != ob or max(ha, hb) / min(ha, hb) > DIVERSITY_H_RATIO or jaccard >= DIVERSITY_JACCARD
+
+
+def _diversity_bonus(runs: list[dict]) -> None:
+    """Field mode: +DIVERSITY_BONUS for a valid run whose recipe differs structurally from every other
+    run of its generation on the problem and whose base score is within DIVERSITY_MARGIN of the best
+    there. Pays for exploring a different recipe that works almost as well, which the be-the-best
+    bonus alone does not. A generation with one run (the single agent's loop) gets none."""
+    if not runs:
+        return
+    grid = DIVERSITY_GRID * _diagonal(runs[0]["problem_id"])
+    by_gen: dict = {}
+    for r in runs:
+        rec = _recipe(r, grid) if r["checks"].get("solved") else None
+        if rec is not None:
+            by_gen.setdefault(r.get("generation"), []).append((r, rec))
+    for grp in by_gen.values():
+        valid = [(r, rec) for r, rec in grp if r["checks"].get("valid")]
+        if len(grp) < 2 or not valid:
+            continue
+        best = max(r["checks"].get("base_score", r["checks"]["score"]) for r, _ in valid)
+        for r, rec in valid:
+            c = r["checks"]
+            c.setdefault("base_score", c["score"])
+            if (c["base_score"] >= DIVERSITY_MARGIN * best
+                    and all(_different(rec, other) for o, other in grp if o is not r)):
+                c["diversity_bonus"] = DIVERSITY_BONUS
+                c["score"] += DIVERSITY_BONUS

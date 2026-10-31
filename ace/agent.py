@@ -240,7 +240,8 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
         from ace.config import AUTO_GAIN_TARGET as G
         from ace.field_error import automesher
         a = automesher(problem_id)
-        from ace.config import BEST_BONUS, PROBE_DISCLOSED, PROBE_POINTS
+        from ace.config import (BEST_BONUS, DIVERSITY_BONUS, DIVERSITY_H_RATIO, DIVERSITY_MARGIN, PROBE_DISCLOSED,
+                                PROBE_POINTS)
         from ace.field_error import probe_points
         shown = "; ".join("(" + ", ".join(f"{v:.4g}" for v in pt[:problem.dim]) + ")"
                           for pt in probe_points(problem_id)["points"][:PROBE_DISCLOSED])
@@ -266,7 +267,11 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
                   f"BONUS for being the best: other agents attempt this task too. On each of the "
                   f"{PROBE_POINTS - PROBE_DISCLOSED} hidden check points, the agent with the smallest stress error "
                   f"there wins a share of up to +{BEST_BONUS:g} in total. A tie pays nobody, so copying the "
-                  f"leader earns nothing. Trying something that beats the others pays.\n")
+                  f"leader earns nothing. Trying something that beats the others pays.\n"
+                  f"DIVERSITY BONUS: +{DIVERSITY_BONUS:g} if your mesh recipe is structurally different from every "
+                  f"other agent's on this task in your generation (another element order, global h differing by "
+                  f"more than {DIVERSITY_H_RATIO:g}x, or mostly different refinement targets) and your base score "
+                  f"is at least {DIVERSITY_MARGIN:.0%} of the best one there.\n")
     else:
         scored = (f"SCORED QUANTITY: {q.name} = {q.type} of {q.field}{where}. Only this quantity is scored; "
                   f"ignore any other quantities the statement asks you to report.\n"
