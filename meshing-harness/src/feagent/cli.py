@@ -313,7 +313,8 @@ def _args_check(p: argparse.ArgumentParser) -> None:
 def _args_automesh(p: argparse.ArgumentParser) -> None:
     p.add_argument("part", help="CAD file to mesh with an auto-generated spec")
     p.add_argument("--cfd", action="store_true", help="cfd analysis (default fea)")
-    p.add_argument("-o", "--output", help="spec directory (default <part dir>/<stem>_mesh)")
+    p.add_argument("-o", "--output", help="spec directory (default <part dir>/<stem>_mesh; the MCP "
+                   "tool defaults to ./<stem>_mesh)")
     p.add_argument("--no-render", action="store_true", help="skip the group/quality renders")
 
 

@@ -5,6 +5,11 @@ Every tool runs ``python -m feagent.cli <command> ... --json`` in a child proces
 on: the geometry digest, matched faces, the gate table or REPORT.md; ``render_view`` also returns
 the PNG. CLI errors (exit 2/3) become tool errors carrying the CLI's message and hint.
 
+``automesh`` and ``render_view`` write into the server process's working directory by default
+(``./<stem>_mesh/``, ``./renders/<stem>_<view>.png``), never next to the input CAD: agents that
+share a part must not overwrite each other, and the part's directory may be read-only. Their
+``output`` argument overrides this.
+
 Tool descriptions and the workflow are improver-editable files, read when the server is built:
 ``<context dir>/tools.yaml`` (tool name -> description; must list exactly the registered tools)
 and ``<context dir>/SKILL.md`` (served as the MCP prompt ``meshing_workflow``). The context dir is
@@ -94,15 +99,17 @@ def find_faces(path: str, query: dict, expect: int | None = None) -> str:
 
 
 def render_view(path: str, view: str = "faces", highlight: list[int] | None = None,
-                query: dict | None = None) -> list:
-    args = ["render", path, "--view", view]
+                query: dict | None = None, output: str | None = None) -> list:
+    out = _out_path(output, Path("renders") / f"{Path(path).stem}_{view}.png")
+    args = ["render", path, "--view", view, "-o", out]
     args += ["--highlight", ",".join(map(str, highlight))] if highlight else []
     _, data = run_cli(args + (["--query", json.dumps(query)] if query is not None else []))
     return [f"{data['path']}\n{data['caption']}", Image(path=data["path"])]
 
 
-def automesh(path: str, cfd: bool = False) -> str:
-    _, data = run_cli(["automesh", path, "--no-render"] + (["--cfd"] if cfd else []))
+def automesh(path: str, cfd: bool = False, output: str | None = None) -> str:
+    out = _out_path(output, Path(f"{Path(path).stem}_mesh"))
+    _, data = run_cli(["automesh", path, "--no-render", "-o", out] + (["--cfd"] if cfd else []))
     return _automesh_text(data)
 
 
@@ -120,6 +127,11 @@ def check_mesh(spec_path: str) -> str:
 
     _, data = run_cli(["check", spec_path])
     return report_markdown(CheckReport.from_dict(data))
+
+
+def _out_path(output: str | None, default: Path) -> str:
+    """``output`` (default: ``default``), absolute against the server's working directory."""
+    return str((Path(output) if output else default).resolve())
 
 
 def _gates(items: list[dict]) -> list:

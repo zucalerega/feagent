@@ -4,9 +4,10 @@
 
 automesh: |
   START HERE. Auto-mesh a CAD part (.step/.stp/.iges/.brep) with a zero-config spec derived from a
-  geometry analysis, then run every quality gate. Writes an editable `<part dir>/<stem>_mesh/mesh.yaml`
-  plus out/report.json and out/REPORT.md, and returns the spec path, status (pass/fail) and the gate
-  table (status, id, value, threshold, message, hint). cfd=true meshes the part's interior as the
+  geometry analysis, then run every quality gate. Writes an editable `<output>/mesh.yaml` plus
+  out/report.json and out/REPORT.md; output defaults to `./<stem>_mesh/` in the server's working
+  directory (never next to the CAD file). Returns the spec path, status (pass/fail), the gate
+  table (status, id, value, threshold, message, hint) and the mesher notes. cfd=true meshes the part's interior as the
   fluid (internal flow); for external flow edit the spec's domain: {type: external, flow_axis: ...}.
   The auto spec has NO groups and NO bcs: next, call inspect_geometry, name the boundary-condition
   faces as groups by geometric query, add a bcs: section, then check_mesh.
@@ -38,7 +39,8 @@ render_view: |
   face tags labelled; highlight = face tags and/or query = a find_faces query to colour the selected
   faces -- use it to visually confirm a group before trusting it. view="groups" / view="quality"
   (mesh.yaml or mesh.msh, after mesh/check): the mesh's surface groups, or per-element SICN with
-  the 10 worst elements marked.
+  the 10 worst elements marked. output = PNG path (default `./renders/<stem>_<view>.png` in the
+  server's working directory).
 
 mesh: |
   Mesh a mesh.yaml (gmsh, in a child process) WITHOUT the quality gates: fast iteration on sizes,

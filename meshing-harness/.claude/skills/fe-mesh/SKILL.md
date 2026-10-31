@@ -16,22 +16,27 @@ Units: mm, N, MPa.
 
 | MCP tool (server `feagent`) | CLI equivalent (`uv run feagent ...`, add `--json` for one JSON doc) |
 |---|---|
-| `automesh(path, cfd=False)` | `automesh PART [--cfd]` |
+| `automesh(path, cfd=False, output=None)` | `automesh PART [--cfd] [-o DIR]` |
 | `inspect_geometry(path, size, detail)` | `inspect PATH [--size H] [--detail full]` |
 | `find_faces(path, query, expect)` | `faces PATH --query '{...}' --expect N` |
-| `render_view(path, view, highlight, query)` | `render PATH --view faces\|groups\|quality [--query ..] [--highlight 1,2]` |
+| `render_view(path, view, highlight, query, output)` | `render PATH --view faces\|groups\|quality [--query ..] [--highlight 1,2] [-o PNG]` |
 | `mesh(spec_path, scale)` | `mesh SPEC [--scale 2]` (no quality gates; records "unchecked") |
 | `check_mesh(spec_path)` | `check SPEC` (mesh + all gates + renders -> report.json, REPORT.md) |
 | - | `waive SPEC --reason "..."` (accept a non-passing spec, with a reason) |
 
 CLI exit codes: 0 ok, 1 a gate failed, 2 usage/spec/query/CAD error (message + hint), 3 internal.
 
+Where files go: the MCP `automesh` writes `./<stem>_mesh/` and `render_view` writes
+`./renders/<stem>_<view>.png`, both in the MCP server's working directory (pass `output` to choose).
+The CLI defaults are next to the input: `<part dir>/<stem>_mesh/` and `<path stem>_<view>.png`
+(`-o` to choose). Specs keep their mesh in `<spec dir>/out/`.
+
 ## Workflow
 
 1. **Auto-mesh first.** `automesh(part)` (`cfd=True` for flow). It writes an editable
-   `<stem>_mesh/mesh.yaml` and checks it. This tells you right away whether the part meshes at all
-   and at what size. Read the gate table and the mesher notes, for example thin walls that were
-   auto-refined.
+   `<stem>_mesh/mesh.yaml` (see "Where files go") and checks it. This tells you right away
+   whether the part meshes at all and at what size. Read the gate table and the mesher notes,
+   for example thin walls that were auto-refined.
 2. **Understand the part.** Run `inspect_geometry(part)` (for cfd external, run it on the spec so
    you see the fluid domain). Read FEATURES, PLANAR FACES and HAZARDS. Every hazard line names the
    spec fix. Open `out/REPORT.md` from the automesh run.

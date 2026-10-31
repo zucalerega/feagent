@@ -291,18 +291,38 @@ def test_inspect_geometry_tool_returns_digest(parts_dir):
     assert text.startswith("GEOMETRY") and "FEATURES" in text and "HAZARDS" in text
 
 
-def test_render_view_tool_returns_caption_and_image(parts_dir, tmp_path):
-    step = tmp_path / "plate_hole.step"
-    shutil.copy(parts_dir / "plate_hole.step", step)
-    caption, image = mcp_server.render_view(str(step), query={"kind": "cylinder"})
+def test_render_view_tool_returns_caption_and_image(parts_dir, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    caption, image = mcp_server.render_view(str(parts_dir / "plate_hole.step"),
+                                            query={"kind": "cylinder"})
     assert isinstance(image, mcp_server.Image) and Path(image.path).is_file()
     assert str(image.path) in caption
+    assert Path(image.path) == tmp_path / "renders" / "plate_hole_faces.png"  # not next to the part
+    _, own = mcp_server.render_view(str(parts_dir / "plate_hole.step"), output="mine/f.png")
+    assert Path(own.path) == tmp_path / "mine" / "f.png" and Path(own.path).is_file()
+
+
+def test_automesh_tool_writes_into_the_server_cwd(parts_dir, tmp_path, monkeypatch):
+    """Not next to the CAD: agents sharing a part must not collide; the part dir may be read-only."""
+    part_dir = tmp_path / "ro"
+    part_dir.mkdir()
+    shutil.copy(parts_dir / "cantilever.step", part_dir / "cantilever.step")
+    part_dir.chmod(0o555)
+    work = tmp_path / "agent"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    try:
+        text = mcp_server.automesh(str(part_dir / "cantilever.step"))
+    finally:
+        part_dir.chmod(0o755)
+    assert str(work / "cantilever_mesh" / "mesh.yaml") in text and "status: pass" in text
+    assert sorted(p.name for p in part_dir.iterdir()) == ["cantilever.step"]
 
 
 def test_automesh_then_check_mesh_tools(parts_dir, tmp_path, state_file):
     step = tmp_path / "cantilever.step"
     shutil.copy(parts_dir / "cantilever.step", step)
-    text = mcp_server.automesh(str(step))
+    text = mcp_server.automesh(str(step), output=str(tmp_path / "cantilever_mesh"))
     spec = tmp_path / "cantilever_mesh" / "mesh.yaml"
     assert str(spec) in text and "status: pass" in text and "| pass | sicn |" in text
     mesh_text = mcp_server.mesh(str(spec), scale=2.0)
