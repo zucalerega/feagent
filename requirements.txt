@@ -1,0 +1,9 @@
+numpy
+scipy
+scikit-fem>=10
+meshio>=5.3
+gmsh>=4.11
+pytest
+matplotlib
+sympy
+# system packages (Ubuntu): libglu1-mesa libxcursor1 libxft2 libxinerama1 libxrender1 libxi6 libgl1 calculix-ccx

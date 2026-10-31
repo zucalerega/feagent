@@ -20,13 +20,41 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
-- Nothing implemented yet.
 - `improver-loop` branch: improver side of the loop.
+- `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
+  parts and a UI (package `feacore/`, see below). In progress: interfaces are in place, the solver
+  backends and problems are being built.
+
+## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
+
+Decisions:
+
+- **Fixed solver** = scikit-fem backend (`backend="skfem"`, CPU). The linear solve is pluggable: SciPy /
+  MKL PARDISO on CPU, NVIDIA cuDSS (via nvmath-python) on a GPU when one is present. Both are direct
+  solves, so the answer doesn't depend on the hardware.
+- **Cross-check solver** = CalculiX (`backend="ccx"`), independent of the fixed solver.
+- **Neural surrogate** (`backend="nn"`, optional, GPU): fast but unverified. It is never the reference;
+  the verification layer judges it like any other submission.
+- **Solver input contract** = a case JSON (`feacore/case.py`: analysis, materials, BCs, loads, QoIs)
+  plus a gmsh `.msh` file whose physical groups are named. This is what the agent's MCP / mesh harness
+  must produce. Run it with `feacore.solver.solve(case, backend)` or the CLI
+  `python -m feacore.cli case.json --out result.json`.
+- **Problems** (the "CAD design problems"): `feacore/problems/` (the `Problem` API + registry),
+  exported to `benchmarks/<id>/public/` (statement + STEP: give these to agents) and
+  `benchmarks/<id>/private/` (reference values, reference setup, validation studies: evaluator only,
+  never give these to agents).
+- **Verification** = Richardson extrapolation / Grid Convergence Index (Celik et al. 2008),
+  `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
+  self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to
+  singularities or setup errors). The evaluator owns the final rubric.
+- Setup on a fresh Ubuntu / Brev box: `apt-get install -y libglu1-mesa libxcursor1 libxft2
+  libxinerama1 libxrender1 libxi6 libgl1 calculix-ccx` and `pip install -e ".[dev]"`.
 
 ## Open questions
 
-- What are the CAD design problems, and how is a solution scored?
-- Which MCP tools does the agent get (geometry / mesh / BCs)?
+- How exactly is a solution scored? (proposal above; the evaluator decides)
+- Which MCP tools does the agent get (geometry / mesh / BCs)? It must emit the case JSON + `.msh` above.
+- There is no `main` branch yet; workstream branches currently fork from `improver-loop`.
 - What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
 - What does the evaluator output look like (schema for rankings + summary)?
 
