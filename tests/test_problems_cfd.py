@@ -66,7 +66,7 @@ def test_case_check(problem, order):
     assert case.analysis.formulation == problem.formulation
     assert case.analysis.order == order
     assert case.analysis.options.get("residual_tol", 1) <= 1e-6
-    m = case.material_for()
+    m = case.material_for("fluid")
     assert m.rho > 0 and m.mu > 0
     names = [q.name for q in case.qois]
     assert names == [q.name for q in problem.qois()]
@@ -339,8 +339,8 @@ def test_reference_study(pid, nested, tmp_path):
     assert study["passed"], [(q["name"], q["values"], q["err_fine"]) for q in study["qois"]]
     second_order = {"poiseuille_channel": ["dp_AB", "u_centreline", "flow_rate_outlet"],
                     "lid_driven_cavity_re100": ["v_hcl_min", "u_centre"],
-                    "cylinder_channel_dfg_2d1": [],
-                    "pipe_poiseuille_3d": ["u_centreline", "flow_rate_outlet"]}[pid]
+                    "cylinder_channel_dfg_2d1": ["dp_front_rear"],
+                    "pipe_poiseuille_3d": ["dp_AB", "flow_rate_outlet"]}[pid]
     for q in study["qois"]:
         if q["name"] in second_order:
             assert 1.7 <= q["gci"]["p"] <= 2.6, (q["name"], q["gci"]["p"])

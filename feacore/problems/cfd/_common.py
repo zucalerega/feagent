@@ -14,12 +14,11 @@
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 
 import numpy as np
 
-from feacore.case import BC, Analysis, Case, Material, QoI
+from feacore.case import BC, Analysis, Case, Material, QoI, Region
 from feacore.geometry.gmsh_tools import add_group, ensure_domain_group, gmsh_session
 from feacore.problems.base import Problem, Reference
 
@@ -67,8 +66,8 @@ class TransfiniteBlocks:
     block a transfinite, recombined patch.
 
     Points are deduplicated by coordinates, straight edges by their end points, so two blocks that
-    list the same edge share it (conformal mesh). ``edge(a, b, n, ratio)`` sets the cell count and
-    grading of an edge (cell size grows by ``ratio`` overall from a to b)."""
+    list the same edge share it (conformal mesh). Cell counts and gradings are set afterwards with
+    ``set_edge`` on the (signed) curve tags; ``coords`` maps point tags to coordinates."""
 
     def __init__(self, tol: float = 1e-12):
         import gmsh
@@ -148,25 +147,23 @@ def transfinite_all(dim: int = 2) -> None:
 
 def orient_ccw_2d() -> int:
     """Reverse the elements of every surface whose cells are clockwise in the xy-plane (so all
-    2D cells have a +z normal). Returns the number of surfaces reversed."""
+    2D cells have a +z normal). One element decides per surface (a surface mesh is consistently
+    oriented). Returns the number of surfaces reversed."""
     import gmsh
 
     flipped = []
     for _, s in gmsh.model.getEntities(2):
         types, _, nodes = gmsh.model.mesh.getElements(2, s)
-        for t, nt in zip(types, nodes):
-            nn = gmsh.model.mesh.getElementProperties(t)[3]
-            first = [int(v) for v in nt[:nn]]
-            xyz = np.array([gmsh.model.mesh.getNode(v)[0] for v in first[: min(nn, 4)]])
-            k = min(nn, 4) if nn >= 4 else 3
-            area = 0.0
-            for i in range(k):
-                x0, y0 = xyz[i, :2]
-                x1, y1 = xyz[(i + 1) % k, :2]
-                area += x0 * y1 - x1 * y0
-            if area < 0:
-                flipped.append((2, s))
-            break
+        if not len(types):
+            continue
+        props = gmsh.model.mesh.getElementProperties(types[0])
+        n_nodes, n_corners = props[3], props[5]
+        corners = [int(v) for v in nodes[0][:n_nodes][:n_corners]]
+        xy = np.array([gmsh.model.mesh.getNode(v)[0][:2] for v in corners])
+        area = sum(xy[i, 0] * xy[(i + 1) % n_corners, 1] - xy[(i + 1) % n_corners, 0] * xy[i, 1]
+                   for i in range(n_corners))
+        if area < 0:
+            flipped.append((2, s))
     if flipped:
         gmsh.model.mesh.reverse(flipped)
     return len(flipped)
@@ -205,7 +202,8 @@ class FlowProblem(Problem):
                               thickness=self.thickness, options=self.options()),
             materials={self.material_name: self.material()},
             bcs=bcs,
-            qois=self.qois(),   # one fluid: no regions (the cell group is "fluid")
+            regions=[Region(group="fluid", material=self.material_name)],
+            qois=self.qois(),
             meta={"problem": self.id, "setup": "reference"},
         )
 
@@ -264,5 +262,5 @@ def group(dim: int, tags, name: str) -> int:
 __all__ = [
     "WHITE", "SCHAEFER_TUREK", "FEATFLOW_2D1", "GHIA", "GHIA_COPY", "num", "refinement_factor", "count",
     "progression", "TransfiniteBlocks", "set_edge", "transfinite_all", "orient_ccw_2d", "FlowProblem",
-    "boundary_curves_where", "near", "group", "BC", "QoI", "Reference", "math",
+    "boundary_curves_where", "near", "group", "BC", "QoI", "Reference",
 ]

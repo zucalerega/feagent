@@ -94,12 +94,14 @@ class CylinderChannelDFG2D1(FlowProblem):
         return (
             "Steady laminar flow of an incompressible Newtonian fluid around a circular cylinder in a 2D "
             "channel (the DFG / Schaefer-Turek 'flow around a cylinder' benchmark, steady case).\n"
-            f"Geometry (STEP, planar face in the xy-plane): channel 0 <= x <= {p['L']}, 0 <= y <= {p['H']} m "
-            f"with a circular hole (the cylinder) of diameter D = {p['D']} m centred at ({p['xc']}, {p['yc']}). "
+            f"Geometry (STEP, planar face in the xy-plane): channel 0 <= x <= {p['L']}, "
+            f"0 <= y <= {p['H']} m with a circular hole (the cylinder) of diameter D = {p['D']} m centred "
+            f"at ({p['xc']}, {p['yc']}). "
             "Model it as 2D; report forces per metre of depth (out-of-plane thickness 1 m).\n"
             f"Fluid: density rho = {p['rho']} kg/m^3, dynamic viscosity mu = {p['mu']} Pa s.\n"
             "Boundary conditions:\n"
-            f"  inlet x = 0: parabolic velocity profile u_x(y) = 4 U_m y (H - y) / H^2 with U_m = {p['Um']} m/s,\n"
+            "  inlet x = 0: parabolic velocity profile u_x(y) = 4 U_m y (H - y) / H^2 with "
+            f"U_m = {p['Um']} m/s,\n"
             f"    i.e. u_x = {self.inlet_profile()}  [m/s, y in m],  u_y = 0\n"
             f"  outlet x = {p['L']}: static pressure p = 0 Pa\n"
             f"  channel walls y = 0 and y = {p['H']}, and the cylinder surface: no slip\n"
@@ -108,8 +110,8 @@ class CylinderChannelDFG2D1(FlowProblem):
             "cylinder [N per m depth]\n"
             "  lift            y-component of that force [N per m depth]\n"
             f"  dp_front_rear   static pressure difference p(front) - p(rear) between the points "
-            f"({pts['front'][0]}, {pts['front'][1]}) and ({pts['rear'][0]}, {pts['rear'][1]}) on the cylinder "
-            "surface [Pa]\n"
+            f"({pts['front'][0]}, {pts['front'][1]}) and ({pts['rear'][0]}, {pts['rear'][1]}) on the "
+            "cylinder surface [Pa]\n"
             "The force QoIs refer to the boundary group cylinder: use this name for the cylinder surface "
             "group of the mesh."
         )
@@ -233,11 +235,14 @@ class CylinderChannelDFG2D1(FlowProblem):
         s = self.force_scale
         conv = f"F = c rho U_bar^2 D / 2 per m depth, rho U_bar^2 D / 2 = {s:.6g} N/m"
         return [
-            Reference("drag", CD_REF * s, "published_numerical", f"{_SRC}; c_D = {CD_REF}; {conv}", tolerance=0.01,
-                      notes="Schaefer & Turek (1996) acceptance interval c_D in [5.57, 5.59] (from memory)."),
-            Reference("lift", CL_REF * s, "published_numerical", f"{_SRC}; c_L = {CL_REF}; {conv}", tolerance=0.05,
-                      notes="Lift is ~0.2 % of drag and sensitive to the mesh; Schaefer & Turek (1996) acceptance "
-                            "interval c_L in [0.0104, 0.0110] (+-3 %, from memory)."),
+            Reference("drag", CD_REF * s, "published_numerical", f"{_SRC}; c_D = {CD_REF}; {conv}",
+                      tolerance=0.01,
+                      notes="Schaefer & Turek (1996) acceptance interval c_D in [5.57, 5.59] (from memory). "
+                            "The fixed solver converges to c_D = 5.5714 (-0.15 %, docs/benchmarks_cfd.md)."),
+            Reference("lift", CL_REF * s, "published_numerical", f"{_SRC}; c_L = {CL_REF}; {conv}",
+                      tolerance=0.05,
+                      notes="Lift is ~0.2 % of drag and sensitive to the mesh; Schaefer & Turek (1996) "
+                            "acceptance interval c_L in [0.0104, 0.0110] (+-3 %, from memory)."),
             Reference("dp_front_rear", DP_REF, "published_numerical",
                       f"{_SRC}; dp = p(0.15, 0.2) - p(0.25, 0.2) = {DP_REF} (rho = 1, so Pa)", tolerance=0.01,
                       notes="Schaefer & Turek (1996) acceptance interval [0.1172, 0.1176] (from memory)."),
