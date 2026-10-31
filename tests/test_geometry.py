@@ -323,3 +323,62 @@ def test_unresolved_shape_is_reported(parts_dir, monkeypatch):
 def test_bad_ref_size_raises(parts_dir, bad):
     with pytest.raises(ValueError, match="ref_size"):
         analyze(parts_dir / "cantilever.step", ref_size=bad)
+
+
+def _plate_with_hole():
+    occ = gmsh.model.occ
+    occ.cut([(3, occ.addBox(0, 0, 0, 40, 30, 5))], [(3, occ.addCylinder(20, 15, -1, 0, 0, 7, 4))])
+
+
+def _three_box_fragment():
+    occ = gmsh.model.occ
+    boxes = [occ.addBox(x, 0, 0, 10, 10, 10) for x in (20, 10, 0)]
+    occ.fragment([(3, boxes[0])], [(3, b) for b in boxes[1:]])
+
+
+def _normals_of(build, **kw):
+    """Orientation facts per face: outward normal of planes, concavity of curved faces (their
+    reported normal is taken at a sample point that differs between runs)."""
+    with gmsh_session():
+        build()
+        gmsh.model.occ.synchronize()
+        m = analyze_current_model(**kw)
+    return {f.tag: tuple(np.round(f.normal, 9)) if f.kind == "plane" else f.concave
+            for f in m.faces}, m
+
+
+@pytest.mark.parametrize("build", [_plate_with_hole, _three_box_fragment])
+@pytest.mark.parametrize("invert", [False, True])
+def test_orientation_survives_partial_tessellation(build, invert, monkeypatch):
+    truth, m = _normals_of(build, tessellate=False)  # exact isInside orientation
+    assert any(len(f.volumes) == 2 for f in m.faces) or build is _plate_with_hole
+    if invert:  # make getNormal point the wrong way so the parity rays must flip it
+        normals_at = geometry._normals_at
+        monkeypatch.setattr(geometry, "_normals_at", lambda f, uv: -normals_at(f, uv))
+    face_triangles = geometry._face_triangles
+    for drop in [None, *truth]:
+        monkeypatch.setattr(geometry, "_face_triangles", lambda f, d=drop: (
+            np.zeros((0, 3), dtype=np.int64) if f == d else face_triangles(f)))
+        got, m2 = _normals_of(build)
+        bad = [t for t in truth if got[t] != truth[t]]
+        assert not bad, f"dropped face {drop}: wrong normals on faces {bad}"
+        assert (drop is None) != any(h.kind == "analysis_incomplete" for h in m2.hazards)
+
+
+def test_full_tessellation_needs_no_isinside_probes(parts_dir, monkeypatch):
+    calls = []
+    is_inside = gmsh.model.isInside
+    def counting(dim, *a, **k):
+        calls.extend([1] if dim == 3 else [])
+        return is_inside(dim, *a, **k)
+
+    monkeypatch.setattr(gmsh.model, "isInside", counting)
+    with gmsh_session():
+        _holed_plate(100)
+        m = analyze_current_model()
+    assert len(m.faces) > 100 and len(calls) == 0
+    with gmsh_session():
+        _holed_plate(100)
+        m = analyze_current_model(tessellate=False)
+    assert 0 < len(calls) <= 2 * len(m.faces)  # at most one probe pair per face (simple faces)
+    assert all(m.face(h.faces[0]).concave for h in m.features)

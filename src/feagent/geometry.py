@@ -519,17 +519,14 @@ def _prepare_samples(ctx: _Ctx, fd: _Face) -> None:
 def _orient_faces(ctx: _Ctx, volumes: list[VolumeInfo], tess: Tessellation | None,
                   caster: _RayCaster | None) -> None:
     """Outward sign per face from ray parity against its first volume's boundary triangles
-    (O(F log T)); one isInside probe pair only where parity is unavailable or undecided."""
-    vol_faces = {v.tag: np.asarray(v.faces, dtype=np.int64) for v in volumes}
+    (O(F log T)). Parity is only trusted when that volume's boundary is fully tessellated (a hole in
+    it breaks crossing counts); otherwise, or when the vote ties, one isInside probe pair decides."""
     rows = _rows_by_face(tess)
+    closed = {v.tag: np.asarray(v.faces, dtype=np.int64) for v in volumes
+              if caster is not None and all(f in rows for f in v.faces)}
     for fd in ctx.faces.values():
-        if fd.volumes and len(fd.xyz):
-            votes = 0
-            if caster is not None and fd.tag in rows:
-                votes = _parity_votes(rows[fd.tag], vol_faces.get(fd.volumes[0]), tess, caster)
-            if votes == 0:
-                votes = _inside_vote(fd.volumes[0], fd.xyz[0], fd.raw[0], 1e-4 * ctx.scale)
-            fd.sign = -1.0 if votes < 0 else 1.0
+        if fd.volumes:
+            fd.sign = _face_sign(ctx, fd, rows.get(fd.tag), closed.get(fd.volumes[0]), tess, caster)
         fd.nrm = fd.sign * fd.raw
         if fd.sign < 0 and fd.tag in rows:
             r = rows[fd.tag]
@@ -537,17 +534,36 @@ def _orient_faces(ctx: _Ctx, volumes: list[VolumeInfo], tess: Tessellation | Non
             tess.normals[r] *= -1
 
 
+def _face_sign(ctx: _Ctx, fd: _Face, rows, vol_faces, tess, caster) -> float:
+    """Parity when the volume is closed (also for faces without exact samples); else isInside on
+    up to 3 samples (a projected centroid of a sliver face may fall just off the face)."""
+    votes = 0
+    if rows is not None and vol_faces is not None:
+        votes = _parity_votes(rows, vol_faces, tess, caster)
+    for i in _spread(len(fd.xyz), 3) if votes == 0 else ():  # first decisive sample wins
+        votes = _inside_vote(fd.volumes[0], fd.xyz[i], fd.raw[i], 1e-4 * ctx.scale)
+        if votes:
+            break
+    return -1.0 if votes < 0 else 1.0
+
+
 def _parity_votes(rows: np.ndarray, vol_faces, tess: Tessellation, caster: _RayCaster) -> int:
-    """+1 per ray (from a triangle centroid, tilted off its getNormal-side normal) that crosses the
-    volume boundary an even number of times (normal points out), -1 per odd count."""
+    """Per ray from a triangle centroid (tilted off its getNormal-side normal): +1 if it crosses the
+    volume boundary an even number of times ahead and an odd number behind (normal points out), -1
+    for the reverse, 0 (abstain) if both parities agree, i.e. the faceted boundary is not a
+    consistent closed shell there (walls thinner than the chordal error)."""
     votes = 0
     for k, cid in enumerate(rows[_spread(len(rows), _PARITY_RAYS)]):
         n = tess.normals[cid]
         d = _unit(n + _TILTS[k] - np.dot(_TILTS[k], n) * n)
-        t, ids = caster.hits(caster.centroid(cid), d, int(cid))
-        on = np.isin(tess.face_tag[ids], vol_faces) if vol_faces is not None else np.ones(len(t), bool)
-        votes += -1 if _distinct_count(t[on], caster.eps * 1e-3) % 2 else 1
+        ahead, behind = (_crossings(caster, cid, s * d, vol_faces, tess) % 2 for s in (1.0, -1.0))
+        votes += 0 if ahead == behind else (-1 if ahead else 1)
     return votes
+
+
+def _crossings(caster: _RayCaster, cid, d: np.ndarray, vol_faces, tess: Tessellation) -> int:
+    t, ids = caster.hits(caster.centroid(cid), d, int(cid))
+    return _distinct_count(t[np.isin(tess.face_tag[ids], vol_faces)], caster.eps * 1e-3)
 
 
 def _inside_vote(vol: int, p: np.ndarray, n: np.ndarray, delta: float) -> int:
