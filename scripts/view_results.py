@@ -43,7 +43,7 @@ PAGE = r"""<!doctype html>
   #panel h4 { margin:4px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#3a4d6b; }
   select, #panel button { font:inherit; padding:4px 6px; border:1px solid var(--line); background:#f4f6fa; cursor:pointer; }
   select { width:100%; }
-  .row { display:flex; gap:4px; margin:4px 0 8px; } .row button { flex:1; } .row button.on { background:#2c5aa0; color:#fff; border-color:#2c5aa0; }
+  .row { display:flex; gap:4px; margin:4px 0 8px; } .row button { flex:1; } #panel .row button.on { background:#2c5aa0; color:#fff; border-color:#2c5aa0; }
   #panel label { display:flex; align-items:center; gap:6px; margin:4px 0; } input[type=range] { width:100%; }
   #words { margin:6px 0; padding-left:16px; } #words li { margin:3px 0; font-size:12px; }
   table { border-collapse:collapse; width:100%; font-size:12px; } td { padding:2px 4px; border-bottom:1px solid #e3e8f0; }
@@ -90,6 +90,8 @@ const DATA = __DATA__, CASES = __CASES__;
 const b64 = (s, T) => new T(Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer);
 const P = b64(DATA.points, Float32Array), T = b64(DATA.tets, Uint32Array), nv = P.length / 3;
 for (const c of CASES) if (c.vm) { c.VM = b64(c.vm, Float32Array); c.U = b64(c.u, Float32Array); }
+const SF = b64(DATA.surf, Uint32Array), groupOf = new Map(), gindex = new Map(DATA.groups.map((g, i) => [g, i]));
+const BC_COL = { fixed: 0x3d5afe, roller: 0x00b8d4, pressure: 0xff1744, force: 0xff6d00 };
 const BANDS = [[0,0,255],[0,178,255],[0,255,255],[0,255,178],[0,255,0],[178,255,0],[255,255,0],[255,178,0],[255,0,0]];
 const tex = new THREE.DataTexture(new Uint8Array(BANDS.flatMap(c => [...c, 255])), 9, 1);
 tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
@@ -99,6 +101,7 @@ function key(a, b, c) { if (a > b) [a, b] = [b, a]; if (b > c) [b, c] = [c, b]; 
 const NPE = DATA.npe || 4, nt = T.length / NPE;
 // faces: corners (outward) + the midside nodes of edges ab, bc, ca. Node numbering is meshio's
 // (VTK): 4=(0,1) 5=(1,2) 6=(0,2) 7=(0,3) 8=(1,3) 9=(2,3); gmsh's own files swap 8 and 9.
+for (let i = 0; i < SF.length; i += 4) groupOf.set(key(SF[i], SF[i+1], SF[i+2]), SF[i+3]);
 const FACES = [[0,2,1,6,5,4],[0,1,3,4,8,7],[0,3,2,7,9,6],[1,2,3,5,9,8]];
 const SUB = NPE === 10 ? 4 : 1;
 const cent = new Float32Array(nt * 3);
@@ -162,6 +165,7 @@ function rebuild() {
   const lg = new THREE.BufferGeometry(); lg.setAttribute("position", new THREE.BufferAttribute(seg, 3));
   lines = new THREE.LineSegments(lg, lineMat); lines.visible = st.edges; scene.add(lines);
   legend(c, lo, hi, F);
+  drawBCs(c, X);
   document.getElementById("scaleLbl").textContent = c.U ? `${(s).toFixed(0)}x (auto ${c.autoscale.toFixed(0)}x)` : "";
 }
 function legend(c, lo, hi, F) {
@@ -177,32 +181,76 @@ function legend(c, lo, hi, F) {
   h += `<div class="band"><i style="background:transparent;border:0"></i>${lo.toPrecision(4)} <span class="tag" style="background:#1f4fd6">Min</span></div>`;
   el.innerHTML = h;
 }
-function drawBCs() {
-  bcGroup.clear(); const c = CASES[st.c]; bcGroup.visible = st.bcs;
+function label(text, colour) {
+  const cv = document.createElement("canvas"), x = cv.getContext("2d"); x.font = "bold 30px Arial";
+  const w = Math.ceil(x.measureText(text).width) + 22; cv.width = w; cv.height = 44;
+  x.fillStyle = colour; x.fillRect(0, 0, w, 44); x.strokeStyle = "#fff"; x.lineWidth = 3; x.strokeRect(1.5, 1.5, w - 3, 41);
+  x.font = "bold 30px Arial"; x.fillStyle = "#fff"; x.textBaseline = "middle"; x.fillText(text, 11, 23);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false }));
+  sp.scale.set(R * 0.065 * w / 44, R * 0.065, 1); sp.renderOrder = 10; return sp;
+}
+// supports / loads on the (deformed) result: shaded BC faces, arrows across load faces, lettered labels
+function drawBCs(c, X) {
+  bcGroup.clear(); bcGroup.visible = st.bcs; const placed = [];
   for (const b of c.markers) {
-    const p = new THREE.Vector3(...b.at), L = R * 0.35;
-    if (b.kind === "support") {
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(R * 0.05, R * 0.1, 3), new THREE.MeshBasicMaterial({ color: b.roller ? 0x00a0ff : 0x1f3fd6 }));
-      const n = new THREE.Vector3(...b.dir); cone.position.copy(p.clone().addScaledVector(n, R * 0.05));
-      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n.clone().negate()); bcGroup.add(cone);
-    } else {
-      const d = new THREE.Vector3(...b.dir).normalize();
-      bcGroup.add(new THREE.ArrowHelper(d, p.clone().addScaledVector(d, -L), L, 0xd62728, L * 0.3, L * 0.18));
+    const gi = gindex.get(b.group), col = BC_COL[b.kind], mine = faces.filter(f => groupOf.get(key(f[0], f[1], f[2])) === gi);
+    if (!mine.length) continue;
+    const pos = new Float32Array(mine.length * SUB * 9);
+    mine.forEach((f, i) => subTris(f).forEach((t, q) => t.forEach((v, j) => pos.set(X(v), i*SUB*9 + 9*q + 3*j))));
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    bcGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.72, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, depthWrite: false })));
+    // x-ray copy: BC faces hidden behind the part still show, faintly
+    const xr = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.22, side: THREE.DoubleSide,
+      depthTest: false, depthWrite: false })); xr.renderOrder = 5; bcGroup.add(xr);
+    // centroid of the (deformed) face group
+    const ctr = new THREE.Vector3(); let area = 0;
+    const V = v => new THREE.Vector3(...X(v));
+    const tri = mine.map(f => {                        // per face: centroid + outward normal (faces are outward)
+      const a = V(f[0]), bb = V(f[1]), cc = V(f[2]), nrm = bb.clone().sub(a).cross(cc.clone().sub(a));
+      const ar = nrm.length() / 2, p = a.clone().add(bb).add(cc).divideScalar(3);
+      ctr.addScaledVector(p, ar); area += ar; return { p, n: nrm.normalize() };
+    });
+    ctr.divideScalar(area || 1);
+    if (b.kind === "pressure" || b.kind === "force") {
+      const L = R * 0.16, step = Math.max(1, Math.floor(tri.length / 14));
+      for (let i = 0; i < tri.length; i += step) {
+        const d = b.dir ? new THREE.Vector3(...b.dir).normalize() : tri[i].n.clone().negate();
+        bcGroup.add(new THREE.ArrowHelper(d, tri[i].p.clone().addScaledVector(d, -L), L, col, L * 0.32, L * 0.2));
+      }
     }
+    // label pushed out from the part's centre along the face direction, joined by a leader line
+    const out = ctr.clone().lengthSq() > 1e-12 ? ctr.clone().normalize() : new THREE.Vector3(0, 0, 1);
+    const at = ctr.clone().addScaledVector(out, R * (0.38 + 0.08 * placed.length));
+    placed.push(at);
+    const tag = label(`${b.letter}  ${b.label}`, "#" + col.toString(16).padStart(6, "0"));
+    tag.position.copy(at); tag.center.set(out.x >= 0 ? 0 : 1, 0.5); bcGroup.add(tag);
+    const lg = new THREE.BufferGeometry().setFromPoints([ctr, at]);
+    const ln = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: col, depthTest: false })); ln.renderOrder = 9; bcGroup.add(ln);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(R * 0.018), new THREE.MeshBasicMaterial({ color: col, depthTest: false }));
+    dot.position.copy(ctr); dot.renderOrder = 9; bcGroup.add(dot);
   }
+}
+// camera on the side where the BC faces are (mean of their centroids), else iso
+function aim(c) {
+  const m = new THREE.Vector3(); c.markers.forEach(b => m.add(new THREE.Vector3(...b.at)));
+  const d = (m.lengthSq() > 1e-9 ? m.normalize() : new THREE.Vector3(0.6, -0.8, 0.5)).add(new THREE.Vector3(0.35, -0.45, 0.4)).normalize();
+  camera.up.set(0, 0, 1); camera.position.copy(d.multiplyScalar(R * 4.4)); controls.target.set(0, 0, 0); controls.update();
 }
 function showCase() {
   const c = CASES[st.c];
   document.getElementById("sub").textContent = ` ${c.id}`;
-  document.getElementById("words").innerHTML = c.words.map(w => `<li>${w}</li>`).join("");
+  document.getElementById("words").innerHTML = c.words.map((w, i) => { const m = c.markers[i];
+    const col = m ? "#" + BC_COL[m.kind].toString(16).padStart(6, "0") : "#999";
+    return `<li style="list-style:none;margin-left:-16px"><b style="background:${col};color:#fff;padding:0 6px;margin-right:6px;border-radius:2px">${m ? m.letter : ""}</b>${w}</li>`; }).join("");
   const s = document.getElementById("status"); s.textContent = c.status.toUpperCase(); s.className = "s-" + c.status;
   document.getElementById("flags").innerHTML = c.flags.map(([sev, id, msg]) => `<div class="flag ${sev}"><b>${id}</b> ${msg}</div>`).join("") || "<div class='flag info'>no flags</div>";
   document.getElementById("nums").innerHTML = c.numbers.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
-  rebuild(); drawBCs();
+  rebuild();
 }
 const sel = document.getElementById("case");
 CASES.forEach((c, i) => { const o = document.createElement("option"); o.value = i; o.textContent = `${c.id} [${c.status}]`; sel.appendChild(o); });
-sel.onchange = e => { st.c = +e.target.value; showCase(); };
+sel.onchange = e => { st.c = +e.target.value; showCase(); aim(CASES[st.c]); };
 document.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { st.f = b.dataset.f;
   document.querySelectorAll("[data-f]").forEach(x => x.classList.toggle("on", x === b)); rebuild(); });
 let pend = 0; const later = fn => { cancelAnimationFrame(pend); pend = requestAnimationFrame(fn); };
@@ -235,10 +283,12 @@ const tScene = new THREE.Scene(), tCam = new THREE.OrthographicCamera(-1.6, 1.6,
   x.fillStyle = "#" + c.toString(16).padStart(6, "0"); x.font = "bold 44px Arial"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(l, 32, 34);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv) })); s.position.set(...d.map(v => v * 1.35)); s.scale.set(0.45, 0.45, 1); tScene.add(s);
 });
-function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+// keep the model centred in the space left of the side panel
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight;
+  const shift = Math.min(180, innerWidth * 0.12); camera.setViewOffset(innerWidth, innerHeight, shift, 0, innerWidth, innerHeight);
+  camera.updateProjectionMatrix(); }
 addEventListener("resize", resize); resize();
-camera.up.set(0, 0, 1); camera.position.set(R * 2.6, -R * 3.4, R * 2.3); controls.update();
-showCase();
+showCase(); aim(CASES[0]);
 (function loop() {
   requestAnimationFrame(loop); controls.update();
   key1.position.copy(camera.position).add(new THREE.Vector3(R, R * 0.6, R * 2)); renderer.render(scene, camera);
@@ -267,16 +317,23 @@ def solve_cases(part, sets, mesh: str, X: np.ndarray, offset: np.ndarray, diag_m
         m = rep.metrics
         c = {"id": s.id, "words": s.words, "status": rep.status,
              "flags": [[f.severity, f.id, f.message] for f in rep.flags], "markers": []}
-        for b in s.bcs:
+        for i, b in enumerate(s.bcs):
             f = part.face(int(b.group[1:]))
             at = (np.asarray(f.centroid) * 1000 - offset).tolist()
             n = np.asarray(f.normal if f.normal else (f.axis or [0, 0, 1]), float)
-            if b.type in ("fixed", "displacement"):
-                c["markers"].append({"kind": "support", "at": at, "dir": n.tolist(), "roller": b.type == "displacement"})
+            letter = "ABCDEFGH"[i]
+            if b.type == "fixed":
+                kind, label, d = "fixed", f"Fixed Support ({b.group})", n
+            elif b.type == "displacement":
+                comp = "".join("xyz"[k] for k in b.components)
+                kind, label, d = "roller", f"Displacement {comp} = 0 ({b.group})", n
             elif b.type == "pressure":
-                c["markers"].append({"kind": "load", "at": at, "dir": (-n).tolist()})
+                kind, label, d = "pressure", f"Pressure {b.value / 1e6:g} MPa ({b.group})", -n if f.normal else None
             else:
-                c["markers"].append({"kind": "load", "at": at, "dir": list(b.value)})
+                v = np.asarray(b.value, float)
+                kind, label, d = "force", f"Force {np.linalg.norm(v):g} N ({b.group})", v / np.linalg.norm(v)
+            c["markers"].append({"kind": kind, "group": b.group, "letter": letter, "label": label, "at": at,
+                                 "dir": None if d is None else np.asarray(d, float).tolist()})
         if res is not None:
             vm = res.probe("von_mises", X) / 1e6
             U = np.column_stack([res.probe(k, X) for k in ("ux", "uy", "uz")]) * 1000
