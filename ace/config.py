@@ -9,13 +9,19 @@ MODELS = {
     "reflector": "claude-sonnet-5-5",   # single-call reflector (REFLECTOR_MODE = "single_call")
     "diagnoser": "claude-sonnet-5-5",   # agentic diagnoser; switch to "claude-opus-5-5" if Sonnet falls short
     "curator": "claude-sonnet-5-5",     # bookkeeping: lesson -> ADD or duplicate-of
+    # --deep (ace/deep_teacher.py, ace/self_reflect.py, ace/organizer.py)
+    "teacher": "claude-opus-5-5",       # reviews every run on a task: whole meshes, error maps, setups
+    "reflect": "claude-sonnet-5-5",     # each agent looks at its own final results and writes notes
+    "organizer": "claude-sonnet-5-5",   # merges and rewrites an agent's (or the shared) notes
 }
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
-MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000}
+MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000,
+              "teacher": 32000, "reflect": 8000, "organizer": 16000}
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
-EFFORT = {"generator": "medium", "reflector": "high", "diagnoser": "medium", "curator": "low"}
+EFFORT = {"generator": "medium", "reflector": "high", "diagnoser": "medium", "curator": "low",
+          "teacher": "medium", "reflect": "low", "organizer": "low"}
 
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.

@@ -163,7 +163,56 @@ class MockLLM:
                 else Decision(lesson_index=i, action="DUPLICATE", duplicate_of="#0", content="")
                 for i in range(n)
             ]), rec
+        text = user if isinstance(user, str) else "\n".join(b["text"] for b in user if b["type"] == "text")
+        if schema.__name__ in ("TeacherFeedback", "SelfReflection", "OrganizerOutput"):
+            return getattr(self, "_" + schema.__name__)(text, schema), rec
         raise ValueError(f"mock has no canned answer for {schema}")
+
+    # ---------------------------------------------------------------- --deep roles
+    # Deterministic answers that name the run ids / agents in the prompt, so the code downstream
+    # (memory updates, output files) is exercised. Notes mention order 2 so mock scores can move.
+
+    @staticmethod
+    def _note(section="meshing", kind="fix", content="mock: use quadratic (order 2) elements"):
+        return {"section": section, "kind": kind, "content": content}
+
+    def _TeacherFeedback(self, text: str, schema):
+        task = re.search(r"^TASK (\S+)", text, re.M).group(1)
+        run_ids = list(dict.fromkeys(re.findall(r"^=== RUN (\S+) ", text, re.M)))
+        call = {"h": 0.1, "order": 2, "refinements": [{"group": None, "point": [0.0, 0.0], "size": 0.02,
+                                                       "radius": 0.2}]}
+        per_agent = [{"agent": rid.rsplit("-", 1)[-1], "run_id": rid, "diagnosis": f"mock: {rid} error near the corner",
+                      "strengths": ["mock strength"], "mistakes": ["mock mistake"], "next_mesh_call": call,
+                      "notes": [self._note(content=f"mock teacher note {i} for {rid}: refine the hotspot to h/4, order 2")
+                                for i in range(8)]} for rid in run_ids]
+        return schema.model_validate({
+            "task": task, "task_summary": "mock: the best run used quadratic elements", "setup_warnings": [],
+            "highlights": [{"agent": rid.rsplit("-", 1)[-1], "run_id": rid, "what": "mock idea", "why_it_works": "mock",
+                            "how_to_copy": "mock"} for rid in run_ids[:1]],
+            "per_agent": per_agent,
+            "shared_lessons": [self._note(kind="idea", content=f"mock shared lesson {i}: order 2 near hotspots")
+                               for i in range(6)],
+            "bullet_ratings": [{"bullet_id": b, "rating": "useful", "why": "mock"}
+                               for b in sorted(set(BULLET_ID.findall(text)))]})
+
+    def _SelfReflection(self, text: str, schema):
+        rid = re.search(r"^MY RUN (\S+)", text, re.M).group(1)
+        return schema.model_validate({
+            "what_happened": f"mock: in {rid} I meshed uniformly",
+            "what_i_learned": [self._note(kind="idea", content=f"mock self note {i} from {rid}: order 2")
+                               for i in range(5)],
+            "plan_next": "mock: refine the hotspot", "next_mesh_call": {"h": 0.1, "order": 2, "refinements": []}})
+
+    def _OrganizerOutput(self, text: str, schema):
+        # Keep every current note (with its id) and add every incoming one as new: the notes are
+        # the one-line JSON objects organizer.build_user writes.
+        notes = []
+        for line in text.splitlines():
+            if line.startswith("{"):
+                n = json.loads(line)
+                notes.append({"id": n.get("id"), "section": n["section"], "kind": n.get("kind") or "idea",
+                              "source": n.get("source") or "mock", "content": n["content"]})
+        return schema.model_validate({"notes": notes})
 
 
 def fake_rerun(flip: bool = True):

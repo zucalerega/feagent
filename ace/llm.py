@@ -10,6 +10,9 @@ With mock=True, ace.mock.MockLLM answers instead and nothing is sent anywhere.
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
+
 import pydantic
 
 from ace.config import EFFORT, MAX_TOKENS, MODELS
@@ -21,6 +24,17 @@ def make_llm(mock: bool):
         from ace.mock import MockLLM
         return MockLLM()
     return LLM()
+
+
+def text_block(s: str) -> dict:
+    """A text content block, for a user message built from several parts (text and images)."""
+    return {"type": "text", "text": s}
+
+
+def image_block(path) -> dict:
+    """A PNG file as an image content block (base64, sent inline with the message)."""
+    data = base64.standard_b64encode(Path(path).read_bytes()).decode("ascii")
+    return {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": data}}
 
 
 def _cached_system(text: str) -> list[dict]:
@@ -54,9 +68,12 @@ class LLM:
         )
         return resp, usage_record(role, resp.model, resp.usage, run_id)
 
-    def structured(self, role: str, system: str, user: str, schema: type[pydantic.BaseModel],
+    def structured(self, role: str, system: str, user: str | list[dict], schema: type[pydantic.BaseModel],
                    records: list | None = None):
         """Returns (parsed model or None, usage records). Retries once, then gives up.
+
+        `user` is the user message: a string, or a list of content blocks (text_block /
+        image_block) when the model should also see images (the deep teacher, self-reflection).
 
         The API constrains the output to the JSON schema; we still validate with pydantic
         ourselves (rather than messages.parse) so a failed attempt's tokens are still counted.
