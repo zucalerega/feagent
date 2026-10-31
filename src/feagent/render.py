@@ -3,17 +3,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pyvista as pv
 
-from .meshdata import MeshData
 from .types import GeometryModel
 
-pv.OFF_SCREEN = True
+if TYPE_CHECKING:
+    from .meshdata import MeshData
 
 _SIZE = (1600, 1200)
-_VIEWS = ("iso", "yz", "xz", "xy")  # iso, +x, +y, +z
+_VIEWS = ("iso", "+x", "+y", "+z")
 _PALETTE = ["#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b", "#e377c2",
             "#17becf", "#bcbd22", "#7f7f7f", "#393b79", "#637939", "#843c39"]
 _AXES = {"x": 0, "y": 1, "z": 2}
@@ -43,7 +44,14 @@ def _view(pl: pv.Plotter, i: int, label: str) -> None:
 
 def _camera(pl: pv.Plotter, i: int) -> None:
     pl.subplot(i // 2, i % 2)
-    getattr(pl, f"view_{'isometric' if i == 0 else _VIEWS[i]}")()
+    if i == 0:
+        pl.view_isometric()
+    elif i == 1:
+        pl.view_yz()  # camera at +x
+    elif i == 2:
+        pl.view_xz(negative=True)  # camera at +y
+    else:
+        pl.view_xy()  # camera at +z
     pl.reset_camera()
 
 
@@ -79,7 +87,7 @@ def render_faces(model: GeometryModel, out_png: str | Path, highlight: list[int]
     label_tags = {f.tag for f in ranked[:max_labels]} | set(hl)
     centers = {f.tag: f.center for f in model.faces}
     for i in range(4):
-        _view(pl, i, _VIEWS[i] if i else "iso")
+        _view(pl, i, _VIEWS[i])
         for k, tag in enumerate(tags):
             sel = t.face_tag == tag
             if not sel.any():
@@ -110,10 +118,10 @@ def render_groups(mesh: MeshData, out_png: str | Path) -> RenderResult:
     pl = _plotter()
     names = sorted(mesh.tris)
     parts = []
+    shell = _grid(mesh).extract_surface(algorithm="dataset_surface")
     for i in range(4):
-        _view(pl, i, _VIEWS[i] if i else "iso")
-        pl.add_mesh(_grid(mesh).extract_surface(algorithm="dataset_surface"), color="lightgrey",
-                    opacity=0.25)
+        _view(pl, i, _VIEWS[i])
+        pl.add_mesh(shell, color="lightgrey", opacity=0.25)
         for k, name in enumerate(names):
             tr = mesh.tris[name]
             if len(tr):
@@ -178,7 +186,7 @@ def render_field(mesh: MeshData, point_values: np.ndarray, name: str, out_png: s
     surf = grid.extract_surface(algorithm="dataset_surface")
     pl = _plotter()
     for i in range(4):
-        _view(pl, i, _VIEWS[i] if i else "iso")
+        _view(pl, i, _VIEWS[i])
         pl.add_mesh(surf, scalars=name, cmap="viridis", show_edges=True)
         _camera(pl, i)
     cap = f"{name}: min {v.min():.4g}, max {v.max():.4g}, mean {v.mean():.4g} over {len(v)} nodes"

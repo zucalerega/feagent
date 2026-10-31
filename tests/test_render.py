@@ -64,3 +64,25 @@ def test_render_groups_and_quality_png(mesh, tmp_path):
 def test_render_field_png(mesh, tmp_path):
     r = render_field(mesh, np.arange(4.0), "u", tmp_path / "u.png", warp=np.zeros((4, 3)))
     assert _width(r.path) == (1600, 1200) and "u" in r.caption
+
+
+def test_camera_directions(model, tmp_path, monkeypatch):
+    import pyvista as pv
+    from feagent import render
+    pl = pv.Plotter(off_screen=True, shape=(2, 2))
+    pl.add_mesh(pv.Cube())
+    for i, axis, sign in ((1, 0, 1), (2, 1, 1), (3, 2, 1)):
+        render._camera(pl, i)
+        d = np.array(pl.camera.position) - np.array(pl.camera.focal_point)
+        assert np.argmax(abs(d)) == axis and np.sign(d[axis]) == sign
+    pl.close()
+
+
+def test_max_labels_includes_highlight(model, tmp_path):
+    r = render_faces(model, tmp_path / "m.png", highlight=[2], max_labels=1)
+    assert "labels f<tag> shown for 2" in r.caption
+
+
+def test_groups_caption_counts(mesh, tmp_path):
+    r = render_groups(mesh, tmp_path / "gc.png")
+    assert "fixed (1 face, 1 tris)" in r.caption and "load (1 face, 1 tris)" in r.caption
