@@ -101,6 +101,15 @@ class _LE11Base(Problem):
     physics = "elasticity"
     expected_behavior = "thermal"
 
+    def expected_order(self, qoi: QoI, order: int) -> float | None:
+        # A sits on the corner where the axially supported bottom face meets the free inner sphere.
+        # The axial stress has a steep, non-smooth variation into that corner: the surface value at A
+        # converges like ~h^1 with P2 (observed p = 0.9-1.1 on graded and uniform meshes) while
+        # points 0.02 m above A converge at the full rate. P1 stresses are O(h) anyway.
+        if qoi.name == "szz_A":
+            return 1.0
+        return None
+
     def references(self) -> list[Reference]:
         return [Reference(
             qoi="szz_A", value=-105e6, kind="published", tolerance=0.02,

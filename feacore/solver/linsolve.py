@@ -170,35 +170,60 @@ def _solve_scipy(K, f, report: LinearSolveReport, symmetric: bool):
     return lu.solve(np.asarray(f, dtype=float))
 
 
-def _solve_pardiso(K, f, report: LinearSolveReport, symmetric: bool):
-    from pypardiso import PyPardisoSolver
+_PARDISO: dict = {}
 
+
+def _pardiso_solver(mtype: int):
+    """One cached PyPardisoSolver per matrix type: creating one scans site-packages for
+    libmkl_rt (~0.5 s), so point it at the library directly when we can find it cheaply."""
+    if mtype not in _PARDISO:
+        if not os.environ.get("PYPARDISO_MKL_RT"):
+            import glob
+            import site
+            import sys
+
+            dirs = [os.path.join(sys.prefix, "lib")]
+            try:
+                dirs.append(os.path.join(site.getuserbase(), "lib"))
+            except Exception:
+                pass
+            for d in dirs:
+                hits = sorted(glob.glob(os.path.join(d, "libmkl_rt.so*")))
+                if hits:
+                    os.environ["PYPARDISO_MKL_RT"] = hits[0]
+                    break
+        from pypardiso import PyPardisoSolver
+
+        _PARDISO[mtype] = PyPardisoSolver(mtype=mtype)
+    return _PARDISO[mtype]
+
+
+def _pardiso_run(mtype: int, A, b):
+    solver = _pardiso_solver(mtype)
+    try:
+        return solver.solve(A, b)
+    finally:
+        try:
+            solver.remove_stored_factorization()
+            solver.free_memory(everything=True)
+        except Exception:
+            pass
+
+
+def _solve_pardiso(K, f, report: LinearSolveReport, symmetric: bool):
     b = np.asarray(f, dtype=float)
     if symmetric:
-        solver = PyPardisoSolver(mtype=2)  # real SPD; PARDISO reads the upper triangle
-        A = sp.triu(K, format="csr")
+        A = sp.triu(K, format="csr")  # mtype 2 (real SPD): PARDISO reads the upper triangle
         A.sort_indices()
         try:
-            x = solver.solve(A, b)
+            x = _pardiso_run(2, A, b)
             report.detail = "MKL PARDISO, mtype=2 (SPD)"
             return np.asarray(x).reshape(b.shape)
         except Exception as e:  # not positive definite -> general LU
             report.notes.append(f"PARDISO SPD factorisation failed ({e}); retried with mtype=11")
-        finally:
-            try:
-                solver.free_memory(everything=True)
-            except Exception:
-                pass
-    solver = PyPardisoSolver(mtype=11)
     A = sp.csr_matrix(K)
     A.sort_indices()
-    try:
-        x = solver.solve(A, b)
-    finally:
-        try:
-            solver.free_memory(everything=True)
-        except Exception:
-            pass
+    x = _pardiso_run(11, A, b)
     report.detail = "MKL PARDISO, mtype=11 (general)"
     return np.asarray(x).reshape(b.shape)
 

@@ -159,7 +159,7 @@ def parse_frd(path: str | Path) -> dict[str, FrdBlock]:
 # ----------------------------------------------------------------------------- .dat
 def parse_dat_totals(path: str | Path) -> dict[tuple[str, str], np.ndarray]:
     """Totals printed by ``*NODE PRINT / *EL PRINT, TOTALS=ONLY``: (quantity, SET) -> values of the
-    last increment. Quantities: 'force' (RF), 'internal energy' (ELSE), 'flux' (RFL), ..."""
+    last increment. Quantities: 'force' (RF), 'internal energy' (ELSE), 'heat generation' (RFL)."""
     out: dict[tuple[str, str], np.ndarray] = {}
     lines = Path(path).read_text(errors="replace").splitlines()
     pat = re.compile(r"^\s*total\s+(.*?)(?:\s*\([^)]*\))?\s+for set\s+(\S+)\s+and time")

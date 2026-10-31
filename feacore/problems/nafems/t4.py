@@ -15,9 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from feacore.case import BC, Analysis, Case, Material, QoI
-from feacore.geometry.gmsh_tools import distance_threshold_field, use_min_field
 from feacore.problems.base import Problem, Reference
-from feacore.problems.nafems._common import TNSB, entities_where, group, near, point_tag
+from feacore.problems.nafems._common import TNSB, entities_where, group, near
 from feacore.problems.registry import register
 
 W, H = 0.6, 1.0
@@ -34,7 +33,7 @@ class NafemsT4(Problem):
     formulation = "2d"
     units = "SI (m, W, degC)"
     expected_behavior = "smooth"
-    default_params = {"h0": 0.1}
+    default_params = {"h0": 0.05}
 
     def description(self) -> str:
         return (
@@ -61,11 +60,9 @@ class NafemsT4(Problem):
         group(1, entities_where(1, lambda x0, y0, z0, x1, y1, z1: near(y0, H)), "top")
         group(2, [t for _, t in gmsh.model.getEntities(2)], "plate")
 
-    def apply_sizing(self, h: float) -> None:
-        # the boundary-condition type jumps at the corner (0.6, 0): grade the mesh towards it
-        corner = point_tag(W, 0.0)
-        f = distance_threshold_field(points=[corner], size_min=h / 4, size_max=h, dist_min=0.02, dist_max=0.4)
-        use_min_field([f], h_max=h)
+    # Reference study on quasi-uniform meshes (default sizing): P2 converges cleanly at p ~ 3 at E.
+    # (Grading towards the corner (0.6, 0), where the boundary condition jumps from fixed
+    # temperature to convection, makes the already tiny changes non-monotone.)
 
     def qois(self) -> list[QoI]:
         return [QoI(name="T_E", type="point", field="T", point=[W, 0.2])]

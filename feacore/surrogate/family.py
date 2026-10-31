@@ -120,7 +120,7 @@ class SurrogatePlate(Problem):
             disk = occ.addDisk(float(p["cx"]), H, 0.0, r, r)
             occ.cut([(2, rect)], [(2, disk)])
         occ.synchronize()
-        tol = 1e-6 * W
+        tol = 1e-4 * W  # OCC pads bounding boxes by ~1e-7
         left = in_box(1, xmax=0.0, tol=tol)
         right = in_box(1, xmin=W, tol=tol)
         bottom = in_box(1, ymax=0.0, tol=tol)
@@ -187,7 +187,7 @@ def _hole_centre(rng, W, H, r, lig_lo, lig_hi=None, cx_rel=(0.25, 0.75)):
 
 def sample_params(rng: np.random.Generator, category: str = "id", h_rel: float = DEFAULT_H_REL) -> tuple[dict, float]:
     """Random family parameters for ``category`` ("id" or a key of ``OOD_CATEGORIES``).
-    Returns (params, mesh size h in m)."""
+    Returns (params, mesh size h in m); h = h_rel * max(W, H) (fine_mesh: half of that)."""
     R = ID_RANGES
     for _ in range(1000):
         W = _loguniform(rng, *R["W"])
@@ -236,7 +236,7 @@ def sample_params(rng: np.random.Generator, category: str = "id", h_rel: float =
             "W": W, "H": H, "kind": kind, "r": r, "cx": cx, "cy": cy, "bc": bc,
             "traction": _loguniform(rng, *R["traction"]), "angle_deg": float(angle), "biax_ratio": float(biax),
             "E": _loguniform(rng, *R["E"]), "nu": float(nu), "thickness": _loguniform(rng, *R["thickness"]),
-            "h0": h * W,
+            "h0": h * max(W, H),
         }
-        return params, h * W
+        return params, h * max(W, H)
     raise RuntimeError(f"could not sample parameters for category {category!r}")

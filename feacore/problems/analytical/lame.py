@@ -81,7 +81,7 @@ class LameCylinderPlaneStrain(_LameCylinder):
     physics = "elasticity"
     formulation = "plane_strain"
     axial_constrained = True
-    default_params = {"a": 0.1, "b": 0.2, "p": 100e6, **STEEL, "thickness": 1.0, "h0": 0.025}
+    default_params = {"a": 0.1, "b": 0.2, "p": 100e6, **STEEL, "thickness": 1.0, "h0": 0.0125}
 
     def description(self) -> str:
         p = self.params
@@ -161,7 +161,7 @@ class LameCylinderAxisym(_LameCylinder):
     dim = 2
     physics = "elasticity"
     formulation = "axisymmetric"
-    default_params = {"a": 0.1, "b": 0.2, "H": 0.05, "p": 100e6, **STEEL, "axial": "constrained", "h0": 0.025}
+    default_params = {"a": 0.1, "b": 0.2, "H": 0.05, "p": 100e6, **STEEL, "axial": "constrained", "h0": 0.0125}
 
     @property
     def axial_constrained(self) -> bool:
@@ -287,7 +287,7 @@ class LameSphereAxisym(ExactProblem):
     physics = "elasticity"
     formulation = "axisymmetric"
     expected_behavior = "smooth"
-    default_params = {"a": 0.1, "b": 0.2, "p": 100e6, **STEEL, "h0": 0.025}
+    default_params = {"a": 0.1, "b": 0.2, "p": 100e6, **STEEL, "h0": 0.0125}
 
     def _K(self) -> float:
         p = self.params
@@ -376,7 +376,7 @@ class LameSphere3D(LameSphereAxisym):
     tags = ("3d", "analytical", "pressure_vessel", "curved_boundary", "symmetry")
     dim = 3
     formulation = "3d"
-    default_params = {"a": 0.1, "b": 0.2, "p": 100e6, **STEEL, "h0": 0.04}
+    default_params = {"a": 0.1, "b": 0.2, "p": 100e6, **STEEL, "h0": 0.03}
 
     def description(self) -> str:
         p = self.params
@@ -392,7 +392,8 @@ class LameSphere3D(LameSphereAxisym):
             "Supports: symmetry on x = 0 (u_x = 0), y = 0 (u_y = 0) and z = 0 (u_z = 0).\n"
             "Report (SI units):\n"
             "  ur_bore       radial displacement at the bore, u_x at (a, 0, 0) [m]\n"
-            "  hoop_bore     hoop stress at the bore, sigma_yy at (a, 0, 0) [Pa]\n"
+            "  hoop_bore     hoop stress at the bore in the plane y = 0 at 45 degrees, sigma_yy at "
+            f"(a/sqrt(2), 0, a/sqrt(2)) = ({p['a'] / math.sqrt(2):.6g}, 0, {p['a'] / math.sqrt(2):.6g}) m [Pa]\n"
             "  vm_max        maximum von Mises stress [Pa]\n"
             "  strain_energy total strain energy of the modelled octant [J]"
         )
@@ -429,7 +430,9 @@ class LameSphere3D(LameSphereAxisym):
         a = self.params["a"]
         return [
             QoI("ur_bore", "point", field="ux", point=[a, 0.0, 0.0]),
-            QoI("hoop_bore", "point", field="syy", point=[a, 0.0, 0.0]),
+            # not at the vertex (a, 0, 0): the L2-recovered stress at a node shared by three boundary
+            # surfaces converges slowly; on the bore / y = 0 edge it is sigma_yy = s_tt exactly
+            QoI("hoop_bore", "point", field="syy", point=[a / math.sqrt(2), 0.0, a / math.sqrt(2)]),
             QoI("vm_max", "max", field="von_mises"),
             QoI("strain_energy", "strain_energy"),
         ]
@@ -464,10 +467,6 @@ class LameSphere3D(LameSphereAxisym):
             Reference("strain_energy", 0.5 * p["p"] * ura * math.pi * a**2 / 2, "analytical",
                       "Clapeyron: U = 1/2 p u_r(a) (pi a^2 / 2) for the octant; " + _SPH_SRC, 0.01),
         ]
-
-    def study_sizes(self, order: int = 2) -> list[float]:
-        h0 = self.params["h0"]
-        return [h0, h0 / 1.5, h0 / 2.25]
 
 
 register(LameCylinderPlaneStrain())

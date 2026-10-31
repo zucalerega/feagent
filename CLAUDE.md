@@ -24,8 +24,8 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
   gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
-  parts and a UI (package `feacore/`, see below). In progress: interfaces are in place, the solver
-  backends and problems are being built.
+  parts and a UI (package `feacore/`, see below). The scikit-fem solver works (all formulations, BCs,
+  heat, QoIs, CLI). The CalculiX cross-check, benchmarks, test parts, UI and surrogate are in progress.
 
 ## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
 
@@ -55,7 +55,9 @@ Decisions:
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to
   singularities or setup errors). The evaluator owns the final rubric.
 - Setup on a fresh Ubuntu / Brev box / DGX Spark: `bash scripts/setup_gpu_box.sh` (system libs,
-  CalculiX, Python deps, and GPU extras when `nvidia-smi` works).
+  CalculiX, a Python >= 3.12 venv, and GPU extras when `nvidia-smi` works). Brev walkthrough (shell,
+  GPU check, validation, UI tunnel on port 8000): `docs/brev.md`. Check the GPU solve with
+  `python scripts/gpu_check.py` before relying on cuDSS.
 
 ## NVIDIA compute (hackathon)
 

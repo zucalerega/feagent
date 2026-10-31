@@ -51,6 +51,19 @@ class LShapePoisson(ExactProblem):
     material_name = "unit"
 
     EXPR = "(x**2 + y**2)**(1/3)*cos(2/3*arctan2(-x - y, y - x))"
+    # outer edges: (group, fixed coordinate, value, description)
+    EDGES = (("edge_x_pos", "x", 1.0, "x = 1 (0 <= y <= 1)"), ("edge_y_pos", "y", 1.0, "y = 1 (-1 <= x <= 1)"),
+             ("edge_x_neg", "x", -1.0, "x = -1 (-1 <= y <= 1)"), ("edge_y_neg", "y", -1.0, "y = -1 (-1 <= x <= 0)"))
+
+    @staticmethod
+    def edge_expr(x: float | None = None, y: float | None = None) -> str:
+        """The exact solution as an expression, optionally with a constant coordinate substituted."""
+        X = "x" if x is None else f"({num(x)})"
+        Y = "y" if y is None else f"({num(y)})"
+        return f"({X}**2 + {Y}**2)**(1/3)*cos(2/3*arctan2(-{X} - {Y}, {Y} - {X}))"
+
+    def _edge_values(self):
+        return [(g, self.edge_expr(**{c: v}), d) for g, c, v, d in self.EDGES]
 
     def material(self):
         from feacore.case import Material
@@ -68,8 +81,8 @@ class LShapePoisson(ExactProblem):
             "Boundary conditions (Dirichlet everywhere):\n"
             "  the two edges meeting at the re-entrant corner, y = 0 for 0 <= x <= 1 and x = 0 for "
             "-1 <= y <= 0: T = 0;\n"
-            f"  the four outer edges x = 1, y = 1, x = -1, y = -1: T(x, y) = {self.EXPR}\n"
-            "  (this is r^(2/3) sin(2 theta/3) with theta measured from the +x axis, 0 <= theta <= 3 pi/2).\n"
+            "  the four outer edges (T in K, coordinates in m):\n"
+            + "".join(f"    {d}: T = {e}\n" for _, e, d in self._edge_values()) +
             "Report:\n"
             "  T_point     temperature at (-0.5, 0.5) [K]\n"
             "  q_max       maximum heat-flux magnitude |q| = k |grad T| over the domain [W/m^2]\n"
@@ -80,7 +93,8 @@ class LShapePoisson(ExactProblem):
         pts = [(0, 0), (1, 0), (1, 1), (-1, 1), (-1, -1), (0, -1)]
         lines, s = polygon(pts)
         add_group(1, [lines[0], lines[5]], "reentrant_edges")
-        add_group(1, lines[1:5], "outer")
+        for (name, *_), line in zip(self.EDGES, lines[1:5]):
+            add_group(1, [line], name)
         add_group(2, [s], "domain")
 
     def qois(self) -> list[QoI]:
@@ -89,8 +103,8 @@ class LShapePoisson(ExactProblem):
                 QoI("T_integral", "integral", field="T", group="domain")]
 
     def case(self, mesh_path, order: int = 2):
-        bcs = [BC("temperature", group="reentrant_edges", value=0.0),
-               BC("temperature", group="outer", value=self.EXPR)]
+        bcs = [BC("temperature", group="reentrant_edges", value=0.0)]
+        bcs += [BC("temperature", group=g, value=e) for g, e, _ in self._edge_values()]
         return self.make_case(mesh_path, order, bcs)
 
     def _primary(self, x, y, z):
@@ -129,10 +143,6 @@ class LShapePoisson(ExactProblem):
                       "three unit squares, confirmed by an independent polar-coordinate quadrature "
                       "(int_0^R r^(5/3) dr = 3/8 R^(8/3)); the two agree to 30 digits", 0.005),
         ]
-
-    def study_sizes(self, order: int = 2) -> list[float]:
-        h0 = self.params["h0"]
-        return [h0, h0 / 2, h0 / 4]
 
 
 class LBracketReentrant(ExactProblem):

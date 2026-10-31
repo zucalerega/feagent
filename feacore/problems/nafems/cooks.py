@@ -18,9 +18,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from feacore.case import BC, Analysis, Case, Material, QoI
-from feacore.geometry.gmsh_tools import distance_threshold_field, use_min_field
 from feacore.problems.base import Problem, Reference
-from feacore.problems.nafems._common import entities_where, group, near, point_tag
+from feacore.problems.nafems._common import entities_where, group, near
 from feacore.problems.registry import register
 
 CORNERS = [(0.0, 0.0), (48.0, 44.0), (48.0, 60.0), (0.0, 44.0)]
@@ -70,11 +69,17 @@ class CooksMembrane(Problem):
         group(1, entities_where(1, lambda x0, y0, z0, x1, y1, z1: near(y1, 60.0) and near(x0, 0.0)), "top")
         group(2, [t for _, t in gmsh.model.getEntities(2)], "panel")
 
-    def apply_sizing(self, h: float) -> None:
-        # grade towards the singular clamped corners; distances fixed, sizes scale with h
-        corners = [point_tag(0.0, 0.0), point_tag(0.0, 44.0)]
-        f = distance_threshold_field(points=corners, size_min=h / 8, size_max=h, dist_min=0.5, dist_max=16.0)
-        use_min_field([f], h_max=h)
+    # Reference study on quasi-uniform meshes (default sizing). Graded meshes towards the clamped
+    # corners are far more accurate (~1e-5 at h0) but then the tiny mesh-to-mesh changes are not in
+    # the asymptotic range (the GCI reads them as oscillatory / divergent).
+
+    def expected_order(self, qoi: QoI, order: int) -> float | None:
+        # Pollution from the clamped/free corner at (0, 44) (wedge angle 108.4 deg, plane stress,
+        # nu = 1/3): smallest Williams exponent lambda = 0.677, so a point displacement converges
+        # like h^(2 lambda) = h^1.35 on quasi-uniform meshes for P2 (and P1 reaches at most 2).
+        if qoi.name == "uy_C":
+            return min(2.0 * 0.677, float(order + 1))
+        return None
 
     def qois(self) -> list[QoI]:
         return [QoI(name="uy_C", type="point", field="uy", point=[48.0, 52.0])]

@@ -12,7 +12,8 @@ Augarde & Deeks, Finite Elem. Anal. Des. 44 (2008) 595-601):
 The exact displacement is prescribed at the root x = 0 (both components, expressions), which makes
 the FE problem's exact solution the field above everywhere (no clamped-corner singularity). The
 field was checked with sympy (strain-displacement + plane-stress Hooke reproduce the stresses).
-Tip deflection uy(L, 0) = -P L (8 L^2 + (4 + 5 nu) D^2) / (24 E I).
+Tip deflection uy(L, 0) = -P L (8 L^2 + (4 + 5 nu) D^2) / (24 E I); ux(L, D/2) = P D L^2 / (4 E I).
+(No shear-stress QoI: the prescribed tip traction already gives sxy, which does not depend on x.)
 Strain energy: U = t/2 int_A (sxx^2 / E + sxy^2 / G) dA = P^2 L^3 / (6 E I) + 3 P^2 L / (5 G t D).
 """
 
@@ -78,7 +79,7 @@ class TimoshenkoCantilever(ExactProblem):
             "Report (SI units):\n"
             "  tip_deflection  u_y at (L, 0) [m]\n"
             "  sxx_top_mid     sigma_xx at (L/2, D/2) [Pa]\n"
-            "  sxy_mid         sigma_xy at (L/2, 0) [Pa]\n"
+            "  ux_tip_top      u_x at the top corner of the loaded end (L, D/2) [m]\n"
             "  vm_max          maximum von Mises stress [Pa]\n"
             "  strain_energy   total strain energy (given thickness) [J]"
         )
@@ -112,7 +113,7 @@ class TimoshenkoCantilever(ExactProblem):
         return [
             QoI("tip_deflection", "point", field="uy", point=[L, 0.0]),
             QoI("sxx_top_mid", "point", field="sxx", point=[L / 2, D / 2]),
-            QoI("sxy_mid", "point", field="sxy", point=[L / 2, 0.0]),
+            QoI("ux_tip_top", "point", field="ux", point=[L, D / 2]),
             QoI("vm_max", "max", field="von_mises"),
             QoI("strain_energy", "strain_energy"),
         ]
@@ -142,7 +143,7 @@ class TimoshenkoCantilever(ExactProblem):
         return [
             self.point_reference("tip_deflection", _SRC + "; uy(L,0) = -P L (8L^2 + (4+5nu) D^2)/(24 E I)", 0.01),
             self.point_reference("sxx_top_mid", _SRC + "; sxx = P (L - x) y / I", 0.02),
-            self.point_reference("sxy_mid", _SRC + "; sxy = -P/(2I) (D^2/4 - y^2)", 0.02),
+            self.point_reference("ux_tip_top", _SRC + "; ux(L, D/2) = P D L^2 / (4 E I)", 0.01),
             Reference("vm_max", p["P"] * p["L"] * p["D"] / (2 * self.I), "analytical",
                       _SRC + "; max von Mises = |sxx| = P L D / (2 I) at the root fibres (0, +-D/2), where "
                       "sxy = 0", 0.02),

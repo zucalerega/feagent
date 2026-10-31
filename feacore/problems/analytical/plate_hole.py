@@ -47,7 +47,7 @@ class PlateHoleFiniteWidth(ExactProblem):
     expected_behavior = "stress_concentration"
     # h0 = size at the hole edge on the coarsest mesh; far-field size = far * h
     default_params = {"W": 0.2, "d_over_W": 0.3, "length_over_W": 4.0, "sigma0": 100e6, **STEEL,
-                      "thickness": 0.01, "h0": 0.006, "far": 4.0}
+                      "thickness": 0.01, "h0": 0.004, "far": 4.0}
 
     @property
     def r(self) -> float:
@@ -122,7 +122,7 @@ class PlateHoleFiniteWidth(ExactProblem):
         ]
 
 
-for _dw, _h0, _far in ((0.1, 0.002, 10.0), (0.3, 0.006, 4.0), (0.5, 0.01, 3.0)):
+for _dw, _h0, _far in ((0.1, 0.0015, 10.0), (0.3, 0.004, 4.0), (0.5, 0.006, 3.0)):
     register(PlateHoleFiniteWidth(id=f"plate_hole_finite_width_d{int(round(_dw * 10)):02d}", d_over_W=_dw,
                                   h0=_h0, far=_far))
 

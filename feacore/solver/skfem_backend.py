@@ -34,12 +34,13 @@ from skfem.helpers import ddot, dot, grad, sym_grad, trace
 
 from feacore.case import (DISPLACEMENT_LIKE, ELASTICITY_FIELDS, HEAT_FIELDS, Case, CaseError, QoI,
                           as_field)
+from feacore.solver import _skfem_assembly as fast
 from feacore.solver._skfem_locate import Locator
 from feacore.solver._skfem_mesh import MeshData, MeshError, read_mesh
 from feacore.solver.base import Result, SolveInfo
 from feacore.solver.linsolve import solve_linear
 
-KNOWN_OPTIONS = ("linear_solver", "stress_recovery", "intorder", "axis_constraint")
+KNOWN_OPTIONS = ("linear_solver", "stress_recovery", "intorder", "axis_constraint", "assembly")
 _ELEMS = {(2, 1): ElementTriP1, (2, 2): ElementTriP2, (3, 1): ElementTetP1, (3, 2): ElementTetP2}
 _VTK = {(2, 1): "triangle", (2, 2): "triangle6", (3, 1): "tetra", (3, 2): "tetra10"}
 TWO_PI = 2.0 * math.pi
@@ -70,16 +71,16 @@ def _k_elastic(u, v, w):
 def _k_axi(u, v, w):
     r = w.x[0]
     eu, ev = sym_grad(u), sym_grad(v)
-    hu, hv = u.value[0] / r, v.value[0] / r
+    hu, hv = u[0] / r, v[0] / r
     tu, tv = trace(eu) + hu, trace(ev) + hv
     return w.c * (w.lam * tu * tv + 2.0 * w.mu * (ddot(eu, ev) + hu * hv))
 
 
 @LinearForm
 def _f_vector(v, w):
-    out = w.g0 * v.value[0] + w.g1 * v.value[1]
-    if v.value.shape[0] == 3:
-        out = out + w.g2 * v.value[2]
+    out = w.g0 * v[0] + w.g1 * v[1]
+    if v.shape[0] == 3:
+        out = out + w.g2 * v[2]
     return w.c * out
 
 
@@ -90,7 +91,7 @@ def _f_thermal(v, w):
 
 @LinearForm
 def _f_thermal_axi(v, w):
-    return w.c * w.sth * (trace(sym_grad(v)) + v.value[0] / w.x[0])
+    return w.c * w.sth * (trace(sym_grad(v)) + v[0] / w.x[0])
 
 
 @BilinearForm
@@ -132,7 +133,7 @@ def _qp(basis, arr):
 
 
 def _coords(basis):
-    return basis.global_coordinates().value  # (dim, nel, nqp)
+    return np.asarray(basis.global_coordinates())  # (dim, nel, nqp)
 
 
 def _eval(value, x):
@@ -205,6 +206,7 @@ class _Model:
         default_q = 2 * self.order + (1 if self.axi else 0)
         self.intorder = int(opts.get("intorder") or default_q)
         self.sb = Basis(self.mesh, self.selem, intorder=self.intorder)
+        self._check_jacobians()
         self.ncomp = self.dim if self.physics == "elasticity" else 1
         if self.physics == "elasticity":
             self.ub = Basis(self.mesh, ElementVector(self.selem), intorder=self.intorder)
@@ -219,6 +221,17 @@ class _Model:
         self.xq = _coords(self.sb)
         self.nel = self.mesh.nelements
         self._materials()
+
+    def _check_jacobians(self):
+        d = self.sb.mapping.detDF(self.sb.X)  # (nel, nqp), signed
+        dmax = float(np.abs(d).max()) if d.size else 1.0
+        flipped = (d.min(axis=1) < 0) & (d.max(axis=1) > 0)
+        tiny = np.abs(d).min(axis=1) <= 1e-12 * dmax
+        if flipped.any():
+            self.warnings.append(f"mesh: {int(flipped.sum())} curved cells have a Jacobian that changes sign "
+                                 f"(inverted / tangled high-order cells): results are unreliable")
+        if tiny.any():
+            self.warnings.append(f"mesh: {int(tiny.sum())} cells are degenerate (near-zero Jacobian)")
 
     # ---- integration weight: thickness (plane), 2*pi*r (axisymmetric), 1 (3d)
     def wfac(self, x):
@@ -352,7 +365,10 @@ def _assemble_elasticity(md: _Model):
     case, ub, sb = md.case, md.ub, md.sb
     c = md.wfac(md.xq)
     lam, mu = _qp(sb, md.lam), _qp(sb, md.mu)
-    K = (_k_axi if md.axi else _k_elastic).assemble(ub, lam=lam, mu=mu, c=c)
+    if md.opts.get("assembly", "fast") == "skfem":
+        K = (_k_axi if md.axi else _k_elastic).assemble(ub, lam=lam, mu=mu, c=c)
+    else:
+        K = fast.elastic_stiffness(sb, md.split, lam, mu, c, md.axi, r=md.xq[0])
     f = np.zeros(md.N)
     dim = md.dim
 
@@ -460,7 +476,7 @@ def _symmetry_axis(md: _Model, F, group, i_bc) -> int:
 
 def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
     U = md.ub.interpolate(u)
-    G = U.grad  # (dim, dim, nel, nqp)
+    G = np.asarray(U.grad)  # (dim, dim, nel, nqp)
     lam, mu = _qp(md.sb, md.lam), _qp(md.sb, md.mu)
     sth = md.sth
     e = 0.5 * (G + np.swapaxes(G, 0, 1))
@@ -474,7 +490,7 @@ def _recover_elasticity(md: _Model, u: np.ndarray, solver_opts: dict) -> dict:
         S["syz"] = 2 * mu * e[1, 2]
         S["sxz"] = 2 * mu * e[0, 2]
     elif md.axi:
-        ett = U.value[0] / md.xq[0]
+        ett = np.asarray(U)[0] / md.xq[0]
         tr = e[0, 0] + e[1, 1] + ett
         S["sxx"] = lam * tr + 2 * mu * e[0, 0] - sth
         S["syy"] = lam * tr + 2 * mu * e[1, 1] - sth
@@ -495,7 +511,7 @@ def _project(md: _Model, S: dict, solver_opts: dict) -> dict:
     if method != "l2":
         raise CaseError(f"unknown stress_recovery {method!r} (supported: 'l2')")
     if not hasattr(md, "_M"):
-        md._M = _mass.assemble(md.sb)
+        md._M = _mass.assemble(md.sb) if md.opts.get("assembly", "fast") == "skfem" else fast.mass(md.sb)
     names = list(S)
     B = np.column_stack([_rhs_proj.assemble(md.sb, s=S[n]) for n in names])
     X, rep = solve_linear(md._M, B, symmetric=True, return_report=True, **solver_opts)
@@ -510,7 +526,10 @@ def _project(md: _Model, S: dict, solver_opts: dict) -> dict:
 def _assemble_heat(md: _Model):
     case, sb = md.case, md.sb
     c = md.wfac(md.xq)
-    K = _k_heat.assemble(sb, k=_qp(sb, md.k), c=c)
+    if md.opts.get("assembly", "fast") == "skfem":
+        K = _k_heat.assemble(sb, k=_qp(sb, md.k), c=c)
+    else:
+        K = fast.scalar_stiffness(sb, _qp(sb, md.k), c)
     f = np.zeros(md.N)
     for ld in case.loads:
         if ld.type != "source":
@@ -548,7 +567,7 @@ def _assemble_heat(md: _Model):
 
 
 def _recover_heat(md: _Model, T: np.ndarray, solver_opts: dict) -> dict:
-    G = md.sb.interpolate(T).grad  # (dim, nel, nqp)
+    G = np.asarray(md.sb.interpolate(T).grad)  # (dim, nel, nqp)
     k = _qp(md.sb, md.k)
     S = {("qx", "qy", "qz")[i]: -k * G[i] for i in range(md.dim)}
     return _project(md, S, solver_opts)
@@ -678,7 +697,7 @@ class SkfemResult(Result):
     def _qp_values(self, field, basis):
         comp = {}
         for n in self._needed(field):
-            comp[n] = basis.interpolate(self.fields[n]).value
+            comp[n] = np.asarray(basis.interpolate(self.fields[n]))
         return self._combine(field, comp)
 
     def _integral(self, field, group):

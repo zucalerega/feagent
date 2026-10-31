@@ -61,17 +61,27 @@ def kirsch_displacement(x, y, a, s0, E, nu):
     return ux, uy
 
 
-def kirsch_stress_expressions(a: float, s0: float) -> dict[str, str]:
-    """The Kirsch stresses as feacore expressions in x, y."""
+def kirsch_stress_expressions(a: float, s0: float, x: float | None = None, y: float | None = None) -> dict[str, str]:
+    """The Kirsch stresses as feacore expressions in x, y. Give ``x`` (or ``y``) to substitute a
+    constant coordinate, e.g. the expressions restricted to the edge x = L."""
     S, A2, A4 = num(s0), num(a * a), num(a**4)
-    r2 = "(x**2 + y**2)"
-    t = "arctan2(y, x)"
+    X = "x" if x is None else f"({num(x)})"
+    Y = "y" if y is None else f"({num(y)})"
+    r2 = f"({X}**2 + {Y}**2)"
+    t = f"arctan2({Y}, {X})"
     c2, c4, s2, s4 = (f"cos(2*{t})", f"cos(4*{t})", f"sin(2*{t})", f"sin(4*{t})")
     return {
         "sxx": f"{S}*(1 - {A2}/{r2}*(1.5*{c2} + {c4}) + 1.5*{A4}/{r2}**2*{c4})",
         "syy": f"{S}*(-{A2}/{r2}*(0.5*{c2} - {c4}) - 1.5*{A4}/{r2}**2*{c4})",
         "sxy": f"{S}*(-{A2}/{r2}*(0.5*{s2} + {s4}) + 1.5*{A4}/{r2}**2*{s4})",
     }
+
+
+def kirsch_edge_tractions(a: float, s0: float, L: float) -> dict[str, list[str]]:
+    """Traction vectors (global axes) on the edges x = L (normal +x) and y = L (normal +y)."""
+    r = kirsch_stress_expressions(a, s0, x=L)
+    t = kirsch_stress_expressions(a, s0, y=L)
+    return {"right": [r["sxx"], r["sxy"]], "top": [t["sxy"], t["syy"]]}
 
 
 class KirschExactTraction(ExactProblem):
@@ -88,24 +98,23 @@ class KirschExactTraction(ExactProblem):
 
     def description(self) -> str:
         p = self.params
-        ex = kirsch_stress_expressions(p["a"], p["sigma0"])
+        tr = kirsch_edge_tractions(p["a"], p["sigma0"], p["L"])
         return (
-            "Steel plate with a circular hole, plane stress. The plate is the classical infinite plate under "
-            "remote uniaxial tension along x; here a finite quarter of it is modelled and the outer edges "
-            "carry the exact tractions of the infinite-plate (Kirsch) stress field, so the finite model "
-            "behaves exactly like the infinite plate.\n"
+            "Steel plate with a circular hole, plane stress. The plate stands for the classical infinite plate "
+            "under remote uniaxial tension along x; a finite quarter of it is modelled and the outer edges "
+            "carry the tractions that the infinite plate transmits across those lines, so the finite model "
+            "behaves like the infinite plate.\n"
             f"Geometry (STEP, planar face in the xy-plane): square [0, L] x [0, L] with L = {p['L']} m minus "
             f"the quarter disk of radius a = {p['a']} m centred at the origin. Edges: x = 0 (from (0, a) to "
             "(0, L)), y = 0 (from (a, 0) to (L, 0)), x = L, y = L, and the quarter-circle hole edge.\n"
             f"Material: linear elastic, E = {p['E']:.4g} Pa, nu = {p['nu']}, thickness {p['thickness']} m.\n"
-            f"Loads: the remote stress is sigma0 = {p['sigma0']:.4g} Pa ({p['sigma0'] / 1e6:g} MPa) along x. "
-            "Apply tractions (force per area, global axes) on the outer edges using the stress field below "
-            "(x, y in m, stresses in Pa):\n"
-            f"  sxx(x, y) = {ex['sxx']}\n"
-            f"  syy(x, y) = {ex['syy']}\n"
-            f"  sxy(x, y) = {ex['sxy']}\n"
-            "  edge x = L (outward normal +x): traction (sxx, sxy); edge y = L (outward normal +y): "
-            "traction (sxy, syy). The hole edge is traction free.\n"
+            f"Loads: remote stress sigma0 = {p['sigma0']:.4g} Pa ({p['sigma0'] / 1e6:g} MPa) along x, applied "
+            "through these tractions (force per area in Pa, global axes, y and x in m):\n"
+            f"  edge x = L: t_x(y) = {tr['right'][0]}\n"
+            f"              t_y(y) = {tr['right'][1]}\n"
+            f"  edge y = L: t_x(x) = {tr['top'][0]}\n"
+            f"              t_y(x) = {tr['top'][1]}\n"
+            "  The hole edge is traction free.\n"
             "Supports: symmetry on x = 0 (u_x = 0) and on y = 0 (u_y = 0).\n"
             "Report (SI units):\n"
             "  sxx_hole_top   sigma_xx at the top of the hole (0, a) [Pa]\n"
@@ -146,12 +155,12 @@ class KirschExactTraction(ExactProblem):
 
     def case(self, mesh_path, order: int = 2):
         p = self.params
-        ex = kirsch_stress_expressions(p["a"], p["sigma0"])
+        tr = kirsch_edge_tractions(p["a"], p["sigma0"], p["L"])
         bcs = [
             BC("symmetry", group="sym_x0"),
             BC("symmetry", group="sym_y0"),
-            BC("traction", group="right", value=[ex["sxx"], ex["sxy"]]),
-            BC("traction", group="top", value=[ex["sxy"], ex["syy"]]),
+            BC("traction", group="right", value=tr["right"]),
+            BC("traction", group="top", value=tr["top"]),
         ]
         return self.make_case(mesh_path, order, bcs, thickness=p["thickness"])
 
@@ -195,4 +204,5 @@ class KirschExactTraction(ExactProblem):
 
 register(KirschExactTraction())
 
-__all__ = ["KirschExactTraction", "kirsch_stress", "kirsch_displacement", "kirsch_stress_expressions"]
+__all__ = ["KirschExactTraction", "kirsch_stress", "kirsch_displacement", "kirsch_stress_expressions",
+           "kirsch_edge_tractions"]

@@ -108,6 +108,15 @@ class ExactProblem(Problem):
         return Reference(qoi=qoi_name, value=self.exact_at(q.field, q.point), kind="analytical",
                          source=source, tolerance=tolerance, notes=notes)
 
+    # -- study sizes: P2 as the base class; P1 starts one level finer (h0/2 .. h0/8 in 2D) so that
+    # its first-order stresses are in the asymptotic range
+    def study_sizes(self, order: int = 2) -> list[float]:
+        h0 = self.params["h0"]
+        r = 2.0 if self.dim == 2 else 1.5
+        if order == 1:
+            h0 = h0 / r
+        return [h0, h0 / r, h0 / r**2]
+
     # -- case helpers
     def material(self) -> Material:
         p = self.params

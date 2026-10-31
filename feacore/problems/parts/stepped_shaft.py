@@ -182,8 +182,8 @@ class SteppedShaftAxi(_ShaftBase):
                 d / 2 - 1e-9, zs - 1e-9, -1e-9, d / 2 + 1e-9, zs + 1e-9, 1e-9, 0)]
             f = threshold(0.1 * h, h, 0.0, 4.0 * h0, points=corner)
         else:
-            kf = min(1.0, r / (4.0 * h0))
-            f = threshold(kf * h, h, 0.5 * r, 0.5 * r + 4.0 * h0, curves=[self._c["fillet"]])
+            kf = min(1.0, r / (8.0 * h0))   # fillet cells r/8 at h0 (r/32 at h0/4)
+            f = threshold(kf * h, h, r, r + 4.0 * h0, curves=[self._c["fillet"]])
         finish_sizing([f], h)
 
     # ---- analysis

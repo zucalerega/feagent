@@ -19,15 +19,13 @@ from __future__ import annotations
 import math
 import shutil
 import time
-from pathlib import Path
 
 import numpy as np
 
-from feacore.case import (BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, Load, QoI,
-                          as_field)
-from feacore.solver._ccx_fem import Locator, interpolate, map_points, measure_factor, quadrature, shape
+from feacore.case import BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field
+from feacore.solver._ccx_fem import Locator, _bary, interpolate, map_points, quadrature, shape
 from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_totals, parse_frd, run_ccx
-from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh
+from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh  # noqa: F401
 from feacore.solver.base import Result, SolveInfo
 
 __all__ = ["solve", "CcxResult", "CcxError", "ELEMENT_TYPES", "AXI_CLOAD_FACTOR", "AXI_OUTPUT_FACTOR"]
@@ -392,7 +390,7 @@ class _Deck:
                 q = as_field(b.value, x[..., 0], x[..., 1], x[..., 2])
                 vals = (q * w * self.weight(x))[..., None]
                 self.add_nodal(nodes, N, vals)
-                if isinstance(b.value, str):
+                if isinstance(b.value, str) or self.etype == "CAX3":   # see pressure above
                     self._cload_from(nodes, N, vals)
                 else:
                     dfl += [f"{e + 1}, S{f + 1}, {fnum(b.value)}" for e, f in zip(el, fc)]
@@ -460,6 +458,18 @@ class CcxResult(Result):
             Sg = nodal_block("STRESS", 6)
             if Sg is None:
                 raise CcxError("no STRESS block in the .frd")
+            if a.formulation == "axisymmetric":
+                # ccx expands CAX elements into a wedge spanning -1..+1 degree and reports, as the 2D
+                # radial displacement, the x-component of expanded nodes: u_r cos(1 deg) at nodes that
+                # only exist on the +-1 degree faces (CAX6 midside nodes, all CAX3 nodes) and the
+                # (1, 4, 1)/6 average over -1, 0, +1 degree, u_r (4 + 2 cos 1deg) / 6, at CAX6 corner
+                # nodes. Measured to 2e-6 on exact linear fields (uniform expansion); undone here.
+                c1 = math.cos(math.radians(1.0))
+                if model.order == 2:
+                    U[np.unique(model.conn[:, :3]), 0] /= (4.0 + 2.0 * c1) / 6.0
+                    U[np.unique(model.conn[:, 3:]), 0] /= c1
+                else:
+                    U[:, 0] /= c1
             self.U = U
             self.RF = nodal_block("FORC", 3)
             self.S = self._map_stress(Sg)
@@ -471,7 +481,7 @@ class CcxResult(Result):
             self.Q = nodal_block("FLUX", 3)
             self.RFL = nodal_block("RFL", 1)
         n_cells = model.n_elems
-        measure = float(model.measures().sum())
+        measure = float(deck.cell_quad(np.arange(model.n_elems), degree=2)[3].sum())
         warnings = list(model.warnings) + list(deck.warnings)
         warnings += [w for w in run.warnings if "OUTPUT" not in w][:10]
         ncomp = 1 if a.physics == "heat" else model.dim
@@ -493,6 +503,7 @@ class CcxResult(Result):
             out[:, 2] = Sg[:, 2]
         elif f == "axisymmetric":
             out[:, 6] = Sg[:, 2]                   # hoop stress (ccx SZZ for CAX elements)
+            out[:, 2] = Sg[:, 2]                   # out-of-plane component = hoop (as skfem backend)
         return out
 
     def _tensor(self, s: np.ndarray) -> np.ndarray:
@@ -574,7 +585,7 @@ class CcxResult(Result):
         comp = 0 if heat else int(component)
         nodes = self._group_nodes(group)
         fext = float(d.fext[nodes, comp].sum())
-        key = ("flux" if heat else "force", d.nsets.get(group, "").upper())
+        key = ("heat generation" if heat else "force", d.nsets.get(group, "").upper())
         tot = self.totals.get(key)
         if tot is not None and len(tot) > comp:
             rf = float(tot[comp]) * d.out_factor
@@ -586,13 +597,43 @@ class CcxResult(Result):
         return rf - fext
 
     def strain_energy(self) -> float:
+        """0.5 u.K.u. Without thermal strain this is CalculiX's total internal energy (ELSE); with
+        thermal loads ccx reports the energy of the mechanical strain only, so 0.5 u.K.u is
+        integrated here from the CalculiX displacements (same quadrature as the stiffness)."""
         if self.deck.thermal:
-            raise NotImplementedError("strain_energy with thermal loads (0.5 u.K.u differs from the "
-                                      "CalculiX internal energy) is not implemented in the ccx backend")
+            return self._energy_from_u()
         tot = self.totals.get(("internal energy", "EALL"))
         if tot is None:
             raise CcxError("no internal energy total in the .dat")
         return float(tot[0]) * self.deck.out_factor
+
+    def _energy_from_u(self) -> float:
+        m, d, c = self.model, self.deck, self.case
+        dim = m.dim
+        xi, w = quadrature(dim, 2 * m.order)
+        N, dN = shape(dim, m.order, xi)                       # (nq, nen), (nq, nen, dim)
+        Xe = m.X[m.conn][..., :dim]                           # (ne, nen, dim)
+        J = np.einsum("qas,eai->eqis", dN, Xe)
+        detJ = np.linalg.det(J)
+        G = np.einsum("qas,eqsi->eqai", dN, np.linalg.inv(J))  # grad N (ne, nq, nen, dim)
+        Ue = self.U[m.conn][..., :dim]                        # (ne, nen, dim)
+        gu = np.einsum("eai,eqaj->eqij", Ue, G)               # du_i/dx_j
+        eps = 0.5 * (gu + np.swapaxes(gu, -1, -2))
+        x = np.einsum("qa,eai->eqi", N, Xe)
+        names = list(c.materials)
+        E = np.array([c.materials[n].E for n in names])[d.elem_mat][:, None]
+        nu = np.array([c.materials[n].nu for n in names])[d.elem_mat][:, None]
+        lam, mu = E * nu / ((1 + nu) * (1 - 2 * nu)), E / (2 * (1 + nu))
+        tr = np.trace(eps, axis1=-2, axis2=-1)
+        ee = np.einsum("eqij,eqij->eq", eps, eps)
+        if self.case.analysis.formulation == "plane_stress":
+            lam = 2 * lam * mu / (lam + 2 * mu)
+        if self.case.analysis.formulation == "axisymmetric":
+            ett = np.einsum("qa,ea->eq", N, Ue[..., 0]) / np.maximum(x[..., 0], 1e-300)
+            tr, ee = tr + ett, ee + ett ** 2
+        dens = 0.5 * (lam * tr ** 2 + 2 * mu * ee)
+        x3 = np.concatenate([x, np.zeros(x.shape[:-1] + (3 - dim,))], axis=-1)
+        return float(np.sum(dens * np.abs(detJ) * w[None, :] * d.weight(x3)))
 
     def integral(self, field: str, group: str | None, mean: bool = False) -> float:
         """Integral over the physical body (plane: x thickness, axisymmetric: x 2 pi r) of ``field``
@@ -625,7 +666,6 @@ class CcxResult(Result):
         elq = np.repeat(el, nq)
         pts = x.reshape(-1, 3)[:, : m.dim]
         # straight-sided initial guess, then Newton on the isoparametric map of that cell
-        from feacore.solver._ccx_fem import _bary
         lam = _bary(m.X[m.conn[elq, : m.dim + 1], : m.dim], pts)
         xi = lam[:, 1:]
         if m.order == 2:
