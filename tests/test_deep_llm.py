@@ -122,3 +122,14 @@ def test_organizer_keeps_known_ids_only():
             n = {"section": "meshing", "content": "c", "kind": "idea", "source": "x"}
             return schema(notes=[dict(n, id="a1-mesh-0001"), dict(n, id="a1-mesh-0001"), dict(n, id="made-up")]), []
     assert [n["id"] for n in org.organize("a1", current, incoming, Liar(), [], max_notes=2)] == ["a1-mesh-0001", None]
+
+
+def test_structured_teacher_call_is_not_refused_by_the_sdk():
+    """max_tokens 32000 without streaming: the SDK refuses before sending unless a timeout is given.
+    Offline: the client points at a closed local port, so reaching the network shows it was sent."""
+    import anthropic
+    from ace.llm import LLM
+    llm = LLM.__new__(LLM)
+    llm.client = anthropic.Anthropic(api_key="offline", base_url="http://127.0.0.1:9", max_retries=0)
+    with pytest.raises(anthropic.APIConnectionError):
+        llm.structured("teacher", "system", "user", dt.TeacherFeedback)

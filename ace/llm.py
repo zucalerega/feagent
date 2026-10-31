@@ -88,6 +88,9 @@ class LLM:
                 system=_cached_system(system),
                 messages=[{"role": "user", "content": user}],
                 output_config={"format": fmt, "effort": EFFORT[role]},
+                # An explicit timeout: without one the SDK refuses any non-streaming call whose
+                # max_tokens could take over 10 minutes (the teacher's 32000 does), before sending.
+                timeout=600,
             )
             records.append(usage_record(role, resp.model, resp.usage))
             text = "".join(b.text for b in resp.content if b.type == "text")
