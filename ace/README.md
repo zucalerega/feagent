@@ -58,7 +58,8 @@ python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev,ace]"
 ```
 
 Useful flags: `--problems a,b` (train), `--holdout c`, `--concurrency 4`, `--top-n 30`,
-`--playbook path.json` (start from an earlier playbook), `--out dir`.
+`--playbook path.json` (start from an earlier playbook), `--out dir`, `--ui-runs-dir dir` (see
+"See runs in the feacore UI" below).
 
 The budget is checked before each agent run is started and after each Reflector call. It can
 overshoot by the runs already in flight (at most `--concurrency` runs). Mock mode logs fake token
@@ -94,6 +95,29 @@ Everything goes to `ace_runs/<timestamp>/` (gitignored):
 | `gen{N}/curator_ops.json`, `gen{N}/merge_changes.json` | the proposed ops and what merge did with them |
 | `cost.jsonl` | one line per LLM call: tokens and estimated $ |
 | `report.html` | after `python -m ace.report ace_runs/<dir>`: the whole run as one page |
+
+## See runs in the feacore UI
+
+The loop can also write every solve and every finished agent run to the feacore run store, so
+they show up live in the feacore web UI (Swarm page). It is off unless you turn it on. On the
+box that serves the UI, point the loop at the run store the UI reads (the UI service's default
+is `~/feagent/runs`):
+
+```bash
+FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui-runs-dir ~/feagent/runs
+```
+
+- Each solve becomes a run record (agent `ace:<run_id>`, source `ace`) with the case, the scored
+  quantity and the fields for the viewer, or the error if the solve failed.
+- Each agent run becomes a submission of its successful solves as soon as it finishes, with its
+  failed gates, setup diagnostics, cited bullets and token counts. Its score (and the score's
+  parts: accuracy, efficiency, ...) is filled in when the loop scores the generation, and updated
+  each later generation, because the score is relative to every run on the problem so far. The
+  diagnoser's verdict on a run is added to its diagnostics.
+- The UI's loop id is the name of the output directory. With the bridge on, each run record in
+  `gen{N}/runs/<run_id>.json` also gets `ui_submission_id`, and each of its solves `ui_run_id`.
+- If the store can't be written (permissions, full disk), the loop only prints a warning and
+  carries on; its own results don't change. Code: `ace/ui_bridge.py`.
 
 ## Knobs that matter (`ace/config.py`)
 

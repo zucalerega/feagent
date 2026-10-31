@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from ace import fea
+from ace import fea, ui_bridge
 from ace.checks import tolerance
 from ace.config import MAX_SOLVES, MAX_TURNS, TASKS
 
@@ -192,7 +192,7 @@ def parse_citations(trace: list[dict]) -> list[str]:
 class Tools:
     """Executes the agent's tool calls and keeps the run's meshes, solves and submission."""
 
-    def __init__(self, problem_id: str, workdir: Path):
+    def __init__(self, problem_id: str, workdir: Path, ui: dict | None = None):
         self.problem_id = problem_id
         self.task = TASKS[problem_id]
         self.problem = fea.get_problem(problem_id)
@@ -200,6 +200,7 @@ class Tools:
         self.meshes: list[dict] = []
         self.solves: list[dict] = []
         self.submitted: int | None = None   # index into self.solves
+        self.ui = ui                        # ace.ui_bridge context of this run; None = off
 
     def call(self, name: str, args: dict) -> tuple[dict, bool]:
         """Returns (result, is_error)."""
@@ -254,8 +255,10 @@ class Tools:
         if len(self.solves) >= MAX_SOLVES:
             return {"error": f"solve limit ({MAX_SOLVES}) reached; call submit"}, True
         setup = {k: v for k, v in args.items() if k != "using"}
-        result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"])
+        feacore_result = []   # filled with the feacore Result if the solve succeeds (for ui_bridge)
+        result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"], on_result=feacore_result.append)
         self.solves.append({"mesh": mesh, "mesh_index": len(self.meshes) - 1, "setup": setup, "result": result})
+        ui_bridge.record_solve(self.ui, self, feacore_result[0] if feacore_result else None)
         return {**{k: v for k, v in result.items() if k not in HIDDEN_KEYS}, "solve": len(self.solves), "nodes": mesh["nodes"],
                 "solves_left": MAX_SOLVES - len(self.solves)}, not result["ok"]
 
@@ -271,10 +274,11 @@ def _block_to_trace(block) -> dict | None:
 
 
 def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
-              workdir: Path, llm, usage: list | None = None) -> dict:
+              workdir: Path, llm, usage: list | None = None, ui: dict | None = None) -> dict:
     """`usage` collects one record per model call; the caller can pass its own list so the
-    tokens of a run that crashes halfway are still counted."""
-    tools = Tools(problem_id, workdir)
+    tokens of a run that crashes halfway are still counted. `ui`: ace.ui_bridge.settings(...)
+    to also record each solve in the feacore run store (None = off)."""
+    tools = Tools(problem_id, workdir, ui_bridge.for_run(ui, run_id, generation))
     system = system_prompt(playbook_text)
     messages: list = [{"role": "user", "content": task_prompt(problem_id)}]
     trace: list[dict] = []
