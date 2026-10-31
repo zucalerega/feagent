@@ -1,0 +1,106 @@
+{
+  "id": "stepped_shaft_3d_Dd2_rd0p2",
+  "expected_behavior": "stress_concentration",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "peak_stress_fillet",
+      "value": 175330000.0,
+      "kind": "converged_numerical",
+      "source": "feacore reference convergence study: scikit-fem P2 isoparametric (3 meshes, h0/h = 1, 2, 4, local refinement at the stress raiser), Richardson extrapolation (Celik et al. 2008); cross-checked with CalculiX on the finest mesh. Study of stepped_shaft_axi_Dd2_rd0p2; CalculiX on the finest mesh 175.43 MPa.",
+      "tolerance": 0.03,
+      "notes": "Same part as the axisymmetric variant; its converged axisymmetric value is the reference (3D peak-of-nodal-stress values are noisier, hence 3 %). Uncertainty ~0.16 %. Handbook (Peterson / Pilkey fit, D/d = 2, r/d = 0.2, h/r = 2.5: Kt = 1.6290 on sigma_nom = 100.00 MPa.) gives 162.9 MPa, 7.6 % below this value: the published shoulder-fillet tension charts are unconservative for these geometries (cf. Tipton, Sorem & Rolovic, J. Mech. Des. 118, 1996). Kt(FE) = 1.753."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "3d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "symmetry",
+        "group": "end_small",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "sym_x0",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "sym_y0",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "traction",
+        "group": "end_large",
+        "point": null,
+        "components": null,
+        "value": [
+          0.0,
+          0.0,
+          24999999.999999996
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "peak_stress_fillet",
+        "type": "max",
+        "field": "s1",
+        "point": null,
+        "group": "fillet",
+        "component": null
+      },
+      {
+        "name": "elongation",
+        "type": "mean",
+        "field": "uz",
+        "point": null,
+        "group": "end_large",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "stepped_shaft_3d_Dd2_rd0p2",
+      "reference_portion": "quarter (x>=0, y>=0) with symmetry"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.004,
+    0.0026666666666666666,
+    0.0017777777777777779
+  ]
+}

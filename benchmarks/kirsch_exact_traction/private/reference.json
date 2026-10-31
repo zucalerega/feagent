@@ -1,0 +1,216 @@
+{
+  "id": "kirsch_exact_traction",
+  "expected_behavior": "stress_concentration",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "sxx_hole_top",
+      "value": 299999999.99999994,
+      "kind": "analytical",
+      "source": "Kirsch (1898), Z. VDI 42:797-807; S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'The effect of circular holes on stress distributions in plates'; plane-stress displacement field from the Kolosov-Muskhelishvili potentials (J.R. Barber, Elasticity, 3rd ed., Springer (2010); also Sukumar et al. 2001, CMAME 190:6183); s_tt(a, 90 deg) = 3 sigma0",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "syy_hole_side",
+      "value": -99999999.99999996,
+      "kind": "analytical",
+      "source": "Kirsch (1898), Z. VDI 42:797-807; S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'The effect of circular holes on stress distributions in plates'; plane-stress displacement field from the Kolosov-Muskhelishvili potentials (J.R. Barber, Elasticity, 3rd ed., Springer (2010); also Sukumar et al. 2001, CMAME 190:6183); s_tt(a, 0 deg) = -sigma0",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "ux_hole_side",
+      "value": 7.500000000000001e-05,
+      "kind": "analytical",
+      "source": "Kirsch (1898), Z. VDI 42:797-807; S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'The effect of circular holes on stress distributions in plates'; plane-stress displacement field from the Kolosov-Muskhelishvili potentials (J.R. Barber, Elasticity, 3rd ed., Springer (2010); also Sukumar et al. 2001, CMAME 190:6183); u_x(a, 0)",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "uy_hole_top",
+      "value": -2.5e-05,
+      "kind": "analytical",
+      "source": "Kirsch (1898), Z. VDI 42:797-807; S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'The effect of circular holes on stress distributions in plates'; plane-stress displacement field from the Kolosov-Muskhelishvili potentials (J.R. Barber, Elasticity, 3rd ed., Springer (2010); also Sukumar et al. 2001, CMAME 190:6183); u_y(0, a)",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "ux_right",
+      "value": 0.00013812000000000004,
+      "kind": "analytical",
+      "source": "Kirsch (1898), Z. VDI 42:797-807; S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'The effect of circular holes on stress distributions in plates'; plane-stress displacement field from the Kolosov-Muskhelishvili potentials (J.R. Barber, Elasticity, 3rd ed., Springer (2010); also Sukumar et al. 2001, CMAME 190:6183); u_x(L, 0)",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "vm_max",
+      "value": 300000000.0,
+      "kind": "analytical",
+      "source": "Kirsch (1898), Z. VDI 42:797-807; S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'The effect of circular holes on stress distributions in plates'; plane-stress displacement field from the Kolosov-Muskhelishvili potentials (J.R. Barber, Elasticity, 3rd ed., Springer (2010); also Sukumar et al. 2001, CMAME 190:6183); the maximum of the Kirsch field is the hoop stress 3 sigma0 at (0, a), where the stress state is uniaxial",
+      "tolerance": 0.02,
+      "notes": ""
+    },
+    {
+      "qoi": "strain_energy",
+      "value": 3.2438549204891274,
+      "kind": "analytical",
+      "source": "Clapeyron: U = 1/2 t int (traction . u) ds over the loaded edges, Gauss-Legendre (200 pts per edge) of the exact Kirsch fields; Kirsch (1898), Z. VDI 42:797-807; S.P. Timoshenko & J.N. Goodier, Theory of Elasticity, 3rd ed., McGraw-Hill (1970), Ch. 4 'The effect of circular holes on stress distributions in plates'; plane-stress displacement field from the Kolosov-Muskhelishvili potentials (J.R. Barber, Elasticity, 3rd ed., Springer (2010); also Sukumar et al. 2001, CMAME 190:6183)",
+      "tolerance": 0.01,
+      "notes": ""
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "plane_stress",
+      "order": 2,
+      "thickness": 0.002,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "symmetry",
+        "group": "sym_x0",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "sym_y0",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "traction",
+        "group": "right",
+        "point": null,
+        "components": null,
+        "value": [
+          "100000000.0*(1 - 0.0025000000000000005/((0.25)**2 + y**2)*(1.5*cos(2*arctan2(y, (0.25))) + cos(4*arctan2(y, (0.25)))) + 1.5*6.250000000000001e-06/((0.25)**2 + y**2)**2*cos(4*arctan2(y, (0.25))))",
+          "100000000.0*(-0.0025000000000000005/((0.25)**2 + y**2)*(0.5*sin(2*arctan2(y, (0.25))) + sin(4*arctan2(y, (0.25)))) + 1.5*6.250000000000001e-06/((0.25)**2 + y**2)**2*sin(4*arctan2(y, (0.25))))"
+        ],
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "traction",
+        "group": "top",
+        "point": null,
+        "components": null,
+        "value": [
+          "100000000.0*(-0.0025000000000000005/(x**2 + (0.25)**2)*(0.5*sin(2*arctan2((0.25), x)) + sin(4*arctan2((0.25), x))) + 1.5*6.250000000000001e-06/(x**2 + (0.25)**2)**2*sin(4*arctan2((0.25), x)))",
+          "100000000.0*(-0.0025000000000000005/(x**2 + (0.25)**2)*(0.5*cos(2*arctan2((0.25), x)) - cos(4*arctan2((0.25), x))) - 1.5*6.250000000000001e-06/(x**2 + (0.25)**2)**2*cos(4*arctan2((0.25), x)))"
+        ],
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [
+      {
+        "group": "domain",
+        "material": "steel"
+      }
+    ],
+    "qois": [
+      {
+        "name": "sxx_hole_top",
+        "type": "point",
+        "field": "sxx",
+        "point": [
+          0.0,
+          0.05
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "syy_hole_side",
+        "type": "point",
+        "field": "syy",
+        "point": [
+          0.05,
+          0.0
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "ux_hole_side",
+        "type": "point",
+        "field": "ux",
+        "point": [
+          0.05,
+          0.0
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "uy_hole_top",
+        "type": "point",
+        "field": "uy",
+        "point": [
+          0.0,
+          0.05
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "ux_right",
+        "type": "point",
+        "field": "ux",
+        "point": [
+          0.25,
+          0.0
+        ],
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "vm_max",
+        "type": "max",
+        "field": "von_mises",
+        "point": null,
+        "group": null,
+        "component": null
+      },
+      {
+        "name": "strain_energy",
+        "type": "strain_energy",
+        "field": null,
+        "point": null,
+        "group": null,
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "kirsch_exact_traction",
+      "setup": "reference"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.04,
+    0.02,
+    0.01
+  ]
+}

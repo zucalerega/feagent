@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "stepped_shaft_3d_Dd2_rd0p2",
+  "title": "Stepped shaft in tension, D/d = 2, r/d = 0.2 (3D solid)",
+  "family": "stepped_shaft",
+  "tags": [
+    "part",
+    "3d",
+    "tension",
+    "stepped_shaft",
+    "fillet",
+    "stress_concentration",
+    "axisymmetric_part"
+  ],
+  "dim": 3,
+  "physics": "elasticity",
+  "formulation": "3d",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "d": 0.02,
+    "D_over_d": 2.0,
+    "r_over_d": 0.2,
+    "L_small_over_d": 3.0,
+    "L_large_over_D": 1.5,
+    "force": 31415.92653589793,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "h0": 0.004
+  },
+  "description": "Stepped round bar (shaft) with a shoulder fillet, in axial tension. 3D solid.\nGeometry file (STEP): the full 3D bar; its axis is the z axis, the small end face lies in the plane z = 0.\nPurpose: a turned steel tension rod whose diameter steps from d = 20 mm to D = 40 mm. The step is blended by a fillet of radius r = 4 mm, tangent to the small cylinder and to the flat annular shoulder face in the plane z = 60 mm. The small-diameter section runs from the end face at z = 0 to the shoulder; the large-diameter section runs from the shoulder plane to the end face at z = 120 mm.\nMaterial: steel, linear elastic and isotropic, E = 200 GPa, Poisson's ratio 0.3.\nLoad: a total axial tensile force P = 31.416 kN, applied as a uniform axial traction (pulling outward) on the large end face z = 120 mm. The nominal stress on the small diameter, 4P/(pi d^2), is 100 MPa.\nAnalysis: linear static, small displacements.\nSupports: the small end face z = 0 is supported axially only (zero axial displacement, free to move in its plane: a frictionless support). Add only the minimum extra constraints needed to remove the remaining rigid-body motions (in-plane translation, rotation about the axis) without stressing the part. Exploiting symmetry is allowed.\nReport:\n  peak_stress_fillet: the maximum value of the maximum principal stress s1 on the fillet surface [Pa];\n  elongation: the average axial displacement uz of the large end face (z = 120 mm) [m].",
+  "qois": [
+    {
+      "name": "peak_stress_fillet",
+      "type": "max",
+      "field": "s1",
+      "point": null,
+      "group": "fillet",
+      "component": null
+    },
+    {
+      "name": "elongation",
+      "type": "mean",
+      "field": "uz",
+      "point": null,
+      "group": "end_large",
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

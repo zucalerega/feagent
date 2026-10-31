@@ -1,0 +1,153 @@
+{
+  "id": "cylinder_channel_dfg_2d1",
+  "expected_behavior": "smooth",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "drag",
+      "value": 0.011159070467679997,
+      "kind": "published_numerical",
+      "source": "M. Schaefer & S. Turek, 'Benchmark computations of laminar flow around a cylinder', in E.H. Hirschel (ed.), Flow Simulation with High-Performance Computers II, Notes on Numerical Fluid Mechanics 52, Vieweg (1996) 547-566 (problem 2D-1, Re = 20); high-accuracy reference values from the FEATFLOW benchmark page https://wwwold.mathematik.tu-dortmund.de/~featflow/en/benchmarks/cfdbenchmarking/flow/dfg_benchmark1_re20.html ('reference results', computed with high-order methods); c_D = 5.57953523384; F = c rho U_bar^2 D / 2 per m depth, rho U_bar^2 D / 2 = 0.002 N/m",
+      "tolerance": 0.01,
+      "notes": "Schaefer & Turek (1996) acceptance interval c_D in [5.57, 5.59] (from memory). The fixed solver converges to c_D = 5.5714 (-0.15 %, docs/benchmarks_cfd.md)."
+    },
+    {
+      "qoi": "lift",
+      "value": 2.1237896291999997e-05,
+      "kind": "published_numerical",
+      "source": "M. Schaefer & S. Turek, 'Benchmark computations of laminar flow around a cylinder', in E.H. Hirschel (ed.), Flow Simulation with High-Performance Computers II, Notes on Numerical Fluid Mechanics 52, Vieweg (1996) 547-566 (problem 2D-1, Re = 20); high-accuracy reference values from the FEATFLOW benchmark page https://wwwold.mathematik.tu-dortmund.de/~featflow/en/benchmarks/cfdbenchmarking/flow/dfg_benchmark1_re20.html ('reference results', computed with high-order methods); c_L = 0.010618948146; F = c rho U_bar^2 D / 2 per m depth, rho U_bar^2 D / 2 = 0.002 N/m",
+      "tolerance": 0.05,
+      "notes": "Lift is ~0.2 % of drag and sensitive to the mesh; Schaefer & Turek (1996) acceptance interval c_L in [0.0104, 0.0110] (+-3 %, from memory)."
+    },
+    {
+      "qoi": "dp_front_rear",
+      "value": 0.11752016697,
+      "kind": "published_numerical",
+      "source": "M. Schaefer & S. Turek, 'Benchmark computations of laminar flow around a cylinder', in E.H. Hirschel (ed.), Flow Simulation with High-Performance Computers II, Notes on Numerical Fluid Mechanics 52, Vieweg (1996) 547-566 (problem 2D-1, Re = 20); high-accuracy reference values from the FEATFLOW benchmark page https://wwwold.mathematik.tu-dortmund.de/~featflow/en/benchmarks/cfdbenchmarking/flow/dfg_benchmark1_re20.html ('reference results', computed with high-order methods); dp = p(0.15, 0.2) - p(0.25, 0.2) = 0.11752016697 (rho = 1, so Pa)",
+      "tolerance": 0.01,
+      "notes": "Schaefer & Turek (1996) acceptance interval [0.1172, 0.1176] (from memory)."
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "flow",
+      "formulation": "2d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {
+        "turbulence": "laminar",
+        "max_iterations": 20000,
+        "residual_tol": 1e-08
+      }
+    },
+    "materials": {
+      "fluid": {
+        "E": 0.0,
+        "nu": 0.0,
+        "alpha": 0.0,
+        "k": 1.0,
+        "rho": 1.0,
+        "mu": 0.001
+      }
+    },
+    "bcs": [
+      {
+        "type": "velocity_inlet",
+        "group": "inlet",
+        "point": null,
+        "components": null,
+        "value": [
+          "7.138607971445569*y*(0.41 - y)",
+          0.0
+        ],
+        "where": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "pressure_outlet",
+        "group": "outlet",
+        "point": null,
+        "components": null,
+        "value": 0.0,
+        "where": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "wall",
+        "group": "walls",
+        "point": null,
+        "components": null,
+        "value": null,
+        "where": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "wall",
+        "group": "cylinder",
+        "point": null,
+        "components": null,
+        "value": null,
+        "where": null,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [
+      {
+        "group": "fluid",
+        "material": "fluid"
+      }
+    ],
+    "qois": [
+      {
+        "name": "drag",
+        "type": "force",
+        "field": null,
+        "point": null,
+        "group": "cylinder",
+        "component": 0,
+        "point2": null
+      },
+      {
+        "name": "lift",
+        "type": "force",
+        "field": null,
+        "point": null,
+        "group": "cylinder",
+        "component": 1,
+        "point2": null
+      },
+      {
+        "name": "dp_front_rear",
+        "type": "point_difference",
+        "field": "p",
+        "point": [
+          0.15,
+          0.2
+        ],
+        "group": null,
+        "component": null,
+        "point2": [
+          0.25,
+          0.2
+        ]
+      }
+    ],
+    "meta": {
+      "problem": "cylinder_channel_dfg_2d1",
+      "setup": "reference"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.0125,
+    0.00625,
+    0.003125
+  ]
+}

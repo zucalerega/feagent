@@ -155,3 +155,20 @@ need no `__main__` guard. Agents' MCP meshing tools should do the same.
   dataverse.harvard.edu in the environment's network settings.
 * **Committing generated SimJEB tasks.** The CAD is GrabCAD-licensed for non-commercial use;
   generated tasks live in git-ignored `data/`.
+
+## D19. Superseded by `feacore` on `main` (2026-10-31, at merge)
+While this branch was being built, `main` gained `feacore/`. The team's decisions there are
+authoritative:
+* the fixed solver is scikit-fem, with CalculiX as an independent cross-check;
+* the solver contract is a case JSON plus a gmsh `.msh` with named physical groups;
+* benchmarks live in `benchmarks/<id>/public|private`.
+
+**D2 and D3 here (ccx as fixed solver, `model.inp` submissions) are superseded.** `feabench`
+remains a reference library and evaluation-design input:
+* code_aster references;
+* the CalculiX corpus;
+* SimJEB loading;
+* the verification-case evidence;
+* the scoring proposal.
+
+Its verification cases can be ported to `feacore` Problems.

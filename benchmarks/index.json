@@ -1,0 +1,775 @@
+[
+  {
+    "id": "clevis_lug_2d_D20",
+    "title": "Pin-loaded lug, D/W = 0.5 (plane stress)",
+    "family": "clevis_lug",
+    "tags": [
+      "part",
+      "2d",
+      "plane_stress",
+      "lug",
+      "pin_loaded",
+      "bearing",
+      "expression_load",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "clevis_lug_2d_D28",
+    "title": "Pin-loaded lug, D/W = 0.7 (plane stress)",
+    "family": "clevis_lug",
+    "tags": [
+      "part",
+      "2d",
+      "plane_stress",
+      "lug",
+      "pin_loaded",
+      "bearing",
+      "expression_load",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "clevis_lug_3d_D20",
+    "title": "Pin-loaded lug, D/W = 0.5 (3D solid)",
+    "family": "clevis_lug",
+    "tags": [
+      "part",
+      "3d",
+      "lug",
+      "pin_loaded",
+      "bearing",
+      "expression_load",
+      "stress_concentration"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "cooks_membrane",
+    "title": "Cook's membrane: tapered panel under end shear (plane stress)",
+    "family": "cooks_membrane",
+    "tags": [
+      "nafems",
+      "published_benchmark",
+      "2d",
+      "plane_stress",
+      "bending",
+      "corner_singularity"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "cylinder_channel_dfg_2d1",
+    "title": "DFG benchmark 2D-1: steady flow around a cylinder in a channel, Re = 20 (Schaefer & Turek 1996)",
+    "family": "cylinder_channel_dfg",
+    "tags": [
+      "cfd",
+      "2d",
+      "flow",
+      "laminar",
+      "published_benchmark",
+      "external_flow",
+      "bluff_body",
+      "expression_bc"
+    ],
+    "dim": 2,
+    "physics": "flow",
+    "formulation": "2d"
+  },
+  {
+    "id": "kirsch_exact_traction",
+    "title": "Plate with a circular hole, exact Kirsch tractions on a finite quarter domain (plane stress)",
+    "family": "kirsch",
+    "tags": [
+      "2d",
+      "plane_stress",
+      "analytical",
+      "stress_concentration",
+      "curved_boundary",
+      "expression_bc",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "l_bracket_r0",
+    "title": "Bolted L-bracket, sharp inside corner (r = 0)",
+    "family": "l_bracket",
+    "tags": [
+      "part",
+      "3d",
+      "bolted",
+      "bending",
+      "l_bracket",
+      "sharp_corner",
+      "singular_trap"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "l_bracket_r10",
+    "title": "Bolted L-bracket, inside fillet r = 10 mm",
+    "family": "l_bracket",
+    "tags": [
+      "part",
+      "3d",
+      "bolted",
+      "bending",
+      "l_bracket",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "l_bracket_r2",
+    "title": "Bolted L-bracket, inside fillet r = 2 mm",
+    "family": "l_bracket",
+    "tags": [
+      "part",
+      "3d",
+      "bolted",
+      "bending",
+      "l_bracket",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "l_bracket_r5",
+    "title": "Bolted L-bracket, inside fillet r = 5 mm",
+    "family": "l_bracket",
+    "tags": [
+      "part",
+      "3d",
+      "bolted",
+      "bending",
+      "l_bracket",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "lame_cylinder_axisym",
+    "title": "Thick-walled cylinder under internal pressure (axisymmetric slice, axially constrained ends)",
+    "family": "lame_cylinder",
+    "tags": [
+      "2d",
+      "axisymmetric",
+      "analytical",
+      "pressure_vessel",
+      "plane_strain_equivalent"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "lame_cylinder_axisym_open",
+    "title": "Thick-walled cylinder under internal pressure (axisymmetric slice, open ends)",
+    "family": "lame_cylinder",
+    "tags": [
+      "2d",
+      "axisymmetric",
+      "analytical",
+      "pressure_vessel",
+      "open_ended"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "lame_cylinder_plane_strain",
+    "title": "Thick-walled cylinder under internal pressure (plane strain, quarter model)",
+    "family": "lame_cylinder",
+    "tags": [
+      "2d",
+      "plane_strain",
+      "analytical",
+      "pressure_vessel",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_strain"
+  },
+  {
+    "id": "lame_sphere_3d",
+    "title": "Thick sphere under internal pressure (3D octant)",
+    "family": "lame_sphere",
+    "tags": [
+      "3d",
+      "analytical",
+      "pressure_vessel",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "lame_sphere_axisym",
+    "title": "Thick sphere under internal pressure (axisymmetric, quarter meridian section)",
+    "family": "lame_sphere",
+    "tags": [
+      "2d",
+      "axisymmetric",
+      "analytical",
+      "pressure_vessel",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "lbracket_reentrant",
+    "title": "L-shaped bracket with a sharp re-entrant corner (plane stress, singular stress)",
+    "family": "lbracket_reentrant",
+    "tags": [
+      "2d",
+      "plane_stress",
+      "singular",
+      "reentrant_corner",
+      "no_reference"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "lid_driven_cavity_re100",
+    "title": "Lid-driven square cavity, Re = 100 (Ghia, Ghia & Shin 1982)",
+    "family": "lid_driven_cavity",
+    "tags": [
+      "cfd",
+      "2d",
+      "flow",
+      "laminar",
+      "published_benchmark",
+      "closed_cavity",
+      "moving_wall"
+    ],
+    "dim": 2,
+    "physics": "flow",
+    "formulation": "2d"
+  },
+  {
+    "id": "lshape_poisson",
+    "title": "Laplace equation on an L-shaped domain with a re-entrant corner (exact r^(2/3) solution)",
+    "family": "lshape_poisson",
+    "tags": [
+      "2d",
+      "heat",
+      "poisson",
+      "analytical",
+      "singular",
+      "reentrant_corner",
+      "expression_bc"
+    ],
+    "dim": 2,
+    "physics": "heat",
+    "formulation": "2d"
+  },
+  {
+    "id": "mounting_bracket_diag45",
+    "title": "Bolted mounting bracket with gusset, diag45 load",
+    "family": "mounting_bracket",
+    "tags": [
+      "part",
+      "3d",
+      "bolted",
+      "fillet",
+      "gusset",
+      "bracket",
+      "multi_load_case",
+      "stress_concentration",
+      "load_diag45"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "mounting_bracket_horizontal",
+    "title": "Bolted mounting bracket with gusset, horizontal load",
+    "family": "mounting_bracket",
+    "tags": [
+      "part",
+      "3d",
+      "bolted",
+      "fillet",
+      "gusset",
+      "bracket",
+      "multi_load_case",
+      "stress_concentration",
+      "load_horizontal"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "mounting_bracket_vertical",
+    "title": "Bolted mounting bracket with gusset, vertical load",
+    "family": "mounting_bracket",
+    "tags": [
+      "part",
+      "3d",
+      "bolted",
+      "fillet",
+      "gusset",
+      "bracket",
+      "multi_load_case",
+      "stress_concentration",
+      "load_vertical"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "nafems_le1",
+    "title": "NAFEMS LE1: elliptic membrane (plane stress)",
+    "family": "nafems_le1",
+    "tags": [
+      "nafems",
+      "2d",
+      "plane_stress",
+      "stress_concentration",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "nafems_le10",
+    "title": "NAFEMS LE10: thick plate under pressure (3D)",
+    "family": "nafems_le10",
+    "tags": [
+      "nafems",
+      "3d",
+      "solid",
+      "plate_bending",
+      "curved_boundary",
+      "symmetry",
+      "line_support"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "nafems_le11_3d",
+    "title": "NAFEMS LE11: cylinder/taper/sphere, thermal load (3D quarter model)",
+    "family": "nafems_le11",
+    "tags": [
+      "nafems",
+      "3d",
+      "solid",
+      "thermal_stress",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "nafems_le11_axisym",
+    "title": "NAFEMS LE11: cylinder/taper/sphere, thermal load (axisymmetric)",
+    "family": "nafems_le11",
+    "tags": [
+      "nafems",
+      "2d",
+      "axisymmetric",
+      "thermal_stress",
+      "curved_boundary"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "nafems_t4",
+    "title": "NAFEMS T4: 2D steady heat conduction with convection",
+    "family": "nafems_t4",
+    "tags": [
+      "nafems",
+      "2d",
+      "heat",
+      "steady",
+      "convection"
+    ],
+    "dim": 2,
+    "physics": "heat",
+    "formulation": "2d"
+  },
+  {
+    "id": "notched_bar_t10_r2",
+    "title": "Flat bar with opposite U-notches in tension, t = 10 mm, r = 2 mm",
+    "family": "notched_bar",
+    "tags": [
+      "part",
+      "2d",
+      "plane_stress",
+      "notch",
+      "tension",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "notched_bar_t10_r4",
+    "title": "Flat bar with opposite U-notches in tension, t = 10 mm, r = 4 mm",
+    "family": "notched_bar",
+    "tags": [
+      "part",
+      "2d",
+      "plane_stress",
+      "notch",
+      "tension",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "notched_bar_t5_r2",
+    "title": "Flat bar with opposite U-notches in tension, t = 5 mm, r = 2 mm",
+    "family": "notched_bar",
+    "tags": [
+      "part",
+      "2d",
+      "plane_stress",
+      "notch",
+      "tension",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "notched_bar_t5_r4",
+    "title": "Flat bar with opposite U-notches in tension, t = 5 mm, r = 4 mm",
+    "family": "notched_bar",
+    "tags": [
+      "part",
+      "2d",
+      "plane_stress",
+      "notch",
+      "tension",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "pipe_poiseuille_3d",
+    "title": "Hagen-Poiseuille flow in a circular pipe, fully developed inflow (3D laminar, exact)",
+    "family": "pipe_poiseuille",
+    "tags": [
+      "cfd",
+      "3d",
+      "flow",
+      "laminar",
+      "analytical",
+      "internal_flow",
+      "expression_bc"
+    ],
+    "dim": 3,
+    "physics": "flow",
+    "formulation": "3d"
+  },
+  {
+    "id": "plate_hole_finite_width_d01",
+    "title": "Finite-width plate with a central circular hole in tension (plane stress, quarter model)",
+    "family": "plate_hole_finite_width",
+    "tags": [
+      "2d",
+      "plane_stress",
+      "stress_concentration",
+      "handbook",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "plate_hole_finite_width_d03",
+    "title": "Finite-width plate with a central circular hole in tension (plane stress, quarter model)",
+    "family": "plate_hole_finite_width",
+    "tags": [
+      "2d",
+      "plane_stress",
+      "stress_concentration",
+      "handbook",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "plate_hole_finite_width_d05",
+    "title": "Finite-width plate with a central circular hole in tension (plane stress, quarter model)",
+    "family": "plate_hole_finite_width",
+    "tags": [
+      "2d",
+      "plane_stress",
+      "stress_concentration",
+      "handbook",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "poiseuille_channel",
+    "title": "Plane Poiseuille flow in a 2D channel, fully developed inflow (laminar, exact)",
+    "family": "poiseuille_channel",
+    "tags": [
+      "cfd",
+      "2d",
+      "flow",
+      "laminar",
+      "analytical",
+      "internal_flow",
+      "expression_bc"
+    ],
+    "dim": 2,
+    "physics": "flow",
+    "formulation": "2d"
+  },
+  {
+    "id": "pressure_vessel_axi_equal",
+    "title": "Pressure vessel with hemispherical heads, equal thickness (axisymmetric)",
+    "family": "pressure_vessel_axisym",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "pressure_vessel",
+      "internal_pressure",
+      "shell_junction"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "pressure_vessel_axi_thin_head",
+    "title": "Pressure vessel with hemispherical heads, thin heads with tapered transition (axisymmetric)",
+    "family": "pressure_vessel_axisym",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "pressure_vessel",
+      "internal_pressure",
+      "shell_junction",
+      "thickness_transition",
+      "singular_trap"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "rotating_disk",
+    "title": "Rotating solid disk, centrifugal body force (plane stress, quarter model)",
+    "family": "rotating_disk",
+    "tags": [
+      "2d",
+      "plane_stress",
+      "analytical",
+      "body_force",
+      "expression_load",
+      "curved_boundary",
+      "symmetry"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  },
+  {
+    "id": "stepped_shaft_3d_Dd2_rd0p2",
+    "title": "Stepped shaft in tension, D/d = 2, r/d = 0.2 (3D solid)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "3d",
+      "tension",
+      "stepped_shaft",
+      "fillet",
+      "stress_concentration",
+      "axisymmetric_part"
+    ],
+    "dim": 3,
+    "physics": "elasticity",
+    "formulation": "3d"
+  },
+  {
+    "id": "stepped_shaft_axi_Dd1p5_rd0p05",
+    "title": "Stepped shaft in tension, D/d = 1.5, r/d = 0.05 (axisymmetric)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "tension",
+      "stepped_shaft",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "stepped_shaft_axi_Dd1p5_rd0p1",
+    "title": "Stepped shaft in tension, D/d = 1.5, r/d = 0.1 (axisymmetric)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "tension",
+      "stepped_shaft",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "stepped_shaft_axi_Dd1p5_rd0p2",
+    "title": "Stepped shaft in tension, D/d = 1.5, r/d = 0.2 (axisymmetric)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "tension",
+      "stepped_shaft",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "stepped_shaft_axi_Dd2_rd0p05",
+    "title": "Stepped shaft in tension, D/d = 2, r/d = 0.05 (axisymmetric)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "tension",
+      "stepped_shaft",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "stepped_shaft_axi_Dd2_rd0p1",
+    "title": "Stepped shaft in tension, D/d = 2, r/d = 0.1 (axisymmetric)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "tension",
+      "stepped_shaft",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "stepped_shaft_axi_Dd2_rd0p2",
+    "title": "Stepped shaft in tension, D/d = 2, r/d = 0.2 (axisymmetric)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "tension",
+      "stepped_shaft",
+      "fillet",
+      "stress_concentration"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "stepped_shaft_axi_Dd2_sharp",
+    "title": "Stepped shaft in tension, D/d = 2, sharp shoulder (r = 0) (axisymmetric)",
+    "family": "stepped_shaft",
+    "tags": [
+      "part",
+      "axisymmetric",
+      "tension",
+      "stepped_shaft",
+      "sharp_corner",
+      "singular_trap"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "axisymmetric"
+  },
+  {
+    "id": "timoshenko_cantilever",
+    "title": "Cantilever with parabolic end shear, exact Timoshenko-Goodier solution (plane stress)",
+    "family": "timoshenko_cantilever",
+    "tags": [
+      "2d",
+      "plane_stress",
+      "analytical",
+      "beam",
+      "expression_bc"
+    ],
+    "dim": 2,
+    "physics": "elasticity",
+    "formulation": "plane_stress"
+  }
+]

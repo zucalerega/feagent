@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "lame_cylinder_axisym_open",
+  "title": "Thick-walled cylinder under internal pressure (axisymmetric slice, open ends)",
+  "family": "lame_cylinder",
+  "tags": [
+    "2d",
+    "axisymmetric",
+    "analytical",
+    "pressure_vessel",
+    "open_ended"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "axisymmetric",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "a": 0.1,
+    "b": 0.2,
+    "H": 0.05,
+    "p": 100000000.0,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "axial": "free",
+    "h0": 0.0125
+  },
+  "description": "Thick-walled steel cylinder under internal pressure, axisymmetric model. Coordinates: x = r (radius, axis of revolution at x = 0), y = z (axial). A slice of axial height H of the wall is modelled (STEP: a planar rectangle in the xy-plane = the r-z half-plane).\nGeometry: rectangle a <= r <= b, 0 <= z <= H with bore radius a = 0.1 m, outer radius b = 0.2 m, H = 0.05 m. Edges: bore r = a, outer surface r = b, ends z = 0 and z = H.\nMaterial: linear elastic, E = 2e+11 Pa, nu = 0.3.\nLoads: uniform internal pressure p = 1e+08 Pa (100 MPa) on the bore r = a. Outer surface r = b traction free.\nSupports: Open-ended cylinder: the end face z = 0 is a symmetry plane (u_z = 0, free radially); the end face z = H is traction free. There is no axial load (no end caps).\nReport (SI units):\n  ur_bore      radial displacement at the bore, u_r at (r, z) = (a, H/2) [m]\n  hoop_bore    hoop stress at the bore, sigma_theta at (a, H/2) [Pa]\n  uz_top       axial displacement u_z at (b, H) [m]\n  vm_max       maximum von Mises stress [Pa]\n  strain_energy total strain energy of the modelled slice, full 360 degrees [J]",
+  "qois": [
+    {
+      "name": "ur_bore",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.1,
+        0.025
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "hoop_bore",
+      "type": "point",
+      "field": "stt",
+      "point": [
+        0.1,
+        0.025
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "uz_top",
+      "type": "point",
+      "field": "uy",
+      "point": [
+        0.2,
+        0.05
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "strain_energy",
+      "type": "strain_energy",
+      "field": null,
+      "point": null,
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

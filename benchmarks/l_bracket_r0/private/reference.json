@@ -1,0 +1,90 @@
+{
+  "id": "l_bracket_r0",
+  "expected_behavior": "singular",
+  "expectations": {
+    "max_vm_corner": "diverge"
+  },
+  "references": [],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "3d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "steel": {
+        "E": 200000000000.0,
+        "nu": 0.3,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "fixed",
+        "group": "bolt_holes",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "force",
+        "group": "load_face",
+        "point": null,
+        "components": null,
+        "value": [
+          -500.0,
+          0.0,
+          0.0
+        ],
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "sym_mid",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "max_vm_corner",
+        "type": "max",
+        "field": "von_mises",
+        "point": null,
+        "group": "corner_edge",
+        "component": null
+      },
+      {
+        "name": "load_displacement",
+        "type": "mean",
+        "field": "ux",
+        "point": null,
+        "group": "load_face",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "l_bracket_r0",
+      "reference_portion": "half (y <= W/2) with symmetry; force halved"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.004,
+    0.0026666666666666666,
+    0.0017777777777777779
+  ]
+}
