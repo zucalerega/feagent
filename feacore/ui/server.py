@@ -899,6 +899,16 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
         except KeyError as e:
             raise HTTPException(404, str(e).strip('"')) from None
 
+    @app.get("/api/swarm")
+    def swarm(loop_id: str | None = None, generation: str | None = None):
+        """ACE agent swarm: loops, per-generation score distribution, per-problem leaderboards of one
+        generation (run-store records written by the ACE bridge; contract in feacore/ui/swarm.py)."""
+        from feacore.ui.swarm import swarm_view
+
+        out = swarm_view(store, _problems_api(), loop_id=loop_id, generation=generation)
+        out["store_root"] = str(store.root.resolve())
+        return out
+
     @app.get("/api/consensus/{problem_id}")
     def consensus_view(problem_id: str):
         subs = store.list_submissions(problem_id=problem_id)

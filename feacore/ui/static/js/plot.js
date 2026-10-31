@@ -317,3 +317,49 @@ export function forestChart(opts) {
   });
   return svg;
 }
+
+// ------------------------------------------------------------------ strip chart (score per generation)
+/**
+ * groups: [{label, points: [{y, tip, muted}], median}], yTitle, zeroLabel. One column per group,
+ * dots jittered deterministically, the medians joined by a line.
+ */
+export function stripChart(opts) {
+  const groups = opts.groups || [];
+  const W = opts.width || 760, H = opts.height || 300, m = { l: 66, r: 28, t: 22, b: 48 };
+  const svg = frame(W, H);
+  const ys = groups.flatMap(g => g.points.map(p => p.y)).filter(Number.isFinite);
+  if (!groups.length || !ys.length) return svg;
+  let y0 = Math.min(-0.5, ...ys), y1 = Math.max(1, ...ys);
+  const pad = (y1 - y0) * 0.08;
+  const yt = niceTicks(y0 - pad, y1 + pad, 5);
+  y0 = Math.min(y0 - pad, yt[0]); y1 = Math.max(y1 + pad, yt[yt.length - 1]);
+  const Y = lin(y0, y1, H - m.b, m.t);
+  const bw = (W - m.l - m.r) / groups.length;
+  const X = i => m.l + (i + 0.5) * bw;
+  const g = s('g');
+  svg.append(g);
+  yt.forEach(t => {
+    g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(t), y2: Y(t), stroke: t === 0 ? C.axis : C.grid, 'stroke-width': t === 0 ? 1.5 : 1 }));
+    g.append(s('text', { x: m.l - 10, y: Y(t) + 4.5, 'text-anchor': 'end', class: 'tick' }, (t > 0 ? '+' : '') + (+t.toFixed(2))));
+  });
+  if (opts.zeroLabel && 0 >= y0 && 0 <= y1) g.append(s('text', { x: W - m.r - 4, y: Y(0) - 7, 'text-anchor': 'end', class: 'tick' }, opts.zeroLabel));
+  g.append(s('text', { x: 16, y: (m.t + H - m.b) / 2, transform: `rotate(-90 16 ${(m.t + H - m.b) / 2})`, 'text-anchor': 'middle', class: 'axis-title' }, opts.yTitle || 'score'));
+  const med = [];
+  groups.forEach((gr, i) => {
+    g.append(s('text', { x: X(i), y: H - m.b + 22, 'text-anchor': 'middle', class: 'tick' }, gr.label));
+    if (gr.sub) g.append(s('text', { x: X(i), y: H - m.b + 38, 'text-anchor': 'middle', class: 'tick' }, gr.sub));
+    gr.points.forEach((p, k) => {
+      if (!Number.isFinite(p.y)) return;
+      const jit = ((k * 0.618034) % 1 - 0.5) * Math.min(bw * 0.5, 70);
+      const c = s('circle', { cx: X(i) + jit, cy: Y(p.y), r: 5.5, fill: p.muted ? C.surface : C.s1, stroke: p.muted ? C.muted : C.surface, 'stroke-width': 2 });
+      g.append(c);
+      g.append(hit(s('circle', { cx: X(i) + jit, cy: Y(p.y), r: 12, fill: 'transparent' }), p.tip || fmt(p.y, 3)));
+    });
+    if (Number.isFinite(gr.median)) {
+      med.push([X(i), Y(gr.median)]);
+      g.append(s('line', { x1: X(i) - Math.min(bw * 0.3, 44), x2: X(i) + Math.min(bw * 0.3, 44), y1: Y(gr.median), y2: Y(gr.median), stroke: C.ink, 'stroke-width': 2.5, 'stroke-linecap': 'round' }));
+    }
+  });
+  if (med.length > 1) g.insertBefore(s('path', { d: med.map((p, i) => `${i ? 'L' : 'M'}${p[0]},${p[1]}`).join(''), fill: 'none', stroke: C.ink, 'stroke-width': 1.2, 'stroke-dasharray': '4 4', opacity: 0.6 }), g.firstChild.nextSibling);
+  return svg;
+}
