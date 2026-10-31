@@ -312,7 +312,7 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
                   default_response_class=SafeJSONResponse,
                   description="Fixed FEA solver service, solution verification (Richardson / GCI), "
                               "benchmark library and multi-agent consensus. See docs/ui.md.")
-    app.add_middleware(GZipMiddleware, minimum_size=2048)
+    app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=3)
     app.state.store = store
     app.state.runner = runner
 

@@ -211,7 +211,7 @@ function qoiCard(q, it, hrep, runs, st) {
   const bandLabel = it.verdict === 'plateau' ? 'fine \u2013 medium difference' : 'GCI band of the finest mesh';
   const yTitle = q.name;
   const chart = convergenceChart({
-    points: pts, phiExt: g && g.phi_ext !== null ? g.phi_ext : NaN, p: g ? g.p : NaN, band,
+    points: pts, phiExt: g && g.phi_ext !== null ? g.phi_ext : NaN, p: g ? g.p : NaN, band, extReliable: it.extrapolation_reliable,
     hFine: Math.min(...hrep), reference: ref ? { value: ref.value, tol: ref.tolerance } : null, yTitle,
   });
   const legend = h('div', { class: 'legend' },
@@ -231,7 +231,7 @@ function qoiCard(q, it, hrep, runs, st) {
 
   const stats = h('div', { class: 'stat-row' },
     stat('finest mesh', fmt(fine, 6)),
-    g && g.phi_ext !== null ? stat('extrapolated (h→0)', fmt(g.phi_ext, 6)) : null,
+    g && g.phi_ext !== null ? stat(it.extrapolation_reliable === false ? 'extrapolated (unreliable)' : 'extrapolated (h→0)', fmt(g.phi_ext, 6)) : null,
     g && g.gci_fine !== null ? stat('GCI (fine)', fmtPct(g.gci_fine, 2)) : null);
   const refStats = ref ? h('div', { class: 'stat-row' },
     stat('reference', fmt(ref.value, 6), 'sm'),

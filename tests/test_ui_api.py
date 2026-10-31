@@ -145,6 +145,19 @@ def test_interpretation_flags():
     it3 = interpret_entry(e3)
     assert it3["verdict"] == "plateau" and "divergent" not in it3["flags"]
     assert analyze_submission(None, [{"h": 0.1, "qois": {"u": 1.0}}])["qois"][0]["interpretation"]["verdict"] == "insufficient"
+    # gci3's noise floor ("converged") is a good state
+    e4 = {"name": "u", "type": "point", "field": "ux", "values": [1.0, 1.0 + 1e-8, 1.0], "p_theory": 3.0,
+          "gci": {"convergence": "converged", "flags": ["converged_within_noise"], "p": None, "phi_ext": 1.0,
+                  "gci_fine": 1.25e-8}}
+    it4 = interpret_entry(e4)
+    assert it4["status"] == "good" and it4["extrapolation_reliable"] is True
+    # order far above theory: converged, but the extrapolation is flagged as unreliable
+    e5 = {"name": "s", "type": "point", "field": "sxx", "values": [0.9, 0.99, 0.999], "p_theory": 2.0,
+          "extrapolation_reliable": False,
+          "gci": {"convergence": "monotone", "flags": ["p_above_theory"], "p": 3.3, "phi_ext": 1.0, "gci_fine": 1e-3}}
+    it5 = interpret_entry(e5)
+    assert it5["verdict"] == "converged" and "extrapolation_unreliable" in it5["flags"]
+    assert "unreliable" in it5["summary"]
 
 
 def test_boundary_triangulation_tet4():

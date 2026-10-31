@@ -14,9 +14,11 @@ res.info                                    # SolveInfo (sizes, h_rep, timing, w
 ```
 
 CLI: `python -m feacore.cli case.json [--backend skfem] [--out result.json] [--vtu out.vtu]
-[--linear-solver auto|scipy|pardiso|cudss]`. It writes `{"info", "qois", "meta"}`. Exit code 0 means
-success, 2 means an invalid case or mesh, 1 means any other failure. On failure, `--out` holds
-`{"error": message}`.
+[--linear-solver auto|scipy|pardiso|cudss]`. It writes `{"info", "qois", "meta"}` as standard JSON.
+Exit code 0 means success. Exit code 2 means an invalid case or mesh: unknown group, wrong group
+kind, insufficient constraints, a non-axis-aligned symmetry group, and so on. Exit code 1 means any
+other failure. On failure, `--out` holds `{"error": message}`. Error messages name the problem and,
+for groups, list the available names.
 
 Files: `feacore/solver/skfem_backend.py` (driver, physics, `SkfemResult`), `_skfem_mesh.py`
 (reads the .msh and maps the groups), `_skfem_assembly.py` (vectorised stiffness and mass),
@@ -76,6 +78,12 @@ Files: `feacore/solver/skfem_backend.py` (driver, physics, `SkfemResult`), `_skf
   1% of the diagonal away.
 - **Several Dirichlet BCs on one DOF**: the last one in the list wins, with a warning if the values
   differ.
+- **Loads**: body forces add up. Temperature loads assign `T` on their cell group; a later load
+  overrides an earlier one on overlapping cells. Cells without a temperature load are at `T_ref`.
+- **Heat `2d`**: multiplied by the thickness too, so reactions (heat flows) and integrals are per
+  thickness. Convection adds `∫ h T v` to the matrix and `∫ h T_inf v` to the load.
+- **QoI failures**: `evaluate()` raises. `evaluate_all()` / `summary()` give NaN for that QoI and add
+  a warning, so one bad probe point does not lose the other QoIs. The CLI writes it as `null`.
 - **Expressions**: `feacore.case.eval_expr` in x, y, z, where axisymmetric x = r and y = z. Dirichlet
   values are evaluated at the node locations; load and flux values at the quadrature points.
 - `SolveInfo`: `n_nodes` = nodes of the mesh actually used (the corner mesh for P1 on a quadratic
@@ -107,7 +115,7 @@ the hardware or on an iterative tolerance that would contaminate a GCI study.
 | `scipy` | SuperLU with MMD(AᵀA+A) ordering, symmetric mode, diagonal pivoting (Cholesky-like for SPD). Always available, single-threaded |
 | `pardiso` | MKL PARDISO via `pypardiso` (`pip install pypardiso`, x86-64 only), real SPD (mtype 2) on the upper triangle. Multithreaded (`MKL_NUM_THREADS`) |
 | `cudss` | NVIDIA cuDSS via nvmath-python (`pip install nvmath-python[cu12]` or `[cu13]`): `nvmath.sparse.advanced.direct_solver(A, b, options=DirectSolverOptions(sparse_system_type=SPD), execution="cuda")` with host SciPy/NumPy operands (int32 indices) |
-| `auto` | `cudss` if a CUDA GPU and nvmath are present, else `pardiso` if installed, else `scipy` |
+| `auto` | `cudss` if a CUDA GPU and nvmath are present and n >= `FEACORE_CUDSS_MIN_N` (default 20000; smaller systems are faster on the CPU), else `pardiso` if installed, else `scipy` |
 | `cg` | opt-in iterative (pyamg smoothed aggregation if installed, else Jacobi), rtol 1e-10, flagged `ITERATIVE` in the info line |
 
 Selection order: an explicit `analysis.options["linear_solver"]` or `solve(case, linear_solver=...)`
@@ -119,8 +127,11 @@ notes it (`strict=True` raises instead). After every solve the relative residual
 
 Before solving, the backend checks that the Dirichlet set removes all rigid-body modes: 2D 3,
 3D 6, axisymmetric the z translation, heat the constant mode (unless there is convection). If one is
-left free it raises `SolverError: insufficient constraints ... (rotation about z)`, which tells the
-agent exactly what is missing.
+left free it raises `InsufficientConstraints` (a `CaseError`): `insufficient constraints: the model
+can move as a rigid body (rotation about z)`. That tells the agent exactly what is missing.
+Mechanisms that are not rigid-body modes (e.g. two parts joined at a single node) are caught by the
+residual check. MKL threads follow `MKL_NUM_THREADS` / `OMP_NUM_THREADS`: set them to the cores
+you can spare per solve when running many solves in parallel.
 
 ## Assembly
 
@@ -155,7 +166,35 @@ interleaved per node.
 
 ## Performance
 
-PERFORMANCE_TABLE
+Measured in the dev container: 4 shared cores, load average 5-8 from other agents, so expect
+±30% noise. `OMP_NUM_THREADS=1`, so PARDISO runs single-threaded. Model: cantilever block, clamped
+face plus end force, P2 unless noted, quadratic mesh for P2. "wall" is `SolveInfo.wall_time` (mesh
+read, assembly, solve, stress recovery); "solve" is the stiffness factorisation and solve alone.
+To reproduce: mesh a box (or a 2x1 rectangle) with gmsh at size h, then run `solve(case)` and read
+`info.wall_time` and the `info: linear_solver=... t=` line.
+
+| model | DOFs | cells | solver | wall [s] | solve [s] |
+|---|---:|---:|---|---:|---:|
+| 2D plane stress P2 | 7.7k | 1.9k | pardiso | 0.14 | 0.05 |
+| 2D plane stress P2 | 30k | 7.4k | pardiso | 0.66 | 0.33 |
+| 2D plane stress P2 | 119k | 29.5k | pardiso | 2.4 | 1.0 |
+| 2D plane stress P2 | 476k | 119k | pardiso | 14.9 | 4.8 |
+| 2D plane stress P2 | 119k | 29.5k | scipy | 4.1 | 2.3 |
+| 2D plane stress P1 | 120k | 119k | pardiso | 2.9-4.2 | 0.7-1.2 |
+| 3D P2 (tet10) | 8.6k | 1.6k | pardiso | 0.56 | 0.23 |
+| 3D P2 (tet10) | 24k | 5.0k | pardiso | 2.3 | 0.79 |
+| 3D P2 (tet10) | 72k | 15.7k | pardiso | 7.4-11.4 | 4.4-4.8 |
+| 3D P2 (tet10) | 141k | 31.6k | pardiso | 21.5-24.7 | 13.3-14.4 |
+| 3D P2 (tet10) | 24k | 5.0k | scipy | 8.2 | 6.7 |
+| 3D P2 (tet10) | 72k | 15.7k | scipy | 100 | 72 |
+| 3D P1 (tet4) | 62k | 111k | pardiso | 8.3-10.5 | 3.0 |
+| 3D P1 (tet4) | 156k | 290k | pardiso | 33.6 | 15.4 |
+
+Takeaways. In 3D the direct solve dominates and SciPy SuperLU is 10-15x slower than PARDISO, so
+install `pypardiso` (x86) or use cuDSS (GPU). Multithreaded PARDISO or cuDSS on a Brev box should
+cut the "solve" column several-fold. What is left is mostly sparse-matrix construction (scipy
+COO→CSR), about 25 µs per P1 tet and 90 µs per P2 tet single-threaded. For every registered
+benchmark problem at its coarsest study size, the solve takes 0.05-4 s.
 
 ## Limitations / not done
 

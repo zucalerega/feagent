@@ -63,6 +63,14 @@ Decisions:
   GPU check, validation, UI tunnel on port 8000): `docs/brev.md`. Check the GPU solve with
   `python scripts/gpu_check.py` before relying on cuDSS.
 
+- Known solver/verification limits (from the benchmark runs):
+  - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
+    backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
+    tolerance, or use averaged / integrated QoIs.
+  - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
+    or thermal-load interfaces. Don't use point stresses right at an interface.
+  - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
+
 ## NVIDIA compute (hackathon)
 
 - Provided (per the ScienceClaw NVIDIA docs index): Brev GPU instances (credits), hosted model

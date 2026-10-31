@@ -1068,6 +1068,10 @@ T_CUBE = (20 + 5 * sp.sin(1.2 * x + 0.3) * sp.cos(0.8 * y - 0.2 * z) * sp.exp(0.
 # Default refinement studies: unstructured base mesh at H0, then uniform splitting (ratio 2).
 H0_2D, LEVELS_2D = 0.25, 4      # 2D: 4 levels, finest h ~ 1/32
 H0_3D, LEVELS_3D = 0.5, {1: 4, 2: 3}  # 3D: P1 4 levels, P2 3 levels (small sizes)
+# Per-problem base size: the thin quarter annular cylinder needs h0 = 0.25 (with 0.5 the P1 chord
+# sag on r = 1 puts sample points ~1.7% of the diagonal outside the mesh, beyond skfem's
+# probe tolerance, and P2 is pre-asymptotic).
+H0_OVERRIDE = {"E-3d-annulus3d-lame": 0.25}
 # Independent (non-nested) unstructured meshes, used for the robustness variant.
 SIZES_2D = [0.25, 0.125, 0.0625, 0.03125]
 SIZES_3D = [0.5, 1 / 3, 2 / 9, 4 / 27]
@@ -1395,8 +1399,8 @@ def run_convergence(problem: MMSProblem, order: int, backend: str = "skfem",
         plan = [(float(hh), 0) for hh in sizes]
         family = "independent"
     else:
-        h0 = h0 or d_h0
-        plan = [(h0, i) for i in range(levels or d_lv)]
+        h0 = h0 or H0_OVERRIDE.get(problem.name, d_h0)
+        plan = [(h0, i) for i in range(levels or (3 if problem.name in H0_OVERRIDE else d_lv))]
         family = "nested"
     geom_order = order if geom_order is None else geom_order
     workdir = Path(workdir or DEFAULT_WORKDIR)

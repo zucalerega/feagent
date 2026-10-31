@@ -139,7 +139,8 @@ def plot_problem(pid, entries, img_dir: Path) -> Path | None:
                 ax.annotate(f"h^{th:g}" if th == int(th) else f"h^{th:.2f}", (h[-1], err[0] * (h[-1] / h[0]) ** th),
                             textcoords="offset points", xytext=(4, -10), fontsize=8, color=INK2)
         ax.set_title(MEASURE[key], fontsize=10, color=INK)
-        ax.set_xlabel("h = (|cells| measure / n_cells)^(1/dim)", fontsize=8, color=INK2)
+        ax.set_xlabel("h = (measure / n_cells)^(1/dim)", fontsize=8, color=INK2)
+        ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
         ax.set_ylabel("relative error", fontsize=8, color=INK2)
         ax.grid(True, which="major", color=GRID, lw=0.8)
         ax.tick_params(labelsize=8, colors=INK2)
@@ -288,28 +289,50 @@ METHOD = """## Method
 
 FINDINGS = """## Findings
 
-1. **skfem: no defect found.** All 2D elasticity / heat studies (plane stress, plane strain,
-   thermal strain, axisymmetric away from and touching the axis, curved boundaries, every BC type with
-   expression data) converge at the theoretical orders: u ~3.0 (P2) / ~2.0 (P1), recovered (L2-projected)
-   stress / flux ~2.0 (P2) / ~1.5 (P1, superconvergent), energy ~4 (P2) / 2 (P1). Patch tests pass to
-   1e-13 on distorted meshes with curved interior P2 edges. See the table for the 3D results.
-2. **`feacore.case.eval_expr` raises `KeyError('__import__')`** instead of returning inf / nan whenever
-   numpy would emit a RuntimeWarning (division by zero, sqrt of a negative, overflow), because the eval
-   runs with empty builtins and the warnings machinery needs `__import__`. Repro:
-   `eval_expr("1/x", [0.0], [0.0])`. Any expression evaluated on the axis (r = 0) or outside its domain
-   crashes the solve with a confusing error. Fix: wrap the eval in `np.errstate(all="ignore")` (or
-   report non-finite values explicitly). The MMS expressions here are regularised so they are finite on
-   the axis.
-3. **ccx axisymmetric is not exact on the patch test** (2e-4 relative for P1, 1e-3 / 6e-3 in u / stress for P2,
-   independent of the BC type; skfem: 1e-14). The P1 magnitude matches CalculiX expanding axisymmetric
-   elements into a thin 3D wedge (chord error 1 - cos(1 deg) = 1.5e-4). This floors every ccx
-   axisymmetric study, so ccx is a weak cross-check for axisymmetric problems at tight tolerances.
-4. **ccx P2 3D (C3D10) fails the patch test on curved tets** (6e-5 u, 1.4e-4 stress), but passes
-   (2e-6, output precision) on the same mesh with straight edges: its integration rule is too weak
-   for curved tet10 cells. The error vanishes with refinement, but it is a consistency error on the
-   curved boundary cells of gmsh meshes.
-5. **ccx output precision**: results come through the ASCII `.frd` (~6 significant digits), so ccx
-   cannot be compared below ~1e-6 relative (patch tolerance 5e-5; order floor 3e-6).
+1. **skfem: no defect found.** Every elasticity / heat study converges at the theoretical order:
+   plane stress, plane strain, thermal strain, axisymmetric away from and touching the axis, 3D, curved
+   boundaries (isoparametric P2 confirmed by the negative control), every BC type with expression
+   data. P2: u ~3.0, L2-projected stress / flux ~2.0, energy ~4 (3.7 where a Dirichlet-traction corner
+   caps it); P1: u ~2.0, stress ~1.5 (superconvergent), energy ~2. All patch tests pass to <= 1e-13 on
+   distorted meshes with curved interior P2 edges.
+2. **ccx `plane_stress` is not 2D plane stress.** On the same mesh, ccx plane strain agrees with skfem
+   to 1e-6, but ccx plane stress differs by 1% (uniform body force) to 3% (varying body force), and its
+   MMS studies with body forces do not converge (observed order ~0.2). The Lame plane-stress case
+   (tractions only) does converge: its plane-stress solution happens to be an exact 3D solution. Likely
+   cause: CalculiX expands CPS elements into 3D elements of the given thickness with free faces, i.e. a
+   thick plate. Treat ccx plane-stress results as a cross-check only when the thickness is small
+   compared with in-plane gradient lengths. Repro: `/tmp/codever/repro_ccx_plane_stress_body_force/`.
+3. **ccx axisymmetric is inexact.** Patch tests fail at 2e-4 (P1) and 1e-3 to 6e-3 (P2), whatever the BC
+   type (skfem: 1e-14); the P1 magnitude matches the thin-wedge 3D expansion that CalculiX uses for CAX
+   elements (1 - cos 1 deg = 1.5e-4). Axisymmetric *heat* with convection is worse: 2e-3 in T and 2e-2
+   in flux for T = 30 + 15 z, which is independent of r, so this looks like a convection / film-area
+   problem in the ccx backend. Repros: `repro_ccx_axi_patch/`, `repro_ccx_axi_heat_convection/`.
+4. **ccx P2 3D (C3D10) fails the patch test on curved tets** (6e-5 u, 1.4e-4 stress) but passes at output
+   precision on the same mesh with straight edges: its integration rule is too weak for curved tet10
+   cells (a consistency error that vanishes with refinement). Repro: `repro_ccx_tet10_curved_patch/`.
+5. **ccx probe in curved P2 cells** can be off by ~4e-4 relative at isolated points while nodal values are
+   exact, probably because point location uses the straight-sided cell. Repro: `repro_ccx_axi_p2_probe/`.
+6. **ccx output precision**: results go through the ASCII `.frd` (~6 significant digits), so ccx cannot
+   be compared below ~1e-6 relative (patch tolerance 5e-5; order floor 3e-6).
+7. **`feacore.case.eval_expr` raises `KeyError('__import__')`** instead of returning inf / nan whenever
+   numpy emits a RuntimeWarning (division by zero, sqrt of a negative, log(0), overflow), because the
+   eval runs with empty builtins. Any expression that is singular on the axis (r = 0) or outside its
+   range crashes the solve with a confusing error. Fix: evaluate under `np.errstate(all="ignore")`
+   and check for non-finite values explicitly. Repro: `repro_eval_expr_keyerror/run.py`.
+8. **skfem `probe` rejects points more than 1% of the bounding-box diagonal outside the mesh**
+   (`PointOutsideMesh`). On very coarse straight-sided meshes of curved parts, the chord sag exceeds
+   that, which is stricter than the contract's "marginally outside -> nearest cell". The MMS studies use
+   a base size that avoids it.
+
+9. **Open: thin 3D quarter annular cylinder (`E-3d-annulus3d-lame`).** skfem and ccx give the *same*
+   errors to 3 digits (so the two solvers agree), but the P1 u-order stalls at 1.64, 1.69, 1.70 over four
+   nested levels (72k tets) and P2 is still pre-asymptotic (1.75, 2.96). The 2D version of the same
+   Lame problem converges at 1.98 / 3.06, and the 3D cube converges optimally. Not attributed to
+   either solver; it needs a closer look (geometry of the refined curved tet faces, or the error
+   measure near the curved faces) before it is trusted as a 3D curved-geometry check.
+
+Reproducers live in `/tmp/codever/repro_<name>/`: `case.json` + mesh + `run.py`, which compares
+skfem and ccx with the exact field.
 """
 
 

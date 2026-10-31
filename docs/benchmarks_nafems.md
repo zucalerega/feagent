@@ -98,8 +98,10 @@ Boundary conditions are T = 100 degC on y = 0, an insulated edge x = 0, and conv
 
 Run with `convergence_study(problem, order, backend="skfem")` at the problem's default
 `study_sizes`. 2D problems were run at P2 and P1, 3D at P2. This build saved the studies in
-`/tmp/nafems/studies/*.json`; `scripts/validate.py` regenerates them. Error % is relative to the reference: the extrapolated value when
-the convergence is monotone, otherwise the finest value.
+`/tmp/nafems/studies/*.json`; `scripts/validate.py` regenerates them. Error % is relative to the
+reference. It uses the Richardson-extrapolated value when the study judges the extrapolation
+reliable (`extrapolation_reliable`), otherwise the finest value, marked "(finest)". Results are
+from the verification code as of this build, which includes the coordinator's GCI noise floor.
 
 | problem | order | QoI | reference | values (coarse -> fine) | extrapolated | p (theory) | GCI % | error % | convergence | pass |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -114,7 +116,7 @@ the convergence is monotone, otherwise the finest value.
 | `nafems_t4` | P2 | T_E | 18.25 | 18.263, 18.255, 18.254 | 18.254 | 3.09 (3.00) | 0.001 | +0.021 | monotone | pass |
 | `nafems_t4` | P1 | T_E | 18.25 | 18.205, 18.242, 18.251 | 18.254 | 1.96 (2.00) | 0.022 | +0.022 | monotone | pass |
 
-The CalculiX backend gives an independent cross-check, all within tolerance:
+The CalculiX backend gives an independent cross-check, all within tolerance. CalculiX models plane stress as a 3D slab, so the plane-stress comparisons are only clean for thin parts. LE1 is 0.1 m thick on a 3 m plan, and Cook is 1 thick on a 48 x 44 plan. The 0.4 % difference at the LE1 stress concentration includes that slab effect and CalculiX's different stress extrapolation:
 
 | problem | mesh h | skfem (P2) | ccx (P2) | reference |
 |---|---|---|---|---|
@@ -161,9 +163,22 @@ Notes per problem:
   elements through a thin wall.
 - **Axisymmetric shell tests:** LE4 (hyperbolic shell), LE8 (shell with pressure) and LE9 (branched
   shell). These are axisymmetric shell-element tests.
-- **No verifiable public definition reachable from this session:** LE7 (axisymmetric
-  cylinder/sphere, pressure) and T1 (membrane with hot-spot, a thermal-stress membrane). Both could be
-  posed with the existing solid formulations once their data sheets are available.
+- **LE7** (axisymmetric cylinder/sphere, pressure): no public reproduction of its data sheet was
+  reachable from this session.
+- **T1** (membrane with hot-spot): we found only the FeenoX test-suite transcription
+  (`tests/nafems-t1.*`, no data sheet). That transcription is a 20 x 20 plate with a hot spot of
+  radius 1, E = 100 GPa, nu = 0.3 and thermal strain 1e-3 in the spot; the output is sigma_yy just
+  outside the spot, target 50 MPa, which equals the analytic E alpha dT / 2. We left it out for two
+  reasons:
+  - The dimensions cannot be checked against the sheet.
+  - The QoI sits at a stress jump (-50 to +50 MPa across the spot boundary). The fixed solver's
+    global continuous L2 stress recovery smears that jump over about one element. A prototype gives
+    13.9 / 24.6 / 40.9 / 49.8 MPa at (1.005, 0) for interface element sizes 0.05 / 0.025 / 0.0125 /
+    0.003, while the stresses away from the jump are exact: centre -49.55 MPa, sigma_yy(1.1, 0) =
+    41.77 MPa.
+  
+  T1 becomes a good benchmark once stress recovery is done per region, so that it stays
+  discontinuous across material and thermal-load interfaces.
 - **Outside the solver's scope:** T2 needs a radiation BC, which the case schema lacks. T3 and
   the other transient tests need transient analysis. The FV (free vibration) tests need modal
   analysis.

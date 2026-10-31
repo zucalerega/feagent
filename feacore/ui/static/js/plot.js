@@ -163,9 +163,11 @@ export function convergenceChart(opts) {
   }
   // Richardson extrapolation + model curve
   if (showExt) {
-    g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(opts.phiExt), y2: Y(opts.phiExt), stroke: C.s1, 'stroke-width': 1.5, 'stroke-dasharray': '6 5' }));
-    g.append(s('text', { x: m.l + 6, y: Y(opts.phiExt) + (opts.phiExt >= pts[0].value ? -8 : 17), class: 'label-strong' }, `Richardson h→0: ${fmt(opts.phiExt, 6)}`));
-    if (isFinite(opts.p) && opts.p > 0) {
+    const extCol = opts.extReliable === false ? C.muted : C.s1;
+    g.append(s('line', { x1: m.l, x2: W - m.r, y1: Y(opts.phiExt), y2: Y(opts.phiExt), stroke: extCol, 'stroke-width': 1.5, 'stroke-dasharray': '6 5' }));
+    g.append(s('text', { x: m.l + 6, y: Y(opts.phiExt) + (opts.phiExt >= pts[0].value ? -8 : 17), class: 'label-strong' },
+      `Richardson h→0${opts.extReliable === false ? ' (unreliable)' : ''}: ${fmt(opts.phiExt, 6)}`));
+    if (isFinite(opts.p) && opts.p > 0 && opts.extReliable !== false) {
       const f1 = pts[0].value, h1 = pts[0].h;
       const d = [];
       const n = 60;
