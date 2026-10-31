@@ -433,7 +433,8 @@ def proposal_to_setup(p: SetupProposal) -> dict:
 def round_trip_mesh(problem, workdir: Path) -> dict:
     """One quadratic mesh at the problem's own reference size: both setups are solved on it, so
     any difference in the scored quantity comes from the setup alone."""
-    mesh = fea.make_mesh(problem, Path(workdir) / "round_trip.msh", h=problem.params["h0"], order=2)
+    h = problem.params.get("h0") or problem.study_sizes()[0]     # gold CAD problems: their coarsest study size
+    mesh = fea.make_mesh(problem, Path(workdir) / "round_trip.msh", h=h, order=2)
     if not mesh["ok"]:
         raise RuntimeError(f"{problem.id}: round-trip mesh failed: {mesh.get('error')}")
     return mesh

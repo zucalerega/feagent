@@ -1,0 +1,30 @@
+{
+  "problem_id": "abc_00000065_bc0",
+  "requirements": "Component: a steel clamp body, a block with a large bore and two arms, lying on one of its two large flat faces. A pad presses on the concave outer flank of one arm.\n\nGeometry (CAD): geometry.step, in metres, scaled so its bounding-box diagonal is 100.0 mm. Faces are named f<tag> by their face tag in this STEP file; positions below are in mm.\n\nMaterial: steel, isotropic and linear elastic; E = 210 GPa, Poisson's ratio 0.3.\n\nService loads: a uniform pressure of 2.1 MPa presses on face f7, the concave cylindrical flank of radius 27.77 mm (axis along z, centroid (26.53, -1.64, 0.00), area 457.1 mm^2), pushing into the part. No other face is loaded.\n\nInstallation and supports: face f12, the whole flat face on the plane z = -8.10 mm (outward normal along -z, centroid (0.00, -15.19, -8.10), area 2426.4 mm^2), is bonded over its whole area to a massive rigid table that does not move or deform. Nothing else touches the part.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity; a solid (three-dimensional) model of the whole part.\n\nRequired result: strain_energy, the total strain energy of the part, in J.",
+  "group_aliases": {},
+  "mapping": [
+    {
+      "reference": "fixed on f12",
+      "implied_by": "f12 is bonded over its whole area to a rigid table that does not move."
+    },
+    {
+      "reference": "pressure 2.1e6 on f7",
+      "implied_by": "A uniform 2.1 MPa pressure pushes into f7."
+    },
+    {
+      "reference": "3d",
+      "implied_by": "A solid model of the whole part."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "7aff2873ff806c773b361d74c45362410fcc89a75a4bf8577ef5cafcbec17afc"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "problem_id": "abc_00000003_bc7",
+  "requirements": "Component: a steel part, a tube along z closed at its top by a cap, with two opposed stubs on bosses along x. It hangs from the rim of its cap while external pressure acts on its tube and on one stub.\n\nGeometry (CAD): geometry.step, in metres, scaled so its bounding-box diagonal is 100.0 mm. Faces are named f<tag> by their face tag in this STEP file; positions below are in mm.\n\nMaterial: steel, isotropic and linear elastic; E = 210 GPa, Poisson's ratio 0.3.\n\nService loads: a uniform pressure of 4 MPa presses on face f23, the outer cylindrical surface of the tube (centroid (0.00, 0.00, 29.58), area 4434.0 mm^2), pushing into the part. A uniform pressure of 2.1 MPa presses on face f16, the surface of the -x stub (centroid (-27.19, 0.00, 30.59), area 736.6 mm^2), also pushing into the part. No other face is loaded.\n\nInstallation and supports: face f2, the rounded rim of the cap (centroid (0.00, 0.00, 60.08), area 487.0 mm^2), is bonded over its whole area to a massive rigid mount that does not move or deform. Nothing else touches the part.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity; a solid (three-dimensional) model of the whole part.\n\nRequired result: strain_energy, the total strain energy of the part, in J.",
+  "group_aliases": {},
+  "mapping": [
+    {
+      "reference": "fixed on f2",
+      "implied_by": "f2 is bonded over its whole area to a rigid mount that does not move."
+    },
+    {
+      "reference": "pressure 4e6 on f23",
+      "implied_by": "A uniform 4 MPa pressure pushes into f23."
+    },
+    {
+      "reference": "pressure 2.1e6 on f16",
+      "implied_by": "A uniform 2.1 MPa pressure pushes into f16."
+    },
+    {
+      "reference": "3d",
+      "implied_by": "A solid model of the whole part."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "612ead1ea56ce64c18b1ee60a262819c5f840c168f6bdb4cad23d73d42221657"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

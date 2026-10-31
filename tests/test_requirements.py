@@ -65,9 +65,9 @@ def test_task_prompt_gives_requirements_and_hides_the_problem_id(requirements_mo
         prompt = task_prompt(pid)
         assert R.agent_text(pid) in prompt and R.label_for(pid) in prompt
         assert pid not in prompt
-        statement = R.raw_problem(pid).description()
-        supports = [ln for ln in statement.splitlines() if ln.startswith("Supports:")]
-        assert supports and supports[0] not in prompt, pid
+        statement = R.raw_problem(pid).description()     # its support lines: "Supports: ..." or "Clamped ..."
+        supports = [ln for ln in statement.splitlines() if ln.startswith(("Supports:", "Clamped", "Roller"))]
+        assert supports and not any(ln in prompt for ln in supports), pid
 
 
 def test_task_prompt_default_mode_is_the_statement():

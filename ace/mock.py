@@ -47,6 +47,8 @@ class MockLLM:
     def agent_turn(self, system: str, messages: list, tools: list, run_id: str = "", role: str = "generator"):
         if role == "diagnoser":
             return self._diagnoser_turn(messages, {t["name"] for t in tools})
+        if role == "big_generator":
+            return self._big_turn(system, messages, tools, run_id)
         from ace import fea   # local import: only needed by the mock generator
 
         problem_id = _problem_id(messages[0]["content"])
@@ -81,6 +83,30 @@ class MockLLM:
         if "solve" in last and last.get("ok"):
             return tool("submit", {"solve": last["solve"]}), self._rec(run_id)
         return _response([NS(type="text", text="Done.")], "end_turn", "generator"), self._rec(run_id)
+
+    def _big_turn(self, system: str, messages: list, tools: list, run_id: str):
+        """The single-agent baseline (ace/single_loop.py): every task in one conversation, each tool
+        call carrying a `task`. Works the tasks in order: replays the conversation so far on the first
+        unsubmitted task as a one-task conversation, lets the generator script above pick the next
+        call, and tags it with that task."""
+        tasks = re.findall(r"^Problem id: (\S+)", messages[0]["content"], re.M)
+        results = {r["tool_use_id"]: r for m in messages[1:] if m["role"] == "user" for r in m["content"]}
+        calls = [b for m in messages if m["role"] == "assistant" for b in m["content"] if b.type == "tool_use"]
+        done = {c.input["task"] for c in calls if c.name == "submit" and not results[c.id]["is_error"]}
+        task = next((t for t in tasks if t not in done), None)
+        rec = self._rec(run_id, "big_generator")
+        if task is None:
+            return _response([NS(type="text", text="Done.")], "end_turn", "big_generator"), rec
+        sub = [{"role": "user", "content": f"Problem id: {task}"}]
+        for c in calls:
+            if c.input.get("task") == task:
+                sub += [{"role": "assistant", "content": [c]}, {"role": "user", "content": [results[c.id]]}]
+        resp, _ = self.agent_turn(system, sub, tools, run_id=f"{run_id}-{task}")
+        turn = sum(1 for m in messages if m["role"] == "assistant")
+        for b in resp.content:
+            if b.type == "tool_use":            # unique ids across tasks; the task argument
+                b.id, b.input = f"b{turn}", {**b.input, "task": task}
+        return resp, rec
 
     def _rec(self, run_id, role="generator"):
         return usage_record(role, MODELS[role], _usage(1500, 200), run_id)

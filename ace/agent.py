@@ -163,7 +163,11 @@ def system_prompt(playbook_text: str) -> str:
     return BASE_PROMPT + "\n" + (playbook_text or "(the playbook is empty)")
 
 
-def task_prompt(problem_id: str) -> str:
+def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = True) -> str:
+    """The task statement, scoring and limits. max_solves: the solve budget stated (default
+    MAX_SOLVES); bonus=False leaves out the be-the-best paragraph (the single-agent baseline,
+    ace/single_loop.py, has no peers to beat on a task)."""
+    max_solves = MAX_SOLVES if max_solves is None else max_solves
     task = TASKS[problem_id]
     problem = fea.get_problem(problem_id)
     q = fea.official_qoi(problem, task["qoi"])
@@ -192,7 +196,9 @@ def task_prompt(problem_id: str) -> str:
                   f"A = (g/{G:g})^2 if g < {G:g} (missing the target is penalised quadratically) else g/{G:g} "
                   f"(beating it keeps paying). Score 1 = {G:g}x the automesher's accuracy at its DOFs; the "
                   f"automesher itself scores {1 / G ** 2:g}. Extra DOFs pay only if they buy at least proportionally "
-                  f"more accuracy, so put them where the error is.\n"
+                  f"more accuracy, so put them where the error is.\n")
+        if bonus:
+            scored += (
                   f"BONUS for being the best: other agents attempt this task too. On each of the "
                   f"{PROBE_POINTS - PROBE_DISCLOSED} hidden check points, the agent with the smallest stress error "
                   f"there wins a share of up to +{BEST_BONUS:g} in total. A tie pays nobody, so copying the "
@@ -216,7 +222,7 @@ def task_prompt(problem_id: str) -> str:
         f"Problem id: {shown_id}\n\n{statement}\n\n"
         f"{scored}"
         f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
-        f"target). You may call solve at most {MAX_SOLVES} times."
+        f"target). You may call solve at most {max_solves} times."
     )
 
 
@@ -234,8 +240,9 @@ def parse_citations(trace: list[dict]) -> list[str]:
 class Tools:
     """Executes the agent's tool calls and keeps the run's meshes, solves and submission."""
 
-    def __init__(self, problem_id: str, workdir: Path, ui: dict | None = None):
+    def __init__(self, problem_id: str, workdir: Path, ui: dict | None = None, max_solves: int | None = None):
         self.problem_id = problem_id
+        self.max_solves = MAX_SOLVES if max_solves is None else max_solves   # larger for the single-agent baseline
         self.task = TASKS[problem_id]
         self.problem = fea.get_problem(problem_id)
         self.workdir = Path(workdir)
@@ -294,8 +301,8 @@ class Tools:
         if mesh["nodes"] > self.task["node_cap"]:
             return {"error": f"current mesh has {mesh['nodes']} nodes, over the cap of "
                              f"{self.task['node_cap']}; re-mesh first (this did not use a solve)"}, True
-        if len(self.solves) >= MAX_SOLVES:
-            return {"error": f"solve limit ({MAX_SOLVES}) reached; call submit"}, True
+        if len(self.solves) >= self.max_solves:
+            return {"error": f"solve limit ({self.max_solves}) reached; call submit"}, True
         setup = {k: v for k, v in args.items() if k != "using"}
         feacore_result = []   # filled with the feacore Result if the solve succeeds (for ui_bridge)
         result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"], on_result=feacore_result.append)
@@ -309,7 +316,7 @@ class Tools:
             shown["test_check"] = {"prediction_vs_test": f"{check['rel_err']:+.2%}", "sigma": round(check["sigma"], 2),
                                    "within_test_uncertainty": check["consistent"]}
         return {**shown, "solve": len(self.solves), "nodes": mesh["nodes"],
-                "solves_left": MAX_SOLVES - len(self.solves)}, not result["ok"]
+                "solves_left": self.max_solves - len(self.solves)}, not result["ok"]
 
 
 def _block_to_trace(block) -> dict | None:
@@ -322,20 +329,23 @@ def _block_to_trace(block) -> dict | None:
     return None
 
 
-def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
-              workdir: Path, llm, usage: list | None = None, ui: dict | None = None) -> dict:
-    """`usage` collects one record per model call; the caller can pass its own list so the
-    tokens of a run that crashes halfway are still counted. `ui`: ace.ui_bridge.settings(...)
-    to also record each solve in the feacore run store (None = off)."""
-    tools = Tools(problem_id, workdir, ui_bridge.for_run(ui, run_id, generation))
-    system = system_prompt(playbook_text)
-    messages: list = [{"role": "user", "content": task_prompt(problem_id)}]
-    trace: list[dict] = []
-    usage = [] if usage is None else usage
-    stop = "max_turns"
+def tool_loop(llm, system: str, first_message: str, tool_specs: list[dict], call, finished,
+              max_turns: int, run_id: str, usage: list, role: str = "generator",
+              on_stop=None) -> tuple[list[dict], str]:
+    """The tool-use conversation: ask the model, run its tool calls with `call(name, args) ->
+    (result, is_error)`, send the results back, until it stops calling tools, `finished()` is true
+    after a turn's calls, or max_turns. Shared by run_agent and the single-agent baseline
+    (ace/single_loop.py). Fills `usage` (one record per model call). Returns (trace, stop).
 
-    for turn in range(MAX_TURNS):
-        resp, rec = llm.agent_turn(system, messages, TOOLS, run_id=run_id)
+    `on_stop(stop_reason) -> str | None` (the baseline only; None for the swarm, which then ends the
+    run as before): when the model stops without finishing, a returned string is sent as a user
+    message and the conversation goes on (the next model call counts as a turn)."""
+    messages: list = [{"role": "user", "content": first_message}]
+    trace: list[dict] = []
+    stop = "max_turns"
+    extra = {} if role == "generator" else {"role": role}   # the generator call is unchanged
+    for turn in range(max_turns):
+        resp, rec = llm.agent_turn(system, messages, tool_specs, run_id=run_id, **extra)
         usage.append(rec)
         # Append the response content unchanged (thinking blocks must be passed back as-is).
         messages.append({"role": "assistant", "content": resp.content})
@@ -343,19 +353,38 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
 
         calls = [b for b in resp.content if b.type == "tool_use"]
         if resp.stop_reason != "tool_use" or not calls:
-            stop = resp.stop_reason
-            break
+            nudge = on_stop(resp.stop_reason) if on_stop else None
+            if not nudge:
+                stop = resp.stop_reason
+                break
+            # Go on. A tool call cut off by max_tokens still needs a tool_result before the text.
+            messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": b.id, "content": "not run: the turn was cut off",
+                 "is_error": True} for b in calls] + [{"type": "text", "text": nudge}]})
+            continue
         results = []
         for b in calls:  # all results go back in ONE user message
-            out, is_err = tools.call(b.name, b.input or {})
+            out, is_err = call(b.name, b.input or {})
             trace.append({"type": "tool_result", "id": b.id, "name": b.name, "result": out,
                           "is_error": is_err, "turn": turn})
             results.append({"type": "tool_result", "tool_use_id": b.id,
                             "content": json.dumps(out), "is_error": is_err})
         messages.append({"role": "user", "content": results})
-        if tools.submitted is not None:
+        if finished():
             stop = "submitted"
             break
+    return trace, stop
+
+
+def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
+              workdir: Path, llm, usage: list | None = None, ui: dict | None = None) -> dict:
+    """`usage` collects one record per model call; the caller can pass its own list so the
+    tokens of a run that crashes halfway are still counted. `ui`: ace.ui_bridge.settings(...)
+    to also record each solve in the feacore run store (None = off)."""
+    tools = Tools(problem_id, workdir, ui_bridge.for_run(ui, run_id, generation))
+    usage = [] if usage is None else usage
+    trace, stop = tool_loop(llm, system_prompt(playbook_text), task_prompt(problem_id), TOOLS, tools.call,
+                            lambda: tools.submitted is not None, MAX_TURNS, run_id, usage)
 
     return {
         "problem_id": problem_id,
