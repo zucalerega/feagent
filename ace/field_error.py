@@ -37,6 +37,7 @@ from ace.checks import reference_setup
 # Per problem: <id>.npz (integration points + fine reference stresses), <id>_coarse.npz (coarser
 # reference stresses at the same points), <id>_points.json (probe points), <id>_auto.json (automesher).
 CACHE = Path(os.environ.get("ACE_FIELD_REFS") or Path(__file__).with_name("field_refs"))
+ERRORS_CACHE: Path | None = None    # where errors_of_setup caches results (None: CACHE / "errors"); tests override
 
 # Element sizes are the problem's default h0 divided by these divisors.
 #   QUAD_DIVISOR: the mesh carrying the integration points (moderate, so probing a run stays fast)
@@ -231,7 +232,8 @@ def probe_points(problem_id: str) -> dict:
     import json
     from ace.config import PROBE_POINTS
     CACHE.mkdir(exist_ok=True)
-    f = CACHE / f"{problem_id}_points.json"
+    # The default 12 points keep their original file name; any other count gets its own file.
+    f = CACHE / (f"{problem_id}_points.json" if PROBE_POINTS == 12 else f"{problem_id}_points{PROBE_POINTS}.json")
     if not f.exists():
         p = fea.get_problem(problem_id)
         ref = reference(problem_id)          # fine level: already solved and cached, not re-solved
@@ -277,10 +279,42 @@ def field_error_of_result(problem_id: str, result) -> float:
 
 def errors_of_setup(problem_id: str, mesh: dict, setup: dict) -> dict:
     """Solve (mesh, setup) and return its errors (the solver is deterministic, so this is the same
-    solution the agent got)."""
+    solution the agent got). Cached in CACHE/errors/ (opt out with ACE_NO_ERROR_CACHE=1)."""
+    import json
     from ace.config import TASKS
+    f = None if os.environ.get("ACE_NO_ERROR_CACHE") == "1" else _errors_cache_file(problem_id, mesh, setup)
+    if f is not None and f.exists():
+        return json.loads(f.read_text())
     res = _solve(fea.get_problem(problem_id), mesh, setup, TASKS[problem_id]["qoi"])
-    return errors_of_result(problem_id, res)
+    out = errors_of_result(problem_id, res)
+    if f is not None:                       # all plain floats: the JSON round trip is exact
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(f".{os.getpid()}.tmp")     # atomic: parallel workers may write the same entry
+        tmp.write_text(json.dumps(out))
+        os.replace(tmp, f)
+    return out
+
+
+def _errors_cache_file(problem_id: str, mesh: dict, setup: dict) -> Path | None:
+    """Cache entry of errors_of_setup, keyed by everything the errors depend on: the mesh (its
+    sha256), the setup, the probe-point counts and the reference (its file's mtime). None if the
+    mesh cannot be fingerprinted."""
+    import hashlib
+    import json
+    from ace.config import PROBE_DISCLOSED, PROBE_POINTS
+    sha = mesh.get("sha256")
+    if not sha:
+        path = Path(mesh.get("path") or "")
+        if not path.is_file():
+            return None
+        sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    ref = CACHE / f"{problem_id}.npz"
+    if not ref.exists():
+        reference(problem_id)                 # build it first, so its mtime is the one used below
+    points = probe_points(problem_id)       # the check points themselves: a rebuilt file means new entries
+    key = json.dumps([problem_id, sha, mesh.get("order"), setup, PROBE_POINTS, PROBE_DISCLOSED, ref.stat().st_mtime_ns,
+                      points["points"]], sort_keys=True, default=str)
+    return (ERRORS_CACHE or CACHE / "errors") / f"{hashlib.sha256(key.encode()).hexdigest()}.json"
 
 
 def field_error(run: dict) -> dict | None:

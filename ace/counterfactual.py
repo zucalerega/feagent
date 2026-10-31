@@ -148,6 +148,29 @@ def evaluate_variant(problem_id: str, mesh: dict, request: dict | None, setup: d
     }
 
 
+def recorded_before(run: dict, cp: dict, target_err: float) -> dict | None:
+    """evaluate_variant of the run's own checkpoint, read from what the loop already recorded
+    (checks, oracles, stages of the scored solve) instead of solving it all again. None when the
+    record cannot stand in for it: a field missing, no successful scored solve, or a different
+    score mode or accuracy target than this rerun's."""
+    c, orc, rep = run.get("checks"), run.get("oracles"), run.get("stages")
+    if not (c and orc and rep and c.get("solved") and cp["solved"]):
+        return None
+    if c.get("tolerance") != target_err or ("field_error" in c) != (SCORE == "field"):
+        return None
+    mesh, res = cp["mesh"], run["solves"][cp["solve_index"]]["result"]
+    err = c["rel_error"]                    # the same error evaluate_variant computes (point or field)
+    return {
+        "solved": True, "error": res.get("error"), "value": res.get("value"),
+        "rel_error": err, "accuracy": min(1.0, target_err / max(err, 1e-300)),
+        "dofs": (res.get("info") or {}).get("n_dofs"),
+        "nodes": mesh.get("nodes"), "within_cap": mesh.get("ok") and mesh["nodes"] <= TASKS[run["problem_id"]]["node_cap"],
+        "first_failing_stage": rep["first_failing_stage"],
+        "oracles": {k: v["status"] for k, v in orc.items() if isinstance(v, dict) and "status" in v},
+        "failed_checks": [f"{s}: {x['check']}: {x['why']}" for s in stages.STAGES for x in rep[s]["checks"] if not x["ok"]],
+    }
+
+
 def _stage_rank(stage: str | None) -> int:
     return len(stages.STAGES) if stage is None else stages.STAGES.index(stage)
 
@@ -188,7 +211,8 @@ def rerun_from_stage(run: dict, stage: str, change: dict, target_err: float, wor
     workdir.mkdir(parents=True, exist_ok=True)
     notes = []
 
-    before = evaluate_variant(run["problem_id"], cp["mesh"], cp["request"], cp["setup"], target_err)
+    before = recorded_before(run, cp, target_err) or \
+        evaluate_variant(run["problem_id"], cp["mesh"], cp["request"], cp["setup"], target_err)
     if stage == "mesh":
         if not cp["request"]:
             raise InterventionError("the mesh request of this run was not recorded")
