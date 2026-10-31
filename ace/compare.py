@@ -80,13 +80,15 @@ def comparison_rows(swarm_dir: Path, single_dir: Path) -> list[dict]:
 def table(rows: list[dict], swarm_dir: Path, single_dir: Path) -> str:
     f = lambda x, p=".2f": "-" if x is None else format(x, p)   # noqa: E731
     lines = ["# Swarm vs single agent", "", f"swarm: `{swarm_dir}`; single agent: `{single_dir}`", "",
-             "Base score = field-mode score without the be-the-best bonus. Swarm best / mean are over its runs on",
-             "that task in that generation (n runs); the single agent has one run per task. Cumulative $ and",
-             "minutes include learning; minutes are approximate (from API call timestamps).", "",
-             "| gen | task | swarm best | swarm mean | n | single | swarm cum $ | single cum $ | swarm cum min | single cum min |",
+             "Base score = field-mode score without the be-the-best bonus. Swarm mean / best are over its runs on",
+             "that task in that generation (n runs); the single agent has one run per task. Compare the single",
+             "agent with the swarm MEAN: the swarm best is picked by the hidden ground-truth score, an oracle the",
+             "single agent does not have. Cumulative $ and minutes include learning; minutes are approximate",
+             "(from API call timestamps).", "",
+             "| gen | task | swarm mean | swarm best (oracle pick) | n | single | swarm cum $ | single cum $ | swarm cum min | single cum min |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
-        lines.append(f"| {r['gen']} | {r['task']} | {f(r['swarm_best'])} | {f(r['swarm_mean'])} | {r['swarm_n']} | "
+        lines.append(f"| {r['gen']} | {r['task']} | {f(r['swarm_mean'])} | {f(r['swarm_best'])} | {r['swarm_n']} | "
                      f"{f(r['single'])} | {f(r['swarm_cum_usd'])} | {f(r['single_cum_usd'])} | "
                      f"{f(r['swarm_cum_min'], '.0f')} | {f(r['single_cum_min'], '.0f')} |")
     return "\n".join(lines) + "\n"
@@ -94,7 +96,8 @@ def table(rows: list[dict], swarm_dir: Path, single_dir: Path) -> str:
 
 def plot(rows: list[dict], path: Path) -> None:
     """One column per task; rows: base score against generation, cumulative $ and cumulative minutes.
-    Swarm in blue (best solid, mean dashed), single agent in orange; one y-scale per panel."""
+    Swarm in blue (mean solid: the fair comparison; best dotted: picked with the hidden score), single
+    agent in orange; one y-scale per panel."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -109,8 +112,8 @@ def plot(rows: list[dict], path: Path) -> None:
         pts = [r for r in rows if r["task"] == task]
         for i, (xs_key, xi_key, xlabel) in enumerate(xs):
             ax = axes[i][j]
-            for y, xk, color, ls, label in (("swarm_best", xs_key, swarm, "-", "swarm best"),
-                                            ("swarm_mean", xs_key, swarm, "--", "swarm mean"),
+            for y, xk, color, ls, label in (("swarm_mean", xs_key, swarm, "-", "swarm mean"),
+                                            ("swarm_best", xs_key, swarm, ":", "swarm best (oracle pick)"),
                                             ("single", xi_key, single, "-", "single agent")):
                 p = [(r[xk], r[y]) for r in pts if r[xk] is not None and r[y] is not None]
                 if p:

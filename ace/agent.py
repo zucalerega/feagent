@@ -312,11 +312,16 @@ def _block_to_trace(block) -> dict | None:
 
 
 def tool_loop(llm, system: str, first_message: str, tool_specs: list[dict], call, finished,
-              max_turns: int, run_id: str, usage: list, role: str = "generator") -> tuple[list[dict], str]:
+              max_turns: int, run_id: str, usage: list, role: str = "generator",
+              on_stop=None) -> tuple[list[dict], str]:
     """The tool-use conversation: ask the model, run its tool calls with `call(name, args) ->
     (result, is_error)`, send the results back, until it stops calling tools, `finished()` is true
     after a turn's calls, or max_turns. Shared by run_agent and the single-agent baseline
-    (ace/single_loop.py). Fills `usage` (one record per model call). Returns (trace, stop)."""
+    (ace/single_loop.py). Fills `usage` (one record per model call). Returns (trace, stop).
+
+    `on_stop(stop_reason) -> str | None` (the baseline only; None for the swarm, which then ends the
+    run as before): when the model stops without finishing, a returned string is sent as a user
+    message and the conversation goes on (the next model call counts as a turn)."""
     messages: list = [{"role": "user", "content": first_message}]
     trace: list[dict] = []
     stop = "max_turns"
@@ -330,8 +335,15 @@ def tool_loop(llm, system: str, first_message: str, tool_specs: list[dict], call
 
         calls = [b for b in resp.content if b.type == "tool_use"]
         if resp.stop_reason != "tool_use" or not calls:
-            stop = resp.stop_reason
-            break
+            nudge = on_stop(resp.stop_reason) if on_stop else None
+            if not nudge:
+                stop = resp.stop_reason
+                break
+            # Go on. A tool call cut off by max_tokens still needs a tool_result before the text.
+            messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": b.id, "content": "not run: the turn was cut off",
+                 "is_error": True} for b in calls] + [{"type": "text", "text": nudge}]})
+            continue
         results = []
         for b in calls:  # all results go back in ONE user message
             out, is_err = call(b.name, b.input or {})

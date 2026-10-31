@@ -27,6 +27,50 @@ def test_single_brief_replaces_the_swarm_brief_in_every_learning_prompt():
         assert PROCESS_BRIEF in system                  # else the swap below would silently do nothing
         SingleBrief(Fake()).structured("teacher", system, "u", None)
     assert all(SINGLE_BRIEF in s and PROCESS_BRIEF not in s for s in seen)
+    # and the critique of solve use is pitched for the baseline's solve budget, not the swarm's 4
+    seen.clear()
+    for system in (deep_teacher.SYSTEM, self_reflect.SYSTEM):
+        SingleBrief(Fake(), 16).structured("teacher", system, "u", None)
+    assert "at most 16 times per task" in seen[0] and "you had 16 solves on this task" in seen[1]
+
+
+def test_a_crash_keeps_the_submitted_task():
+    """A crash after one task was submitted errors only the open task (the submitted run is scored)."""
+    from types import SimpleNamespace as NS
+
+    from ace.single_loop import split_records
+
+    tools = NS(tools={TASKS[0]: NS(submitted={"solve": 1}, meshes=[], solves=[]),
+                      TASKS[1]: NS(submitted=None, meshes=[], solves=[])})
+    recs = split_records(list(TASKS), 0, [], tools, [], "error", "529 overloaded")
+    assert "error" not in recs[0] and recs[0]["stop"] == "submitted" and recs[0]["conversation_error"]
+    assert recs[1]["error"] == "529 overloaded"
+
+
+def test_a_turn_without_tool_calls_is_nudged_not_the_end():
+    """tool_loop with on_stop goes on after a text-only turn; without it (the swarm) it stops there."""
+    from types import SimpleNamespace as NS
+
+    from ace.agent import tool_loop
+
+    class Scripted:
+        def __init__(self):
+            self.n = 0
+
+        def agent_turn(self, system, messages, tools, run_id="", **kw):
+            self.n += 1
+            if self.n == 1:          # a status line, no tool call
+                return NS(content=[NS(type="text", text="Cook done, moving on.")], stop_reason="end_turn"), {}
+            assert messages[-1]["content"][-1]["text"] == "continue"
+            return NS(content=[NS(type="tool_use", id="t1", name="submit", input={})], stop_reason="tool_use"), {}
+
+    done = []
+    call = lambda name, args: (done.append(name) or {"ok": True}, False)   # noqa: E731
+    trace, stop = tool_loop(Scripted(), "s", "m", [], call, lambda: bool(done), 5, "r", [])
+    assert stop == "end_turn" and not done                                   # the swarm: unchanged
+    trace, stop = tool_loop(Scripted(), "s", "m", [], call, lambda: bool(done), 5, "r", [],
+                            on_stop=lambda reason: "continue")
+    assert stop == "submitted" and done == ["submit"]
 
 
 def test_single_loop_mock(tmp_path):

@@ -55,6 +55,7 @@ from ace.run_loop import (_dump, _first_text, _llm_jobs, _run_summary, plot_scor
 
 SWARM_AGENTS = 8      # the swarm this baseline is matched to (ace_runs/run_deep.sh: --agents 8, two tasks)
 AGENT = "big"         # its name in run ids (g<g>-<task>-big) and output files
+MAX_NUDGES = 5        # "continue" messages per conversation when it stops with tasks unsubmitted (see _big_worker)
 
 
 # --------------------------------------------------------------------------- one generation's run
@@ -100,9 +101,11 @@ def first_message(tasks: list[str], max_solves: int) -> str:
 
 
 def split_records(tasks: list[str], gen: int, trace: list[dict], tools: TaskTools, usage: list, stop: str,
-                  error: str | None) -> list[dict]:
+                  error: str | None, nudges: int = 0) -> list[dict]:
     """One run record per task, in the swarm's format (ace.agent.run_agent). A task's trace holds its
-    own tool calls and results, and the text/thinking of the turns that worked on it (or on no task)."""
+    own tool calls and results, and the text/thinking of the turns that worked on it (or on no task).
+    A crash marks only the tasks not yet submitted as errors: a submitted task is scored, as a swarm
+    run that ended at its submit is never touched by a later crash elsewhere."""
     task_of = {t["id"]: t["input"].get("task") for t in trace if t["type"] == "tool_call"}
     turn_tasks: dict[int, set] = {}
     for t in trace:
@@ -122,9 +125,12 @@ def split_records(tasks: list[str], gen: int, trace: list[dict], tools: TaskTool
                "stop": "submitted" if tl.submitted is not None else stop, "turns": len(usage),
                "cited": parse_citations(mine), "submitted": tl.submitted, "trace": mine,
                "meshes": tl.meshes, "solves": tl.solves,
-               "usage": usage if i == 0 else []}     # one conversation: counted once
-        if error:
+               "usage": usage if i == 0 else [],     # one conversation: counted once
+               "nudges": nudges}                     # "continue" messages sent (the same on every task)
+        if error and tl.submitted is None:
             rec["error"] = error
+        elif error:
+            rec["conversation_error"] = error         # kept visible, but this task's run stands
         recs.append(rec)
     return recs
 
@@ -135,13 +141,27 @@ def _big_worker(job: dict) -> list[dict]:
     tools = TaskTools(tasks, Path(job["gdir"]), job["max_solves"])
     usage: list = []      # filled call by call, so a crash halfway still reports its tokens
     trace, stop, error = [], "error", None
+    nudges = [0]
+
+    def on_stop(reason: str) -> str | None:
+        """One turn without a tool call (a text-only status line, or a turn spent on thinking up to
+        max_tokens) would end the conversation for every task, where in the swarm it costs one run.
+        So remind it of the open tasks, at most MAX_NUDGES times."""
+        left = [t for t, tl in tools.tools.items() if tl.submitted is None]
+        if not left or nudges[0] >= MAX_NUDGES:
+            return None
+        nudges[0] += 1
+        return (f"Not submitted yet: {', '.join(left)}. Continue working on them with tool calls "
+                f"(each tool call names its task).")
+
     try:
         trace, stop = tool_loop(make_llm(job["mock"]), system_prompt(job["context"]),
                                 first_message(tasks, job["max_solves"]), task_tool_specs(tasks), tools.call,
-                                tools.finished, job["max_turns"], f"g{gen}-{AGENT}", usage, role="big_generator")
+                                tools.finished, job["max_turns"], f"g{gen}-{AGENT}", usage, role="big_generator",
+                                on_stop=on_stop)
     except Exception:  # noqa: BLE001  as the swarm: a crashed run is recorded, not scored
         error = traceback.format_exc()
-    return split_records(tasks, gen, trace, tools, usage, stop, error)
+    return split_records(tasks, gen, trace, tools, usage, stop, error, nudges[0])
 
 
 def run_big(job: dict) -> list[dict]:
@@ -171,18 +191,26 @@ def rescore(prs: list[dict]) -> None:
 class SingleBrief:
     """The LLM with process_brief.PROCESS_BRIEF replaced by SINGLE_BRIEF in every system prompt, so the
     teacher, self-reflection and organizer (whose prompts embed the swarm's brief) read the single-agent
-    version. Nothing else in their prompts changes."""
+    version; and the swarm's solve budget (config.MAX_SOLVES) replaced by this agent's, so the critique
+    of its solve use is pitched for the budget it had. Nothing else in their prompts changes."""
 
-    def __init__(self, llm):
+    def __init__(self, llm, max_solves: int = config.MAX_SOLVES):
         self.llm = llm
+        n = config.MAX_SOLVES
+        self.swaps = [(process_brief.PROCESS_BRIEF, process_brief.SINGLE_BRIEF),
+                      (f"called solve(setup) at most {n} times", f"called solve(setup) at most {max_solves} times per task"),
+                      (f"(you had {n} solves)", f"(you had {max_solves} solves on this task)")]
+
+    def _swap(self, system: str) -> str:
+        for old, new in self.swaps:
+            system = system.replace(old, new)
+        return system
 
     def structured(self, role, system, user, schema, records=None):
-        return self.llm.structured(role, system.replace(process_brief.PROCESS_BRIEF, process_brief.SINGLE_BRIEF),
-                                   user, schema, records)
+        return self.llm.structured(role, self._swap(system), user, schema, records)
 
     def warm_cache(self, role, system, *args, **kwargs):
-        return self.llm.warm_cache(role, system.replace(process_brief.PROCESS_BRIEF, process_brief.SINGLE_BRIEF),
-                                   *args, **kwargs)
+        return self.llm.warm_cache(role, self._swap(system), *args, **kwargs)
 
 
 def learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memory, llm, cost: CostLog,
@@ -330,7 +358,7 @@ def main(argv=None) -> int:
     out = args.out or Path("ace_runs") / ("single-" + time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
-    llm = SingleBrief(make_llm(args.mock))
+    llm = SingleBrief(make_llm(args.mock), solves)
     mem = Memory(1)
     from ace.field_error import automesher, probe_points
     for pid in tasks:       # build the baselines once here, not in every worker
@@ -369,10 +397,13 @@ def main(argv=None) -> int:
             cost.add(runs[0]["usage"])
             for r in runs:
                 r["playbook_text"] = context
+            err = next((r.get("error") or r.get("conversation_error") for r in runs
+                        if r.get("error") or r.get("conversation_error")), None)
             print(f"  big agent: {runs[0]['turns']} turns, solves {[len(r['solves']) for r in runs]}, "
-                  f"stop {runs[0]['stop']}, spent ${cost.total:.2f}" + (" (ERROR)" if runs[0].get("error") else ""))
-            if all(r.get("error") for r in runs):
-                print(runs[0]["error"])
+                  f"stops {[r['stop'] for r in runs]}, nudges {runs[0].get('nudges', 0)}, spent ${cost.total:.2f}"
+                  + (" (ERROR)" if err else ""))
+            if err:
+                print(err)
 
             # 2. score (each task against all its runs so far, no bonus) and run reports
             t0 = time.perf_counter()
