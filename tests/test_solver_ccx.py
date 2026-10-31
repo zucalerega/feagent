@@ -252,7 +252,25 @@ def test_lame_plane_strain_quarter(meshes):
     assert rel(v["W"], 0.5 * p * ur(a) * math.pi / 2 * a) < 1e-4
 
 
-@pytest.mark.parametrize("order,tol_u", [(2, 3e-5), (1, 1e-3)])
+def test_refused_configurations(meshes):
+    """CAX3 and C3D10 / CAX6 cells with curved interior edges raise NotImplementedError."""
+    c = _case(meshes["ring_axi"], form="axisymmetric", order=1,
+              bcs=[BC("symmetry", group="bottom"), BC("pressure", group="left", value=1.0)])
+    with pytest.raises(NotImplementedError, match="CAX3"):
+        solve(c, backend="ccx")
+    import meshio
+    m = meshio.read(meshes["box2"])
+    for blk in m.cells:
+        if blk.type == "tetra10":
+            m.points[blk.data[:, 9]] += [0.004, -0.003, 0.002]   # curve interior and boundary edges
+    bent = meshes["box2"].replace(".msh", "_bent.msh")
+    meshio.write(bent, m, file_format="gmsh22", binary=False)
+    c = _case(bent, bcs=[BC("fixed", group="left"), BC("force", group="right", value=[1.0, 0, 0])])
+    with pytest.raises(NotImplementedError, match="curved interior"):
+        solve(c, backend="ccx")
+
+
+@pytest.mark.parametrize("order,tol_u", [(2, 3e-5)])
 def test_lame_axisymmetric(meshes, order, tol_u):
     a, b, p, Hh = 1.0, 2.0, 10.0, 0.5
     A, B, ur = _lame(a, b, p)
@@ -345,7 +363,7 @@ def test_free_thermal_expansion(meshes, order):
     v = solve(c, backend="ccx").evaluate_all()
     assert rel(v["ux"], al * dT * 2.0) < 1e-6
     assert v["vm"] < 1e-9 * E * al * dT * 1e6        # zero stress (round-off only)
-    for form in ("plane_stress", "plane_strain", "axisymmetric"):
+    for form in ("plane_stress", "plane_strain") + (("axisymmetric",) if order == 2 else ()):
         bcs = [BC("symmetry", group="bottom")] + ([] if form == "axisymmetric" else [BC("symmetry", group="left")])
         c = _case(meshes["rect2"], form=form, order=order, mats=mats, T_ref=Tref, thickness=0.1, bcs=bcs,
                   loads=[Load("temperature", Tref + dT)],
@@ -355,8 +373,8 @@ def test_free_thermal_expansion(meshes, order):
         f = (1 + NU) if form == "plane_strain" else 1.0
         tol = 1e-5 if form == "axisymmetric" else 1e-6     # frd output has 6 digits
         assert rel(v["ux"], al * dT * 2.0 * f) < tol
-        assert v["sxx"] < 1e-9
-        assert (rel(v["szz"], -E * al * dT) < 2e-5) if form == "plane_strain" else abs(v["szz"]) < 1e-9
+        assert v["sxx"] < 1e-7      # round-off (thin internal plane-stress slab: ~1e-8)
+        assert (rel(v["szz"], -E * al * dT) < 2e-5) if form == "plane_strain" else abs(v["szz"]) < 1e-7
 
 
 def test_body_force_and_multi_material(meshes):

@@ -67,7 +67,7 @@ def _summ(rows: list[dict]) -> dict:
 
 def evaluate(ckpt: str | Path, data: str | Path, out: str | Path, img_dir: str | Path | None = None,
              n_timing: int = 12, n_timing_ood: int = 2, device: str = "cpu", threads: int | None = 2,
-             scaling: bool = False, benchmarks: bool = False) -> dict:
+             scaling: bool = False, benchmarks: bool = False, history: list | None = None) -> dict:
     import torch
 
     from feacore.surrogate.model import load_checkpoint
@@ -129,6 +129,9 @@ def evaluate(ckpt: str | Path, data: str | Path, out: str | Path, img_dir: str |
         report["scaling"] = scaling_timing(ckpt, device=device)
     if benchmarks:
         report["benchmarks"] = benchmark_check(ckpt, device=device)
+    if history:
+        report["history_stages"] = [json.loads(Path(h).read_text()) for h in history]
+        report["training"]["minutes"] = sum(st[-1]["elapsed_s"] for st in report["history_stages"]) / 60
     (out / "report.json").write_text(json.dumps(report, indent=1, default=float))
     (out / "report.md").write_text(markdown_tables(report))
     if img_dir is not None:
@@ -428,19 +431,28 @@ def plots(rep: dict, samples: list[dict], preds: dict, blob: dict, img: Path) ->
         fig.savefig(files[-1])
         plt.close(fig)
 
-    # 4. training curve
-    hist = blob["training"]["history"]
+    # 4. training curve (several warm-started stages are drawn one after the other)
+    stages = rep.get("history_stages") or [blob["training"]["history"]]
+    hist, minutes = [], 0.0
+    for k, st in enumerate(stages):
+        off = hist[-1]["epoch"] if hist else 0
+        hist += [{**h, "epoch": h["epoch"] + off} for h in st]
+        minutes += st[-1]["elapsed_s"] / 60
     fig, ax = plt.subplots(figsize=(5.0, 3.2), dpi=150)
     _style(ax)
     ep = [h["epoch"] for h in hist]
     ax.plot(ep, [h["train_loss"] for h in hist], color=BLUE, linewidth=2, label="train")
     ax.plot(ep, [h["val_loss"] for h in hist], color=ORANGE, linewidth=2, label="validation")
+    off = 0
+    for st in stages[:-1]:
+        off += len(st)
+        ax.axvline(off + 0.5, color=INK2, linewidth=0.8, linestyle=":")
+        ax.text(off + 0.7, ax.get_ylim()[1], "warm restart", fontsize=7, color=INK2, va="top")
     ax.set_yscale("log")
     ax.set_xlabel("epoch")
     ax.set_ylabel("MSE of standardised targets")
     ax.legend(frameon=False, fontsize=8)
-    ax.set_title(f"Training ({blob['training']['device']}, {hist[-1]['elapsed_s'] / 60:.0f} min)", loc="left",
-                 color=INK)
+    ax.set_title(f"Training ({blob['training']['device']}, {minutes:.0f} min)", loc="left", color=INK)
     fig.tight_layout()
     files.append(img / "training_curve.png")
     fig.savefig(files[-1])
@@ -460,10 +472,12 @@ def main(argv=None) -> int:
     ap.add_argument("--threads", type=int, default=2)
     ap.add_argument("--scaling", action="store_true", help="also time FEM vs surrogate on finer meshes")
     ap.add_argument("--benchmarks", action="store_true", help="also run on the registered 2D benchmark problems")
+    ap.add_argument("--history", nargs="*", default=None,
+                    help="history.json files of consecutive (warm-started) training stages for the curve plot")
     args = ap.parse_args(argv)
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     rep = evaluate(args.ckpt, args.data, args.out, args.img, args.n_timing, args.n_timing_ood, args.device,
-                   args.threads, scaling=args.scaling, benchmarks=args.benchmarks)
+                   args.threads, scaling=args.scaling, benchmarks=args.benchmarks, history=args.history)
     print(markdown_tables(rep))
     return 0
 
