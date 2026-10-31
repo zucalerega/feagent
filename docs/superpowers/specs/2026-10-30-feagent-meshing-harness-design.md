@@ -27,7 +27,7 @@ the answer makes sense, so the harness must do the same before claiming success.
 - **Tests for meshes.** A gate suite: geometry, groups, mesh generated, no inverted elements, SICN/gamma,
   volume fidelity, group-area fidelity, connectivity, thin-wall resolution, CFD non-orthogonality/skewness,
   solver smoke test with physics sanity checks, optional 3-grid GCI convergence study.
-- **Solver smoke tests are built in** (no external installs): scikit-fem linear elasticity (equilibrium,
+- ~~Solver smoke tests are built in~~ **Amended 2026-10-30 (user): no solver in this harness; a separate owner handles solving.** The spec's `solve:` section only declares boundary conditions for that solver. Original text: (no external installs): scikit-fem linear elasticity (equilibrium,
   stress-spike-vs-bad-element check) for FEA; potential flow (mass balance, velocity ratio) for CFD.
   Exports (.inp, .msh 2.2, .su2, .unv, .vtk) let real solvers run later.
 - **Renders localize, numbers judge.** Face-ID maps, query highlights, group maps, quality clips — each with a
