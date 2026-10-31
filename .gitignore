@@ -36,3 +36,6 @@ ace/field_refs_gpu/
 *.dat
 !benchmarks/**/*.dat.ref
 data/
+
+# Claude Code subagent worktrees
+.claude/worktrees/
