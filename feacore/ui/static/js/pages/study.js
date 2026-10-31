@@ -1,7 +1,7 @@
 // Run study: pick problem / backend / order / refinement; live progress; per-QoI convergence plots
 // (QoI vs log h with Richardson extrapolation, GCI band and reference), observed vs theoretical order,
 // and the verification flags in plain words.
-import { api, postJSON, h, clear, fmt, fmtPct, fmtSigned, fmtTime, fmtInt, loading, errorBox, statusChip,
+import { api, postJSON, withToken, h, clear, fmt, fmtPct, fmtSigned, fmtTime, fmtInt, loading, errorBox, statusChip,
   runStatusChip, flagList, qs, qoiDesc, timeAgo } from '../api.js';
 import { convergenceChart, orderChart } from '../plot.js';
 
@@ -188,7 +188,7 @@ function drawProgress(el, st) {
         h('td', {}, l.run_id ? h('a', { href: `#/viewer/${l.run_id}` }, 'view field →') : null))))),
     st.error ? h('div', { style: { marginTop: '14px' } }, errorBox(st.error),
       st.traceback ? h('details', { style: { marginTop: '8px' } }, h('summary', {}, 'Traceback'), h('pre', { class: 'code' }, st.traceback)) : null,
-      h('div', { class: 'small', style: { marginTop: '6px' } }, h('a', { href: `/api/studies/${st.study_id}/log`, target: '_blank' }, 'worker log'))) : null));
+      h('div', { class: 'small', style: { marginTop: '6px' } }, h('a', { href: withToken(`/api/studies/${st.study_id}/log`), target: '_blank' }, 'worker log'))) : null));
 }
 
 function drawResults(el, st) {

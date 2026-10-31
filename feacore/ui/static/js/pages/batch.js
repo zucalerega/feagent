@@ -1,6 +1,6 @@
 // Run benchmarks: select many problems, queue one convergence study each (through the server's study
 // worker pool), follow live progress, and read / download the results table.
-import { api, postJSON, h, clear, fmt, fmtTime, fmtInt, loading, errorBox, statusChip, runStatusChip, timeAgo, toast } from '../api.js';
+import { api, postJSON, withToken, h, clear, fmt, fmtTime, fmtInt, loading, errorBox, statusChip, runStatusChip, timeAgo, toast } from '../api.js';
 
 const sel = new Set();
 const opts = { backend: 'skfem', order: 2, nested: false, levels: null };
@@ -179,8 +179,8 @@ function drawHead(el, d) {
         h('span', { class: 'badge' }, `${d.settings.study_workers} parallel`), h('span', { class: 'badge' }, timeAgo(d.created_at)))),
     h('div', { class: 'row' },
       running ? h('button', { class: 'btn', onclick: async () => { await postJSON(`/api/batches/${d.batch_id}/cancel`, {}); toast('Cancelled the queued and running studies'); } }, 'Cancel') : null,
-      h('a', { class: 'btn', href: `/api/batches/${d.batch_id}/results.csv`, download: `${d.batch_id}.csv` }, 'Download CSV'),
-      h('a', { class: 'btn', href: `/api/batches/${d.batch_id}/results.json`, download: `${d.batch_id}.json` }, 'Download JSON'))));
+      h('a', { class: 'btn', href: withToken(`/api/batches/${d.batch_id}/results.csv`), download: `${d.batch_id}.csv` }, 'Download CSV'),
+      h('a', { class: 'btn', href: withToken(`/api/batches/${d.batch_id}/results.json`), download: `${d.batch_id}.json` }, 'Download JSON'))));
 }
 
 function drawTiles(el, d) {
