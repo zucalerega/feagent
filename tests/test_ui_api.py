@@ -527,9 +527,10 @@ def test_swarm_leaderboards(tmp_path):
         rows = prob["rows"]
         assert [r["ace_run_id"] for r in rows] == ["a1", "a2", "a3"]  # by score, running agents last
         top = rows[0]
-        assert top["status"] == "submitted" and top["score"] == 0.4 and top["n_solves"] == 3 and top["n_attempts"] == 3
+        assert top["status"] == "finished" and top["score"] == 0.4 and top["n_solves"] == 3 and top["n_attempts"] == 3
         assert top["submitted_run_id"] == r1[-1] and top["value"] == pytest.approx(9.24e7)
-        assert top["error"] == pytest.approx((9.24e7 - 9.27e7) / 9.27e7) and top["n_dofs"] == 15000
+        assert top["rel_error"] == pytest.approx((9.24e7 - 9.27e7) / 9.27e7) and top["n_dofs"] == 15000
+        assert top["scored_solve"] == 3 and top["mesh"]["n_refinements"] == 2
         assert top["tokens"] == 1000 and top["setup_diagnostics"] == ["coarse_mesh"] and top["n_cited_bullets"] == 2
         assert rows[1]["gates"] == ["dof_budget"] and rows[1]["n_attempts"] == 2 and rows[1]["n_solves"] == 1
         assert rows[2]["status"] == "running" and rows[2]["score"] is None
@@ -541,3 +542,69 @@ def test_swarm_leaderboards(tmp_path):
         # ACE submissions also feed the regular consensus view
         cons = c.get(f"/api/consensus/{pid}").json()
         assert {"ace:a1", "ace:a2", "ace:a4"} <= set(cons["agents"])
+
+
+def test_swarm_bridge_record_shapes(tmp_path):
+    """Shapes the real ACE bridge writes: refinements as a list of dicts, the scored QoI named in the
+    case (not references()[0]), runs with no successful solve, crashed runs, ids reused across loops."""
+    from feacore.runstore import write_json, new_id, now_iso, SUBMISSION_SCHEMA
+
+    store = RunStore(tmp_path / "runs")
+    pid = "lame_cylinder_plane_strain"            # references: ur_bore first, hoop_bore second
+    refine = [{"point": [0.0, 0.1], "size": 0.002, "radius": 0.01}, {"point": [0.1, 0.0], "size": 0.002, "radius": 0.01}]
+
+    def solve(loop, aid, idx, value, ok=True):
+        meta = {"source": "ace", "loop_id": loop, "generation": 0, "ace_run_id": aid, "solve_index": idx,
+                "mesh": {"h": 0.01, "order": 2, "refinements": refine}}
+        rec = store.create_run(backend="skfem", problem_id=pid, agent_id=f"ace:{aid}", source="ace", status="running",
+                               meta=meta, case={"mesh": "m.msh", "qois": [{"name": "hoop_bore", "type": "point", "field": "stt"}]})
+        if ok:
+            store.update_run(rec["run_id"], status="succeeded", qois={"hoop_bore": value}, info={"n_dofs": 900, "order": 2, "h_rep": 0.01 / (idx + 1)})
+        else:
+            store.update_run(rec["run_id"], status="failed", error="no_such_group")
+        return rec["run_id"]
+
+    def submit(loop, aid, run_ids, scored, score, gates=(), error=None):
+        meta = {"source": "ace", "loop_id": loop, "generation": 0, "ace_run_id": aid, "submitted_run_id": scored,
+                "score": score, "gates": list(gates), "setup_diagnostics": [], "cited_bullets": [],
+                "tokens": {"input": 10, "output": 5, "cache_write": 0, "cache_read": 0, "total": 15}}
+        if error:
+            meta["error"] = error
+        if run_ids:
+            return store.create_submission(pid, f"ace:{aid}", run_ids=run_ids, meta=meta)
+        sid = new_id("sub")                        # what the bridge writes when there is no successful solve
+        write_json(store.submissions_dir / f"{sid}.json", {
+            "schema": SUBMISSION_SCHEMA, "submission_id": sid, "created_at": now_iso(), "problem_id": pid,
+            "agent_id": f"ace:{aid}", "run_ids": [], "levels": [], "order": None, "notes": "", "meta": meta,
+            "analysis": {"order": None, "n_levels": 0, "qois": []}})
+
+    good = [solve("L1", "g0-lame-0", i, 1.66e8 + i * 3e5) for i in range(2)]
+    submit("L1", "g0-lame-0", good, good[0], 0.7)          # ACE scored the first solve, not the last
+    failed = solve("L1", "g0-lame-1", 0, None, ok=False)
+    submit("L1", "g0-lame-1", [], None, -2.0, gates=["no successful solve"])
+    submit("L1", "g0-lame-2", [], None, None, error="APIError: overloaded")
+    other = [solve("L2", "g0-lame-0", 0, 1.0e8)]           # same ace id, another loop
+    submit("L2", "g0-lame-0", other, other[0], -0.5)
+
+    app = create_app(runs_dir=tmp_path / "runs", token="")
+    with TestClient(app) as c:
+        d = c.get("/api/swarm", params={"loop_id": "L1"}).json()
+        [prob] = d["problems"]
+        assert prob["qoi"] == "hoop_bore" and prob["reference"]["qoi"] == "hoop_bore"
+        rows = {r["ace_run_id"]: r for r in prob["rows"]}
+        assert set(rows) == {"g0-lame-0", "g0-lame-1", "g0-lame-2"}          # nothing from loop L2
+        a = rows["g0-lame-0"]
+        assert a["status"] == "finished" and a["qoi"] == "hoop_bore" and a["value"] == pytest.approx(1.66e8)
+        assert a["reference"] == pytest.approx(prob["reference"]["value"]) and a["rel_error"] is not None
+        assert a["scored_solve"] == 1 and a["n_solves"] == 2 and a["tokens"] == 15
+        assert a["mesh"]["n_refinements"] == 2 and a["mesh"]["refinements"] == refine
+        b = rows["g0-lame-1"]
+        assert b["status"] == "finished" and b["score"] == -2.0 and b["gates"] == ["no successful solve"]
+        assert b["n_solves"] == 0 and b["n_attempts"] == 1 and b["value"] is None
+        cr = rows["g0-lame-2"]
+        assert cr["status"] == "crashed" and cr["score"] is None and cr["error"] == "APIError: overloaded"
+        g0 = d["generations"][0]
+        assert g0["n_submissions"] == 3 and g0["n_crashed"] == 1 and g0["n_running"] == 0 and g0["n_gated"] == 1
+        d2 = c.get("/api/swarm", params={"loop_id": "L2"}).json()
+        assert [r["score"] for r in d2["problems"][0]["rows"]] == [-0.5]
+        assert c.get(f"/api/consensus/{pid}").status_code == 200   # empty / crashed submissions don't break it
