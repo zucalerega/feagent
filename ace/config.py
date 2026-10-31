@@ -24,7 +24,7 @@ MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curato
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
 EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
-          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "max"}
+          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "high"}   # big_generator: Opus at its default effort
 
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
