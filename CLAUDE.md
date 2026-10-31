@@ -20,18 +20,19 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
+- `main` has the mesh harness (package `feagent` in `src/`: STEP → YAML mesh spec → gmsh mesh with named
+  groups, quality gates, `report.json` with the spec's `bcs:`), the fixed solver, verification,
+  benchmarks and UI (`feacore/`), and the diagnostics (`feacore/diagnostics/`). One root
+  `pyproject.toml` ships both packages.
+- `mesh-harness` branch: Alexander's ongoing harness work; merged into `main` as it lands.
 - `improver-loop` branch: improver side of the loop.
-- `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
-  gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
-  deterministic failure-mode flags (precheck before solving + post-solve checks), reference-free accuracy
-  (ZZ estimate, refinement study of the agent's own setup, P1-vs-P2) and the speed / accuracy score
-  (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py`: agent prompt for a
-  NAFEMS benchmark and reply-vs-reference scoring (LE10 first, with `benchmarks/nafems_le10/public/mesh.msh`).
-  The only solver change is `qp_stress_elasticity` split out of `_recover_elasticity` (same results).
-- `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
-  parts and a UI (package `feacore/`, see below). The scikit-fem solver works (all formulations, BCs,
-  heat, QoIs, CLI). The CalculiX cross-check, benchmarks, test parts, UI and surrogate are in progress.
+  deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
+  accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy
+  score (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py` give the agent
+  prompt for a NAFEMS benchmark and score the reply against the reference. LE10 comes first, with
+  `benchmarks/nafems_le10/public/mesh.msh`.
+- `cfd-openfoam` branch (PR #3): OpenFOAM backend and CFD benchmarks, in progress.
 
 ## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
 
@@ -59,11 +60,15 @@ Decisions:
   plus a gmsh `.msh` file whose physical groups are named. This is what the agent's MCP / mesh harness
   must produce. Run it with `feacore.solver.solve(case, backend)` or the CLI
   `python -m feacore.cli case.json --out result.json`.
-- **Mesh harness → solver:** `feacore/adapters/mesh_harness.py` turns a harness output directory
-  (`mesh.msh` + `manifest.json` + `report.json` with `bcs.fea: {fixed, loads: [{group, force}], E, nu}`)
-  into a case: `python -m feacore.adapters.mesh_harness <out_dir>`. `fixed` → `fixed` and
-  `loads[].force` → `force` (total force spread per area) map 1:1. The case schema also has pressure,
-  symmetry, prescribed displacement, thermal loads and explicit QoIs if the harness wants to declare them.
+- **Mesh harness → solver:** `feacore/adapters/mesh_harness.py` turns a harness output directory or its
+  YAML spec into a case: `python -m feacore.adapters.mesh_harness <out_dir | mesh.yaml>`. The spec's
+  `bcs.fea` maps 1:1:
+  - `fixed`, `loads: [{group, force}]` (total force spread per area);
+  - `symmetry: [group]`, `pressure: [{group, value}]`;
+  - `displacement: [{group, components, value, where}]`, where `where` filters nodes, e.g. a line on a
+    face for LE10's mid-thickness support.
+
+  `E` and `nu` give the material.
 - **Problems** (the "CAD design problems"): `feacore/problems/` (the `Problem` API + registry),
   exported to `benchmarks/<id>/public/` (statement + STEP: give these to agents) and
   `benchmarks/<id>/private/` (reference values, reference setup, validation studies: evaluator only,
@@ -115,9 +120,6 @@ Decisions:
 
 - How exactly is a solution scored? (proposal above; the evaluator decides)
 - Which MCP tools does the agent get (geometry / mesh / BCs)? It must emit the case JSON + `.msh` above.
-- Merging into `main`: `mesh-harness` and `fea-solver-benchmarks` both add a root `pyproject.toml`
-  (`feagent` with uv_build, `feacore` with setuptools). Pick one root project that ships both
-  packages, or make `feacore` a sub-project.
 - What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
 - What does the evaluator output look like (schema for rankings + summary)?
 
