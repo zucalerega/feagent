@@ -141,9 +141,9 @@ def cmd_run(a) -> int:
                 continue
             for m in meshes:
                 log.write(json.dumps({k: m.get(k) for k in ("part", "mesh_level", "h", "cells", "seconds", "scheme",
-                                                             "folded_before_opt", "fallback_reason")}) + "\n")
+                                                             "folded_before_fix", "failed_attempts", "fallback_reason")}) + "\n")
                 print(f"[{pid}] L{m['mesh_level']}: {m['cells']} cells, {m['seconds']:.1f}s, {m['scheme']}"
-                      f" (folded before opt: {m['folded_before_opt']})", flush=True)
+                      f" (folded before fix: {m['folded_before_fix']})", flush=True)
             log.flush()
             part = Part.from_json(json.dumps(row["part"]))
             for s in sets:

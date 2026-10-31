@@ -88,7 +88,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 const DATA = __DATA__, CASES = __CASES__;
 const b64 = (s, T) => new T(Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer);
-const P = b64(DATA.points, Float32Array), T = b64(DATA.tets, Uint32Array), nt = T.length / 4, nv = P.length / 3;
+const P = b64(DATA.points, Float32Array), T = b64(DATA.tets, Uint32Array), nv = P.length / 3;
 for (const c of CASES) if (c.vm) { c.VM = b64(c.vm, Float32Array); c.U = b64(c.u, Float32Array); }
 const BANDS = [[0,0,255],[0,178,255],[0,255,255],[0,255,178],[0,255,0],[178,255,0],[255,255,0],[255,178,0],[255,0,0]];
 const tex = new THREE.DataTexture(new Uint8Array(BANDS.flatMap(c => [...c, 255])), 9, 1);
@@ -96,17 +96,28 @@ tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.colorSpace = THREE.SRGB
 const GREY = new THREE.Color(0.60, 0.72, 0.74);
 
 function key(a, b, c) { if (a > b) [a, b] = [b, a]; if (b > c) [b, c] = [c, b]; if (a > b) [a, b] = [b, a]; return a + "," + b + "," + c; }
-const FACES = [[0,2,1],[0,1,3],[0,3,2],[1,2,3]];
+const NPE = DATA.npe || 4, nt = T.length / NPE;
+// faces: corners (outward) + the midside nodes of edges ab, bc, ca (gmsh tet10 numbering)
+const FACES = [[0,2,1,6,5,4],[0,1,3,4,9,7],[0,3,2,7,8,6],[1,2,3,5,8,9]];
+const SUB = NPE === 10 ? 4 : 1;
 const cent = new Float32Array(nt * 3);
 for (let e = 0; e < nt; e++) for (let d = 0; d < 3; d++)
-  cent[3*e+d] = (P[3*T[4*e]+d] + P[3*T[4*e+1]+d] + P[3*T[4*e+2]+d] + P[3*T[4*e+3]+d]) / 4;
+  cent[3*e+d] = (P[3*T[NPE*e]+d] + P[3*T[NPE*e+1]+d] + P[3*T[NPE*e+2]+d] + P[3*T[NPE*e+3]+d]) / 4;
+// boundary faces (used by exactly one kept tet): [a, b, c, mab, mbc, mca] (mids = -1 for tet4)
 function boundary(keep) {
   const seen = new Map();
   for (let e = 0; e < nt; e++) { if (!keep(e)) continue;
-    for (const f of FACES) { const a = T[4*e+f[0]], b = T[4*e+f[1]], c = T[4*e+f[2]], k = key(a, b, c);
-      if (seen.has(k)) seen.set(k, null); else seen.set(k, [a, b, c]); } }
+    for (const f of FACES) {
+      const a = T[NPE*e+f[0]], b = T[NPE*e+f[1]], c = T[NPE*e+f[2]], k = key(a, b, c);
+      const m = NPE === 10 ? [T[NPE*e+f[3]], T[NPE*e+f[4]], T[NPE*e+f[5]]] : [-1, -1, -1];
+      if (seen.has(k)) seen.set(k, null); else seen.set(k, [a, b, c, ...m]);
+    } }
   return [...seen.values()].filter(Boolean);
 }
+// a face as drawn: 4 sub-triangles through the midside nodes (curved), or the flat triangle
+const subTris = f => SUB === 4 ? [[f[0],f[3],f[5]],[f[3],f[1],f[4]],[f[5],f[4],f[2]],[f[3],f[4],f[5]]] : [[f[0],f[1],f[2]]];
+// element edges as drawn: a-mab-b, b-mbc-c, c-mca-a (6 segments) or the 3 straight edges
+const subEdges = f => SUB === 4 ? [[f[0],f[3]],[f[3],f[1]],[f[1],f[4]],[f[4],f[2]],[f[2],f[5]],[f[5],f[0]]] : [[f[0],f[1]],[f[1],f[2]],[f[2],f[0]]];
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true, alpha: true });
 renderer.setPixelRatio(devicePixelRatio);
@@ -135,13 +146,13 @@ function rebuild() {
   let lo = 0, hi = 1;
   if (F) { lo = Infinity; hi = -Infinity; for (const v of F) { if (v < lo) lo = v; if (v > hi) hi = v; } if (hi <= lo) hi = lo + 1e-12; }
   const s = c.U ? st.scale * c.autoscale : 0;
-  const n = faces.length, pos = new Float32Array(n * 9), uv = new Float32Array(n * 6), seg = new Float32Array(n * 18);
+  const n = faces.length, nt3 = SUB * 9, ns = SUB === 4 ? 6 : 3;
+  const pos = new Float32Array(n * nt3), uv = new Float32Array(n * SUB * 6), seg = new Float32Array(n * ns * 6);
   const X = v => [P[3*v] + s * (c.U ? c.U[3*v] : 0), P[3*v+1] + s * (c.U ? c.U[3*v+1] : 0), P[3*v+2] + s * (c.U ? c.U[3*v+2] : 0)];
+  const tv = v => F ? Math.min(0.9999, Math.max(0, (F[v] - lo) / (hi - lo))) : 0;
   faces.forEach((f, i) => {
-    const xs = f.map(X);
-    xs.forEach((x, j) => pos.set(x, 9*i + 3*j));
-    f.forEach((v, j) => uv.set([F ? Math.min(0.9999, Math.max(0, (F[v] - lo) / (hi - lo))) : 0, 0.5], 6*i + 2*j));
-    [[0,1],[1,2],[2,0]].forEach(([a, b], j) => seg.set([...xs[a], ...xs[b]], 18*i + 6*j));
+    subTris(f).forEach((t, q) => t.forEach((v, j) => { pos.set(X(v), i*nt3 + 9*q + 3*j); uv.set([tv(v), 0.5], i*SUB*6 + 6*q + 2*j); }));
+    subEdges(f).forEach(([u, v], j) => seg.set([...X(u), ...X(v)], (i*ns + j) * 6));
   });
   if (mesh) { scene.remove(mesh, lines); mesh.geometry.dispose(); lines.geometry.dispose(); }
   const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -208,7 +219,7 @@ renderer.domElement.addEventListener("pointermove", ev => {
   mouse.set(ev.clientX / innerWidth * 2 - 1, -ev.clientY / innerHeight * 2 + 1); ray.setFromCamera(mouse, camera);
   const hit = mesh && ray.intersectObject(mesh)[0], F = field(CASES[st.c]);
   if (!hit || !F) { tip.style.display = "none"; return; }
-  const f = faces[hit.faceIndex], v = (F[f[0]] + F[f[1]] + F[f[2]]) / 3;
+  const f = faces[Math.floor(hit.faceIndex / SUB)], v = (F[f[0]] + F[f[1]] + F[f[2]]) / 3;
   tip.textContent = `${v.toPrecision(4)} ${st.f === "vm" ? "MPa" : "mm"}`;
   tip.style.left = ev.clientX + 14 + "px"; tip.style.top = ev.clientY + 10 + "px"; tip.style.display = "block";
 });

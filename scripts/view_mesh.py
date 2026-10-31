@@ -71,9 +71,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 const DATA = __DATA__;
 const b64 = (s, T) => new T(Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer);
 const P = b64(DATA.points, Float32Array);            // (n*3) mm, centred
-const T = b64(DATA.tets, Uint32Array);               // (m*4) corner nodes
+const T = b64(DATA.tets, Uint32Array);               // (m*npe) tet nodes (4 or 10)
 const SF = b64(DATA.surf, Uint32Array);              // (k*4) surface tris + group index
-const nt = T.length / 4;
 const BODY = new THREE.Color(0.60, 0.72, 0.74), CUT = new THREE.Color(0.93, 0.80, 0.42);
 
 const groupOf = new Map();
@@ -81,25 +80,28 @@ for (let i = 0; i < SF.length; i += 4) groupOf.set(key(SF[i], SF[i+1], SF[i+2]),
 function key(a, b, c) { if (a > b) [a, b] = [b, a]; if (b > c) [b, c] = [c, b]; if (a > b) [a, b] = [b, a]; return a + "," + b + "," + c; }
 const palette = DATA.groups.map((_, i) => new THREE.Color().setHSL(((i * 0.618034) % 1), 0.55, 0.62));
 
-const FACES = [[0,2,1],[0,1,3],[0,3,2],[1,2,3]];
+const NPE = DATA.npe || 4, nt = T.length / NPE;
+// faces: corners (outward) + the midside nodes of edges ab, bc, ca (gmsh tet10 numbering)
+const FACES = [[0,2,1,6,5,4],[0,1,3,4,9,7],[0,3,2,7,8,6],[1,2,3,5,8,9]];
+const SUB = NPE === 10 ? 4 : 1;
 const cent = new Float32Array(nt * 3);
 for (let e = 0; e < nt; e++) for (let d = 0; d < 3; d++)
-  cent[3*e+d] = (P[3*T[4*e]+d] + P[3*T[4*e+1]+d] + P[3*T[4*e+2]+d] + P[3*T[4*e+3]+d]) / 4;
-
-// boundary faces (used by exactly one kept tet), oriented outward
+  cent[3*e+d] = (P[3*T[NPE*e]+d] + P[3*T[NPE*e+1]+d] + P[3*T[NPE*e+2]+d] + P[3*T[NPE*e+3]+d]) / 4;
+// boundary faces (used by exactly one kept tet): [a, b, c, mab, mbc, mca] (mids = -1 for tet4)
 function boundary(keep) {
   const seen = new Map();
-  for (let e = 0; e < nt; e++) {
-    if (!keep(e)) continue;
+  for (let e = 0; e < nt; e++) { if (!keep(e)) continue;
     for (const f of FACES) {
-      const a = T[4*e+f[0]], b = T[4*e+f[1]], c = T[4*e+f[2]], k = key(a, b, c);
-      if (seen.has(k)) seen.set(k, null); else seen.set(k, [a, b, c, e]);
-    }
-  }
-  const out = [];
-  for (const v of seen.values()) if (v) out.push(v);
-  return out;
+      const a = T[NPE*e+f[0]], b = T[NPE*e+f[1]], c = T[NPE*e+f[2]], k = key(a, b, c);
+      const m = NPE === 10 ? [T[NPE*e+f[3]], T[NPE*e+f[4]], T[NPE*e+f[5]]] : [-1, -1, -1];
+      if (seen.has(k)) seen.set(k, null); else seen.set(k, [a, b, c, ...m]);
+    } }
+  return [...seen.values()].filter(Boolean);
 }
+// a face as drawn: 4 sub-triangles through the midside nodes (curved), or the flat triangle
+const subTris = f => SUB === 4 ? [[f[0],f[3],f[5]],[f[3],f[1],f[4]],[f[5],f[4],f[2]],[f[3],f[4],f[5]]] : [[f[0],f[1],f[2]]];
+// element edges as drawn: a-mab-b, b-mbc-c, c-mca-a (6 segments) or the 3 straight edges
+const subEdges = f => SUB === 4 ? [[f[0],f[3]],[f[3],f[1]],[f[1],f[4]],[f[4],f[2]],[f[2],f[5]],[f[5],f[0]]] : [[f[0],f[1]],[f[1],f[2]],[f[2],f[0]]];
 
 const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true, alpha: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -124,12 +126,14 @@ function rebuild() {
   const plane = lo[st.ax] + st.pos * (hi[st.ax] - lo[st.ax]);
   const keep = st.sec ? (e => (st.flip ? cent[3*e+st.ax] <= plane : cent[3*e+st.ax] >= plane)) : (() => true);
   faceList = boundary(keep);
-  const n = faceList.length, pos = new Float32Array(n * 9), col = new Float32Array(n * 9), seg = new Float32Array(n * 18);
-  faceList.forEach(([a, b, c], i) => {
-    const g = groupOf.get(key(a, b, c));
+  const n = faceList.length, nt3 = SUB * 9, ns = SUB === 4 ? 6 : 3;
+  const pos = new Float32Array(n * nt3), col = new Float32Array(n * nt3), seg = new Float32Array(n * ns * 6);
+  const XP = v => [P[3*v], P[3*v+1], P[3*v+2]];
+  faceList.forEach((f, i) => {
+    const g = groupOf.get(key(f[0], f[1], f[2]));
     const color = g === undefined ? CUT : (st.groups ? palette[g] : BODY);
-    [a, b, c].forEach((v, j) => { pos.set([P[3*v], P[3*v+1], P[3*v+2]], 9*i + 3*j); col.set([color.r, color.g, color.b], 9*i + 3*j); });
-    [[a,b],[b,c],[c,a]].forEach(([u, v], j) => seg.set([P[3*u],P[3*u+1],P[3*u+2],P[3*v],P[3*v+1],P[3*v+2]], 18*i + 6*j));
+    subTris(f).forEach((t, q) => t.forEach((v, j) => { pos.set(XP(v), i*nt3 + 9*q + 3*j); col.set([color.r, color.g, color.b], i*nt3 + 9*q + 3*j); }));
+    subEdges(f).forEach(([u, v], j) => seg.set([...XP(u), ...XP(v)], (i*ns + j) * 6));
   });
   if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); scene.remove(lines); lines.geometry.dispose(); }
   const g = new THREE.BufferGeometry();
@@ -166,7 +170,7 @@ renderer.domElement.addEventListener("pointermove", ev => {
   ray.setFromCamera(mouse, camera);
   const hit = mesh && ray.intersectObject(mesh)[0];
   if (!hit) { tip.style.display = "none"; return; }
-  const [a, b, c] = faceList[hit.faceIndex], g = groupOf.get(key(a, b, c));
+  const [a, b, c] = faceList[Math.floor(hit.faceIndex / SUB)], g = groupOf.get(key(a, b, c));
   tip.textContent = g === undefined ? "section (cut tetrahedra)" : DATA.groups[g];
   tip.style.left = ev.clientX + 14 + "px"; tip.style.top = ev.clientY + 10 + "px"; tip.style.display = "block";
 });
@@ -203,11 +207,12 @@ def _b64(a: np.ndarray) -> str:
 
 
 def load(mesh_path: str) -> tuple[dict, np.ndarray]:
-    """Viewer data for a tet mesh, and the corner-node coordinates in the file's units (m), in the
-    same order as the data's points (so fields can be probed at them)."""
+    """Viewer data for a tet mesh, and the node coordinates in the file's units (m), in the same
+    order as the data's points (so fields can be probed at them). Tet10 meshes keep their midside
+    nodes, so curved faces and element edges are drawn curved."""
     m = meshio.read(mesh_path)
     ctype = "tetra10" if "tetra10" in m.cells_dict else "tetra"
-    tets = m.cells_dict[ctype][:, :4]
+    tets = m.cells_dict[ctype]                          # all nodes: midside nodes draw curved faces
     used = np.unique(tets)
     renum = np.full(len(m.points), -1, dtype=np.int64)
     renum[used] = np.arange(len(used))
@@ -231,7 +236,7 @@ def load(mesh_path: str) -> tuple[dict, np.ndarray]:
         "points": _b64(P.astype(np.float32)), "tets": _b64(renum[tets].astype(np.uint32)),
         "surf": _b64(np.asarray(surf, dtype=np.uint32).reshape(-1, 4)), "groups": gnames,
         "lo": (lo - centre).tolist(), "hi": (hi - centre).tolist(), "offset": centre.tolist(),
-        "radius": float(np.linalg.norm(hi - lo) / 2), "nodes": int(len(np.unique(m.cells_dict[ctype]))),
+        "radius": float(np.linalg.norm(hi - lo) / 2), "nodes": int(len(used)), "npe": int(tets.shape[1]),
         "type": "Tet10" if ctype == "tetra10" else "Tet4",
     }
     return data, X
