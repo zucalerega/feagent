@@ -157,14 +157,16 @@ async function renderStudy(el, sid) {
 }
 
 function drawHead(el, st) {
+  const passed = st.result && st.result.passed !== null && st.result.passed !== undefined ? st.result.passed : null;
   clear(el).append(h('div', { class: 'page-head' }, h('div', {},
-    h('div', { class: 'secondary small' }, h('a', { href: '#/study' }, '← Run study'), ' · ', h('a', { href: `#/benchmarks/${encodeURIComponent(st.problem_id)}` }, 'problem')),
+    h('div', { class: 'secondary small' }, h('a', { href: '#/runs' }, '← Runs'), ' · ', h('a', { href: `#/benchmarks/${encodeURIComponent(st.problem_id)}` }, 'problem'),
+      st.batch_id ? [' · ', h('a', { href: `#/batch/${st.batch_id}` }, 'batch')] : null),
     h('h1', {}, st.problem_title || st.problem_id),
-    h('div', { class: 'chips', style: { marginTop: '6px' } }, runStatusChip(st.status), h('span', { class: 'badge mono' }, st.study_id),
-      h('span', { class: 'badge' }, `backend ${st.backend}`), h('span', { class: 'badge' }, `P${st.order} elements`),
-      h('span', { class: 'badge' }, `${(st.sizes || []).length} meshes${st.nested ? ', nested' : ''}`),
-      st.batch_id ? h('a', { class: 'badge', href: `#/batch/${st.batch_id}` }, 'part of a batch') : null,
-      st.result && st.result.passed !== null && st.result.passed !== undefined ? statusChip(st.result.passed ? 'good' : 'critical', st.result.passed ? 'matches references' : 'misses a reference') : null))));
+    h('div', { class: 'meta-line', style: { display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' } },
+      runStatusChip(st.status),
+      passed !== null ? statusChip(passed ? 'good' : 'critical', passed ? 'matches the references' : 'misses a reference') : null,
+      h('span', {}, `${st.backend} · P${st.order} · ${(st.sizes || []).length} meshes${st.nested ? ' (nested)' : ''}`),
+      h('span', { class: 'mono small muted' }, st.study_id)))));
 }
 
 function drawProgress(el, st) {
@@ -187,7 +189,7 @@ function drawProgress(el, st) {
         h('td', {}, l.status === 'done' ? statusChip('good', 'done') : l.status === 'pending' ? statusChip('info', 'pending') : l.status === 'failed' ? statusChip('critical', 'failed') : h('span', {}, h('span', { class: 'spinner' }), ` ${l.status}`, l.started_at && st.server_time ? h('span', { class: 'muted' }, ` ${fmtTime(st.server_time - l.started_at)}`) : null)),
         h('td', {}, l.run_id ? h('a', { href: `#/viewer/${l.run_id}` }, 'view field →') : null))))),
     st.error ? h('div', { style: { marginTop: '14px' } }, errorBox(st.error),
-      st.traceback ? h('details', { style: { marginTop: '8px' } }, h('summary', {}, 'Traceback'), h('pre', { class: 'code' }, st.traceback)) : null,
+      st.traceback ? h('details', { class: 'more' }, h('summary', {}, 'Traceback'), h('pre', { class: 'code' }, st.traceback)) : null,
       h('div', { class: 'small', style: { marginTop: '6px' } }, h('a', { href: withToken(`/api/studies/${st.study_id}/log`), target: '_blank' }, 'worker log'))) : null));
 }
 
@@ -247,7 +249,7 @@ function qoiCard(q, it, hrep, runs, st) {
     stats, gauge(g ? g.p : null, q.p_theory), refStats,
     h('p', { class: 'secondary', style: { marginTop: '10px' } }, it.summary || ''),
     flagList(it.explanations),
-    h('details', { style: { marginTop: '12px' } }, h('summary', {}, 'Values per mesh and GCI details'),
+    h('details', { class: 'more' }, h('summary', {}, 'Values per mesh and GCI details'),
       h('table', { class: 'data', style: { marginTop: '6px' } },
         h('thead', {}, h('tr', {}, h('th', {}, 'mesh'), h('th', { class: 'num' }, 'h'), h('th', { class: 'num' }, 'dofs'), h('th', { class: 'num' }, q.name))),
         h('tbody', {}, q.values.map((v, i) => h('tr', {}, h('td', {}, i + 1), h('td', { class: 'num' }, fmt(hrep[i], 4)), h('td', { class: 'num' }, fmtInt(runs[i] && runs[i].info.n_dofs)), h('td', { class: 'num' }, fmt(v, 8)))))),

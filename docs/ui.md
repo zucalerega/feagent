@@ -7,12 +7,14 @@ A web UI and HTTP API on top of `feacore`. It serves:
 - the **run store** (`feacore/runstore.py`): solves, studies and agent submissions as files, readable by the evaluator and the improvers.
 - the **multi-agent consensus view**: every agent's answer with its own error band, against the population and the reference.
 
-Pages (single-page app, no build step, `feacore/ui/static/`):
+Navigation has five sections: **Benchmarks** (library, problem pages, batch runs), **Runs** (studies, batches, solves, consensus), **Swarm** (the ACE agent loop), **Solve** and **Connect** (plus Health). Pages (single-page app, no build step, `feacore/ui/static/`):
 
 | page | what it shows |
 |---|---|
 | Benchmarks `#/benchmarks` | problem library, tag filter, detail with statement, 3D CAD preview with named groups, **evaluator view** (references, expectations, reference setup, studies); **Run with defaults** starts the reference study (skfem, P2, the problem's sizes) and opens its live view |
 | Run benchmarks `#/batch` | select many problems (by tag, family, ticked rows, "all with references"), choose backend / order / nested / meshes, queue one convergence study each; live per-problem progress; results table (reference, finest, extrapolated, p vs theory, GCI, error, pass / fail / divergence detected as expected, runtime) with links to each study's plot and finest-mesh field; CSV / JSON download. Batches persist in the run store |
+| Runs `#/runs` | tabs for convergence studies, benchmark batches, solves (opens the field viewer) and consensus views; "New study" and "Run benchmarks" start new work |
+| Swarm `#/swarm` | the ACE agent loop, live: loop and generation selectors, score distribution per generation, per-problem leaderboards (score, QoI vs reference, mesh, DOFs, solves, gates) linking to the field viewer and the problem's Consensus view. Empty state until the ACE bridge writes records |
 | Run study `#/study` | pick problem / backend / element order / refinement; live progress; per QoI: QoI vs log h with the Richardson extrapolation, the GCI band and the reference; error vs h (log-log, observed vs theoretical slope); verdict and flags in plain words |
 | Consensus `#/consensus/<problem>` | forest plot per QoI: each submission's finest-mesh value ± GCI, extrapolated value, consensus median, reference ± tolerance; per-submission verdicts and flags |
 | Field viewer `#/viewer/<run>` | 2D mesh / 3D boundary surface coloured by any field, colour bar, mesh edges, deformed shape with scale, study-level switcher. Tested smooth at 230k display triangles |
@@ -46,21 +48,19 @@ No Node and no build step are needed.
 
 ## Run on Brev
 
-On the instance (setup per CLAUDE.md / `docs/brev.md`), in tmux or with nohup:
+Setup on any account is one command (details in `docs/brev.md`):
 
 ```bash
-python -m feacore.ui --host 0.0.0.0 --port 8000 --threads 4 --token auto   # prints the share URL with ?token=
+curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash
 ```
 
-Then reach port 8000:
+`scripts/serve.sh` keeps the UI running as a service (`python -m feacore.ui --host 0.0.0.0 --port 8000`). It auto-updates and waits while `active_jobs` (from `/api/health`) is non-zero. To reach port 8000:
 
-- **Console tunnel** (to share with the team): in the Brev console, open the instance's *Access* section → *Using Tunnels* and expose port 8000. Brev tunnels can require a browser login (Cloudflare) on first access. Scripts cannot do that login: either make the tunnel public and rely on `--token`, or use the port-forward.
-- **Port-forward** (your laptop, scripts, the agent harness): `brev port-forward <instance> --port 8000:8000`, then use http://localhost:8000.
-- SSH also works: `ssh -L 8000:localhost:8000 <instance>`.
+- **Brev HTTP Ports** (the team link): on the instance page, open **HTTP Ports**, add port **8000** and open the https link. Brev's sign-in sits in front of it, so no feacore token is needed there.
+- **Port-forward** (your laptop, scripts, the agent harness): `brev port-forward <instance> --port 8000:8000`, then use http://localhost:8000. Scripts can't pass Brev's browser sign-in, so they use this route.
+- Don't use the console's "TCP/UDP Open Port" dialog for this service. It opens the port unauthenticated to 0.0.0.0/0.
 
-The Brev steps come from the Brev CLI connectivity docs. docs.nvidia.com was not reachable from the dev container, so check the console menu names there.
-
-### Shared-token auth (for public tunnels)
+### Shared-token auth (only for links without Brev's sign-in)
 
 If `FEACORE_UI_TOKEN` or `--token` is set, every `/api/*` request must carry the token in one of three forms:
 
@@ -198,6 +198,55 @@ curl $S/api/consensus/nafems_le1
 
 The best estimate is the extrapolated value when the convergence and the extrapolation are reliable, otherwise the finest-mesh value. With 3 or more submissions, a submission is an `outlier_vs_consensus` when |best − median| > max(3·σ_robust, its own band, tolerance·|median|).
 
+## ACE swarm records (Swarm page)
+
+The ACE loop's bridge writes into the same run store, through `RunStore` or the HTTP API. `GET /api/swarm?loop_id=&generation=` reads it back. The response holds:
+
+- `loops`: each with its generations, counts and an `active` flag (new records in the last 3 min, which makes the page poll every 4 s);
+- `generations[]`: `n_submissions`, `n_running`, `n_gated`, median and best score, and one point per agent run;
+- `problems[].rows[]`: the selected generation's leaderboard.
+
+**Each ACE solve** is a run record:
+
+```json
+{"source": "ace", "agent_id": "ace:<ace_run_id>", "problem_id": "nafems_le1",
+ "meta": {"source": "ace", "loop_id": "L1", "generation": 3, "ace_run_id": "<id>", "solve_index": 2,
+          "mesh": {"h": 0.05, "order": 2, "refinements": 1}},
+ "qois": {...}, "info": {...SolveInfo...}, "status": "succeeded"}
+```
+
+**Each finished ACE agent run** is a submission. `run_ids` are its successful solves:
+
+```json
+{"problem_id": "nafems_le1", "agent_id": "ace:<ace_run_id>", "run_ids": ["run-...", "..."],
+ "meta": {"source": "ace", "loop_id": "L1", "generation": 3, "ace_run_id": "<id>",
+          "submitted_run_id": "run-...", "score": 0.42, "gates": [], "setup_diagnostics": ["..."],
+          "cited_bullets": ["..."], "tokens": 12345}}
+```
+
+Python: `store.create_run(..., source="ace", meta=...)` then `store.update_run(...)`, or `store.record_result(result, ..., source="ace", meta=...)`. Finish with `store.create_submission(problem_id, "ace:<id>", run_ids=..., meta=...)`.
+
+**Score** = log10(e_uniform / e_agent): 0 means as good as the best uniform mesh with the same node budget, +1 means ten times better, and a failed gate scores −2. The bridge computes it; the UI only displays it.
+
+Details the UI relies on (as written by the bridge, `ace/ui_bridge.py` on `ace-ui-bridge`):
+
+- `meta.mesh.refinements` is the agent's list of refinement dicts. The leaderboard shows their count, with the details in a tooltip.
+- `solve_index` counts from 0, and the "scored #k" note is 1-based.
+- `submitted_run_id` is the solve ACE scored, and the QoI value comes from that run. The reference is matched by the QoI name in that run's case (or `meta.qoi`), not by the problem's first reference.
+- `tokens` = `{input, output, cache_write, cache_read, total}`.
+- An agent run with **no successful solve** is a submission with `run_ids: []`, score −2 and the gate "no successful solve". A **crashed** run has score `null` and `meta.error`. Both show as finished (crashed in red), never as running.
+- ACE ids are unique only within a loop, so the page keys agents by `(loop_id, ace_run_id)` and the Consensus view labels ACE agents with their loop.
+
+Per agent run, the leaderboard shows:
+
+- the score;
+- the submitted run's value of the problem's primary QoI (the first reference) and its error;
+- the mesh (`meta.mesh`) and DOFs;
+- solves, as successful / attempted;
+- gates and diagnostics counts.
+
+Agents without a submission yet are listed as running. ACE submissions also appear in the regular Consensus view of each problem.
+
 ## Run-record format (for the harness and the evaluator)
 
 Root: `$FEACORE_RUNS_DIR`, else `<repo>/runs`. The store writes `runs/.gitignore` containing `*`, so nothing in it is ever committed. Every write is atomic (temp file + rename).
@@ -293,7 +342,7 @@ python -m pytest tests/test_ui_api.py -q
 
 The tests use FastAPI's TestClient on a temporary store and cover every endpoint. That includes real solves through `POST /api/solve`, a real three-level study, a benchmark batch (run, CSV / JSON, cancel), submissions, consensus and the token auth. They skip if no 2D elasticity problem is registered or `skfem` does not import.
 
-The screenshots were made with headless Chromium (Playwright) against a scratch store. `batch_*.png` show a real batch (8 fast 2D benchmarks + NAFEMS LE10); `study_live_le10.png` / `study_le10.png` show LE10 started with *Run with defaults*. The consensus screenshot shows **scripted test agents**: deterministic scripts (`agent_id` `scripted-*`) that mesh the CAD themselves, change the reference setup (P1 vs P2, other mesh sizes, two meshes only, a symmetry edge clamped by mistake) and solve through `POST /api/solve`. Every number is a real solve. None of them is an LLM agent.
+The screenshots were made with headless Chromium (Playwright) against a scratch store. `swarm_empty.png` shows the Swarm page before any ACE records exist. `swarm.png` and `consensus_ace.png` show real bridge records from the ACE loop's **mock-LLM** path: 3 generations × 3 agent runs on Lamé / LE10 (train) and LE1 (held out), written by `python -m ace.run_loop --mock --ui-runs-dir <dir>`. The loop and its solves are real; the LLM decisions are the mock's. `batch_*.png` show a real batch (8 fast 2D benchmarks + NAFEMS LE10); `study_live_le10.png` / `study_le10.png` show LE10 started with *Run with defaults*. The consensus screenshot shows **scripted test agents**: deterministic scripts (`agent_id` `scripted-*`) that mesh the CAD themselves, change the reference setup (P1 vs P2, other mesh sizes, two meshes only, a symmetry edge clamped by mistake) and solve through `POST /api/solve`. Every number is a real solve. None of them is an LLM agent.
 
 ## Known gaps
 

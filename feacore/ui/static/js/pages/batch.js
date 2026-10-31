@@ -172,15 +172,16 @@ function drawHead(el, d) {
   const running = d.status === 'queued' || d.status === 'running';
   clear(el).append(h('div', { class: 'page-head' },
     h('div', {},
-      h('div', { class: 'secondary small' }, h('a', { href: '#/batch' }, '← Run benchmarks')),
+      h('div', { class: 'secondary small' }, h('a', { href: '#/batch' }, '← Run benchmarks'), ' · ', h('a', { href: '#/runs?tab=batches' }, 'all batches')),
       h('h1', {}, d.name || `Benchmark batch · ${d.n_problems} problem${d.n_problems === 1 ? '' : 's'}`),
-      h('div', { class: 'chips', style: { marginTop: '6px' } }, runStatusChip(d.status === 'finished' ? 'succeeded' : d.status),
-        h('span', { class: 'badge mono' }, d.batch_id), h('span', { class: 'badge' }, settingsText(d.settings)),
-        h('span', { class: 'badge' }, `${d.settings.study_workers} parallel`), h('span', { class: 'badge' }, timeAgo(d.created_at)))),
-    h('div', { class: 'row' },
-      running ? h('button', { class: 'btn', onclick: async () => { await postJSON(`/api/batches/${d.batch_id}/cancel`, {}); toast('Cancelled the queued and running studies'); } }, 'Cancel') : null,
+      h('div', { class: 'meta-line', style: { display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' } },
+        runStatusChip(d.status === 'finished' ? 'succeeded' : d.status),
+        h('span', {}, `${settingsText(d.settings)} · ${d.settings.study_workers} at a time · started ${timeAgo(d.created_at)}`),
+        h('span', { class: 'mono small muted' }, d.batch_id))),
+    h('div', { class: 'row', style: { gap: '10px' } },
+      running ? h('button', { class: 'btn ghost', onclick: async () => { await postJSON(`/api/batches/${d.batch_id}/cancel`, {}); toast('Cancelled the queued and running studies'); } }, 'Cancel') : null,
       h('a', { class: 'btn', href: withToken(`/api/batches/${d.batch_id}/results.csv`), download: `${d.batch_id}.csv` }, 'Download CSV'),
-      h('a', { class: 'btn', href: withToken(`/api/batches/${d.batch_id}/results.json`), download: `${d.batch_id}.json` }, 'Download JSON'))));
+      h('a', { class: 'btn', href: withToken(`/api/batches/${d.batch_id}/results.json`), download: `${d.batch_id}.json` }, 'JSON'))));
 }
 
 function drawTiles(el, d) {
