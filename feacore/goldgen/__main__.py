@@ -22,10 +22,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, as_completed, wait
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, as_completed, wait
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
@@ -42,37 +43,36 @@ def _screen_one(path: str):
         return {"ok": False, "path": path, "id": pid, "reason": f"{type(e).__name__}: {str(e)[:180]}"}
 
 
+SCREEN_TIMEOUT = 120   # s per STEP file: some ABC files send the CAD kernel into an endless loop
+
+
+def _screen_isolated(path: str) -> dict:
+    """Screen one file in its own interpreter: a file that crashes (segfault / double free) or
+    hangs the CAD kernel is rejected without touching the others."""
+    pid = "abc_" + Path(path).name.split("_")[0]
+    code = ("import json, sys; from feacore.goldgen.__main__ import _screen_one; "
+            "print('@@ROW@@' + json.dumps(_screen_one(sys.argv[1])))")
+    try:
+        p = subprocess.run([sys.executable, "-W", "ignore", "-c", code, path], capture_output=True,
+                           text=True, timeout=SCREEN_TIMEOUT, errors="replace")
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "path": path, "id": pid, "reason": f"CAD kernel timeout (> {SCREEN_TIMEOUT} s)"}
+    rows = [ln for ln in p.stdout.splitlines() if "@@ROW@@" in ln]
+    if p.returncode or not rows:
+        return {"ok": False, "path": path, "id": pid, "reason": f"crashed the CAD kernel (exit {p.returncode})"}
+    return json.loads(rows[-1].split('@@ROW@@', 1)[1])
+
+
 def cmd_screen(a) -> int:
     files = sorted(str(p) for p in Path(a.step_dir).rglob("*.step"))
-    rows: dict[str, dict] = {}
-    todo = list(files)
-    # a file that crashes gmsh (segfault / double free) kills its worker and breaks the whole pool:
-    # rebuild the pool and retry what was in flight; after two broken rounds each leftover file runs
-    # alone, so the crasher is identified and rejected without losing the rest
-    for rnd in range(3):
-        if not todo:
-            break
-        with ProcessPoolExecutor(a.workers if rnd < 2 else 1) as ex:
-            futs = {ex.submit(_screen_one, p): p for p in todo} if rnd < 2 else {}
-            for f in as_completed(futs):
-                try:
-                    rows[futs[f]] = f.result()
-                except BrokenProcessPool:
-                    pass
-        todo = [p for p in files if p not in rows]
-    for p in todo:                                    # alone, one process each
-        with ProcessPoolExecutor(1) as ex:
-            try:
-                rows[p] = ex.submit(_screen_one, p).result()
-            except BrokenProcessPool:
-                rows[p] = {"ok": False, "path": p, "id": "abc_" + Path(p).name.split("_")[0],
-                           "reason": "crashed the CAD kernel"}
-    with open(a.out, "w") as f:
-        for p in files:                               # input order: the same file on every machine
-            f.write(json.dumps(rows[p]) + "\n")
-    n_ok = sum(r["ok"] for r in rows.values())
-    n_crash = sum(r["reason"] == "crashed the CAD kernel" for r in rows.values() if not r["ok"])
-    print(f"screened {len(files)}: {n_ok} accepted, {n_crash} crashed -> {a.out}")
+    with ThreadPoolExecutor(a.workers) as ex:              # threads only wait on the subprocesses
+        rows = list(ex.map(_screen_isolated, files))
+    with open(a.out, "w") as f:                            # input order: the same file on every machine
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    n_ok = sum(r["ok"] for r in rows)
+    n_bad = sum(not r["ok"] and r["reason"].startswith(("crashed", "CAD kernel timeout")) for r in rows)
+    print(f"screened {len(files)}: {n_ok} accepted, {n_bad} crashed / timed out -> {a.out}")
     return 0
 
 
