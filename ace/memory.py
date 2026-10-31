@@ -20,6 +20,9 @@ With several tasks (`tasks=[...]`), there is one shared playbook PER TASK (IDs "
 "p1-...": the task's index), and each agent's private notes follow it across tasks: an agent sees
 the shared playbook of the task it is on plus its own notes. The teacher (diagnoser) also writes
 advice addressed to single agents (Diagnosis.agent_advice); that goes straight to their notes.
+
+With run_loop --deep none of update/promote is used: an LLM organizer (ace/organizer.py) rewrites
+each note list as a whole, and replace_notes applies its new list.
 """
 
 from __future__ import annotations
@@ -27,11 +30,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ace.config import (AGENTS, PRIVATE_DEDUP_THRESHOLD, PRIVATE_PRUNE_MARGIN, PRIVATE_TOP_N, PROMOTE_MIN_AGENTS,
+from ace.config import (AGENTS, SECTIONS, PRIVATE_DEDUP_THRESHOLD, PRIVATE_PRUNE_MARGIN, PRIVATE_TOP_N, PROMOTE_MIN_AGENTS,
                         SHARED_PRUNE_MARGIN)
 from ace.curator import Op, curate
 from ace.merge import apply_ops, find_duplicate
-from ace.playbook import Playbook
+from ace.playbook import Bullet, Playbook
 
 AGENT_OF_RUN = re.compile(r"-a(\d+)$")       # run ids end in "-a<k>"
 TASK_OF_RUN = re.compile(r"^g\d+-(.+)-a\d+$")  # run ids are "g<gen>-<problem>-a<k>"
@@ -162,6 +165,38 @@ class Memory:
                 return self.shared_by_task[m.group(1)]
         return None
 
+    # ---- --deep: the organizer rewrites a whole note list at once (ace/organizer.py)
+    @staticmethod
+    def replace_notes(playbook: Playbook, notes: list[dict], generation: int) -> dict:
+        """Make `playbook` hold exactly `notes` (the organizer's new list, most important first).
+        A note whose id is one of the playbook's bullets keeps that bullet (and its votes and
+        history), updated in place if its text, section or kind changed; a note with id None (or an
+        id this playbook does not hold) becomes a new bullet; every bullet not returned is removed.
+        Returns {"added": [(id, content)], "edited": [(id, content)], "removed": [(id, content)],
+        "kept": [id]}."""
+        old = {b.id: b for b in playbook.bullets}
+        changes = {"added": [], "edited": [], "removed": [], "kept": []}
+        new_bullets, used = [], set()
+        for n in notes:
+            section = n["section"] if n.get("section") in SECTIONS else "meshing"   # guard against a bad label
+            b = old.get(n.get("id"))
+            if b is not None and b.id not in used:     # an id returned twice: the second copy is a new note
+                used.add(b.id)
+                if (b.content, b.section, b.kind) != (n["content"], section, n.get("kind")):
+                    b.content, b.section, b.kind = n["content"], section, n.get("kind")
+                    b.source = n.get("source") or b.source
+                    changes["edited"].append((b.id, b.content))
+                else:
+                    changes["kept"].append(b.id)
+            else:
+                b = Bullet(id=playbook.next_id(section), section=section, content=n["content"],
+                           created_gen=generation, kind=n.get("kind"), source=n.get("source"))
+                changes["added"].append((b.id, b.content))
+            new_bullets.append(b)
+        changes["removed"] = [(b.id, b.content) for b in playbook.bullets if b.id not in used]
+        playbook.bullets = new_bullets        # in the organizer's order (render_notes keeps it)
+        return changes
+
     # ---- persistence
     def save(self, out: Path, generation: int) -> None:
         if self.tasks == [None]:
@@ -173,6 +208,12 @@ class Memory:
         pdir.mkdir(exist_ok=True)
         for k, pb in enumerate(self.private):
             pb.save(pdir / f"agent{k}_gen{generation}.json")
+
+
+def notes_as_dicts(playbook: Playbook) -> list[dict]:
+    """A playbook's notes in the form the organizer reads: {id, section, content, kind, source, gen}."""
+    return [{"id": b.id, "section": b.section, "content": b.content, "kind": b.kind, "source": b.source,
+             "gen": b.created_gen} for b in playbook.bullets]
 
 
 def agent_of_bullet(bullet_id: str) -> int | None:
