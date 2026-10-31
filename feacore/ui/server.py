@@ -371,7 +371,8 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
     @app.middleware("http")
     async def require_token(request: Request, call_next):
         # the page shell and static files stay open (the UI must load to accept ?token=)
-        if token and request.url.path.startswith("/api/") and request.url.path != "/api/auth":
+        # /api/auth and /api/health stay open; health answers only {ok, active_jobs} without a token
+        if token and request.url.path.startswith("/api/") and request.url.path not in ("/api/auth", "/api/health"):
             if not _token_ok(request):
                 return SafeJSONResponse({"detail": AUTH_HELP}, status_code=401,
                                         headers={"WWW-Authenticate": "Bearer"})
@@ -421,12 +422,20 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
 
     # ------------------------------------------------------------------ health
     @app.get("/api/health")
-    def health(wait: bool = False, refresh: bool = False):
+    def health(request: Request, wait: bool = False, refresh: bool = False):
+        """Service health. ``active_jobs`` = queued + running solve / study (incl. batch) jobs, so a
+        deploy script can wait for 0 before restarting. Reachable without the token, but then it
+        returns only ``{ok, active_jobs, auth_required}``."""
+        active = runner.active_count()
+        if token and not _token_ok(request):
+            return {"ok": True, "active_jobs": active, "auth_required": True}
         reg = _problems_api()
         errors = reg.discover()
         bc = backend_check.get(wait=wait, refresh=refresh)
         return {
             "ok": True,
+            "active_jobs": active,
+            "auth_required": bool(token),
             "feacore": feacore.__version__,
             "python": sys.version.split()[0],
             "platform": platform.platform(),

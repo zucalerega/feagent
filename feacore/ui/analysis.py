@@ -50,6 +50,11 @@ FLAG_INFO = {
                       "The quantity is close to zero, so relative errors are not meaningful."),
     "two_solutions_identical": ("warning", "Two meshes give identical values",
                                 "Two of the three values coincide; the convergence rate cannot be estimated."),
+    "mesh_scatter": ("warning", "Scatter between meshes",
+                     "The value moves up and down by under 2% between meshes without a trend: typical of point "
+                     "stresses on independently remeshed (unstructured) meshes, where the point lands at a different "
+                     "position inside an element each time. No convergence order can be measured; judge the value "
+                     "against the reference tolerance, or use an averaged / integrated quantity."),
     "outlier_vs_consensus": ("serious", "Disagrees with the other agents",
                              "This answer lies outside the population consensus by more than its own error band "
                              "and the reference tolerance. Likely a setup error (wrong load, units, support or "
@@ -76,6 +81,7 @@ VERDICTS = {
     "converged": ("good", "Converged"),
     "exact": ("good", "Exact on every mesh"),
     "plateau": ("good", "Converged (plateau)"),
+    "scatter": ("warning", "Scatter between meshes"),
     "converged_noise": ("good", "Converged"),
     "converging": ("warning", "Converging, not asymptotic"),
     "slow": ("serious", "Converging slowly"),
@@ -89,6 +95,7 @@ VERDICTS = {
 
 
 PLATEAU_REL = 1e-3  # successive relative changes below this: converged, rate not measurable
+SCATTER_REL = 2e-2  # divergent but non-monotone and below this: mesh-to-mesh scatter, not a singularity
 
 
 def _plateau(values: list[float]) -> float | None:
@@ -101,6 +108,18 @@ def _plateau(values: list[float]) -> float | None:
         return None
     changes = [abs(v[-1] - v[-2]), abs(v[-2] - v[-3])]
     return changes[0] if max(changes) < PLATEAU_REL * scale else None
+
+
+def _scatter(values: list[float]) -> bool:
+    """Small (< SCATTER_REL) changes without a monotone growth of |value| over the last 3 meshes."""
+    v = [float(x) for x in values if x is not None][-3:]
+    if len(v) < 3:
+        return False
+    scale = max(abs(x) for x in v)
+    if scale == 0 or max(abs(v[1] - v[0]), abs(v[2] - v[1])) >= SCATTER_REL * scale:
+        return False
+    growing = abs(v[0]) < abs(v[1]) < abs(v[2]) or abs(v[0]) > abs(v[1]) > abs(v[2])
+    return not growing
 
 
 def explain(flag: str) -> dict:
@@ -142,9 +161,13 @@ def interpret_entry(entry: dict) -> dict:
         plateau = None
         if conv not in ("monotone", "exact", "converged") or g.get("p") is None and conv == "monotone":
             plateau = _plateau(entry.get("values", []))
+        scatter = plateau is None and conv in ("divergent", "oscillatory_divergent") and _scatter(entry.get("values", []))
         if plateau is not None:
             flags = [f for f in flags if f not in ("divergent", "oscillatory", "order_undefined")]
             flags.append("converged_plateau")
+        elif scatter:
+            flags = [f for f in flags if f != "divergent"]
+            flags.append("mesh_scatter")
         elif stress and (conv in ("divergent", "oscillatory_divergent") or "p_far_below_theory" in flags):
             flags.append("singular_suspected")
         if expectation == "diverge":
@@ -157,6 +180,8 @@ def interpret_entry(entry: dict) -> dict:
             verdict = "converged_noise"
         elif plateau is not None:
             verdict = "plateau"
+        elif scatter:
+            verdict = "scatter"
         elif conv in ("divergent", "oscillatory_divergent"):
             verdict = "diverging"
         elif conv == "oscillatory":
@@ -173,7 +198,7 @@ def interpret_entry(entry: dict) -> dict:
         else:
             verdict = "undetermined"
         if reliable is False and g.get("phi_ext") is not None and verdict not in (
-                "expected_divergence", "unexpected_convergence", "plateau"):
+                "expected_divergence", "unexpected_convergence", "plateau", "scatter"):
             flags.append("extrapolation_unreliable")
     flags = list(dict.fromkeys(flags))
     status, label = VERDICTS[verdict]
@@ -223,6 +248,12 @@ def _summary_sentence(entry: dict, out: dict) -> str:
     if v == "converged_noise":
         return (f"Converged within round-off: the meshes agree to better than 1e-6 "
                 f"(finest-mesh value {_fmt(out['fine'], 7)}).")
+    if v == "scatter":
+        vals = [x for x in entry.get("values", []) if x is not None][-3:]
+        sc = max(abs(x) for x in vals) or 1.0
+        mx = max(abs(vals[1] - vals[0]), abs(vals[2] - vals[1])) / sc
+        return (f"Mesh-to-mesh scatter of up to {100 * mx:.2g}% without a trend (finest-mesh value "
+                f"{_fmt(out['fine'], 6)}); no convergence order can be measured.")
     if v == "plateau":
         return (f"Converged: the last meshes differ by less than {100 * PLATEAU_REL:.1g}% "
                 f"(fine-mesh value {_fmt(out['fine'], 6)}); the convergence rate is below measurement resolution.")

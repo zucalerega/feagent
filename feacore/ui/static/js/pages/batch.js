@@ -47,7 +47,7 @@ async function renderNew(el) {
   const drawQuick = () => {
     clear(quick);
     const withRefs = all.filter(p => p.n_references > 0).map(p => p.id);
-    quick.append(
+    quick.append(...[
       h('button', { class: `chip${withRefs.length && withRefs.every(id => sel.has(id)) ? ' on' : ''}`, onclick: () => toggleGroup(withRefs) }, 'all with references', h('span', { class: 'count' }, withRefs.length)),
       h('button', { class: 'chip', onclick: () => { all.forEach(p => sel.add(p.id)); redraw(); } }, 'all', h('span', { class: 'count' }, all.length)),
       h('button', { class: 'chip', onclick: () => { sel.clear(); redraw(); } }, 'clear'),
@@ -57,7 +57,7 @@ async function renderNew(el) {
         return h('button', { class: `chip${ids.every(id => sel.has(id)) ? ' on' : ''}`, onclick: () => toggleGroup(ids) }, t.replace(/_/g, ' '), h('span', { class: 'count' }, n));
       }),
       h('select', { style: { fontSize: '14px', padding: '3px 8px' }, onchange: e => { if (e.target.value) toggleGroup(all.filter(p => p.family === e.target.value).map(p => p.id)); e.target.value = ''; } },
-        h('option', { value: '' }, 'by family…'), families.map(f => h('option', { value: f }, `${f} (${all.filter(p => p.family === f).length})`))));
+        h('option', { value: '' }, 'by family…'), families.map(f => h('option', { value: f }, `${f} (${all.filter(p => p.family === f).length})`)))].flat());
   };
   const drawTable = () => {
     clear(tableBody);
@@ -225,6 +225,12 @@ function meshDots(it) {
     lv.map(l => h('span', { title: `${l.status}${l.n_dofs ? `, ${fmtInt(l.n_dofs)} dofs` : ''}`,
       style: { width: '14px', height: '14px', borderRadius: '4px', background: col[l.status] || 'var(--grid)', opacity: ['meshing', 'solving', 'storing'].includes(l.status) ? 0.65 : 1 } })));
 }
+
+const pct = (x, signed = false) => {
+  if (x === null || x === undefined || !isFinite(x)) return '\u2013';
+  if (Math.abs(x) < 1e-3) return '<0.001%';
+  return `${signed && x > 0 ? '+' : ''}${fmt(x, 2)}%`;
+};
 
 function drawResults(el, d) {
   const rows = d.rows || [];

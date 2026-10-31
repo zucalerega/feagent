@@ -42,6 +42,7 @@ class Job:
     pid: int | None = None
     returncode: int | None = None
     future: Future = field(default_factory=Future)
+    cancel_requested: bool = False
 
     def summary(self) -> dict:
         return {"id": self.id, "kind": self.kind, "lane": self.lane, "state": self.state, "pid": self.pid,
@@ -117,6 +118,12 @@ class JobRunner:
         self.queues[lane].put(job)
         return job
 
+    def active_count(self, kinds: tuple[str, ...] = ("solve", "study")) -> int:
+        """Queued + running jobs of these kinds (batches are studies). Used by deploy scripts to
+        avoid restarting the service mid-job."""
+        with self._lock:
+            return sum(1 for j in self.jobs.values() if j.kind in kinds and j.state in ("queued", "running"))
+
     def status(self) -> dict:
         with self._lock:
             jobs = list(self.jobs.values())
@@ -137,6 +144,7 @@ class JobRunner:
             if j.state == "queued":
                 j.state = "cancelled"
             elif j.id in procs and procs[j.id].poll() is None:
+                j.cancel_requested = True
                 procs[j.id].terminate()
             n += 1
         return n
@@ -183,7 +191,7 @@ class JobRunner:
                 self._procs[job.id] = p
             try:
                 job.returncode = p.wait(timeout=job.timeout)
-                job.state = "done" if job.returncode == 0 else "failed"
+                job.state = "done" if job.returncode == 0 else ("cancelled" if job.cancel_requested else "failed")
             except subprocess.TimeoutExpired:
                 p.terminate()
                 try:
@@ -223,6 +231,10 @@ def finalize_study(store: RunStore) -> Callable[[Job], None]:
     def hook(job: Job) -> None:
         sid = job.payload["study_id"]
         rec = store.get_study(sid)
+        if job.state == "cancelled":
+            if rec.get("status") != "cancelled":
+                store.update_study(sid, status="cancelled", error="cancelled by the user", finished_at=now_iso())
+            return
         if rec.get("status") in ("queued", "running"):
             prog = rec.get("progress") or {}
             prog.update(stage="failed", message=crash_message(job))

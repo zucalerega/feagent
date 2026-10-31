@@ -78,6 +78,15 @@ Decisions:
   meshes; the consensus view uses the median and MAD of each submission's best estimate. For display
   only, the UI calls a QoI converged when both mesh-to-mesh changes are under 0.1%, even if `gci3`
   can't assign an order. Verdicts still come from `feacore.verification`.
+- **Running it for the team (Brev):** `bash scripts/serve.sh` installs the UI/solver service (systemd,
+  starts on boot) plus an auto-update timer. Every minute it fast-forwards the checked-out branch and
+  restarts the service, re-runs setup when dependencies change, and waits while jobs are running.
+  Set `FEACORE_UI_TOKEN` (or start the UI with `--token auto`) before sharing a tunnel URL. Every
+  `/api/*` call then needs the token. Teammates' scripts and agents call `POST <url>/api/solve`;
+  the UI's Connect page shows copy-paste examples. Details are in `docs/brev.md`; a one-click team box
+  is a Brev Launchable using `scripts/brev_launchable_setup.sh`.
+- The UI shows small trendless mesh-to-mesh changes (under 2%) as "scatter between meshes", not as
+  divergence. Real singularities still show as diverging.
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
