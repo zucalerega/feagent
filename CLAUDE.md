@@ -20,14 +20,29 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
-- Nothing implemented yet.
+- `mesh-harness` branch: the agent's meshing MCP + harness, in `meshing-harness/` (see its README).
+  Reads existing STEP/IGES/BREP CAD, names boundary-condition faces by geometric query, meshes with
+  gmsh from an editable `mesh.yaml`, and gates mesh quality. No solver (owned separately).
 - `improver-loop` branch: improver side of the loop.
+
+## Decisions
+
+- **Agent MCP tools** (`meshing-harness/`, server `uv run feagent-mcp`): `automesh` (zero-config start),
+  `inspect_geometry` (digest: features, faces, hazards), `find_faces` (geometric face query with
+  expected count), `render_view`, `mesh`, `check_mesh`; prompt `meshing_workflow`. Geometry, mesh and BCs
+  are all declared in `mesh.yaml` (`groups:` by query, `bcs:` for fixed/loads or inlet/outlet).
+- **Solver hand-off:** `out/mesh.inp` (every group as NSET/ELSET; surface elements for groups must not
+  get a section), `out/mesh.msh`/`.su2`, and `out/report.json` → `bcs`.
+- **Evaluator input:** `out/report.json` (`schema_version: 1`, per-gate pass/warn/fail with value and
+  threshold) — schema in `meshing-harness/docs/report-schema.md`.
+- **Improver-editable surface:** `meshing-harness/agent_context/` — `SKILL.md` (workflow prompt),
+  `tools.yaml` (MCP tool descriptions), `examples/` (few-shot specs). Give each agent its own copy via
+  `FEAGENT_CONTEXT_DIR`. Harness code changes are possible but not required for prompt-level improvement.
 
 ## Open questions
 
 - What are the CAD design problems, and how is a solution scored?
-- Which MCP tools does the agent get (geometry / mesh / BCs)?
-- What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
+- What exactly can an improver change beyond `agent_context/` (harness code? per-agent spec defaults?)
 - What does the evaluator output look like (schema for rankings + summary)?
 
 ## Conventions
