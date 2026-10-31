@@ -627,7 +627,9 @@ def _check_rigid_modes(md: _Model, D: np.ndarray, has_robin: bool = False) -> No
     if R.shape[0] == 0:
         free = names
     else:
-        u, sv, vt = np.linalg.svd(R, full_matrices=True)
+        # full_matrices only when R has fewer rows than modes: otherwise the reduced SVD already gives
+        # the complete (modes x modes) vt, and the full one would build an n x n U (80 GB at n ~ 1e5)
+        u, sv, vt = np.linalg.svd(R, full_matrices=R.shape[0] < R.shape[1])
         tol = 1e-8 * max(1.0, sv.max() if sv.size else 1.0)
         rank = int((sv > tol).sum())
         if rank == len(modes):
