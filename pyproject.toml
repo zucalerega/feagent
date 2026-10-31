@@ -11,9 +11,10 @@ dependencies = ["numpy", "scipy", "scikit-fem>=10", "meshio>=5.3", "gmsh>=4.11"]
 
 [project.optional-dependencies]
 dev = ["pytest", "matplotlib", "sympy"]
+ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib"]
 
 [tool.setuptools.packages.find]
-include = ["feacore*"]
+include = ["feacore*", "ace*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -21,6 +21,8 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 ## Status
 
 - `improver-loop` branch: improver side of the loop.
+- `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
+  `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
 - `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
   gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `fea-solver-benchmarks` branch: the fixed solver, solution verification, benchmark problems, test
