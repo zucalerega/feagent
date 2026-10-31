@@ -1,0 +1,6 @@
+{
+ "a0": "Grade strongly at singular or re-entrant corners and other stress concentrations: very small local sizes there, coarse elsewhere.",
+ "a1": "Economy: reach the accuracy target with as few DOFs as possible; prefer the coarsest mesh that still beats the automesher.",
+ "a2": "Refine every geometric feature (holes, fillets, corners, thin sections) moderately rather than any single one strongly.",
+ "a3": "Refine along the loaded and supported boundaries, where the boundary conditions drive the stress gradients."
+}
