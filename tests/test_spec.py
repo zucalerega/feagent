@@ -85,3 +85,35 @@ def test_fea_solve_parsed(tmp_path):
                   "solve:\n  fea: {fixed: [f], loads: [{group: l, force: [0, 0, -1000]}]}\n")
     s = load_spec(write(tmp_path, body))
     assert s.fea.loads[0].force == (0.0, 0.0, -1000.0) and s.fea.E == 210000.0
+
+
+def test_fea_symmetry_pressure_displacement(tmp_path):
+    body = MIN + ("groups:\n  s: {select: {kind: plane}}\n  top: {select: {kind: plane}}\n"
+                  "  outer: {select: {kind: cylinder}}\n"
+                  "solve:\n  fea:\n    symmetry: [s]\n    pressure: [{group: top, value: 1.0}]\n"
+                  "    displacement:\n      - {group: outer, components: [0, 1]}\n"
+                  "      - {group: outer, components: [2], value: 0, where: 'abs(z) < 1e-6'}\n")
+    fea = load_spec(write(tmp_path, body)).fea
+    assert fea.fixed == [] and fea.loads == [] and fea.symmetry == ["s"]
+    assert fea.pressure[0].group == "top" and fea.pressure[0].value == 1.0
+    assert fea.displacement[0].components == [0, 1] and fea.displacement[0].value == 0.0
+    assert fea.displacement[1].where == "abs(z) < 1e-6" and fea.displacement[0].where is None
+
+
+@pytest.mark.parametrize("item, match", [
+    ("{group: s, components: [3]}", "components"),
+    ("{group: s, components: [0, 0]}", "distinct"),
+    ("{group: nope, components: [0]}", "unknown group"),
+    ("{group: s}", "required"),
+    ("{group: s, components: [0], bogus: 1}", "bogus"),
+])
+def test_fea_displacement_errors(tmp_path, item, match):
+    body = MIN + f"groups:\n  s: {{select: {{kind: plane}}}}\nsolve:\n  fea: {{displacement: [{item}]}}\n"
+    with pytest.raises(SpecError, match=match):
+        load_spec(write(tmp_path, body))
+
+
+def test_fea_pressure_needs_value(tmp_path):
+    body = MIN + "groups:\n  s: {select: {kind: plane}}\nsolve:\n  fea: {pressure: [{group: s}]}\n"
+    with pytest.raises(SpecError, match="value"):
+        load_spec(write(tmp_path, body))
