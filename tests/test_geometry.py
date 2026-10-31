@@ -1,9 +1,12 @@
 import math
+import time
 
 import gmsh
 import numpy as np
 import pytest
 
+from feagent import geometry
+from feagent.errors import FeagentError
 from feagent.geometry import analyze, analyze_current_model, digest_text
 from feagent.gmsh_session import gmsh_session, load_cad
 from feagent.types import GeometryModel
@@ -201,11 +204,122 @@ def test_split_hole_faces_merge_into_one_hole():
         occ.rotate([(3, halves[1])], 20, 15, 0, 0, 0, 1, math.pi)
         occ.cut([(3, plate)], [(3, t) for t in halves])
         occ.synchronize()
-        m = analyze_current_model()
+        m = analyze_current_model(ref_size=5)
     cyl = [f for f in m.faces if f.kind == "cylinder"]
     assert len(cyl) == 2 and all(f.angle_span == pytest.approx(180) for f in cyl)
+    # the other half of the same hole is not a "gap" (consistent with a single-face hole)
+    assert not [h for h in m.hazards if h.kind == "narrow_gap"]
     assert len(m.features) == 1
     hole = m.features[0]
     assert hole.kind == "hole" and hole.faces == sorted(f.tag for f in cyl)
     assert hole.params["angle_span"] == pytest.approx(360)
     assert hole.params["radius"] == pytest.approx(4) and hole.params["depth"] == pytest.approx(5)
+
+
+def _holed_plate(n: int, distinct: bool = False) -> None:
+    occ = gmsh.model.occ
+    k = int(math.ceil(math.sqrt(n)))
+    plate = occ.addBox(0, 0, 0, 12.0 * k, 12.0 * k, 4)
+    tools = [(3, occ.addCylinder(6 + 12 * (i % k), 6 + 12 * (i // k), -1, 0, 0, 6,
+                                 2.0 + (0.01 * i if distinct else 0.0))) for i in range(n)]
+    occ.cut([(3, plate)], tools)
+    occ.synchronize()
+
+
+def test_many_holes_analyze_fast():
+    with gmsh_session():
+        _holed_plate(200)
+        t0 = time.perf_counter()
+        m = analyze_current_model()
+        dt = time.perf_counter() - t0
+    assert dt < 10.0
+    holes = [f for f in m.features if f.kind == "hole"]
+    assert len(holes) == 200 and all(m.face(h.faces[0]).concave for h in holes)
+    top = [f for f in m.faces if f.kind == "plane" and f.center[2] == pytest.approx(4)]
+    assert len(top) == 1 and _close(top[0].normal, (0, 0, 1))
+    assert "200× hole r=2 axis +z" in digest_text(m)
+
+
+def test_summary_digest_is_token_bounded():
+    with gmsh_session():
+        _holed_plate(400, distinct=True)
+        m = analyze_current_model()
+    assert len(m.faces) > 400 and len(m.features) == 400
+    s = digest_text(m)
+    assert len(s) < 8000
+    assert "more feature patterns (use detail=full)" in s and "more (use detail=full)" in s
+    for hz in m.hazards:  # id lists inside hazard texts are capped
+        assert len(hz.message) < 400 and len(hz.suggestion) < 500
+    assert len(digest_text(m, detail="full")) > len(s)
+
+
+@pytest.mark.parametrize("preset", [("Mesh.ElementOrder", 2), ("Mesh.RecombineAll", 1),
+                                    ("Mesh.MeshSizeMin", 30), ("Mesh.Algorithm", 8)])
+def test_preset_mesh_options_do_not_break_tessellation(parts_dir, preset):
+    with gmsh_session():
+        load_cad(parts_dir / "thin_cup.step")
+        gmsh.option.setNumber(*preset)
+        m = analyze_current_model(ref_size=4)
+        assert gmsh.option.getNumber(preset[0]) == preset[1]
+    assert m.tessellation is not None
+    assert [h for h in m.hazards if h.kind == "thin_wall"][0].value == pytest.approx(1.0, abs=0.1)
+    assert not [h for h in m.hazards if h.kind == "analysis_incomplete"]
+
+
+def test_per_surface_recombine_still_tessellates(parts_dir):
+    with gmsh_session():
+        load_cad(parts_dir / "cantilever.step")
+        for _, f in gmsh.model.getEntities(2):
+            gmsh.model.mesh.setRecombine(2, f)
+        m = analyze_current_model()
+    p = m.tessellation.points[m.tessellation.triangles]
+    cr = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
+    assert np.all(np.einsum("ij,ij->i", cr, m.tessellation.normals) > 0)
+    assert all(f.thickness is not None for f in m.faces)
+
+
+def test_existing_mesh_is_not_destroyed(parts_dir):
+    with gmsh_session():
+        load_cad(parts_dir / "cantilever.step")
+        gmsh.model.mesh.generate(2)
+        n0 = gmsh.model.mesh.getNodes()[0].size
+        with pytest.raises(FeagentError) as ei:
+            analyze_current_model()
+        assert "before meshing" in ei.value.hint
+        m = analyze_current_model(tessellate=False)
+        assert gmsh.model.mesh.getNodes()[0].size == n0
+    assert len(m.faces) == 6
+
+
+def test_tessellation_failure_is_reported(parts_dir, monkeypatch):
+    def boom(dim=3):
+        raise Exception("synthetic mesher failure")
+
+    with gmsh_session():
+        load_cad(parts_dir / "thin_cup.step")
+        monkeypatch.setattr(gmsh.model.mesh, "generate", boom)
+        m = analyze_current_model(ref_size=4)
+    inc = [h for h in m.hazards if h.kind == "analysis_incomplete"]
+    assert inc and "synthetic mesher failure" in inc[0].message
+    assert len(inc[0].entities) == len(m.faces)
+    assert m.tessellation is None and all(f.thickness is None for f in m.faces)
+    assert _close(next(f for f in m.faces if f.center[0] == 0).normal, (-1, 0, 0))
+    assert "NOTE: temporary tessellation failed" in digest_text(m)
+
+
+def test_unresolved_shape_is_reported(parts_dir, monkeypatch):
+    def boom(fd):
+        raise RuntimeError("curvature query failed")
+
+    monkeypatch.setattr(geometry, "_curvatures", boom)
+    m = analyze(parts_dir / "plate_hole.step")
+    cyl = next(f for f in m.faces if f.kind == "cylinder")
+    assert cyl.radius is None and cyl.normal is not None
+    inc = [h for h in m.hazards if h.kind == "analysis_incomplete"]
+    assert inc and (2, cyl.tag) in inc[0].entities
+
+
+@pytest.mark.parametrize("bad", [0, -1.0])
+def test_bad_ref_size_raises(parts_dir, bad):
+    with pytest.raises(ValueError, match="ref_size"):
+        analyze(parts_dir / "cantilever.step", ref_size=bad)
