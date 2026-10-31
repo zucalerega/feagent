@@ -53,7 +53,7 @@ function draw(el, d, refresh) {
       label: `gen ${x.generation}`, sub: `${x.n_submissions} agent${x.n_submissions === 1 ? '' : 's'}`, median: x.median,
       points: x.points.map(p => ({ y: p.score, muted: p.gated, tip: `<b>${p.ace_run_id}</b> · ${p.problem_id}<br>score ${fmt(p.score, 3)}${p.gated ? '<br><span class="t-muted">gated</span>' : ''}` })),
     })),
-    yTitle: 'score  log₁₀(e_uniform / e_agent)', zeroLabel: 'uniform mesh, same node budget', width: 760,
+    yTitle: 'score', zeroLabel: '0 = uniform mesh, same node budget', width: 600, height: 280,
   });
   el.append(h('div', { class: 'grid-2', style: { marginBottom: '28px' } },
     h('div', { class: 'card' }, h('h2', {}, 'Score by generation'),
