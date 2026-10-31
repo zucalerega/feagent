@@ -9,11 +9,13 @@ Reads a run directory (ace_runs/<name>) as the loop writes it, so it updates whi
   gen<g>/diagnosis_*.json   the teacher's lessons and its advice to each agent
   playbook_<task>_gen<g>.json, private/agent<k>_gen<g>.json   the context an agent saw at gen g
   cost.jsonl                every API call, with its run id
+  --deep runs also: gen<g>/context/<agent>.md, teacher_<task>.json, reflections/, organizer/, reports/
 Nothing here writes to the run.
 """
 
 from __future__ import annotations
 
+import difflib
 import io
 import json
 import re
@@ -300,6 +302,141 @@ def scored_mesh_path(run_path: str) -> str | None:
     return cp["mesh"].get("path") if cp else None
 
 
+# --------------------------------------------------------------------------- --deep artefacts
+# A --deep run also writes, per generation g:
+#   gen<g>/context/<agent>.md          the exact context block the agent saw
+#   gen<g>/teacher_<task>.json         the deep teacher's feedback (per agent, highlights, warnings)
+#   gen<g>/reflections/<run_id>.json   the agent's own look at its results
+#   gen<g>/organizer/<owner>.json      the organizer's before / incoming / after notes
+#   gen<g>/reports/<run_id>.json, <run_id>_*.png   the run report and its pictures
+# Older runs have none of these, so every reader below returns None / empty when a file is missing.
+
+
+def read_text(path: Path) -> str | None:
+    return read_text_cached(str(path), path.stat().st_mtime) if path.exists() else None
+
+
+@st.cache_data(max_entries=200, show_spinner=False)
+def read_text_cached(path: str, mtime: float) -> str:   # mtime: cache key, see read_json
+    return Path(path).read_text()
+
+
+def report_images(d: Path, g: int, run_id: str) -> dict[str, Path]:
+    """The run report's pictures by name ("mesh", "error", "stress"). The report JSON lists them; its
+    paths may have been written relative to the repo or from another directory, so fall back to the
+    file name inside gen<g>/reports, and finally to globbing <run_id>_*.png there."""
+    rdir = d / f"gen{g}" / "reports"
+    rep = maybe_json(rdir / f"{run_id}.json") or {}
+    found = {}
+    for name, p in (rep.get("images") or {}).items():
+        for cand in (Path(p), RUNS.parent / p, rdir / Path(p).name):
+            if cand.exists():
+                found[name] = cand
+                break
+    if not found:
+        for f in sorted(rdir.glob(f"{run_id}_*.png")):
+            found[f.stem[len(run_id) + 1:]] = f
+    return found
+
+
+def note_changes(org: dict) -> dict[str, list]:
+    """Which notes the organizer added, edited and removed, from its before / after lists.
+    An "after" note keeps its id when it is kept or edited; a new note has id null."""
+    before = {n.get("id"): n for n in org.get("before") or [] if n.get("id")}
+    added, edited, kept_ids = [], [], set()
+    for n in org.get("after") or []:
+        old = before.get(n.get("id"))
+        if old is None:
+            added.append(n)
+        else:
+            kept_ids.add(n["id"])
+            if (old.get("content"), old.get("section")) != (n.get("content"), n.get("section")):
+                edited.append({**n, "was": old.get("content")})
+    removed = [n for i, n in before.items() if i not in kept_ids]
+    return {"added": added, "edited": edited, "removed": removed}
+
+
+def change_count(changes: dict, key: str, fallback: list) -> int:
+    """Memory.replace_notes reports changes as counts or as lists of ids; accept either."""
+    v = (changes or {}).get(key)
+    return len(v) if isinstance(v, list) else int(v) if v is not None else len(fallback)
+
+
+def deep_stamp(run: str, agent: str) -> float:
+    d = RUNS / run
+    files = [*d.glob(f"gen*/context/{agent}.md"), *d.glob(f"gen*/organizer/{agent}.json")]
+    return max((f.stat().st_mtime for f in files), default=0.0)
+
+
+@st.cache_data(max_entries=50, show_spinner=False)
+def context_history(run: str, agent: str, version: float) -> pd.DataFrame:   # version: cache key
+    """Per generation: the size of the context the agent saw, and how many of its notes the organizer
+    added / edited / removed after that generation (those changes show up in the next context)."""
+    d = RUNS / run
+    rows = []
+    for gd in d.glob("gen*"):
+        if not gd.name[3:].isdigit():
+            continue
+        ctx, org_f = gd / "context" / f"{agent}.md", gd / "organizer" / f"{agent}.json"
+        if not ctx.exists() and not org_f.exists():
+            continue
+        row = {"gen": int(gd.name[3:]), "context chars": len(ctx.read_text()) if ctx.exists() else None}
+        if org_f.exists():
+            org = json.loads(org_f.read_text())
+            ch = note_changes(org)
+            for key in ("added", "edited", "removed"):
+                row[key] = change_count(org.get("changes"), key, ch[key])
+        rows.append(row)
+    return pd.DataFrame(rows).sort_values("gen") if rows else pd.DataFrame()
+
+
+def show_mesh_call(call: dict | None, label: str) -> None:
+    if call:
+        st.markdown(f"**{label}**")
+        st.code(json.dumps(call, indent=None), language="json", wrap_lines=True)
+
+
+def show_stored_context(d: Path, r, g: int, k: int, agent: str, cited: set) -> None:
+    """The shared playbook and the agent's private notes as the loop stored them for generation g."""
+    shared = maybe_json(d / f"playbook_{r['task']}_gen{g}.json") or maybe_json(d / f"playbook_gen{g}.json")
+    private = maybe_json(d / "private" / f"agent{k}_gen{g}.json")
+    prev = maybe_json(d / "private" / f"agent{k}_gen{g - 1}.json") if g > 0 else None
+    prev_ids = {b["id"] for b in (prev or {}).get("bullets", [])}
+    st.markdown(f"**Shared playbook for {short(r['task'])}** ({len((shared or {}).get('bullets', []))} bullets)")
+    for b in (shared or {}).get("bullets", []):
+        st.markdown(f"{':green-badge[cited]' if b['id'] in cited else ''} `{b['id']}` {b['content']}")
+    st.markdown(f"**{agent}'s own notes** ({len((private or {}).get('bullets', []))}; kept across tasks)")
+    for b in (private or {}).get("bullets", []):
+        tags = (":blue-badge[new]" if b["id"] not in prev_ids else "") + \
+               (" :green-badge[cited]" if b["id"] in cited else "") + \
+               (" :violet-badge[teacher advice]" if b.get("evidence_type") == "advice" else "")
+        st.markdown(f"{tags} `{b['id']}` {b['content']}")
+
+
+def show_old_teacher(d: Path, r, g: int, agent: str) -> None:
+    """The (non --deep) teacher's diagnosis: lessons for everyone and advice to this agent."""
+    diag = maybe_json(d / f"gen{g}" / f"diagnosis_{r['task']}.json")
+    dg = (diag or {}).get("diagnosis") or {}
+    adv = [a for a in dg.get("agent_advice", []) if a.get("agent") == agent]
+    st.markdown(f"**To {agent}** (goes into its own notes for generation {g + 1})")
+    for a in adv or [{"content": "(no advice addressed to this agent)"}]:
+        st.markdown(f"- {a['content']}")
+    st.markdown("**To everyone on this task** (candidate lessons)")
+    for les in dg.get("lessons", []):
+        st.markdown(f"- {les['content']} :gray-badge[{les.get('evidence_type', '')}]")
+    mine_diag = [x for x in dg.get("runs", []) if x.get("run_id") == r["run_id"]]
+    if mine_diag:
+        st.markdown("**Diagnosis of this run**")
+        st.markdown(f"{mine_diag[0].get('cause', '')}")
+    st.caption(f"{(diag or {}).get('tool_calls', 0)} teacher tool calls, {len((diag or {}).get('reruns', []))} reruns")
+
+
+def show_notes(notes: list[dict]) -> None:
+    """Note items (section, kind, content) as one line each."""
+    for n in notes or []:
+        st.markdown(f":gray-badge[{n.get('section', '')}] :blue-badge[{n.get('kind', '')}] {n.get('content', '')}")
+
+
 # --------------------------------------------------------------------------- page
 
 
@@ -388,6 +525,33 @@ def page() -> None:
         st.altair_chart(line + ref, alt=f"{agent}'s base score per generation; dashed: mean of all agents on that task")
         st.caption("Solid: this agent. Dashed: mean of every agent on that task that generation.")
 
+    # ---- --deep runs: how the agent's context grows and changes
+    hist = context_history(run, agent, deep_stamp(run, agent))
+    if not hist.empty:
+        with st.container(border=True):
+            st.subheader("Context over generations")
+            size_col, change_col = st.columns(2)
+            with size_col:
+                st.altair_chart(alt.Chart(hist.dropna(subset=["context chars"])).mark_line(point=True).encode(
+                    x=alt.X("gen:Q", title="generation", axis=alt.Axis(tickMinStep=1)),
+                    y=alt.Y("context chars:Q", title="context size (characters)"),
+                    tooltip=["gen", "context chars"]),
+                    alt=f"Size of the context {agent} saw in each generation")
+            changes = [c for c in ("added", "edited", "removed") if c in hist]
+            with change_col:
+                if changes:
+                    long = hist.melt(id_vars="gen", value_vars=changes, var_name="change", value_name="notes").dropna()
+                    st.altair_chart(alt.Chart(long).mark_bar().encode(
+                        x=alt.X("gen:O", title="generation"),
+                        y=alt.Y("notes:Q", title="notes"),
+                        color=alt.Color("change:N", title="organizer",
+                                        scale=alt.Scale(domain=["added", "edited", "removed"],
+                                                        range=["#4c9a5b", "#4a7fc1", "#d6402b"])),
+                        xOffset="change:N", tooltip=["gen", "change", "notes"]),
+                        alt=f"Notes the organizer added, edited and removed for {agent} after each generation")
+            st.caption("Left: the exact context the agent saw. Right: the organizer's changes to its notes after "
+                       "that generation, which show up in the next generation's context.")
+
     # ---- meshes, generation by generation
     with st.container(border=True):
         st.subheader("Meshes")
@@ -434,6 +598,13 @@ def page() -> None:
                 st.markdown(f"**Target: the actual structure** ({tgt['kind']}, reference stress)")
                 st.plotly_chart(mesh_figure(tgt["pts"], tgt["tris"], None, tgt["vm"], lo, hi,
                                             flat2d=tgt["kind"] == "CAD section"), key=f"target_{r['task']}")
+        # --deep runs: the run report's pictures (the same ones the teacher and the agent looked at)
+        imgs = report_images(d, g, r["run_id"])
+        if imgs:
+            st.markdown("**Run report** (what the teacher and the agent's self-reflection were shown)")
+            for col, (name, f) in zip(st.columns(len(imgs)), imgs.items()):
+                with col:
+                    st.image(str(f), caption=name, alt=f"{agent} generation {g}: {name} picture from the run report")
         left, right = st.columns([1, 1.2])
         with left:
             st.markdown(f"**{short(r['task'])}** · rank {r['rank']} of {r['group_size']} · `{r['run_id']}`")
@@ -449,38 +620,103 @@ def page() -> None:
                 else:
                     st.caption("Error maps are drawn for 2D tasks only.")
         with right:
-            view = st.segmented_control("Show", ["Context it saw", "Teacher's advice", "What it did"],
+            view = st.segmented_control("Show", ["Context it saw", "Teacher's advice", "Self-reflection",
+                                                 "Organizer", "What it did"],
                                         default="Context it saw", key="detail_view")
             cited = set(r["cited"])
+            gd = d / f"gen{g}"
             if view == "Context it saw":
-                shared = maybe_json(d / f"playbook_{r['task']}_gen{g}.json") or maybe_json(d / f"playbook_gen{g}.json")
-                private = maybe_json(d / "private" / f"agent{k}_gen{g}.json")
-                prev = maybe_json(d / "private" / f"agent{k}_gen{g - 1}.json") if g > 0 else None
-                prev_ids = {b["id"] for b in (prev or {}).get("bullets", [])}
-                st.markdown(f"**Shared playbook for {short(r['task'])}** ({len((shared or {}).get('bullets', []))} bullets)")
-                for b in (shared or {}).get("bullets", []):
-                    st.markdown(f"{':green-badge[cited]' if b['id'] in cited else ''} `{b['id']}` {b['content']}")
-                st.markdown(f"**{agent}'s own notes** ({len((private or {}).get('bullets', []))}; kept across tasks)")
-                for b in (private or {}).get("bullets", []):
-                    tags = (":blue-badge[new]" if b["id"] not in prev_ids else "") + \
-                           (" :green-badge[cited]" if b["id"] in cited else "") + \
-                           (" :violet-badge[teacher advice]" if b.get("evidence_type") == "advice" else "")
-                    st.markdown(f"{tags} `{b['id']}` {b['content']}")
+                # --deep: the exact text the agent saw, diffed against its previous context
+                ctx = read_text(gd / "context" / f"{agent}.md")
+                if ctx is not None:
+                    prev_g = max((x for x in range(g) if (d / f"gen{x}" / "context" / f"{agent}.md").exists()), default=None)
+                    prev_ctx = read_text(d / f"gen{prev_g}" / "context" / f"{agent}.md") if prev_g is not None else None
+                    with st.container(horizontal=True):
+                        st.metric("Context size", f"{len(ctx):,} chars",
+                                  f"{len(ctx) - len(prev_ctx):+,} vs gen {prev_g}" if prev_ctx is not None else None,
+                                  delta_color="off", border=True)
+                        st.metric("Lines", f"{len(ctx.splitlines()):,}", border=True)
+                    if prev_ctx is not None and st.toggle(f"Highlight changes since generation {prev_g}", value=True,
+                                                          key="ctx_diff"):
+                        # the whole context with + (added) / - (removed) markers; n is large so nothing is elided
+                        diff = list(difflib.unified_diff(prev_ctx.splitlines(), ctx.splitlines(), lineterm="",
+                                                         n=10**6))[3:]   # drop the ---/+++/@@ header lines
+                        st.caption(f"{sum(x.startswith('+') for x in diff)} lines added, "
+                                   f"{sum(x.startswith('-') for x in diff)} removed")
+                        st.code("\n".join(diff) or ctx, language="diff", wrap_lines=True, height=600)
+                    else:
+                        st.code(ctx, language="markdown", wrap_lines=True, height=600)
+                stored = st.expander("Playbook and notes as stored") if ctx is not None else st.container()
+                with stored:
+                    show_stored_context(d, r, g, k, agent, cited)
+            elif view == "Teacher's advice" and (teach := maybe_json(gd / f"teacher_{r['task']}.json")):
+                # --deep teacher: one feedback per task, with a section for every run
+                fb = next((a for a in teach.get("per_agent", [])
+                           if a.get("run_id") == r["run_id"] or a.get("agent") == agent), None)
+                if fb:
+                    st.markdown(f"**Diagnosis of {agent}'s run**")
+                    st.markdown(fb.get("diagnosis", ""))
+                    for label, items in (("What it did well", fb.get("strengths")), ("Mistakes", fb.get("mistakes"))):
+                        if items:
+                            st.markdown(f"**{label}**")
+                            st.markdown("\n".join(f"- {x}" for x in items))
+                    show_mesh_call(fb.get("next_mesh_call"), "Suggested next mesh call")
+                    st.markdown(f"**Notes for {agent}** ({len(fb.get('notes') or [])}; go to the organizer)")
+                    show_notes(fb.get("notes"))
+                else:
+                    st.caption(f"(no feedback addressed to {agent})")
+                with st.expander("The whole task: summary, highlights, setup warnings, shared lessons"):
+                    st.markdown(teach.get("task_summary", ""))
+                    for w in teach.get("setup_warnings") or []:
+                        st.warning(w, icon=":material/warning:")
+                    for h in teach.get("highlights") or []:
+                        who = ":green-badge[this agent]" if h.get("agent") == agent else f":gray-badge[{h.get('agent')}]"
+                        st.markdown(f"{who} **{h.get('what', '')}** — {h.get('why_it_works', '')} "
+                                    f"*How to copy:* {h.get('how_to_copy', '')}")
+                    if teach.get("shared_lessons"):
+                        st.markdown("**Shared lessons**")
+                        show_notes(teach["shared_lessons"])
             elif view == "Teacher's advice":
-                diag = maybe_json(d / f"gen{g}" / f"diagnosis_{r['task']}.json")
-                dg = (diag or {}).get("diagnosis") or {}
-                adv = [a for a in dg.get("agent_advice", []) if a.get("agent") == agent]
-                st.markdown(f"**To {agent}** (goes into its own notes for generation {g + 1})")
-                for a in adv or [{"content": "(no advice addressed to this agent)"}]:
-                    st.markdown(f"- {a['content']}")
-                st.markdown("**To everyone on this task** (candidate lessons)")
-                for les in dg.get("lessons", []):
-                    st.markdown(f"- {les['content']} :gray-badge[{les.get('evidence_type', '')}]")
-                mine_diag = [x for x in dg.get("runs", []) if x.get("run_id") == r["run_id"]]
-                if mine_diag:
-                    st.markdown("**Diagnosis of this run**")
-                    st.markdown(f"{mine_diag[0].get('cause', '')}")
-                st.caption(f"{(diag or {}).get('tool_calls', 0)} teacher tool calls, {len((diag or {}).get('reruns', []))} reruns")
+                show_old_teacher(d, r, g, agent)
+            elif view == "Self-reflection":
+                refl = maybe_json(gd / "reflections" / f"{r['run_id']}.json")
+                if refl is None:
+                    st.caption("No self-reflection for this run (only --deep runs write one).")
+                else:
+                    st.markdown("**What happened** (the agent, looking at its own results and whole mesh)")
+                    st.markdown(refl.get("what_happened", ""))
+                    st.markdown("**What I learned**")
+                    show_notes(refl.get("what_i_learned"))
+                    st.markdown("**Plan for next time**")
+                    st.markdown(refl.get("plan_next", ""))
+                    show_mesh_call(refl.get("next_mesh_call"), "Next mesh call it plans")
+            elif view == "Organizer":
+                org = maybe_json(gd / "organizer" / f"{agent}.json")
+                if org is None:
+                    st.caption("No organizer record for this agent (only --deep runs write one).")
+                else:
+                    ch = note_changes(org)
+                    st.caption(f"After generation {g}: {len(org.get('before') or [])} notes before, "
+                               f"{len(org.get('incoming') or [])} incoming, {len(org.get('after') or [])} after. "
+                               f"These are the notes {agent} sees in generation {g + 1}.")
+                    with st.container(horizontal=True):
+                        for key in ("added", "edited", "removed"):
+                            st.metric(key.capitalize(), change_count(org.get("changes"), key, ch[key]), border=True)
+                    if ch["added"]:
+                        st.markdown("**Added**")
+                        show_notes(ch["added"])
+                    if ch["edited"]:
+                        st.markdown("**Edited**")
+                        for n in ch["edited"]:
+                            st.markdown(f"`{n.get('id')}` :red[~~{n['was']}~~]  \n:green[{n.get('content', '')}]")
+                    if ch["removed"]:
+                        st.markdown("**Removed**")
+                        for n in ch["removed"]:
+                            st.markdown(f"`{n.get('id')}` :red[~~{n.get('content', '')}~~]")
+                    with st.expander("Incoming notes (teacher, self-reflection, peers, shared lessons)"):
+                        for n in org.get("incoming") or []:
+                            st.markdown(f":violet-badge[{n.get('source', '')}] :gray-badge[{n.get('section', '')}] "
+                                        f"{n.get('content', '')}")
             else:
                 for t in run_rec.get("trace", []):
                     if t["type"] == "tool_call" and t.get("name") in ("mesh", "solve", "submit"):
