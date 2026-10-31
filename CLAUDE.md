@@ -35,6 +35,11 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   - Two new exact benchmarks: `taylor_couette_2d` (rotating cylinder) and `square_duct_3d` (developing duct flow).
   - The tasks are 2D only, because of the 3D unstructured-mesh bias listed under the known solver limits.
   - Without a local OpenFOAM: `scripts/openfoam_docker.sh` (OpenFOAM v1912 in Docker, plus shims) and `FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp`.
+- `single-agent-baseline` branch (off `ace-ui-bridge`): is the swarm useful? `ace/baselines.py` runs the
+  loop with one agent (single, matched attempts, isolated agents) and `ace/compare.py` re-scores every arm
+  together. `run_loop --attempts N`, `run_config.json` (setup snapshot) and `progress.json` (spend per gen).
+- `claude/ace-loop-integration-a1498d` branch: `ace-loop` with `ace-cfd` and `single-agent-baseline`
+  merged in, to see the three together.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
   accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy

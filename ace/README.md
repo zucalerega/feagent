@@ -195,6 +195,45 @@ export FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp
 A two-generation mock run on the three 2D problems takes about 16 s that way. The solver tests in
 `tests/test_ace_cfd.py` skip without OpenFOAM.
 
+## Is the collective actually useful? Single-agent baselines
+
+`ace/baselines.py` runs the same loop *without* the collective, and `ace/compare.py` puts every
+run on one scale. Each baseline is `run_loop --memory shared+private --agents 1`: the swarm
+member's own prompt, diagnoser, memory and scoring code, with no peers and nothing promoted.
+
+| arm | command | what it isolates |
+|---|---|---|
+| swarm | `python -m ace.run_loop` (6 agents) | the system under test |
+| matched | `python -m ace.baselines matched --swarm-agents 6` | one agent, 6 attempts per problem per generation: same runs as the swarm, no collective |
+| isolated | `python -m ace.baselines isolated --swarm-agents 6 --jobs 3` | 6 independent agents, no channel between them: the value of sharing; also the spread between agents |
+| single | `python -m ace.baselines single` | one agent, one attempt: the cheap baseline (1/6 of the runs) |
+
+Give every arm the same `--problems`, `--holdout`, `--generations` and `--top-n`. Give matched and
+isolated the swarm's `--budget-usd` (isolated splits it across its agents). Then:
+
+```bash
+python -m ace.compare --exp swarm=ace_runs/<swarm> --exp matched=ace_runs/<matched> \
+    --exp isolated=ace_runs/<isolated> --exp single=ace_runs/<single>
+```
+
+How it works:
+- **Setup check.** `run_loop` now writes `run_config.json`: problems, models, limits, diagnoser
+  settings and a hash of the loop's code. `compare` refuses experiments whose setups differ in
+  anything but the treatment (memory, agents, attempts), the run size and the budget.
+- **Joint re-scoring.** The score is relative (efficiency compares a run with the cheapest
+  in-tolerance run in the same output dir), so `compare` pools all arms' runs per problem and
+  re-scores them together. Read differences, not absolute values.
+- **Outputs.** `compare.md`, `compare.json` and `compare.png`. They contain:
+  - the last generation's held-out score (each problem weighted equally) with a bootstrap 90%
+    interval;
+  - swarm minus each baseline, with its interval and P(swarm better);
+  - the held-out score at matched spend;
+  - learning curves against cumulative $ (`progress.json` now records spend per generation).
+- **Run ids.** With `--attempts N` they look like `g0-<problem>-r1-a0`. The `-a<k>` suffix still
+  routes lessons to the agent's notes.
+- **Cost of isolated.** Equal agent runs is not equal spend: each isolated agent pays for its own
+  diagnoser sessions. The report shows both runs and $, so compare at matched spend too.
+
 ## Knobs that matter (`ace/config.py`)
 
 - `MODELS`: one line per role. The Reflector is the step most worth a strong model.
