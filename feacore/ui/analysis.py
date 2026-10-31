@@ -427,3 +427,78 @@ def reference_dicts(problem) -> list[dict]:
         return [asdict(r) for r in problem.references()]
     except Exception:  # noqa: BLE001
         return []
+
+
+# --------------------------------------------------------------------------- benchmark batch table
+
+OUTCOMES = {
+    "pass": ("good", "pass"),
+    "fail": ("critical", "fail"),
+    "divergence_detected": ("good", "divergence detected, as expected"),
+    "divergence_missed": ("critical", "expected divergence not detected"),
+    "no_reference": ("info", "no reference"),
+}
+
+CSV_COLUMNS = ["problem_id", "qoi", "reference", "tolerance_pct", "finest", "extrapolated",
+               "extrapolation_reliable", "p_observed", "p_theory", "gci_pct", "error_pct", "error_basis",
+               "outcome", "verdict", "n_meshes", "finest_dofs", "runtime_s", "backend", "order", "nested",
+               "study_id", "finest_run_id"]
+
+
+def batch_rows(study: dict, title: str, finest_run_id: str | None, elapsed: float | None) -> list[dict]:
+    """One results-table row per QoI of a finished convergence study (benchmark batch view)."""
+    res = study.get("result") or {}
+    interp = interpret_study(res)
+    runs = res.get("runs") or []
+    rows = []
+    for q in res.get("qois", []):
+        g = q.get("gci") or {}
+        ref = q.get("reference")
+        it = interp.get(q["name"], {})
+        reliable = q.get("extrapolation_reliable")
+        if reliable is None:
+            reliable = it.get("extrapolation_reliable")
+        if reliable and q.get("err_ext") is not None:
+            err, basis = q["err_ext"], "extrapolated"
+        else:
+            err, basis = q.get("err_fine"), "finest"
+        if q.get("expectation") == "diverge":
+            outcome = "divergence_detected" if q.get("passed") else "divergence_missed"
+        elif q.get("passed") is True:
+            outcome = "pass"
+        elif q.get("passed") is False:
+            outcome = "fail"
+        else:
+            outcome = "no_reference"
+        values = q.get("values") or []
+        rows.append({
+            "problem_id": res.get("problem") or study.get("problem_id"), "title": title,
+            "study_id": study.get("study_id"), "qoi": q["name"], "type": q.get("type"), "field": q.get("field"),
+            "expectation": q.get("expectation"),
+            "reference": ref["value"] if ref else None, "reference_kind": ref.get("kind") if ref else None,
+            "tolerance_pct": 100 * ref["tolerance"] if ref else None,
+            "finest": values[-1] if values else None,
+            "extrapolated": g.get("phi_ext"), "extrapolation_reliable": reliable,
+            "p_observed": g.get("p"), "p_theory": q.get("p_theory"),
+            "gci_pct": 100 * g["gci_fine"] if g.get("gci_fine") is not None else None,
+            "error_pct": 100 * err if err is not None else None, "error_basis": basis if err is not None else None,
+            "outcome": outcome, "outcome_status": OUTCOMES[outcome][0], "outcome_label": OUTCOMES[outcome][1],
+            "verdict": it.get("label"), "verdict_status": it.get("status"),
+            "n_meshes": len(values), "finest_dofs": (runs[-1].get("info") or {}).get("n_dofs") if runs else None,
+            "runtime_s": elapsed, "backend": res.get("backend"), "order": res.get("order"),
+            "nested": bool(res.get("nested", False)), "finest_run_id": finest_run_id,
+        })
+    return rows
+
+
+def rows_to_csv(rows: list[dict]) -> str:
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=CSV_COLUMNS, extrasaction="ignore", lineterminator="\n")
+    w.writeheader()
+    for r in rows:
+        w.writerow({k: ("" if r.get(k) is None else (f"{r[k]:.10g}" if isinstance(r.get(k), float) else r[k]))
+                    for k in CSV_COLUMNS})
+    return buf.getvalue()
