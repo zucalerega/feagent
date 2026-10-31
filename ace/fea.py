@@ -13,6 +13,7 @@ from pathlib import Path
 import gmsh
 import numpy as np
 
+from ace.config import MIN_QUALITY
 from feacore.case import BC, Analysis, Case, CaseError, Load, Material
 from feacore.geometry.gmsh_tools import distance_threshold_field, ensure_domain_group, gmsh_session
 from feacore.problems import registry
@@ -91,13 +92,13 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
     # part (all four nodes on CAD edges, so no optimizer can move them); MeshAdapt surfaces avoid
     # that on the gold parts. Both can fail on a curved face much smaller than h ("overlapping
     # facets"); sizing by curvature resolves it at the price of extra elements there, so it is the
-    # last resort. The default is kept whenever it gives a good mesh. Each attempt is a fresh gmsh
-    # session (after a failed generate gmsh fails every later one) writing its own file.
+    # last resort, and it starts at few elements per 2 pi (8 per 2 pi puts ~7000 nodes on a gold
+    # part whatever h is, which would forbid coarse meshes). The first mesh that passes the scoring
+    # quality gate (MIN_QUALITY) is kept, else the best one. Each attempt is a fresh gmsh session
+    # (after a failed generate gmsh fails every later one) writing its own file.
     path = Path(path)
     errors, best = [], None
     for i, mesher in enumerate(MESHERS):
-        if mesher[1] and best is not None:
-            break
         res = _mesh_once(problem, path.with_suffix(f".try{i}.msh"), h, order, refinements or [], mesher)
         if not res["ok"]:
             if not res.pop("retry", False):
@@ -106,7 +107,7 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
             continue
         if best is None or res["min_quality"] > best["min_quality"]:
             best = res
-        if res["min_quality"] >= REPAIR_TARGET:
+        if res["min_quality"] >= MIN_QUALITY:
             break
     for f in path.parent.glob(path.stem + ".try*.msh"):
         if best is None or str(f) != best["path"]:
@@ -254,11 +255,15 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
     }
 
 
-REPAIR_TARGET = 0.05   # min straight-cell quality (minSICN) the linear repair aims for
-# (gmsh Mesh.Algorithm, Mesh.MeshSizeFromCurvature) tried in turn: Frontal-Delaunay surfaces (gmsh's
-# default), MeshAdapt, MeshAdapt with at least 8 elements per 2 pi of curvature (as feacore.goldgen)
-MESHERS = ((6, 0), (1, 0), (1, 8))
-MESHER_NAMES = {(6, 0): "frontal-delaunay", (1, 0): "meshadapt", (1, 8): "meshadapt+curvature"}
+REPAIR_TARGET = MIN_QUALITY   # min straight-cell quality (minSICN) the linear repair aims for: the scoring gate
+# (gmsh Mesh.Algorithm, Mesh.MeshSizeFromCurvature) tried in turn until one passes the gate:
+# Frontal-Delaunay surfaces (gmsh's default), MeshAdapt, then curvature sizing with 4, 6 and 8
+# (as feacore.goldgen) elements per 2 pi. Nodes grow with the elements per 2 pi, quality does not
+# reliably, so the coarse settings come first.
+MESHERS = ((6, 0), (1, 0), (1, 4), (6, 4), (1, 6), (1, 8))
+MESHER_NAMES = {(6, 0): "frontal-delaunay", (1, 0): "meshadapt", (1, 4): "meshadapt+curvature4",
+                (6, 4): "frontal-delaunay+curvature4", (1, 6): "meshadapt+curvature6",
+                (1, 8): "meshadapt+curvature8"}
 SJ_MIN = 0.05          # curved cells below this min scaled Jacobian are straightened (as feacore.goldgen)
 LINEAR_TYPE = {2: 2, 3: 4}           # gmsh element types: tri3, tet4
 CURVED_TYPE = {2: 9, 3: 11}          # tri6, tet10

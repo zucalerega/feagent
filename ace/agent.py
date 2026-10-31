@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ace import fea, geometry_info, solve_feedback, ui_bridge
 from ace.checks import tolerance
-from ace.config import MAX_SOLVES, MAX_TURNS, SCORE, TASKS
+from ace.config import MAX_SOLVES, MAX_TURNS, MIN_QUALITY, SCORE, TASKS
 
 # Deliberately short and non-expert: the playbook is where expertise should accumulate.
 # Keep it identical across runs (no problem-specific text) so prompt caching works.
@@ -275,7 +275,8 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
         f"Problem id: {problem_id}\n\n{problem.description()}\n\n"
         f"{scored}"
         f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
-        f"target). You may call solve at most {max_solves} times."
+        f"target), and its minimum element quality (quality.min) must be at least {MIN_QUALITY}. You may call solve "
+        f"at most {max_solves} times."
     )
 
 
@@ -345,6 +346,11 @@ class Tools:
         if m.get("repaired_cells"):
             out["message"] = (f"{m['repaired_cells']} curved (order 2) cells were folded or nearly folded and were "
                               f"straightened to keep the mesh valid; this is automatic and fine")
+        if m["min_quality"] < MIN_QUALITY:
+            # The scoring gate (ace.checks): a solve on this mesh cannot be scored.
+            out["warning_quality"] = (f"min element quality {m['min_quality']} is below the gate {MIN_QUALITY}: a run "
+                                      f"submitted on this mesh is invalid. Change h or the refinement sizes/radii a "
+                                      f"little (smoother size transitions help)")
         if m.get("folded_cells"):
             out["warning"] = (f"{m['folded_cells']} cells are still folded (inverted): a solve on this mesh is invalid. "
                               f"Change h or the refinement sizes near curved faces, or use order 1")
