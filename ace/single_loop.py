@@ -183,14 +183,22 @@ def swarm_agent_seconds(swarm_dir: Path | None, gen: int) -> float | None:
 
 
 def run_big(job: dict) -> list[dict]:
-    with ProcessPoolExecutor(1, mp_context=mp.get_context("spawn")) as pool:
-        try:
-            return pool.submit(_big_worker, job).result()
-        except Exception as e:  # noqa: BLE001  the worker process itself died (its usage is lost)
-            err = f"worker process failed: {e!r} (token usage unknown)"
-            return [{"problem_id": t, "run_id": f"g{job['generation']}-{t}-{AGENT}", "generation": job["generation"],
-                     "error": err, "stop": "error", "turns": 0, "cited": [], "submitted": None, "trace": [],
-                     "meshes": [], "solves": [], "usage": []} for t in job["tasks"]]
+    """The single agent works on its tasks IN PARALLEL: one conversation per task, all started at once,
+    all with the same context (its one memory) and each with that task's share of the turn budget.
+    Records come back in task order, as before."""
+    tasks = job["tasks"]
+    per_task = [dict(job, tasks=[t], max_turns=max(1, job["max_turns"] // len(tasks))) for t in tasks]
+    out = []
+    with ProcessPoolExecutor(len(tasks), mp_context=mp.get_context("spawn")) as pool:
+        futures = [pool.submit(_big_worker, j) for j in per_task]
+        for t, f in zip(tasks, futures):
+            try:
+                out += f.result()
+            except Exception as e:  # noqa: BLE001  the worker process itself died (its usage is lost)
+                out.append({"problem_id": t, "run_id": f"g{job['generation']}-{t}-{AGENT}", "generation": job["generation"],
+                            "error": f"worker process failed: {e!r} (token usage unknown)", "stop": "error", "turns": 0,
+                            "cited": [], "submitted": None, "trace": [], "meshes": [], "solves": [], "usage": []})
+    return out
 
 
 def rescore(prs: list[dict]) -> None:
@@ -417,12 +425,13 @@ def main(argv=None) -> int:
             runs = run_big({"tasks": tasks, "generation": gen, "gdir": str(gdir), "context": context,
                             "max_solves": solves, "max_turns": turns, "mock": args.mock, "seconds": seconds})
             phase = {"gen": gen, "what": "phase", "agents": round(time.perf_counter() - t0, 2)}
-            cost.add(runs[0]["usage"])
+            for r in runs:                       # one conversation per task: each record carries its own usage
+                cost.add(r["usage"])
             for r in runs:
                 r["playbook_text"] = context
             err = next((r.get("error") or r.get("conversation_error") for r in runs
                         if r.get("error") or r.get("conversation_error")), None)
-            print(f"  big agent: {runs[0]['turns']} turns, solves {[len(r['solves']) for r in runs]}, "
+            print(f"  big agent: turns {[r['turns'] for r in runs]}, solves {[len(r['solves']) for r in runs]}, "
                   f"stops {[r['stop'] for r in runs]}, nudges {runs[0].get('nudges', 0)}, spent ${cost.total:.2f}"
                   + (" (ERROR)" if err else ""))
             if err:

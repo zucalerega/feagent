@@ -14,7 +14,7 @@ MODELS = {
     "reflect": "claude-sonnet-5-5",     # each agent looks at its own final results and writes notes
     "organizer": "claude-sonnet-5-5",   # merges and rewrites an agent's (or the shared) notes
     # the single-agent baseline (ace/single_loop.py): ONE big agent doing every task in one conversation
-    "big_generator": "claude-opus-5-5",
+    "big_generator": "claude-sonnet-5-5",   # the swarm agents' model
 }
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
@@ -26,7 +26,7 @@ MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curato
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
 EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
-          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "medium"}   # big_generator: Opus at its default effort (medium)
+          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "high"}   # big_generator: same model and effort as the swarm agents
 
 # Fast mode (research preview, Claude API only): the same model and effort, output generated faster,
 # at twice the price ($8 / $40 per MTok on Opus 5.5 instead of $4 / $20). Off to save money. If the
