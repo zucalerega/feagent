@@ -65,7 +65,8 @@ function draw(el, d, refresh) {
         stat('still running', g.n_running ?? 0),
         stat('median score', signed(g.median)),
         stat('best score', signed(g.best)),
-        stat('gated', g.n_gated ?? 0)),
+        stat('gated (score \u22122)', g.n_gated ?? 0),
+        g.n_crashed ? stat('crashed (not scored)', g.n_crashed) : null),
       d.active ? h('p', { class: 'small muted' }, 'The loop is running: this page refreshes every few seconds.') : null)));
 
   // leaderboards
@@ -81,8 +82,11 @@ function live(d) {
 const stat = (label, value) => h('div', { class: 'stat-line' }, h('span', { class: 'label' }, label), h('span', { class: 'value' }, value));
 const signed = x => (x === null || x === undefined || !isFinite(x)) ? '–' : `${x > 0 ? '+' : ''}${x.toFixed(2)}`;
 
-function scoreBar(score, gated) {
-  if (score === null || score === undefined) return h('span', { class: 'muted small' }, 'running…');
+function scoreCell(r) {
+  if (r.status === 'running') return h('span', { class: 'muted small' }, 'running\u2026');
+  if (r.status === 'crashed') return h('span', { class: 'gate', title: r.error || 'crashed' }, h('span', { class: 'dot critical' }), 'crashed');
+  const score = r.score, gated = r.gates.length > 0;
+  if (score === null || score === undefined) return h('span', { class: 'muted' }, 'not scored');
   const w = 90, c = w / 2, sc = Math.max(-2, Math.min(2, score)) / 2 * (c - 2);
   const bar = `<svg width="${w}" height="12" style="vertical-align:middle"><line x1="${c}" x2="${c}" y1="0" y2="12" stroke="#c3c2b7"/>` +
     `<rect x="${sc >= 0 ? c : c + sc}" y="3" width="${Math.abs(sc)}" height="6" rx="2" fill="${score >= 0 && !gated ? '#2a78d6' : '#b9b8b2'}"/></svg>`;
@@ -104,27 +108,33 @@ function board(p) {
         h('th', { class: 'num' }, 'error vs ref'), h('th', {}, 'mesh'), h('th', { class: 'num' }, 'DOFs'), h('th', { class: 'num' }, 'solves'),
         h('th', {}, 'gates'), h('th', {}, ''))),
       h('tbody', {}, rows.map((r, i) => h('tr', { class: r.status === 'running' ? 'dim' : '' },
-        h('td', { class: 'num muted' }, r.status === 'submitted' ? i + 1 : ''),
-        h('td', {}, h('div', { class: 'mono' }, r.ace_run_id), h('div', { class: 'small muted' }, r.status === 'running' ? `running · ${timeAgo(r.created_at)}` : timeAgo(r.created_at),
-          r.tokens ? ` · ${fmtInt(r.tokens)} tokens` : '', r.n_cited_bullets ? ` · ${r.n_cited_bullets} playbook bullets` : '')),
-        h('td', {}, scoreBar(r.score, r.gates.length > 0)),
-        h('td', { class: 'num' }, fmt(r.value, 6)),
-        h('td', { class: 'num' }, r.error === null || r.error === undefined ? '–' : `${r.error > 0 ? '+' : ''}${fmt(100 * r.error, 2)}%`),
-        h('td', { class: 'small' }, meshText(r)),
+        h('td', { class: 'num muted' }, r.status === 'finished' ? i + 1 : ''),
+        h('td', {}, h('div', { class: 'mono' }, r.ace_run_id), h('div', { class: 'small muted' }, r.status === 'running' ? `running \u00b7 ${timeAgo(r.created_at)}` : timeAgo(r.created_at),
+          r.tokens ? ` \u00b7 ${fmtInt(r.tokens)} tokens` : '', r.n_cited_bullets ? ` \u00b7 ${r.n_cited_bullets} playbook bullets` : '')),
+        h('td', {}, scoreCell(r)),
+        h('td', { class: 'num' }, fmt(r.value, 6), r.qoi && r.qoi !== p.qoi ? h('div', { class: 'small muted' }, r.qoi) : null),
+        h('td', { class: 'num' }, r.rel_error === null || r.rel_error === undefined ? '' : `${r.rel_error > 0 ? '+' : ''}${fmt(100 * r.rel_error, 2)}%`),
+        h('td', { class: 'small', title: refinementTip(r.mesh) }, meshText(r)),
         h('td', { class: 'num' }, fmtInt(r.n_dofs)),
-        h('td', { class: 'num' }, r.n_attempts > r.n_solves ? `${r.n_solves} / ${r.n_attempts}` : r.n_solves),
-        h('td', { class: 'small' }, r.gates.length ? h('span', { class: 'gate', title: r.gates.join(', ') }, h('span', { class: 'dot critical' }), r.gates.join(', ')) : h('span', { class: 'muted' }, 'none'),
-          r.setup_diagnostics.length ? h('div', { class: 'muted', title: r.setup_diagnostics.join(', ') }, `${r.setup_diagnostics.length} setup diagnostic${r.setup_diagnostics.length === 1 ? '' : 's'}`) : null),
-        h('td', { class: 'nowrap small' }, r.submitted_run_id || r.last_run_id ? h('a', { href: `#/viewer/${r.submitted_run_id || r.last_run_id}` }, 'field →') : null)))))));
+        h('td', { class: 'num', title: r.scored_solve ? `ACE scored solve #${r.scored_solve}` : '' }, r.n_attempts > r.n_solves ? `${r.n_solves} / ${r.n_attempts}` : r.n_solves,
+          r.scored_solve ? h('div', { class: 'small muted' }, `scored #${r.scored_solve}`) : null),
+        h('td', { class: 'small' }, r.gates.length ? h('span', { class: 'gate', title: r.gates.join(', ') }, h('span', { class: 'dot critical' }), r.gates.join(', ')) : h('span', { class: 'muted' }, r.status === 'crashed' ? '' : 'none'),
+          r.setup_diagnostics.length ? h('div', { class: 'muted', title: r.setup_diagnostics.join('\n') }, `${r.setup_diagnostics.length} setup diagnostic${r.setup_diagnostics.length === 1 ? '' : 's'}`) : null),
+        h('td', { class: 'nowrap small' }, r.submitted_run_id || r.last_run_id ? h('a', { href: `#/viewer/${r.submitted_run_id || r.last_run_id}` }, 'field \u2192') : null)))))));
 }
 
 function meshText(r) {
   const m = r.mesh || {};
   const parts = [];
   if (m.h !== undefined && m.h !== null) parts.push(`h ${fmt(m.h, 3)}`);
-  if (r.order) parts.push(`P${r.order}`);
-  if (m.refinements) parts.push(`${m.refinements} refinement${m.refinements === 1 ? '' : 's'}`);
-  return parts.join(' · ') || '–';
+  if (m.order) parts.push(`P${m.order}`);
+  if (m.n_refinements) parts.push(`${m.n_refinements} refinement${m.n_refinements === 1 ? '' : 's'}`);
+  return parts.join(' \u00b7 ') || '\u2013';
+}
+
+function refinementTip(m) {
+  if (!m || !m.refinements || !m.refinements.length) return '';
+  return m.refinements.map((x, k) => `${k + 1}: ${Object.entries(x).map(([a, b]) => `${a}=${Array.isArray(b) ? `(${b.map(v => fmt(v, 3)).join(', ')})` : typeof b === 'number' ? fmt(b, 3) : b}`).join(', ')}`).join('\n');
 }
 
 function emptyState(d) {

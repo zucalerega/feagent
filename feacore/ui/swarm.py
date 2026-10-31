@@ -7,7 +7,10 @@ ACE bridge. Contract (see docs/ui.md):
   solves, ``meta = {source: "ace", loop_id, generation, ace_run_id, submitted_run_id, score, gates: [...],
   setup_diagnostics: [...], cited_bullets: [...], tokens?}``
 * ``score = log10(e_uniform / e_agent)``: 0 = as good as the best uniform mesh with the same node budget,
-  +1 = 10x better; a failed gate scores -2.
+  +1 = 10x better; a failed gate scores -2. An agent run with no successful solve is a submission with
+  ``run_ids = []`` and score -2 (gate "no successful solve"); a crashed run has score None and ``meta.error``.
+* ``meta.mesh.refinements`` is the agent's list of refinement dicts; ``solve_index`` counts from 0;
+  ``tokens`` = {input, output, cache_write, cache_read, total}. ACE ids are unique only within a loop.
 """
 
 from __future__ import annotations
@@ -72,6 +75,32 @@ def _num(x):
     except (TypeError, ValueError):
         return None
     return f if math.isfinite(f) else None
+
+
+def _mesh_summary(mesh: dict | None, info: dict | None = None) -> dict:
+    """The agent's mesh call (h, order, refinements = list of dicts) as display fields."""
+    mesh = dict(mesh or {})
+    refs = mesh.get("refinements")
+    if isinstance(refs, list):
+        n_ref = len(refs)
+    elif isinstance(refs, (int, float)):
+        n_ref, refs = int(refs), None
+    else:
+        n_ref, refs = 0, None
+    return {"h": _num(mesh.get("h")), "order": mesh.get("order", (info or {}).get("order")),
+            "n_refinements": n_ref, "refinements": refs if isinstance(refs, list) else None}
+
+
+def _scored_qoi(run: dict | None, meta: dict) -> str | None:
+    """Name of the QoI the agent was scored on: meta.qoi if the bridge records it, else the QoI
+    declared in the scored run's case, else the run's only QoI value."""
+    if meta.get("qoi"):
+        return str(meta["qoi"])
+    case_qois = ((run or {}).get("case") or {}).get("qois") or []
+    if case_qois and isinstance(case_qois[0], dict) and case_qois[0].get("name"):
+        return case_qois[0]["name"]
+    q = (run or {}).get("qois") or {}
+    return next(iter(q)) if len(q) == 1 else None
 
 
 def _median(v: list[float]):
@@ -139,10 +168,11 @@ def swarm_view(store, registry=None, loop_id: str | None = None, generation=None
             if _gen(m) != g:
                 continue
             rows.append({"score": _num(m.get("score")), "gated": bool(m.get("gates")), "problem_id": s.get("problem_id"),
-                         "ace_run_id": _ace_id(s)})
+                         "ace_run_id": _ace_id(s), "crashed": bool(m.get("error"))})
         scores = [r["score"] for r in rows if r["score"] is not None]
         out["generations"].append({
             "generation": g, "n_submissions": len(rows), "n_gated": sum(r["gated"] for r in rows),
+            "n_crashed": sum(r["crashed"] for r in rows),
             "median": _median(scores), "mean": (sum(scores) / len(scores)) if scores else None,
             "best": max(scores) if scores else None, "worst": min(scores) if scores else None,
             "points": rows,
@@ -153,72 +183,73 @@ def swarm_view(store, registry=None, loop_id: str | None = None, generation=None
     # ---- per-problem leaderboards for the selected generation
     g_subs = [s for s in loop_subs if _gen(s.get("meta") or {}) == gen]
     g_runs = [r for r in loop_runs if _gen(r.get("meta") or {}) == gen]
-    attempts: dict[str, list[dict]] = {}
+    attempts: dict[tuple, list[dict]] = {}   # keyed by (loop_id, ace_run_id): ids are unique only per loop
     for r in g_runs:
-        attempts.setdefault(_ace_id(r) or "?", []).append(r)
+        attempts.setdefault((lid, _ace_id(r) or "?"), []).append(r)
     pids = sorted({s.get("problem_id") for s in g_subs} | {r.get("problem_id") for r in g_runs} - {None})
     for pid in pids:
-        title, qoi_name, ref = pid, None, None
+        title, refs = pid, {}
         if registry is not None:
             try:
                 p = registry.get(pid)
                 title = p.title or pid
-                refs = p.references()
-                if refs:
-                    ref = {"qoi": refs[0].qoi, "value": refs[0].value, "tolerance": refs[0].tolerance,
-                           "kind": refs[0].kind}
-                    qoi_name = refs[0].qoi
-                else:
-                    qs = p.qois()
-                    qoi_name = qs[0].name if qs else None
+                refs = {r.qoi: {"qoi": r.qoi, "value": r.value, "tolerance": r.tolerance, "kind": r.kind}
+                        for r in p.references()}
             except Exception:  # noqa: BLE001 - unknown problem: show the raw records
                 pass
         rows = []
-        submitted_ids = set()
+        submitted_keys = set()
         for s in (s for s in g_subs if s.get("problem_id") == pid):
             m = s.get("meta") or {}
-            aid = _ace_id(s)
-            submitted_ids.add(aid)
-            run = runs_by_id.get(m.get("submitted_run_id")) or (store_get_run(store, m.get("submitted_run_id")))
+            key = (lid, _ace_id(s))
+            submitted_keys.add(key)
+            run = runs_by_id.get(m.get("submitted_run_id")) or store_get_run(store, m.get("submitted_run_id"))
+            tries = sorted((r for r in attempts.get(key, []) if r.get("problem_id") == pid),
+                           key=lambda r: r.get("created_at") or "")
+            shown = run or (tries[-1] if tries else None)   # no successful solve: show the last attempt
+            name = _scored_qoi(run, m)
             q = (run or {}).get("qois") or {}
-            name = qoi_name if qoi_name in q else (next(iter(q)) if q else None)
             val = _num(q.get(name)) if name else None
-            info = (run or {}).get("info") or {}
-            mesh = ((run or {}).get("meta") or {}).get("mesh") or {}
-            err = None
-            if ref and val is not None and name == ref["qoi"] and ref["value"]:
-                err = (val - ref["value"]) / ref["value"]
+            ref = refs.get(name) if name else None
+            err = (val - ref["value"]) / ref["value"] if (ref and val is not None and ref["value"]) else None
+            info = (shown or {}).get("info") or {}
+            crashed = bool(m.get("error"))
+            scored_index = ((run or {}).get("meta") or {}).get("solve_index")
             rows.append({
-                "status": "submitted", "ace_run_id": aid, "agent_id": s.get("agent_id"),
-                "submission_id": s.get("submission_id"), "submitted_run_id": m.get("submitted_run_id"),
-                "score": _num(m.get("score")), "gates": _names(m.get("gates")),
+                "status": "crashed" if crashed else "finished", "loop_id": lid, "ace_run_id": key[1],
+                "agent_id": s.get("agent_id"), "submission_id": s.get("submission_id"),
+                "submitted_run_id": m.get("submitted_run_id"), "scored_solve": (scored_index + 1) if isinstance(scored_index, int) else None,
+                "score": _num(m.get("score")), "gates": _names(m.get("gates")), "error": m.get("error"),
                 "setup_diagnostics": _names(m.get("setup_diagnostics")), "n_cited_bullets": len(m.get("cited_bullets") or []),
-                "tokens": _tokens(m.get("tokens")), "qoi": name, "value": val, "error": err,
-                "n_dofs": info.get("n_dofs"), "n_nodes": info.get("n_nodes"), "h_rep": info.get("h_rep"),
-                "mesh": mesh, "order": mesh.get("order", info.get("order")),
-                "n_solves": len(s.get("run_ids") or []), "n_attempts": len(attempts.get(aid, [])),
+                "tokens": _tokens(m.get("tokens")), "qoi": name, "value": val, "reference": ref["value"] if ref else None,
+                "rel_error": err, "n_dofs": info.get("n_dofs"), "n_nodes": info.get("n_nodes"), "h_rep": info.get("h_rep"),
+                "mesh": _mesh_summary(((shown or {}).get("meta") or {}).get("mesh"), info),
+                "n_solves": len(s.get("run_ids") or []), "n_attempts": len(tries),
                 "run_ids": s.get("run_ids") or [], "created_at": s.get("created_at"),
             })
-        for aid, rs in attempts.items():
-            rs = [r for r in rs if r.get("problem_id") == pid]
-            if not rs or aid in submitted_ids:
+        for key, rs in attempts.items():
+            rs = sorted((r for r in rs if r.get("problem_id") == pid), key=lambda r: r.get("created_at") or "")
+            if not rs or key in submitted_keys:
                 continue
-            rs.sort(key=lambda r: r.get("created_at") or "")
             last = rs[-1]
             info = last.get("info") or {}
             rows.append({
-                "status": "running", "ace_run_id": aid, "agent_id": last.get("agent_id"), "submission_id": None,
-                "submitted_run_id": None, "score": None, "gates": [], "setup_diagnostics": [], "n_cited_bullets": 0,
-                "tokens": None, "qoi": None, "value": None, "error": None, "n_dofs": info.get("n_dofs"),
-                "n_nodes": info.get("n_nodes"), "h_rep": info.get("h_rep"), "mesh": (last.get("meta") or {}).get("mesh") or {},
-                "order": ((last.get("meta") or {}).get("mesh") or {}).get("order", info.get("order")),
+                "status": "running", "loop_id": lid, "ace_run_id": key[1], "agent_id": last.get("agent_id"),
+                "submission_id": None, "submitted_run_id": None, "scored_solve": None, "score": None, "gates": [],
+                "error": None, "setup_diagnostics": [], "n_cited_bullets": 0, "tokens": None, "qoi": None, "value": None,
+                "reference": None, "rel_error": None, "n_dofs": info.get("n_dofs"), "n_nodes": info.get("n_nodes"),
+                "h_rep": info.get("h_rep"), "mesh": _mesh_summary((last.get("meta") or {}).get("mesh"), info),
                 "n_solves": sum(r.get("status") == "succeeded" for r in rs), "n_attempts": len(rs),
                 "run_ids": [r["run_id"] for r in rs if r.get("status") == "succeeded"],
                 "last_run_id": last["run_id"], "last_status": last.get("status"), "created_at": last.get("created_at"),
             })
-        rows.sort(key=lambda r: (r["status"] != "submitted", -(r["score"] if r["score"] is not None else -1e9)))
+        order = {"finished": 0, "crashed": 1, "running": 2}
+        rows.sort(key=lambda r: (order[r["status"]], -(r["score"] if r["score"] is not None else -1e9)))
         scores = [r["score"] for r in rows if r["score"] is not None]
-        out["problems"].append({"problem_id": pid, "title": title, "qoi": qoi_name, "reference": ref,
+        names = [r["qoi"] for r in rows if r["qoi"]]
+        main_qoi = max(set(names), key=names.count) if names else None
+        out["problems"].append({"problem_id": pid, "title": title, "qoi": main_qoi,
+                                "reference": refs.get(main_qoi) if main_qoi else None,
                                 "n_agents": len(rows), "best": max(scores) if scores else None,
                                 "median": _median(scores), "rows": rows})
     return out
