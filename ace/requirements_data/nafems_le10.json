@@ -1,0 +1,42 @@
+{
+  "problem_id": "nafems_le10",
+  "requirements": "Component: a thick plate in the shape of an elliptic ring, loaded by a uniform pressure on its upper surface and carried at its outer edge.\n\nGeometry (CAD): metres. The plate is 0.6 m thick, -0.3 <= z <= 0.3. Its plan is an elliptic ring: the hole is bounded by the ellipse (x/2.0)^2 + (y/1.0)^2 = 1 and the outside by the ellipse (x/3.25)^2 + (y/2.75)^2 = 1. The CAD file holds the quarter with x >= 0 and y >= 0 as a solid. Corner points on the upper surface z = +0.3: A = (0, 1.0, 0.3), B = (0, 2.75, 0.3), C = (3.25, 0, 0.3), D = (2.0, 0, 0.3); A', B', C', D' are the same (x, y) on the lower surface z = -0.3. The faces on the planes x = 0 (ABA'B') and y = 0 (DCD'C') are cuts through the full plate, not surfaces of it. The outer curved face BCB'C' is split along its mid-thickness line, the outer ellipse at z = 0; that line is an edge in the CAD.\n\nMaterial: isotropic, linear elastic; E = 210 GPa, Poisson's ratio 0.3.\n\nService loads: a uniform pressure of 1 MPa acts on the whole upper surface (z = +0.3), pushing down into the plate (towards -z). No other face is loaded.\n\nInstallation and supports: the outer curved edge face of the full plate is held all round in a rigid frame. The frame stops every horizontal movement of that face, both towards or away from the plate's centre and along the edge, but lets the face slide up and down in it without friction. The plate's only vertical support is a rigid knife-edge in the frame that carries it along the mid-thickness line of its outer edge (the outer ellipse at z = 0): that line cannot move up or down, and the plate is free to rotate about it. The surface of the hole and the lower surface touch nothing. The full plate, its frame and its load are mirror-symmetric about the planes x = 0 and y = 0, which is why only the quarter is modelled.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity; a solid (three-dimensional) model of the quarter.\n\nRequired result: syy_D, the direct stress sigma_yy at point D = (2.0, 0.0, 0.3) on the upper surface, in Pa.",
+  "group_aliases": {},
+  "mapping": [
+    {
+      "reference": "pressure 1e6 on face_upper",
+      "implied_by": "A uniform pressure of 1 MPa pushes down into the upper surface."
+    },
+    {
+      "reference": "symmetry on face_DCD'C'_y0",
+      "implied_by": "Mirror symmetry about y = 0, and DCD'C' is the cut on y = 0."
+    },
+    {
+      "reference": "symmetry on face_ABA'B'_x0",
+      "implied_by": "Mirror symmetry about x = 0, and ABA'B' is the cut on x = 0."
+    },
+    {
+      "reference": "displacement x, y = 0 on face_BCB'C'_outer",
+      "implied_by": "The rigid frame stops every horizontal movement of the outer edge face (normal and along the edge) and lets it slide vertically."
+    },
+    {
+      "reference": "displacement z = 0 on line_outer_midplane",
+      "implied_by": "The knife-edge stops vertical movement of the outer mid-thickness line only; the plate may rotate about it."
+    },
+    {
+      "reference": "3d",
+      "implied_by": "A solid model of the quarter (the CAD is a solid)."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "dc2c7ebd419e433d2921d1bfcb2ba16e84ef1f504b698acdc77197d191a1b94c"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

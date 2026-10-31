@@ -510,7 +510,10 @@ def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
         how = ["score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
                "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
                "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
-    lines = ["# ACE run summary", "", *how,
+    told = ("Agents got each problem's engineering requirements (ace/requirements.py) and set the boundary "
+            "conditions themselves." if config.STATEMENT == "requirements" else
+            "Agents got each problem's statement, boundary conditions included.")
+    lines = ["# ACE run summary", "", told, "", *how,
              "'failed' counts runs that failed a gate; 'errored' counts runs that crashed (API or code errors).",
              "'base' is the mean score without the be-the-best bonus; 'bonus' the mean bonus (field mode).",
              "", "| gen | problem | split | mean score | base | bonus | min | max | mean accuracy | mean efficiency | within tol | median DOFs | median rel. error | failed | errored |",
@@ -618,12 +621,18 @@ def main(argv=None) -> int:
     ap.add_argument("--deep", action="store_true",
                     help="run reports + deep teacher + self-reflection + organizer (see deep_learn); needs "
                          "--memory shared+private, --split and ACE_SCORE=field; implies --peers, --shared-scope all")
+    ap.add_argument("--statement", choices=["bcs", "requirements"], default=config.STATEMENT,
+                    help="what agents are told: the problem statement with its boundary conditions, or the "
+                         "problem's engineering requirements (ace/requirements.py), from which they set the "
+                         "boundary conditions themselves")
     ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
                     "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
     # Before any process pool exists: spawned children (agents, scoring, teacher) read it at import.
     os.environ["ACE_TEACHER"] = args.teacher
     config.TEACHER_MODE = args.teacher
+    os.environ["ACE_STATEMENT"] = args.statement
+    config.STATEMENT = args.statement
     peers = args.split if args.peers is None else args.peers
 
     train = [p for p in args.problems.split(",") if p]
@@ -634,6 +643,11 @@ def main(argv=None) -> int:
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()
     private = args.memory == "shared+private"
+    if args.statement == "requirements":
+        from ace.requirements import problems_ready
+        if not_ready := problems_ready(train + holdout):
+            raise SystemExit("--statement requirements: these problems have no clean requirements:\n  "
+                             + "\n  ".join(not_ready))
     if args.teacher != "rerun" and config.SCORE != "field":
         raise SystemExit("--teacher inspect/both needs field scoring (ACE_SCORE=field): its tools read the field error")
     if args.split and not (private and len(train) > 1):

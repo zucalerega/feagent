@@ -23,6 +23,8 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `improver-loop` branch: improver side of the loop.
 - `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
   `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
+  `--statement requirements` (branch `ace-requirements`) gives agents engineering requirements
+  instead of boundary conditions (`ace/requirements.py`, `ace/requirements_data/`).
 - `mesh-harness` branch: the meshing harness (package `feagent` in `src/`): STEP → YAML mesh spec →
   gmsh mesh with named groups and quality gates. It declares BCs for the solver but does not solve.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:

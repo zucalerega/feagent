@@ -23,6 +23,13 @@ MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curato
 EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
           "teacher": "high", "reflect": "low", "organizer": "low"}
 
+# ace/requirements.py (offline, not part of a loop run): the translator rewrites a problem's statement
+# as engineering requirements (the teacher's model); the back-translator reads them the way an agent
+# would and proposes a setup, to check they still pin down the reference setup (the agent's model).
+MODELS.update(translator=MODELS["teacher"], backtranslator=MODELS["generator"])
+MAX_TOKENS.update(translator=16000, backtranslator=8000)
+EFFORT.update(translator="high", backtranslator="high")
+
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
 PRICES = {
@@ -47,6 +54,16 @@ TASKS = {
 }
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
+
+# What the agent is told about a problem (ACE_STATEMENT, set by run_loop --statement; an environment
+# variable so the spawned workers see it too):
+#   bcs           the problem statement: supports, loads and analysis type spelled out
+#   requirements  the problem's engineering requirements instead (ace/requirements.py, stored in
+#                 ace/requirements_data/): how the part is held and loaded in service, what is
+#                 symmetric, what the CAD represents. The agent decides the boundary conditions and
+#                 the analysis type itself. The problem id is replaced by a neutral task label, and
+#                 groups named after a support or load get neutral names. Scoring is unchanged.
+STATEMENT = os.environ.get("ACE_STATEMENT", "bcs")
 
 # --------------------------------------------------------------------------- agent limits
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)

@@ -119,6 +119,56 @@ FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui
 - If the store can't be written (permissions, full disk), the loop only prints a warning and
   carries on; its own results don't change. Code: `ace/ui_bridge.py`.
 
+## Requirements instead of boundary conditions (`--statement requirements`)
+
+By default an agent gets the problem statement, which spells out the supports, loads and analysis
+type. With `--statement requirements` it gets the problem's **engineering requirements** instead,
+and has to set the boundary conditions and the analysis type itself. The requirements say:
+- what the part is and what the CAD holds (a quarter, a meridian section, a thin plate);
+- its material;
+- how it is loaded in service;
+- how it is held: welded, bolted, between frictionless platens, on a knife-edge;
+- what is symmetric;
+- the result wanted.
+
+```bash
+python -m ace.run_loop --statement requirements ...          # agents set the BCs themselves
+python -m ace.requirements show cooks_membrane               # the task prompt an agent gets
+python -m ace.requirements check                             # lint + staleness of every stored file
+python -m ace.requirements check --round-trip                # + an agent-like model reads them back (API)
+python -m ace.requirements generate --problems a,b --force   # (re)write with the translator (API)
+```
+
+- **What changes.** The task prompt (`agent.task_prompt`) shows the requirements and a neutral
+  task label instead of the problem id; the id names the benchmark, and a model could recall its
+  setup. Groups whose names give a support or load away get neutral names everywhere, through
+  `fea.get_problem`: Cook's `clamped`/`loaded` become `left_edge`/`right_edge`, and the `sym_*`
+  groups become `face_x0`/`face_y0` (LE11 3D) and `edge_x0`/`edge_y0` (Lamé). The reflector, diagnoser and deep teacher read the same task
+  prompt, so their lessons are about turning requirements into a setup.
+- **What does not change.** Scoring, gates and `checks.bc_report`, which compares the agent's setup
+  with the reference setup and feeds the teachers.
+- **Where the requirements live.** One JSON per problem in `ace/requirements_data/`:
+  - the agent-facing text;
+  - `group_aliases`;
+  - `mapping`: which requirement implies each reference item, for reviewers only;
+  - `source`, with a fingerprint of the statement and reference setup they were written from;
+  - `validation`.
+- **How `generate` writes them** (`ace/requirements.py`):
+  1. The translator model rewrites the statement and reference setup under rules that forbid
+     boundary-condition language.
+  2. A deterministic lint rejects BC or solver words (`fixed`, `clamped`, `traction`, `zero
+     x-displacement`, `plane stress`, ...), benchmark names, CAD group identifiers, a missing
+     number of the reference setup, telltale or colliding aliases, and a stale fingerprint.
+  3. A round trip: the agents' model reads only what an agent sees and proposes a setup, three
+     times. Each proposal is solved next to the reference setup on the same mesh, so equivalent
+     setups pass (force vs force-per-area, fixed vs zero displacement).
+  4. Failures go back to the translator for up to two re-drafts.
+- **The loop refuses to start** in requirements mode when a problem has no file, or its file fails
+  the lint.
+- **Current files.** The six `TASKS` problems are written and lint clean. They were written in a
+  session without an API key, so their round trip has not been run yet (`validation.round_trip:
+  null`): run `python -m ace.requirements check --round-trip` once a key is available.
+
 ## Knobs that matter (`ace/config.py`)
 
 - `MODELS`: one line per role. The Reflector is the step most worth a strong model.

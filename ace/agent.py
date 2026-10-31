@@ -12,7 +12,7 @@ import json
 import re
 from pathlib import Path
 
-from ace import fea, ui_bridge
+from ace import config, fea, ui_bridge
 from ace.checks import tolerance
 from ace.config import MAX_SOLVES, MAX_TURNS, SCORE, TASKS
 
@@ -201,8 +201,16 @@ def task_prompt(problem_id: str) -> str:
         scored = (f"SCORED QUANTITY: {q.name} = {q.type} of {q.field}{where}. Only this quantity is scored; "
                   f"ignore any other quantities the statement asks you to report.\n"
                   f"TARGET: {q.name} within {tolerance(problem_id):.0%} of the true value, with as few DOFs as possible.\n")
+    if config.STATEMENT == "requirements":
+        # Engineering requirements instead of the statement, and a neutral label instead of the id
+        # (which names the benchmark): the agent works the boundary conditions out itself.
+        from ace import requirements
+        shown_id = requirements.label_for(problem_id)
+        statement = f"{requirements.TASK_PREFACE}\n\n{requirements.agent_text(problem_id)}"
+    else:
+        shown_id, statement = problem_id, problem.description()
     return (
-        f"Problem id: {problem_id}\n\n{problem.description()}\n\n"
+        f"Problem id: {shown_id}\n\n{statement}\n\n"
         f"{scored}"
         f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
         f"target). You may call solve at most {MAX_SOLVES} times."

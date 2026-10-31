@@ -6,6 +6,7 @@ No LLM here. gmsh is process-global, so call these from one thread per process
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import math
 from pathlib import Path
@@ -20,7 +21,53 @@ from feacore.solver import solve
 
 
 def get_problem(problem_id: str) -> Problem:
-    return registry.get(problem_id)
+    """The problem as the loop sees it. In requirements mode (config.STATEMENT), groups whose
+    names give a support or load away (e.g. "clamped") get the neutral names stored with the
+    problem's requirements (ace.requirements); every module looks problems up here, so meshes,
+    setups, reference setups and reports all use the same names."""
+    from ace import config
+    problem = registry.get(problem_id)
+    if config.STATEMENT == "requirements":
+        from ace import requirements
+        aliases = requirements.aliases_for(problem_id)
+        if aliases:
+            return AliasedProblem(problem, aliases)
+    return problem
+
+
+class AliasedProblem:
+    """A problem whose named groups are renamed (real name -> alias) everywhere the loop can see
+    them: the geometry it builds, its reference case and its QoIs. Everything else is the wrapped
+    problem's. Group names not in `aliases` are unchanged."""
+
+    def __init__(self, problem: Problem, aliases: dict[str, str]):
+        self._problem = problem
+        self.aliases = dict(aliases)
+
+    def __getattr__(self, name):
+        return getattr(self._problem, name)
+
+    def alias(self, group: str | None) -> str | None:
+        return self.aliases.get(group, group) if group else group
+
+    def build_geometry(self) -> None:
+        self._problem.build_geometry()
+        for dim, tag in gmsh.model.getPhysicalGroups():
+            name = gmsh.model.getPhysicalName(dim, tag)
+            if name in self.aliases:
+                gmsh.model.removePhysicalName(name)       # setPhysicalName alone keeps an existing name
+                gmsh.model.setPhysicalName(dim, tag, self.aliases[name])
+
+    def qois(self):
+        return [dataclasses.replace(q, group=self.alias(q.group)) for q in self._problem.qois()]
+
+    def case(self, mesh_path, order: int = 2) -> Case:
+        c = self._problem.case(mesh_path, order)
+        c.bcs = [dataclasses.replace(b, group=self.alias(b.group)) for b in c.bcs]
+        c.loads = [dataclasses.replace(ld, group=self.alias(ld.group)) for ld in c.loads]
+        c.regions = [dataclasses.replace(r, group=self.alias(r.group)) for r in c.regions]
+        c.qois = [dataclasses.replace(q, group=self.alias(q.group)) for q in c.qois]
+        return c
 
 
 def official_qoi(problem: Problem, qoi_name: str):
