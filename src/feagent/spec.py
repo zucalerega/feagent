@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -156,9 +157,9 @@ def _int(v: Any, path: str, *, minimum: int | None = None) -> int:
     return v
 
 
-def _choice(v: Any, path: str, options: tuple[str, ...]) -> str:
+def _choice(v: Any, path: str, options: tuple) -> Any:
     if v not in options:
-        raise _err(path, f"invalid value {v!r}", f"allowed: {', '.join(options)}")
+        raise _err(path, f"invalid value {v!r}", f"allowed: {', '.join(map(str, options))}")
     return v
 
 
@@ -168,14 +169,36 @@ def _str_list(v: Any, path: str) -> list[str]:
     return list(v)
 
 
-def _fill(cls, data: dict, path: str, *, nonneg_ints: tuple[str, ...] = ()):
-    """Build a dataclass of numeric fields from a validated mapping."""
-    kwargs = {}
-    for k, v in data.items():
-        default = getattr(cls, k)
-        p = _join(path, k)
-        kwargs[k] = _int(v, p, minimum=0) if isinstance(default, int) else _num(v, p, nonneg=True)
-    return cls(**kwargs)
+def _list(v: Any, path: str) -> list:
+    if not isinstance(v, list):
+        raise _err(path, "expected a list")
+    return v
+
+
+def _text(v: Any, path: str, what: str = "a non-empty string") -> str:
+    if not isinstance(v, str) or not v:
+        raise _err(path, f"expected {what}")
+    return v
+
+
+def _require(d: dict, path: str, keys: tuple[str, ...], hint: str = "") -> None:
+    for k in keys:
+        if k not in d:
+            raise _err(_join(path, k), "required field missing", hint)
+
+
+def _group_ref(name: Any, path: str, groups: dict) -> str:
+    if not isinstance(name, str) or name not in groups:
+        raise _err(path, f"unknown group {name!r}",
+                   f"defined groups: {', '.join(groups) or '(none)'}")
+    return name
+
+
+def _group_refs(v: Any, path: str, groups: dict) -> list[str]:
+    names = _str_list(v, path)
+    for i, n in enumerate(names):
+        _group_ref(n, f"{path}[{i}]", groups)
+    return names
 
 
 def _check_select(sel: Any, path: str, keys: tuple[str, ...]) -> dict:
@@ -187,7 +210,226 @@ def _check_select(sel: Any, path: str, keys: tuple[str, ...]) -> dict:
     return sel
 
 
+# --- scalar sections: key -> validator(value, path) -------------------------
+
+_Validator = Callable[[Any, str], Any]
+
+
+def _values(d: dict, path: str, table: dict[str, _Validator]) -> dict:
+    """Validated values of the keys of ``table`` present in ``d`` (in table order)."""
+    return {k: check(d[k], _join(path, k)) for k, check in table.items() if k in d}
+
+
+def _section(v: Any, path: str, table: dict[str, _Validator],
+             required: tuple[str, ...] = ()) -> dict:
+    """A mapping whose keys are exactly those of ``table``, validated."""
+    d = _mapping(v, path, tuple(table))
+    _require(d, path, required)
+    return _values(d, path, table)
+
+
+def _poisson(v: Any, path: str) -> float:
+    nu = _num(v, path)
+    if not 0 <= nu < 0.5:
+        raise _err(path, f"must be in [0, 0.5), got {nu}")
+    return nu
+
+
+def _element_order(v: Any, path: str) -> int:
+    return _choice(_int(v, path), path, (1, 2))
+
+
+_positive = partial(_num, positive=True)
+_nonneg = partial(_num, nonneg=True)
+_count = partial(_int, minimum=0)
+_DOMAIN: dict[str, _Validator] = {
+    "type": partial(_choice, options=("internal", "external")),
+    "flow_axis": partial(_choice, options=_AXES),
+    "upstream": _positive, "downstream": _positive, "lateral": _positive,
+}
+_SIZE: dict[str, _Validator] = {"global": _positive, "min": _nonneg, "curvature": _count,
+                                "thin_wall_layers": _count}
+_ELEMENT: dict[str, _Validator] = {"order": _element_order,
+                                   "optimize": partial(_choice, options=_OPTIMIZE)}
+_ALGORITHM: dict[str, _Validator] = {"mesh2d": partial(_int, minimum=1),
+                                     "mesh3d": partial(_int, minimum=1)}
+_QUALITY: dict[str, _Validator] = {f.name: _count if isinstance(f.default, int) else _nonneg
+                                   for f in fields(QualitySpec)}
+_FEA_SCALARS: dict[str, _Validator] = {"E": _positive, "nu": _poisson}
+
+
+# --- sections: parser(data, parsed so far) -> MeshSpec fields ---------------
+
+def _parse_name(data: dict, done: dict) -> dict:
+    return {"name": _text(data.get("name", done["path"].resolve().parent.name), "name")}
+
+
+def _parse_geometry(data: dict, done: dict) -> dict:
+    _require(data, "", ("geometry",))
+    if not isinstance(data["geometry"], str):
+        raise _err("geometry", "expected a path string")
+    geometry = (done["path"].parent / data["geometry"]).resolve()
+    if not geometry.is_file():
+        raise _err("geometry", f"file not found: {geometry}", "path is relative to the spec file")
+    return {"geometry": geometry}
+
+
+def _parse_analysis(data: dict, done: dict) -> dict:
+    _require(data, "", ("analysis",), "allowed: fea, cfd")
+    return {"analysis": _choice(data["analysis"], "analysis", ("fea", "cfd"))}
+
+
+def _parse_heal(data: dict, done: dict) -> dict:
+    heal = data.get("heal", False)
+    if not isinstance(heal, bool):
+        raise _err("heal", f"expected true/false, got {heal!r}")
+    return {"heal": heal}
+
+
+def _parse_domain(data: dict, done: dict) -> dict:
+    return {"domain": DomainSpec(**_section(data.get("domain"), "domain", _DOMAIN))}
+
+
+def _parse_groups(data: dict, done: dict) -> dict:
+    gd = data.get("groups")
+    gd = {} if gd is None else gd
+    if not isinstance(gd, dict):
+        raise _err("groups", "expected a mapping of group name to {select, expect}")
+    qkeys = _query_keys()
+    return {"groups": {str(n): _parse_group(str(n), g, qkeys) for n, g in gd.items()}}
+
+
+def _parse_group(name: str, g: Any, qkeys: tuple[str, ...]) -> GroupSpec:
+    gp = f"groups.{name}"
+    g = _mapping(g, gp, ("select", "expect"))
+    _require(g, gp, ("select",))
+    sel = _check_select(g["select"], f"{gp}.select", qkeys)
+    return GroupSpec(name=name, select=sel, expect=_parse_expect(g.get("expect"), f"{gp}.expect"))
+
+
+def _parse_expect(ex: Any, path: str) -> int | tuple[int, int] | None:
+    if ex is None:
+        return None
+    if not isinstance(ex, list):
+        return _int(ex, path, minimum=0)
+    if len(ex) != 2:
+        raise _err(path, "range must be [min, max]")
+    lo, hi = _int(ex[0], f"{path}[0]", minimum=0), _int(ex[1], f"{path}[1]", minimum=0)
+    if lo > hi:
+        raise _err(path, f"min {lo} > max {hi}")
+    return (lo, hi)
+
+
+def _parse_default_group(data: dict, done: dict) -> dict:
+    dg = data.get("default_group", "walls" if done["analysis"] == "cfd" else None)
+    if dg is not None:
+        _text(dg, "default_group", "a non-empty string or null")
+        if dg in done["groups"]:
+            raise _err("default_group", f"{dg!r} collides with a group of the same name",
+                       "rename default_group or the group")
+    return {"default_group": dg}
+
+
+def _parse_size(data: dict, done: dict) -> dict:
+    _require(data, "", ("size",), "e.g. size: {global: 3.0}")
+    s = _section(data["size"], "size", _SIZE, required=("global",))
+    return {"size": SizeSpec(global_=s.pop("global"), **s)}
+
+
+def _parse_refine(data: dict, done: dict) -> dict:
+    items = data.get("refine")
+    items = _list([] if items is None else items, "refine")
+    qkeys = _query_keys()
+    return {"refine": [_parse_refine_item(r, f"refine[{i}]", done["groups"], qkeys)
+                       for i, r in enumerate(items)]}
+
+
+def _parse_refine_item(r: Any, rp: str, groups: dict, qkeys: tuple[str, ...]) -> RefineSpec:
+    r = _mapping(r, rp, ("group", "select", "size", "distance"))
+    if ("group" in r) == ("select" in r):
+        raise _err(rp, "exactly one of 'group' or 'select' is required")
+    _require(r, rp, ("size", "distance"))
+    by_group = "group" in r
+    grp = _group_ref(r["group"], f"{rp}.group", groups) if by_group else None
+    sel = None if by_group else _check_select(r["select"], f"{rp}.select", qkeys)
+    return RefineSpec(size=_positive(r["size"], f"{rp}.size"),
+                      distance=_positive(r["distance"], f"{rp}.distance"), group=grp, select=sel)
+
+
+def _parse_element(data: dict, done: dict) -> dict:
+    e = _section(data.get("element"), "element", _ELEMENT)
+    return {"order": e.get("order", 1), "optimize": e.get("optimize", "netgen")}
+
+
+def _parse_algorithm(data: dict, done: dict) -> dict:
+    a = _section(data.get("algorithm"), "algorithm", _ALGORITHM)
+    return {"algorithm_2d": a.get("mesh2d", 6), "algorithm_3d": a.get("mesh3d", 1)}
+
+
+def _parse_export(data: dict, done: dict) -> dict:
+    export = data.get("export", ["msh"])
+    if not isinstance(export, list) or not export:
+        raise _err("export", "expected a non-empty list", f"allowed: {', '.join(_EXPORTS)}")
+    return {"export": [_choice(x, f"export[{i}]", _EXPORTS) for i, x in enumerate(export)]}
+
+
+def _parse_quality(data: dict, done: dict) -> dict:
+    return {"quality": QualitySpec(**_section(data.get("quality"), "quality", _QUALITY))}
+
+
+def _parse_solve(data: dict, done: dict) -> dict:
+    sv = _mapping(data.get("solve"), "solve", ("fea", "cfd"))
+    return {"fea": _solver(sv, "fea", done, _parse_fea),
+            "cfd": _solver(sv, "cfd", done, _parse_cfd)}
+
+
+def _solver(sv: dict, kind: str, done: dict, parse: Callable[[Any, dict], Any]) -> Any:
+    if sv.get(kind) is None:
+        return None
+    if done["analysis"] != kind:
+        raise _err(f"solve.{kind}", f"only allowed with analysis: {kind}")
+    return parse(sv[kind], done["groups"])
+
+
+def _parse_fea(v: Any, groups: dict) -> FeaSolveSpec:
+    fd = _mapping(v, "solve.fea", ("E", "nu", "fixed", "loads"))
+    fixed = _group_refs(fd.get("fixed", []), "solve.fea.fixed", groups)
+    loads = [_parse_load(ld, f"solve.fea.loads[{i}]", groups)
+             for i, ld in enumerate(_list(fd.get("loads", []), "solve.fea.loads"))]
+    return FeaSolveSpec(fixed=fixed, loads=loads, **_values(fd, "solve.fea", _FEA_SCALARS))
+
+
+def _parse_load(ld: Any, lp: str, groups: dict) -> FeaLoad:
+    ld = _mapping(ld, lp, ("group", "force"))
+    _require(ld, lp, ("group", "force"))
+    group = _group_ref(ld["group"], f"{lp}.group", groups)
+    f = ld["force"]
+    if not isinstance(f, list) or len(f) != 3:
+        raise _err(f"{lp}.force", "expected [fx, fy, fz]")
+    return FeaLoad(group, tuple(_num(c, f"{lp}.force[{j}]") for j, c in enumerate(f)))
+
+
+def _parse_cfd(v: Any, groups: dict) -> CfdSolveSpec:
+    cd = _mapping(v, "solve.cfd", ("inlet", "outlet", "velocity"))
+    inlet = _group_refs(cd.get("inlet", []), "solve.cfd.inlet", groups)
+    outlet = _group_refs(cd.get("outlet", []), "solve.cfd.outlet", groups)
+    return CfdSolveSpec(inlet=inlet, outlet=outlet,
+                        **_values(cd, "solve.cfd", {"velocity": _positive}))
+
+
+def _parse_output(data: dict, done: dict) -> dict:
+    return {"output": Path(_text(data.get("output", "out"), "output", "a directory name string"))}
+
+
+_SECTIONS = (_parse_name, _parse_geometry, _parse_analysis, _parse_heal, _parse_domain,
+             _parse_groups, _parse_default_group, _parse_size, _parse_refine, _parse_element,
+             _parse_algorithm, _parse_export, _parse_quality, _parse_solve, _parse_output)
+_TOP = ("name", "geometry", "analysis", "heal", "domain", "groups", "default_group", "size",
+        "refine", "element", "algorithm", "export", "quality", "solve", "output")
+
+
 def load_spec(path: str | Path) -> MeshSpec:
+    """Read and validate a YAML mesh spec; raises SpecError naming the bad field."""
     p = Path(path)
     if not p.is_file():
         raise _err("", f"spec file not found: {p}")
@@ -199,191 +441,9 @@ def load_spec(path: str | Path) -> MeshSpec:
 
 
 def parse_spec(data: dict, path: Path) -> MeshSpec:
-    path = Path(path)
-    top = ("name", "geometry", "analysis", "heal", "domain", "groups", "default_group", "size",
-           "refine", "element", "algorithm", "export", "quality", "solve", "output")
-    data = _mapping(data, "", top)
-    qkeys = _query_keys()
-
-    name = data.get("name", path.resolve().parent.name)
-    if not isinstance(name, str) or not name:
-        raise _err("name", "expected a non-empty string")
-
-    if "geometry" not in data:
-        raise _err("geometry", "required field missing")
-    if not isinstance(data["geometry"], str):
-        raise _err("geometry", "expected a path string")
-    geometry = (path.parent / data["geometry"]).resolve()
-    if not geometry.is_file():
-        raise _err("geometry", f"file not found: {geometry}", "path is relative to the spec file")
-
-    if "analysis" not in data:
-        raise _err("analysis", "required field missing", "allowed: fea, cfd")
-    analysis = _choice(data["analysis"], "analysis", ("fea", "cfd"))
-
-    heal = data.get("heal", False)
-    if not isinstance(heal, bool):
-        raise _err("heal", f"expected true/false, got {heal!r}")
-
-    dd = _mapping(data.get("domain"), "domain", ("type", "flow_axis", "upstream", "downstream", "lateral"))
-    domain = DomainSpec()
-    if "type" in dd:
-        domain.type = _choice(dd["type"], "domain.type", ("internal", "external"))
-    if "flow_axis" in dd:
-        domain.flow_axis = _choice(dd["flow_axis"], "domain.flow_axis", _AXES)
-    for k in ("upstream", "downstream", "lateral"):
-        if k in dd:
-            setattr(domain, k, _num(dd[k], f"domain.{k}", positive=True))
-
-    gd = data.get("groups")
-    if gd is None:
-        gd = {}
-    if not isinstance(gd, dict):
-        raise _err("groups", "expected a mapping of group name to {select, expect}")
-    groups: dict[str, GroupSpec] = {}
-    for gname, g in gd.items():
-        gp = f"groups.{gname}"
-        g = _mapping(g, gp, ("select", "expect"))
-        if "select" not in g:
-            raise _err(f"{gp}.select", "required field missing")
-        sel = _check_select(g["select"], f"{gp}.select", qkeys)
-        ex = g.get("expect")
-        if ex is not None:
-            if isinstance(ex, list):
-                if len(ex) != 2:
-                    raise _err(f"{gp}.expect", "range must be [min, max]")
-                lo, hi = _int(ex[0], f"{gp}.expect[0]", minimum=0), _int(ex[1], f"{gp}.expect[1]", minimum=0)
-                if lo > hi:
-                    raise _err(f"{gp}.expect", f"min {lo} > max {hi}")
-                ex = (lo, hi)
-            else:
-                ex = _int(ex, f"{gp}.expect", minimum=0)
-        groups[str(gname)] = GroupSpec(name=str(gname), select=sel, expect=ex)
-
-    default_group = data.get("default_group", "walls" if analysis == "cfd" else None)
-    if default_group is not None:
-        if not isinstance(default_group, str) or not default_group:
-            raise _err("default_group", "expected a non-empty string or null")
-        if default_group in groups:
-            raise _err("default_group", f"{default_group!r} collides with a group of the same name",
-                       "rename default_group or the group")
-
-    if "size" not in data:
-        raise _err("size", "required field missing", "e.g. size: {global: 3.0}")
-    sd = _mapping(data["size"], "size", ("global", "min", "curvature", "thin_wall_layers"))
-    if "global" not in sd:
-        raise _err("size.global", "required field missing")
-    size = SizeSpec(global_=_num(sd["global"], "size.global", positive=True))
-    if "min" in sd:
-        size.min = _num(sd["min"], "size.min", nonneg=True)
-    if "curvature" in sd:
-        size.curvature = _int(sd["curvature"], "size.curvature", minimum=0)
-    if "thin_wall_layers" in sd:
-        size.thin_wall_layers = _int(sd["thin_wall_layers"], "size.thin_wall_layers", minimum=0)
-
-    rl = data.get("refine")
-    if rl is None:
-        rl = []
-    if not isinstance(rl, list):
-        raise _err("refine", "expected a list")
-    refine: list[RefineSpec] = []
-    for i, r in enumerate(rl):
-        rp = f"refine[{i}]"
-        r = _mapping(r, rp, ("group", "select", "size", "distance"))
-        if ("group" in r) == ("select" in r):
-            raise _err(rp, "exactly one of 'group' or 'select' is required")
-        for k in ("size", "distance"):
-            if k not in r:
-                raise _err(f"{rp}.{k}", "required field missing")
-        grp = sel = None
-        if "group" in r:
-            grp = r["group"]
-            if not isinstance(grp, str) or grp not in groups:
-                raise _err(f"{rp}.group", f"unknown group {grp!r}", f"defined groups: {', '.join(groups) or '(none)'}")
-        else:
-            sel = _check_select(r["select"], f"{rp}.select", qkeys)
-        refine.append(RefineSpec(size=_num(r["size"], f"{rp}.size", positive=True),
-                                 distance=_num(r["distance"], f"{rp}.distance", positive=True),
-                                 group=grp, select=sel))
-
-    ed = _mapping(data.get("element"), "element", ("order", "optimize"))
-    order = _int(ed.get("order", 1), "element.order")
-    if order not in (1, 2):
-        raise _err("element.order", f"invalid value {order!r}", "allowed: 1, 2")
-    optimize = _choice(ed.get("optimize", "netgen"), "element.optimize", _OPTIMIZE)
-
-    ad = _mapping(data.get("algorithm"), "algorithm", ("mesh2d", "mesh3d"))
-    alg2 = _int(ad.get("mesh2d", 6), "algorithm.mesh2d", minimum=1)
-    alg3 = _int(ad.get("mesh3d", 1), "algorithm.mesh3d", minimum=1)
-
-    export = data.get("export", ["msh"])
-    if not isinstance(export, list) or not export:
-        raise _err("export", "expected a non-empty list", f"allowed: {', '.join(_EXPORTS)}")
-    for i, x in enumerate(export):
-        _choice(x, f"export[{i}]", _EXPORTS)
-    export = list(export)
-
-    qd = _mapping(data.get("quality"), "quality", tuple(QualitySpec.__dataclass_fields__))
-    quality = _fill(QualitySpec, qd, "quality")
-
-    sv = _mapping(data.get("solve"), "solve", ("fea", "cfd"))
-    fea = cfd = None
-
-    def need(names: list[str], p: str) -> None:
-        for i, n in enumerate(names):
-            if n not in groups:
-                raise _err(f"{p}[{i}]", f"unknown group {n!r}", f"defined groups: {', '.join(groups) or '(none)'}")
-
-    if sv.get("fea") is not None:
-        if analysis != "fea":
-            raise _err("solve.fea", "only allowed with analysis: fea")
-        fd = _mapping(sv["fea"], "solve.fea", ("E", "nu", "fixed", "loads"))
-        fixed = _str_list(fd.get("fixed", []), "solve.fea.fixed")
-        need(fixed, "solve.fea.fixed")
-        loads = []
-        ll = fd.get("loads", [])
-        if not isinstance(ll, list):
-            raise _err("solve.fea.loads", "expected a list")
-        for i, ld in enumerate(ll):
-            lp = f"solve.fea.loads[{i}]"
-            ld = _mapping(ld, lp, ("group", "force"))
-            for k in ("group", "force"):
-                if k not in ld:
-                    raise _err(f"{lp}.{k}", "required field missing")
-            if not isinstance(ld["group"], str) or ld["group"] not in groups:
-                raise _err(f"{lp}.group", f"unknown group {ld['group']!r}",
-                           f"defined groups: {', '.join(groups) or '(none)'}")
-            f = ld["force"]
-            if not isinstance(f, list) or len(f) != 3:
-                raise _err(f"{lp}.force", "expected [fx, fy, fz]")
-            loads.append(FeaLoad(ld["group"], tuple(_num(c, f"{lp}.force[{j}]") for j, c in enumerate(f))))
-        fea = FeaSolveSpec(fixed=fixed, loads=loads)
-        if "E" in fd:
-            fea.E = _num(fd["E"], "solve.fea.E", positive=True)
-        if "nu" in fd:
-            fea.nu = _num(fd["nu"], "solve.fea.nu")
-            if not 0 <= fea.nu < 0.5:
-                raise _err("solve.fea.nu", f"must be in [0, 0.5), got {fea.nu}")
-
-    if sv.get("cfd") is not None:
-        if analysis != "cfd":
-            raise _err("solve.cfd", "only allowed with analysis: cfd")
-        cd = _mapping(sv["cfd"], "solve.cfd", ("inlet", "outlet", "velocity"))
-        inlet = _str_list(cd.get("inlet", []), "solve.cfd.inlet")
-        outlet = _str_list(cd.get("outlet", []), "solve.cfd.outlet")
-        need(inlet, "solve.cfd.inlet")
-        need(outlet, "solve.cfd.outlet")
-        cfd = CfdSolveSpec(inlet=inlet, outlet=outlet)
-        if "velocity" in cd:
-            cfd.velocity = _num(cd["velocity"], "solve.cfd.velocity", positive=True)
-
-    output = data.get("output", "out")
-    if not isinstance(output, str) or not output:
-        raise _err("output", "expected a directory name string")
-
-    return MeshSpec(
-        path=path, name=name, geometry=geometry, analysis=analysis, heal=heal, domain=domain,
-        groups=groups, default_group=default_group, size=size, refine=refine, order=order,
-        optimize=optimize, algorithm_2d=alg2, algorithm_3d=alg3, export=export, quality=quality,
-        fea=fea, cfd=cfd, output=Path(output),
-    )
+    """Validate spec ``data`` (paths relative to ``path``), section by section in order."""
+    parsed: dict[str, Any] = {"path": Path(path)}
+    data = _mapping(data, "", _TOP)
+    for parse in _SECTIONS:
+        parsed.update(parse(data, parsed))
+    return MeshSpec(**parsed)

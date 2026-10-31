@@ -1,8 +1,7 @@
 """Shared data types. All dataclasses round-trip through to_dict()/from_dict()."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
-from typing import Any
+from dataclasses import dataclass, fields
 
 import numpy as np
 
@@ -19,6 +18,10 @@ def _bb(x) -> BBox:
 
 
 def _jsonable(x):
+    if isinstance(x, np.generic):
+        return x.item()
+    if isinstance(x, np.ndarray):
+        return x.tolist()
     if hasattr(x, "to_dict"):
         return x.to_dict()
     if isinstance(x, dict):
