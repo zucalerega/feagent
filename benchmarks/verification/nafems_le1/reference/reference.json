@@ -1,0 +1,76 @@
+{
+ "id": "verification/nafems_le1",
+ "volume": 272434987.92849046,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -1.0004021311299149e-07,
+  -1.0002010655649574e-07,
+  -1.0002010655649574e-07,
+  3250.0000001000203,
+  2750.0000001000203,
+  50.00000010002011
+ ],
+ "n_cad_faces": 6,
+ "qois": [
+  {
+   "id": "syy_D",
+   "kind": "line",
+   "field": "S",
+   "component": "yy",
+   "start": [
+    2000.0,
+    0.0,
+    0.0
+   ],
+   "end": [
+    2000.0,
+    0.0,
+    50.0
+   ],
+   "n": 21,
+   "reference": 92.7,
+   "tolerance": {
+    "rel": 0.02
+   },
+   "reference_type": "published",
+   "provenance": "NAFEMS LE1 target sigma_yy(D) = 92.7 MPa (plane stress; TNSB Rev. 3, 1990)",
+   "note": "plane stress = thickness average, so the 3D QoI averages sigma_yy along the hole edge through D. Sensitive to element shape at the notch: the level-3 pipeline mesh has sliver tets there (radius ratio 0.001) and is 14 % low, the others are within 0.6 %",
+   "description": "sigma_yy averaged through the thickness along the hole edge at D (x=2000, y=0, 0<=z<=50)",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "reaction_x",
+   "kind": "reaction",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "component": "x",
+   "reference": -1375000.0,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "gate": true,
+   "reference_type": "analytical",
+   "provenance": "statics: x-resultant of the outward traction",
+   "description": "sum of x-reactions on x=0",
+   "weight": 1.0
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 1,
+  "reference_n_dof": 2973,
+  "reference_solver_cpu_s": 0.09037499999999998
+ }
+}
