@@ -119,6 +119,82 @@ FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui
 - If the store can't be written (permissions, full disk), the loop only prints a warning and
   carries on; its own results don't change. Code: `ace/ui_bridge.py`.
 
+## The CFD suite (steady laminar flow)
+
+The same loop also trains agents on flow problems. Select them with `--suite cfd`, or name the
+problems directly:
+
+```bash
+python -m ace.run_loop --suite cfd --mock                  # free, needs OpenFOAM (see below)
+python -m ace.run_loop --suite cfd                         # real agents
+```
+
+| split | problem | scored QoI | node cap | what makes it hard |
+|---|---|---|---|---|
+| train | `poiseuille_channel` | `dp_AB` (exact, 1 %) | 1200 | easy: the scheme choice matters more than the mesh |
+| train | `lid_driven_cavity_re100` | `u_vcl_min` (Ghia 1982, 3 %) | 2500 | closed cavity, lid-corner singularities |
+| train | `taylor_couette_2d` | `u_theta_mid` (exact, 1 %) | 2500 | curved walls, moving-wall expression BC, closed domain |
+| held out | `cylinder_channel_dfg_2d1` | `drag` (Schaefer & Turek 1996, 1 %) | 12000 | external flow: refine at the cylinder, not everywhere |
+
+`taylor_couette_2d` is new in this branch. So is `square_duct_3d`, which is a benchmark but not a
+task. Both are checked against the fixed solver in `docs/benchmarks_cfd.md`.
+
+Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mesh for each, and
+`tests/test_diagnosis.py` checks that it passes every oracle. For example, the cylinder drag is
+0.28 % off at 5440 nodes with refinement at the cylinder. With lighter refinement (3277 nodes) it
+is 1.71 % off and fails the 1 % tolerance, so local refinement is what the agents have to learn.
+The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with
+linearUpwind meets the tolerance (`calibration.json`: Poiseuille 0.08 %, Taylor-Couette 0.36 %,
+cavity 1.33 %), so the score rewards the cheapest accurate setup. Upwind is far worse on
+Poiseuille: 3.6 % against 0.08 %.
+
+**3D flow is not a task yet.** The agent's mesh tool makes unstructured tets in 3D. On those, the
+backend's axial pressure gradient comes out 12-19 % high:
+
+| case | mesh | pressure gradient |
+|---|---|---|
+| `pipe_poiseuille_3d` | tets, 4.6k nodes | +15 % |
+| `pipe_poiseuille_3d` | tets split into hexes, 33k nodes | still +12 % |
+| `square_duct_3d` | tets, 6.5-8k nodes | +12 % |
+
+On the same tet mesh of the pipe, the flow rate is right (+0.6 %) and the wall force +3 %, so the
+probed pressure and the wall shear no longer balance. 2D triangles are as accurate as quads, and
+structured hexes converge (`docs/benchmarks_cfd.md`). Until that is resolved, or the mesh tool can
+make structured or extruded hex meshes, a 2 % tolerance is out of reach for any agent in 3D.
+
+What changes for flow (it is chosen from the problem's physics, so the two suites can be mixed):
+
+- **Tools** (`TOOLS_FLOW` in `agent.py`):
+  - `mesh` has no element order: cells are straight-sided finite volumes, and `quads=true` asks
+    for quad-dominant 2D cells.
+  - `solve` takes a fluid (`rho`, `mu`), a `convection` scheme (`upwind` or `linearUpwind`) and
+    the flow BC types (`velocity_inlet`, `pressure_outlet`, `wall`, `slip`, `symmetry`). Values
+    may be expressions in x, y, z.
+  - The solver controls (laminar, iteration cap, residual target) come from the problem, not
+    the agent.
+- **Score**: unchanged. DOFs are cells × unknowns. The uniform-mesh baseline compares the two
+  convection schemes, where elasticity compares the two element orders.
+- **Oracles**: feacore's diagnostics run the elasticity solver, so equilibrium, singularity,
+  sanity bounds and symmetry are reported as unavailable for flow.
+  - These still run: spec compliance, gaming, the known answer, and the refinement study of the
+    agent's own setup (three OpenFOAM solves).
+  - The refinement estimate is pessimistic on independently remeshed unstructured meshes.
+- **Diagnoser interventions** (`counterfactual.py`):
+  - inlets and outlets count as loads, and walls, slip and symmetry as supports;
+  - `convert_units` also takes `mu` or `rho`;
+  - `set_convection` switches the scheme.
+
+OpenFOAM is required: ESI line, v1912 or newer, as on the Brev box. On a Mac, run
+`bash scripts/openfoam_docker.sh` once. It runs OpenFOAM v1912 in a Docker container and writes
+shims. Then:
+
+```bash
+export FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp
+```
+
+A two-generation mock run on the three 2D problems takes about 16 s that way. The solver tests in
+`tests/test_ace_cfd.py` skip without OpenFOAM.
+
 ## Knobs that matter (`ace/config.py`)
 
 - `MODELS`: one line per role. The Reflector is the step most worth a strong model.

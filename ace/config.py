@@ -36,9 +36,24 @@ TASKS = {
     "cooks_membrane": {"qoi": "uy_C", "node_cap": 20000},         # tapered panel in shear (classic, not NAFEMS)
     # easy sanity problem (planted-failure tests use it; not in the loop)
     "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 20000},
+    # CFD (physics "flow", steady laminar, openfoam backend), 2D only for now. The caps are safety
+    # limits like the others: a uniform mesh at the cap meets the tolerance (calibration.json), so
+    # the score is about the cheapest accurate mesh. 3D flow tasks (pipe_poiseuille_3d,
+    # square_duct_3d) are left out: on the unstructured tets the agent's mesh tool makes, the
+    # backend's axial pressure gradient is 12-19 % high at 4k-33k nodes (2D triangles and structured
+    # hexes are fine), so no agent could meet a 2 % tolerance (ace/README.md, "The CFD suite").
+    "poiseuille_channel": {"qoi": "dp_AB", "node_cap": 1200},             # 2D channel, exact (easy sanity case)
+    "lid_driven_cavity_re100": {"qoi": "u_vcl_min", "node_cap": 2500},    # 2D closed cavity, Ghia et al. 1982
+    "taylor_couette_2d": {"qoi": "u_theta_mid", "node_cap": 2500},        # 2D annulus, rotating wall, exact
+    "cylinder_channel_dfg_2d1": {"qoi": "drag", "node_cap": 12000},       # 2D external flow, Schaefer & Turek 1996
 }
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
+# The CFD suite (run_loop --suite cfd): held out is a new topology, external flow past a cylinder,
+# where the cheapest accurate mesh refines at the body instead of everywhere.
+TRAIN_CFD = ["poiseuille_channel", "lid_driven_cavity_re100", "taylor_couette_2d"]
+HOLDOUT_CFD = ["cylinder_channel_dfg_2d1"]
+SUITES = {"fea": (TRAIN, HOLDOUT), "cfd": (TRAIN_CFD, HOLDOUT_CFD)}
 
 # --------------------------------------------------------------------------- agent limits
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)

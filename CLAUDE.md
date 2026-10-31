@@ -28,6 +28,13 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `improver-loop` branch: improver side of the loop.
 - `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
   `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
+- `ace-cfd` branch (off `ace-loop`, with `main` merged in): the same ACE loop on steady laminar CFD.
+  - Run it with `python -m ace.run_loop --suite cfd`.
+  - Flow tools: finite-volume mesh with optional quads; solve with fluid, convection scheme and flow BCs on the openfoam backend.
+  - Oracles: spec compliance, gaming, known answer, and a refinement study on the openfoam backend.
+  - Two new exact benchmarks: `taylor_couette_2d` (rotating cylinder) and `square_duct_3d` (developing duct flow).
+  - The tasks are 2D only, because of the 3D unstructured-mesh bias listed under the known solver limits.
+  - Without a local OpenFOAM: `scripts/openfoam_docker.sh` (OpenFOAM v1912 in Docker, plus shims) and `FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp`.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
   accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy
@@ -141,6 +148,11 @@ Decisions:
   - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
     or thermal-load interfaces. Don't use point stresses right at an interface.
   - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
+  - 3D flow on unstructured meshes looks biased in the openfoam backend (found on `ace-cfd`). On tets of the
+    3D pipe (4.6k nodes) the axial pressure gradient is +15 %, while the wall force is +3 % and the flow rate
+    +0.6 %. Tets split into hexes are still +12 % at 33k nodes, and the square duct on tets is +12 %. So the
+    pressure force and the wall shear do not balance. 2D triangles are as accurate as quads, and structured
+    hexes converge. Not investigated yet; until then, judge 3D flow only on structured hex meshes.
 
 ## NVIDIA compute (hackathon)
 

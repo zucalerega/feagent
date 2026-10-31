@@ -53,19 +53,27 @@ class MockLLM:
                               NS(type="tool_use", id=f"t{turn}", name=name, input={**args, "using": using})],
                              "tool_use", "generator")
 
+        problem = fea.get_problem(problem_id)
+        flow = fea.is_flow(problem)
         if turn == 0:
             return tool("inspect_geometry", {}), self._rec(run_id)
         if turn == 1 or (last.get("within_cap") is False):
-            if last.get("within_cap") is False:          # over the cap: same order, coarser
-                return tool("mesh", {"h": last["h_used"] * 1.3, "order": last["order"]}), self._rec(run_id)
+            if last.get("within_cap") is False:          # over the cap: same element choice, coarser
+                same = {"quads": last.get("quads", False)} if flow else {"order": last["order"]}
+                return tool("mesh", {"h": last["h_used"] * 1.3, **same}), self._rec(run_id)
+            h = problem.params["h0"] * rng.uniform(0.6, 2.0)   # around the problem's own size
+            if flow:                                     # finite volumes: no element order
+                return tool("mesh", {"h": h, "quads": problem.dim == 2 and rng.random() < 0.5}), self._rec(run_id)
             order = 2 if knows_p2 else rng.choice([1, 2])
-            h = fea.get_problem(problem_id).params["h0"] * rng.uniform(0.6, 2.0)   # around the problem's own size
             return tool("mesh", {"h": h, "order": order}), self._rec(run_id)
         if "value" not in last and "error" not in last:   # meshed and within cap: solve
-            setup = reference_setup(fea.get_problem(problem_id))
-            if rng.random() < 0.2:                       # sometimes get a load direction wrong
+            setup = reference_setup(problem)
+            if flow:   # a second-order lesson in the playbook -> the second-order convection scheme
+                setup["convection"] = "linearUpwind" if knows_p2 else rng.choice(["upwind", "linearUpwind"])
+            if rng.random() < 0.2:                       # sometimes get a load / inflow direction wrong
                 for bc in setup["bcs"]:
-                    if bc["type"] == "traction":
+                    if bc["type"] in ("traction", "velocity_inlet") and isinstance(bc.get("value"), list) \
+                            and all(isinstance(v, (int, float)) for v in bc["value"]):
                         bc["value"] = [-v for v in bc["value"]]
             return tool("solve", setup), self._rec(run_id)
         if "solve" in last and last.get("ok"):

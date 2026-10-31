@@ -41,8 +41,12 @@ from ace import fea
 from ace.checks import bc_report, reference_setup
 from ace.config import TASKS
 
-LOAD_TYPES = {"pressure", "traction", "force"}
-SUPPORT_TYPES = {"fixed", "displacement", "symmetry"}
+LOAD_TYPES = {"pressure", "traction", "force",
+              "velocity_inlet", "pressure_outlet"}          # flow: what drives the flow
+SUPPORT_TYPES = {"fixed", "displacement", "symmetry",
+                 "wall", "slip"}                              # flow: what confines it
+FLOW_SKIPPED = ("not checked for flow: feacore's diagnostics run the elasticity solver; the flow "
+                "oracles are spec_compliance, gaming, mesh_convergence and known_answer")
 SYMMETRY_TOL = 1e-3
 STUDY_MAX_NODES_3D = 8000    # skip the refinement study above this (its fine level is ~8x larger)          # tangential reaction / applied load on a symmetry plane
 
@@ -52,8 +56,11 @@ def baseline_fail_flags(problem_id: str) -> frozenset:
     """feacore fail-severity flags that fire on the problem's OWN reference setup (on a mesh at the
     problem's default size). They are properties of the benchmark or limits of a check (e.g. Cook's
     membrane is posed with E = 1 and huge displacements; LE11's axisymmetric thermal load trips the
-    equilibrium check), so they say nothing about an agent and are not held against it."""
+    equilibrium check), so they say nothing about an agent and are not held against it. Flow
+    problems have none (the diagnostics do not run on them)."""
     problem = fea.get_problem(problem_id)
+    if fea.is_flow(problem):
+        return frozenset()
     with tempfile.TemporaryDirectory() as tmp:
         m = fea.make_mesh(problem, Path(tmp) / "ref.msh", h=problem.params["h0"], order=2)
         rep, _ = diagnose(fea.build_case(problem, m, reference_setup(problem), TASKS[problem_id]["qoi"]))
@@ -108,7 +115,7 @@ def mesh_convergence(problem, request: dict | None, setup: dict, qoi: str, targe
         def case_at(s: float):
             refs = [dict(r, size=r["size"] * s) for r in request.get("refinements") or []]
             m = fea.make_mesh(problem, Path(tmp) / f"m{s}.msh", h=request["h"] * s,
-                              order=request.get("order", 1), refinements=refs)
+                              order=request.get("order", 1), refinements=refs, quads=bool(request.get("quads")))
             if not m["ok"]:
                 raise CaseError(m["error"])
             return fea.build_case(problem, m, setup, qoi)
@@ -261,7 +268,8 @@ def spec_compliance(problem, setup: dict, rep) -> dict:
             problems.append(f"load {key[1]} on {key[0]} is {got_loads[key] / mag:.3g}x the specified magnitude")
     problems += [f"load {t} on {g} is not in the problem statement" for g, t in got_loads.keys() - ref_loads.keys()]
     problems += r["sign_flips"]
-    for k, what in (("formulation_ok", "formulation"), ("thickness_ok", "thickness"), ("material_ok", "material (E, nu)")):
+    props = "fluid (rho, mu)" if fea.is_flow(problem) else "material (E, nu)"
+    for k, what in (("formulation_ok", "formulation"), ("thickness_ok", "thickness"), ("material_ok", props)):
         if not r[k]:
             problems.append(f"wrong {what}")
     problems += [f"{f.id}: {f.message}" for f in rep.flags if f.category == "setup" and f.severity == "fail"
@@ -324,6 +332,8 @@ def evaluate(problem_id: str, mesh: dict, request: dict | None, setup: dict, val
     `target_err` is the accuracy target (the reference tolerance)."""
     problem = fea.get_problem(problem_id)
     qoi = TASKS[problem_id]["qoi"]
+    if fea.is_flow(problem):
+        return _evaluate_flow(problem, mesh, request, setup, value, target_err)
     try:
         case = fea.build_case(problem, mesh, setup, qoi)
         rep, res = diagnose(case)
@@ -354,4 +364,34 @@ def evaluate(problem_id: str, mesh: dict, request: dict | None, setup: dict, val
         # feacore's raw flags, for the diagnoser and the report
         "flags": [f.to_dict() for f in rep.flags],
         "valid_case": True,
+    }
+
+
+def _evaluate_flow(problem, mesh: dict, request: dict | None, setup: dict, value: float | None,
+                   target_err: float) -> dict:
+    """The oracles that do not need feacore's (elasticity) diagnostics: the setup against the
+    statement, gaming, a refinement study of the agent's own setup (openfoam backend) and the
+    known answer. The others are reported as unavailable."""
+    from feacore.diagnostics.flags import Report
+
+    qoi = TASKS[problem.id]["qoi"]
+    known = known_answer(problem.id, value)
+    try:
+        fea.build_case(problem, mesh, setup, qoi).check()
+    except (CaseError, TypeError, ValueError, KeyError) as e:
+        msg = f"the setup is not a valid case: {type(e).__name__}: {e}"
+        return {"spec_compliance": result("fail", msg), "equilibrium": unavailable(msg), "mesh_convergence": unavailable(msg),
+                "singularity": unavailable(msg), "sanity_bounds": unavailable(msg), "symmetry": unavailable(msg),
+                "gaming": unavailable(msg), "known_answer": known, "flags": [], "valid_case": False}
+    rep = Report()
+    conv = mesh_convergence(problem, request, setup, qoi, target_err, mesh.get("nodes")) if value is not None else \
+        unavailable("no solution (solver failure)")
+    if conv["status"] == "fail" and known["status"] == "pass" and conv["values"].get("est_err") is not None:
+        conv = result("pass", conv["why"] + f"; but the true error vs the reference is {known['values']['rel_error']:.2%}, "
+                      "within tolerance, so the estimate is too pessimistic here", **conv["values"])
+    return {
+        "equilibrium": unavailable(FLOW_SKIPPED), "mesh_convergence": conv, "singularity": unavailable(FLOW_SKIPPED),
+        "sanity_bounds": unavailable(FLOW_SKIPPED), "symmetry": unavailable(FLOW_SKIPPED),
+        "spec_compliance": spec_compliance(problem, setup, rep), "gaming": gaming(problem, setup, rep),
+        "known_answer": known, "flags": [], "valid_case": True,
     }
