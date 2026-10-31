@@ -73,6 +73,11 @@ load-stepped static one; ``increments`` (default 20) fixed, equal increments; ``
 (default 1.0) the multiplier of every load and prescribed displacement at the end of the ramp;
 ``nlgeom`` (default false) geometric nonlinearity (large displacements); ``adaptive`` (default false)
 lets the solver cut an increment back when it does not converge (increments are then not equal).
+``failure`` (optional, ccx): progressive failure by element erosion,
+``{"criterion": "peeq", "limit": 0.043, ...}``: the ramp runs in restart blocks and after every block
+the cells whose PEEQ (integration-point mean, or max with ``"aggregate": "max"``) reaches ``limit`` are
+removed; loading continues from the current state. Displacement-driven loading only; see
+``docs/solver_ccx_nonlinear.md`` for the block / increment options and the method's limits.
 A material with ``plasticity`` requires ``nonlinear: true``. The skfem backend refuses nonlinear cases.
 
 Quantities of interest (``QoI.type``)
@@ -392,7 +397,8 @@ class Case:
 # --------------------------------------------------------------------------- nonlinear
 
 PLASTICITY_MODELS = ("j2_isotropic",)
-NONLINEAR_OPTIONS = ("nonlinear", "increments", "load_factor_max", "nlgeom", "adaptive")
+NONLINEAR_OPTIONS = ("nonlinear", "increments", "load_factor_max", "nlgeom", "adaptive", "failure")
+FAILURE_CRITERIA = ("peeq",)
 
 
 def hardening_table(p: dict) -> list[tuple[float, float]]:
@@ -419,6 +425,16 @@ def _validate_nonlinear(case: "Case") -> list[str]:
         lf = opts.get("load_factor_max", 1.0)
         if not isinstance(lf, (int, float)) or isinstance(lf, bool) or not lf > 0:
             errs.append("analysis.options.load_factor_max must be a number > 0")
+    fail = opts.get("failure")
+    if fail is not None:
+        if not a.nonlinear or not plastic:
+            errs.append("analysis.options.failure needs nonlinear = true and a material with plasticity")
+        if not isinstance(fail, dict) or fail.get("criterion") not in FAILURE_CRITERIA:
+            errs.append(f"analysis.options.failure.criterion must be one of {FAILURE_CRITERIA}")
+        elif not isinstance(fail.get("limit"), (int, float)) or not fail["limit"] > 0:
+            errs.append("analysis.options.failure.limit must be a number > 0")
+        elif fail.get("aggregate", "mean") not in ("mean", "max"):
+            errs.append("analysis.options.failure.aggregate must be 'mean' or 'max'")
     for name, p in plastic.items():
         tag = f"material {name!r}: plasticity"
         if not isinstance(p, dict) or p.get("model") not in PLASTICITY_MODELS:

@@ -73,6 +73,9 @@ def solve(case: Case, **options) -> "CcxResult":
     deck = _Deck(case, model)
     inp = deck.build()
     if a.nonlinear:   # opt-in elastoplastic load stepping: docs/solver_ccx_nonlinear.md
+        if a.options.get("failure"):
+            from feacore.solver._ccx_failure import solve_failure
+            return solve_failure(case, model, deck, inp, options, t0)
         from feacore.solver._ccx_nl import solve_nonlinear
         return solve_nonlinear(case, model, deck, inp, options, t0)
     keep = bool(options.get("keep", False)) or options.get("workdir") is not None
