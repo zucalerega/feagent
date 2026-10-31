@@ -33,7 +33,7 @@ from ace.curator import curate
 from ace.llm import make_llm
 from ace.merge import apply_ops, save_generation
 from ace.playbook import Playbook
-from ace.reflector import reflect
+from ace.reflector import build_prompt, reflect
 
 
 # --------------------------------------------------------------------------- one agent run
@@ -199,6 +199,7 @@ def main(argv=None) -> int:
                 pruns = [r for r in runs if r["problem_id"] == pid]
                 if not pruns:
                     continue
+                (gdir / f"reflection_prompt_{pid}.md").write_text(build_prompt(pid, pruns, checks, playbook))
                 refl, usage = reflect(pid, pruns, checks, playbook, llm)
                 cost.add(usage)
                 if refl is None:
@@ -211,7 +212,9 @@ def main(argv=None) -> int:
             # 4. curate  5. merge
             ops, usage = curate(reflections, playbook, llm)
             cost.add(usage)
+            (gdir / "curator_ops.json").write_text(json.dumps([vars(o) for o in ops], indent=1))
             changes = apply_ops(playbook, ops, generation=gen)
+            (gdir / "merge_changes.json").write_text(json.dumps(changes, indent=1))
             save_generation(playbook, changes, out, gen + 1)
             note.update({k: len(v) for k, v in changes.items()}, usd=cost.total)
             print(f"  playbook: +{len(changes['added'])} added, {len(changes['voted'])} votes, "
