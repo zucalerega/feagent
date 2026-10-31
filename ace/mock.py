@@ -221,6 +221,8 @@ class MockLLM:
         text = user if isinstance(user, str) else "\n".join(b["text"] for b in user if b["type"] == "text")
         if schema.__name__ in ("AgentFeedback", "CrossRunFeedback", "SelfReflection", "OrganizerOutput"):
             return getattr(self, "_" + schema.__name__)(text, schema), rec
+        if schema.__name__ == "AssignedFeedback":             # AgentFeedback plus the assignment
+            return self._AgentFeedback(text, schema), rec
         raise ValueError(f"mock has no canned answer for {schema}")
 
     # ---------------------------------------------------------------- --deep roles
@@ -239,7 +241,11 @@ class MockLLM:
         task = re.search(r"^TASK (\S+)", text, re.M).group(1)
         call = {"h": 0.1, "order": 2, "refinements": [{"group": None, "point": [0.0, 0.0], "size": 0.02,
                                                        "radius": 0.2}]}
+        role = re.search(r"^YOUR ROLE: (\w+)", text, re.M)
+        assignment = role and {"agent": rid.rsplit("-", 1)[-1], "role": role.group(1),
+                               "experiment": f"mock {role.group(1)} experiment for {rid}", "why": "mock"}
         return schema.model_validate({
+            "assignment": assignment,
             "agent": rid.rsplit("-", 1)[-1], "run_id": rid, "diagnosis": f"mock: {rid} error near the corner",
             "step_critique": [{"step": "mesh call 1", "what_it_did": "uniform mesh", "verdict": "mistake",
                                "correction": "mock: refine the corner to h/4"}],

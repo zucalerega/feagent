@@ -8,7 +8,9 @@ across runs (ace.run_report.disagreement_map) and each agent's own previous run.
 To keep a generation fast, the review is split into parallel calls that share one cached prefix
 (everything above): one call per agent (a step-by-step critique, notes, the next mesh call, a check
 of what it promised last time) and one cross-run call (summary, setup warnings, contested regions,
-highlights, shared lessons). teach() merges them into one TeacherFeedback. ace/organizer.py then
+highlights, shared lessons). Each per-agent call also writes the agent's experiment for next
+generation in the role allocate() gave it (control / variant / explorer). teach() merges them into one
+TeacherFeedback. ace/organizer.py then
 files the notes into memory.
 
 The schema below (NoteItem, MeshCall) is shared with ace/self_reflect.py and ace/organizer.py.
@@ -94,6 +96,15 @@ class PromiseCheck(BaseModel):
     comment: str = Field(description="evidence from this run; say REPEATED MISTAKE if it repeated one")
 
 
+class Assignment(BaseModel):
+    """The experiment one agent runs next generation (allocate() picks the role, the teacher the rest)."""
+    agent: str
+    role: Literal["control", "variant", "explorer"]
+    experiment: str = Field(description="one concrete thing to try, with locations (groups, edges, points, "
+                                        "boxes) and sizes; for a variant name the one factor and its new value")
+    why: str = Field(description="the evidence that makes this experiment worth a run")
+
+
 class AgentFeedback(BaseModel):
     agent: str = Field(description='the agent, e.g. "a3" (the end of its run_id)')
     run_id: str
@@ -106,6 +117,12 @@ class AgentFeedback(BaseModel):
     mistakes: list[str] = Field(default_factory=list)
     next_mesh_call: MeshCall = Field(description="the exact mesh call that should beat this run's score next time")
     notes: list[NoteItem] = Field(description="8-15 agent-specific, actionable notes, each tagged with its task")
+    assignment: Assignment | None = Field(default=None, description="this agent's experiment next generation")
+
+
+class AssignedFeedback(AgentFeedback):
+    """AgentFeedback with the assignment required: the schema of the per-agent call when 2+ agents ran."""
+    assignment: Assignment
 
 
 class Highlight(BaseModel):
@@ -147,6 +164,8 @@ class CrossRunFeedback(BaseModel):
 class TeacherFeedback(CrossRunFeedback):
     task: str
     per_agent: list[AgentFeedback] = Field(description="one per run")
+    assignments: list[Assignment] = Field(default_factory=list, description="next generation's experiments, "
+                                          "one per agent (copied from per_agent), best run's agent first")
 
 
 # --------------------------------------------------------------------------- shared helpers
@@ -361,6 +380,68 @@ YOUR JOB NOW: the cross-run review of task {task} (not per-agent feedback; that 
 No hidden-point ids or coordinates anywhere."""
 
 
+# --------------------------------------------------------------------------- experiment allocation
+# Without this, every agent on a task ends up with nearly the same recipe (results/scaling_gold_2026-10-31):
+# the swarm samples one point of mesh space several times. The allocation spreads the agents out: one
+# control re-runs the best recipe (so we learn how noisy a score is), variants each move ONE factor of
+# it (a coordinate search around the best point), explorers try structurally different meshes.
+#
+# The roles and each variant's factor are fixed here in code, BEFORE the teacher calls, from the
+# ranking alone. That keeps the per-agent calls parallel (no waiting for the cross-run call, which
+# has the longest answer), and makes the assignments distinct by construction. The teacher then
+# chooses the concrete experiment inside that slot from the evidence.
+
+VARIANT_FACTORS = [
+    "the global size h (everything else as in the best recipe)",
+    "the element size at the refinements (keep their places, radii, h and order)",
+    "the refinement radii, i.e. how fast the size grows back to h (keep sizes, places, h and order)",
+    "the placement of ONE refinement (move one, or add one where the best recipe leaves a hotspot or "
+    "contested region coarse)",
+    "the element order (re-size h so the DOFs stay comparable)",
+]
+EXPLORER_DIRECTIONS = [
+    "different refinement TARGETS: refine regions the best recipes leave coarse (contested regions, error "
+    "hotspots) and leave alone what they all refine",
+    "a different STRATEGY: e.g. a coarse h with many small local refinements, edge or box refinements "
+    "instead of points, or one strongly graded refinement",
+    "a different element ORDER, with every size re-chosen for it",
+]
+
+
+def allocate(agents: list[str]) -> list[tuple[str, str, str]]:
+    """[(agent, role, focus)] for the agents on one task, best run first. Fewer than 2 agents: none
+    (a lone agent, e.g. the single-agent baseline, keeps the plain feedback). The best run's agent
+    is the control; the lowest-ranked n//3 (at least 1 when n >= 3, more if the factors run out) are
+    explorers, since they have least to lose; the rest are variants, one factor each."""
+    n = len(agents)
+    if n < 2:
+        return []
+    n_exp = max(n // 3, n - 1 - len(VARIANT_FACTORS)) if n >= 3 else 0
+    out = [(agents[0], "control", "re-run the best recipe so far with at most one small, deliberate tweak")]
+    out += [(a, "variant", "change only " + VARIANT_FACTORS[i]) for i, a in enumerate(agents[1:n - n_exp])]
+    out += [(a, "explorer", EXPLORER_DIRECTIONS[i % len(EXPLORER_DIRECTIONS)])
+            for i, a in enumerate(agents[n - n_exp:])]
+    return out
+
+
+ASSIGN_JOB = """EXPERIMENT ALLOCATION FOR TASK {task} next generation (roles fixed by rank before this review, so that
+the agents on a task try DIFFERENT things; every per-agent review sees this same table):
+{table}
+YOUR ROLE: {role} (agent {agent})
+- assignment: role "{role}"; experiment = ONE concrete thing to try, with groups/edges/points/boxes and
+  sizes; why = the evidence for it.
+  control: re-run the best recipe so far on this task (normally the top run's submitted mesh call) with
+  at most one small, deliberate tweak, so its score measures run-to-run noise.
+  variant: the best recipe with exactly ONE factor changed, the factor named for you in the table;
+  state the new value. Everything else stays as in the best recipe.
+  explorer: a structurally different mesh that no run above tried, in the direction named for you,
+  chosen from the error maps and contested regions; not a resized copy of anyone's recipe.
+  If another agent in the table has the same factor or direction, choose a different change from the
+  one the agent listed first would obviously choose.
+- next_mesh_call must implement the assignment exactly, and the step corrections and notes must not
+  contradict it."""
+
+
 def _run_block(run: dict, report: dict, notes_text: str) -> str:
     rid = run["run_id"]
     cited = run.get("cited") or []
@@ -456,8 +537,18 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
                                  disagreement, last_by_agent)
     cross_user = prefix + [text_block(CROSS_JOB.format(task=task))]
 
+    rids = [run["run_id"] for run, _ in pairs]
+    roles = allocate([agent_name(r) for r in rids])                # best first, like rids
+    table = "\n".join(f"  {a}: {role}: {focus}" for a, role, focus in roles)
+    role_of = {a: role for a, role, _ in roles}
+    schema = AssignedFeedback if roles else AgentFeedback
+
     def agent_user(rid: str) -> list[dict]:
-        return prefix + [text_block(f"FOR RUN {rid}\n" + AGENT_JOB.format(rid=rid, agent=agent_name(rid), task=task))]
+        a = agent_name(rid)
+        job = AGENT_JOB.format(rid=rid, agent=a, task=task)
+        if a in role_of:
+            job += "\n" + ASSIGN_JOB.format(task=task, table=table, role=role_of[a], agent=a)
+        return prefix + [text_block(f"FOR RUN {rid}\n" + job)]
 
     def call(user, schema):
         try:
@@ -466,7 +557,6 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
             print(f"  teacher {task}: a {schema.__name__} call failed: {e}")
             return None
 
-    rids = [run["run_id"] for run, _ in pairs]
     with ThreadPoolExecutor(max_workers=len(rids) + 1) as pool:
         cross = pool.submit(call, cross_user, CrossRunFeedback)   # different schema: its own cache, start now
         # Kept blocking on purpose: a cache entry is readable only once its writer's answer has begun,
@@ -474,8 +564,8 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
         # reports) instead of ~5% of it. The wait is mostly the prefix's processing, which every
         # call would otherwise do itself, so dropping it saves only a second or two.
         if len(rids) > 1:
-            llm.warm_cache("teacher", SYSTEM, agent_user(rids[0]), AgentFeedback, records)
-        per = [pool.submit(call, agent_user(rid), AgentFeedback) for rid in rids]
+            llm.warm_cache("teacher", SYSTEM, agent_user(rids[0]), schema, records)
+        per = [pool.submit(call, agent_user(rid), schema) for rid in rids]
         per_agent = [f.result() for f in per]
         cross_fb = cross.result()
 
@@ -483,12 +573,15 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
     for rid, af in zip(rids, per_agent):
         if af is not None:
             af.run_id, af.agent = rid, agent_name(rid)   # the caller's ids, whatever the model wrote
+            if af.assignment is not None:                 # and the role allocate() gave, likewise
+                af.assignment.agent, af.assignment.role = af.agent, role_of[af.agent]
             got.append(af)
     if not got and cross_fb is None:
         return None
     base = cross_fb.model_dump() if cross_fb is not None else {
         "task_summary": "(the cross-run review failed this generation)", "shared_lessons": []}
-    return TeacherFeedback(task=task, per_agent=got, **base)
+    return TeacherFeedback(task=task, per_agent=got, assignments=[af.assignment for af in got if af.assignment],
+                           **base)
 
 
 assert config.SECTIONS.keys() == set(Section.__args__)   # NoteItem.section must match the playbook
