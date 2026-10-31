@@ -306,6 +306,23 @@ def _fmt(v, unit="", scale=1.0, digits=4):
     return "-" if v is None else f"{v * scale:.{digits}g} {unit}".strip()
 
 
+def nodal_at(res, X: np.ndarray):
+    """von Mises (MPa) and displacement (mm) at the mesh nodes X (m). The solver's nodal values sit
+    on the same nodes, so one k-d tree match replaces per-point location (probe), which takes
+    minutes at ~300k nodes; nodes not matched exactly (none expected) fall back to probe."""
+    from scipy.spatial import cKDTree
+
+    C, vm = res.nodal("von_mises")
+    d, idx = cKDTree(C).query(X[:, : C.shape[1]])
+    U = np.column_stack([res.nodal(k)[1][idx] for k in ("ux", "uy", "uz")])
+    vm = vm[idx]
+    miss = d > 1e-9 * max(float(np.ptp(X, axis=0).max()), 1e-300)
+    if miss.any():
+        vm[miss] = res.probe("von_mises", X[miss])
+        U[miss] = np.column_stack([res.probe(k, X[miss]) for k in ("ux", "uy", "uz")])
+    return vm / 1e6, U * 1000
+
+
 def solve_cases(part, sets, mesh: str, X: np.ndarray, offset: np.ndarray, diag_mm: float) -> list[dict]:
     from feacore.diagnostics import diagnose
     from feacore.goldgen.run import make_case
@@ -335,8 +352,7 @@ def solve_cases(part, sets, mesh: str, X: np.ndarray, offset: np.ndarray, diag_m
             c["markers"].append({"kind": kind, "group": b.group, "letter": letter, "label": label, "at": at,
                                  "dir": None if d is None else np.asarray(d, float).tolist()})
         if res is not None:
-            vm = res.probe("von_mises", X) / 1e6
-            U = np.column_stack([res.probe(k, X) for k in ("ux", "uy", "uz")]) * 1000
+            vm, U = nodal_at(res, X)
             umax = float(np.linalg.norm(U, axis=1).max())
             c.update(vm=_b64(vm), u=_b64(U), autoscale=float(0.06 * diag_mm / umax) if umax > 0 else 1.0)
         c["numbers"] = [
