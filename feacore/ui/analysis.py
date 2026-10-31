@@ -383,6 +383,7 @@ def consensus(problem_id: str, submissions: list[dict], references: list[dict] |
             row = {
                 "submission_id": s.get("submission_id"),
                 "agent_id": s.get("agent_id"),
+                "loop_id": (s.get("meta") or {}).get("loop_id"),   # ACE ids are unique only within a loop
                 "created_at": s.get("created_at"),
                 "n_levels": len(e.get("values", [])),
                 "h_fine": e["h"][-1] if e.get("h") else None,

@@ -94,8 +94,9 @@ Decisions:
   restarts the service, re-runs setup when dependencies change, and waits while jobs are running.
   Set `FEACORE_UI_TOKEN` (or start the UI with `--token auto`) before sharing a tunnel URL. Every
   `/api/*` call then needs the token. Teammates' scripts and agents call `POST <url>/api/solve`;
-  the UI's Connect page shows copy-paste examples. Details are in `docs/brev.md`; a one-click team box
-  is a Brev Launchable using `scripts/brev_launchable_setup.sh`.
+  the UI's Connect page shows copy-paste examples. Details are in `docs/brev.md`; any account's box is set up
+  with one command (`curl -fsSL https://raw.githubusercontent.com/zucalerega/feagent/main/scripts/bootstrap.sh | bash`),
+  which a Brev Launchable can also run as its setup script. Expose port 8000 via the instance's HTTP Ports.
 - The UI shows small trendless mesh-to-mesh changes (under 2%) as "scatter between meshes", not as
   divergence. Real singularities still show as diverging.
 - Known solver/verification limits (from the benchmark runs):

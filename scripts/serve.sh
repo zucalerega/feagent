@@ -90,4 +90,4 @@ fi
 for _ in $(seq 1 30); do curl -fs "http://localhost:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -fs "http://localhost:$PORT/api/health" >/dev/null 2>&1 && echo "healthy on port $PORT" \
   || echo "not answering yet on port $PORT; check: bash scripts/serve.sh logs"
-echo "Expose it: Brev console > instance > Access > Using Tunnels > port $PORT (or: brev port-forward <instance> --port $PORT:$PORT)"
+echo "Expose it: Brev console > your instance > HTTP Ports > add port $PORT (or: brev port-forward <instance> --port $PORT:$PORT)"
