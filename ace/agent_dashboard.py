@@ -34,7 +34,9 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: E402
 
 RUNS = Path(__file__).resolve().parent.parent / "ace_runs"
 SHORT = {"nafems_le11_3d": "LE11 3D", "nafems_le11_axisym": "LE11 axisym", "nafems_le1": "LE1",
-         "nafems_le10": "LE10", "cooks_membrane": "Cook's membrane"}
+         "nafems_le10": "LE10", "cooks_membrane": "Cook's membrane",
+         "poiseuille_channel": "Poiseuille", "lid_driven_cavity_re100": "Cavity Re 100",
+         "taylor_couette_2d": "Taylor-Couette", "cylinder_channel_dfg_2d1": "DFG cylinder"}
 RUN_ID = re.compile(r"^g(\d+)-(.+)-a(\d+)$")
 
 st.set_page_config(page_title="Agent tracker", page_icon=":material/monitoring:", layout="wide")
@@ -105,31 +107,51 @@ def maybe_json(path: Path):
 # --------------------------------------------------------------------------- mesh pictures
 
 
+def faces_of(m) -> tuple[int, np.ndarray, np.ndarray]:
+    """The mesh's dimension, the triangles to shade (quads split in two) and the element edges to draw
+    (a quad's four sides, not its diagonal). Flow meshes are quad-dominant; quadratic elements are
+    drawn by their corner nodes."""
+    dim = 3 if any(c.type.startswith(("tetra", "hexahedron", "wedge", "pyramid")) for c in m.cells) else 2
+    tri = [c.data[:, :3] for c in m.cells if c.type.startswith("triangle")]
+    quad = [c.data[:, :4] for c in m.cells if c.type.startswith("quad")]
+    tris = np.vstack(tri + [q[:, [0, 1, 2]] for q in quad] + [q[:, [0, 2, 3]] for q in quad]) if tri or quad \
+        else np.empty((0, 3), dtype=int)
+    sides = [t[:, [i, (i + 1) % 3]] for t in tri for i in range(3)] + [q[:, [i, (i + 1) % 4]] for q in quad for i in range(4)]
+    edges = np.unique(np.sort(np.vstack(sides), axis=1), axis=0) if sides else np.empty((0, 2), dtype=int)
+    return dim, tris, edges
+
+
 @st.cache_data(max_entries=600, show_spinner=False)
-def mesh_png(msh: str, mtime: float, point: tuple | None, size: tuple = (5.0, 3.6)) -> bytes:
-    """The mesh: edges in 2D, the surface triangles in 3D. `point` marks the problem's scored point."""
+def mesh_png(msh: str, mtime: float, points: tuple = (), size: tuple = (5.0, 3.6)) -> bytes:
+    """The mesh: edges in 2D, the surface triangles in 3D. `points` mark the problem's scored point(s)."""
     m = meshio.read(msh)
-    dim = 3 if any(c.type.startswith("tetra") for c in m.cells) else 2
-    tris = np.vstack([c.data[:, :3] for c in m.cells if c.type.startswith("triangle")])
+    dim, tris, e = faces_of(m)
     fig = plt.figure(figsize=size)
     if dim == 2:
         ax = fig.add_subplot()
-        e = np.unique(np.sort(np.vstack([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]]), axis=1), axis=0)
         ax.add_collection(LineCollection(m.points[e][:, :, :2], colors="#1d2733", linewidths=0.3))
-        if point is not None:
-            ax.plot(point[0], point[1], "o", color="#d6402b", ms=4)
+        for pt in points:
+            ax.plot(pt[0], pt[1], "o", color="#d6402b", ms=4)
         ax.autoscale(); ax.set_aspect("equal"); ax.axis("off")
     else:
         ax = fig.add_subplot(projection="3d", computed_zorder=False)
         ax.add_collection3d(Poly3DCollection(m.points[tris], facecolor="#e9edf1", edgecolor="#2b3640", linewidths=0.15))
-        if point is not None:
-            ax.scatter(*point[:3], color="#d6402b", s=25, depthshade=False)
+        for pt in points:
+            ax.scatter(*pt[:3], color="#d6402b", s=25, depthshade=False)
         lo, hi = m.points.min(0), m.points.max(0)
         ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
         ax.set_box_aspect(hi - lo, zoom=1.15); ax.view_init(elev=24, azim=-58); ax.set_axis_off()
     fig.subplots_adjust(0, 0, 1, 1)
     buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=110); plt.close(fig)
     return buf.getvalue()
+
+
+def has_reference(task: str) -> bool:
+    """Whether the task's fine stress reference is on disk. The dashboard only reads it, never builds
+    it: in 3D that solve can need more memory than a laptop has. `python -m ace.field_error
+    --precompute <task>` builds it (field-mode runs build it too)."""
+    from ace import field_error as fe
+    return (fe.CACHE / f"{task}.npz").exists()
 
 
 @st.cache_data(max_entries=200, show_spinner="Solving to map the error…")
@@ -143,7 +165,7 @@ def error_map_png(run_path: str) -> bytes | None:
     r = json.loads(Path(run_path).read_text())
     p = fea.get_problem(r["problem_id"])
     cp = ckpt.checkpoint(r)
-    if p.dim != 2 or cp is None:
+    if p.dim != 2 or cp is None or fea.is_flow(p) or not has_reference(r["problem_id"]):
         return None
     mat, ref = reference_setup(p)["material"], fe.reference(r["problem_id"])
     s = fe.stresses(fe._solve(p, cp["mesh"], cp["setup"], TASKS[r["problem_id"]]["qoi"]), ref["pts"], 2)
@@ -162,11 +184,13 @@ def error_map_png(run_path: str) -> bytes | None:
 
 
 @st.cache_data(max_entries=20, show_spinner=False)
-def scored_point(task: str):
+def scored_points(task: str) -> tuple:
+    """Where the scored QoI is read: one point, two for a point difference (a pressure drop), none
+    for a group quantity (a drag force)."""
     from ace import fea
     from ace.config import TASKS
     q = fea.official_qoi(fea.get_problem(task), TASKS[task]["qoi"])
-    return None if q.point is None else tuple(q.point)
+    return tuple(tuple(x) for x in (q.point, q.point2) if x is not None)
 
 
 # --------------------------------------------------------------------------- interactive 3D views (plotly)
@@ -176,21 +200,19 @@ STRESS_SCALE = "Turbo"
 
 @st.cache_data(max_entries=300, show_spinner=False)
 def surface_of(msh: str, mtime: float) -> dict:
-    """Vertices, triangles and edges to draw: the boundary triangles of a 3D mesh, or all
-    triangles of a 2D mesh (at z = 0). Quadratic elements are drawn by their corner nodes."""
+    """Vertices, triangles and edges to draw: the boundary faces of a 3D mesh, or all faces of a
+    2D mesh (at z = 0). Quadratic elements are drawn by their corner nodes."""
     m = meshio.read(msh)
-    dim = 3 if any(c.type.startswith("tetra") for c in m.cells) else 2
-    tris = np.vstack([c.data[:, :3] for c in m.cells if c.type.startswith("triangle")])
+    dim, tris, edges = faces_of(m)
     if dim == 3:   # keep each boundary triangle once (gmsh writes some in several groups)
         tris = np.unique(np.sort(tris, axis=1), axis=0)
-    edges = np.unique(np.sort(np.vstack([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]]), axis=1), axis=0)
     pts = m.points.copy()
     if dim == 2:
         pts[:, 2] = 0.0
     return {"pts": pts, "tris": tris, "edges": edges, "dim": dim}
 
 
-def mesh_figure(pts, tris, edges=None, color=None, cmin=None, cmax=None, point=None, flat2d=False,
+def mesh_figure(pts, tris, edges=None, color=None, cmin=None, cmax=None, points=(), flat2d=False,
                 height=460, show_scale=True) -> go.Figure:
     """A draggable CAD-style view: shaded surface, optional element edges, optional stress colours."""
     data = [go.Mesh3d(
@@ -205,9 +227,9 @@ def mesh_figure(pts, tris, edges=None, color=None, cmin=None, cmax=None, point=N
         seg[0::3], seg[1::3] = pts[edges[:, 0]], pts[edges[:, 1]]
         data.append(go.Scatter3d(x=seg[:, 0], y=seg[:, 1], z=seg[:, 2], mode="lines",
                                  line=dict(color="#26313b", width=1.2), hoverinfo="skip", name="edges"))
-    if point is not None:
-        q = list(point) + [0.0] * (3 - len(point))
-        data.append(go.Scatter3d(x=[q[0]], y=[q[1]], z=[q[2]], mode="markers",
+    if points:
+        q = np.array([list(pt) + [0.0] * (3 - len(pt)) for pt in points])
+        data.append(go.Scatter3d(x=q[:, 0], y=q[:, 1], z=q[:, 2], mode="markers",
                                  marker=dict(size=5, color="#d6402b"), name="scored point"))
     fig = go.Figure(data)
     cam = dict(eye=dict(x=0, y=0, z=2.0), up=dict(x=0, y=1, z=0)) if flat2d else dict(eye=dict(x=1.5, y=-1.6, z=1.1))
@@ -233,29 +255,24 @@ def run_stress(run_path: str, mtime: float) -> np.ndarray | None:
 
 
 @st.cache_data(max_entries=10, show_spinner="Building the target structure…")
-def target_structure(task: str) -> dict:
+def target_structure(task: str, with_reference: bool) -> dict:
     """The actual part the agents mesh: a fine tessellation of the problem's CAD geometry, coloured by
     the reference von Mises stress (interpolated from the cached fine reference solve). An
-    axisymmetric section is revolved into the full solid, with a 90-degree cutaway showing the section."""
+    axisymmetric section is revolved into the full solid, with a 90-degree cutaway showing the section.
+    Without a reference on disk (`with_reference`, also the cache key) or for a flow problem, the
+    geometry is drawn uncoloured (vm None)."""
     import subprocess
     import sys
     from scipy.spatial import cKDTree
     from ace import fea, field_error as fe
     from ace.checks import reference_setup
     p = fea.get_problem(task)
-    ref = fe.reference(task)
-    vm_ref = fe.von_mises(ref["sigma"])
-    tree = cKDTree(ref["pts"][:, : p.dim])
-
-    def vm_at(x):   # inverse-distance average of the 4 nearest reference integration points
-        dist, idx = tree.query(x[:, : p.dim], k=4)
-        w = 1 / np.maximum(dist, 1e-12)
-        return (vm_ref[idx] * w).sum(1) / w.sum(1)
 
     # gmsh is process-global and not safe to call from Streamlit's script threads more than once, so
     # the tessellation is made once in a separate process and kept on disk next to the references.
     path = fe.CACHE / f"{task}_target.msh"
     if not path.exists():
+        fe.CACHE.mkdir(exist_ok=True)
         script = ("import gmsh, sys; from ace import fea; "
                   "from feacore.geometry.gmsh_tools import ensure_domain_group, gmsh_session, set_uniform_size; "
                   "p = fea.get_problem(sys.argv[1]); "
@@ -265,8 +282,22 @@ def target_structure(task: str) -> dict:
         subprocess.run([sys.executable, "-c", script, task, str(path)], check=True, capture_output=True,
                        cwd=Path(__file__).resolve().parent.parent)
     m = meshio.read(path)
-    tris = np.unique(np.sort(np.vstack([c.data[:, :3] for c in m.cells if c.type.startswith("triangle")]), axis=1), axis=0)
+    tris = np.unique(np.sort(faces_of(m)[1], axis=1), axis=0)
     pts = m.points.copy()
+    if p.dim == 2:
+        pts[:, 2] = 0.0
+    if fea.is_flow(p) or not with_reference:
+        kind = "flow domain" if fea.is_flow(p) else "CAD part" if p.dim == 3 else "CAD section"
+        return {"pts": pts, "tris": tris, "vm": None, "kind": kind, "flat": p.dim == 2}
+    ref = fe.reference(task)
+    vm_ref = fe.von_mises(ref["sigma"])
+    tree = cKDTree(ref["pts"][:, : p.dim])
+
+    def vm_at(x):   # inverse-distance average of the 4 nearest reference integration points
+        dist, idx = tree.query(x[:, : p.dim], k=4)
+        w = 1 / np.maximum(dist, 1e-12)
+        return (vm_ref[idx] * w).sum(1) / w.sum(1)
+
     if p.dim == 2 and reference_setup(p)["formulation"] == "axisymmetric":
         # revolve the section (x = r, y = z) about the axis through 270 degrees; the two cut faces show it
         lines = np.vstack([c.data[:, [0, -1]] for c in m.cells if c.type.startswith("line")])
@@ -288,10 +319,10 @@ def target_structure(task: str) -> dict:
             P += [(r * np.cos(t), r * np.sin(t), z) for r, z in zip(r_, z_)]
             C += list(vm_nodes)
             T += [tuple(base + q for q in tri) for tri in tris]
-        return {"pts": np.array(P), "tris": np.array(T), "vm": np.array(C) / 1e6, "kind": "revolved section"}
-    if p.dim == 2:
-        pts[:, 2] = 0.0
-    return {"pts": pts, "tris": tris, "vm": vm_at(pts) / 1e6, "kind": "CAD part" if p.dim == 3 else "CAD section"}
+        return {"pts": np.array(P), "tris": np.array(T), "vm": np.array(C) / 1e6, "kind": "revolved section",
+                "flat": False}
+    return {"pts": pts, "tris": tris, "vm": vm_at(pts) / 1e6, "kind": "CAD part" if p.dim == 3 else "CAD section",
+            "flat": p.dim == 2}
 
 
 def scored_mesh_path(run_path: str) -> str | None:
@@ -360,7 +391,7 @@ def page() -> None:
                           & costs["run_id"].astype(str).str.startswith(f"g{current}-")] if not costs.empty else costs
             st.caption(f"{len(work)} mesh(es) so far · {len(spent)} model calls · ${spent['usd'].sum() if len(spent) else 0:.3f}")
             if work:
-                st.image(mesh_png(str(work[-1]), work[-1].stat().st_mtime, scored_point(task) if task else None),
+                st.image(mesh_png(str(work[-1]), work[-1].stat().st_mtime, scored_points(task) if task else ()),
                          caption=f"latest mesh: {work[-1].name}", width=420)
 
     if mine.empty:
@@ -400,7 +431,7 @@ def page() -> None:
             path = scored_mesh_path(r["path"])
             with cols[i % 4]:
                 if path and Path(path).exists():
-                    st.image(mesh_png(path, Path(path).stat().st_mtime, scored_point(r["task"]), (4.0, 3.0)),
+                    st.image(mesh_png(path, Path(path).stat().st_mtime, scored_points(r["task"]), (4.0, 3.0)),
                              caption=f"g{r['gen']} · {short(r['task'])} · base {r['base']:.2f}"
                                      + (f" +{r['bonus']:.2f}" if r["bonus"] else "")
                                      + f" · {int(r['dofs']):,} DOFs · {r['error']:.2%}")
@@ -413,9 +444,10 @@ def page() -> None:
         run_rec = json.loads(Path(r["path"]).read_text())
         # the agent's mesh next to the structure it is trying to capture, both draggable
         path = scored_mesh_path(r["path"])
-        tgt = target_structure(r["task"])
-        lo, hi = float(np.percentile(tgt["vm"], 1)), float(np.percentile(tgt["vm"], 99))
-        colour = st.toggle("Colour by stress (agent's solution vs reference)", key="colour_stress")
+        tgt = target_structure(r["task"], has_reference(r["task"]))
+        stressed = tgt["vm"] is not None           # a stress reference on disk: colouring and error map
+        lo, hi = (float(np.percentile(tgt["vm"], 1)), float(np.percentile(tgt["vm"], 99))) if stressed else (None, None)
+        colour = stressed and st.toggle("Colour by stress (agent's solution vs reference)", key="colour_stress")
         mcol, tcol = st.columns(2)
         with mcol:
             with st.container(border=True):
@@ -427,22 +459,30 @@ def page() -> None:
                         full = run_stress(r["path"], Path(r["path"]).stat().st_mtime)
                         vm = None if full is None else full / 1e6
                     st.plotly_chart(mesh_figure(surf["pts"], surf["tris"], surf["edges"], vm, lo, hi,
-                                                scored_point(r["task"]), flat2d=surf["dim"] == 2),
+                                                points=scored_points(r["task"]), flat2d=surf["dim"] == 2),
                                     key=f"mesh_{r['run_id']}")
         with tcol:
             with st.container(border=True):
-                st.markdown(f"**Target: the actual structure** ({tgt['kind']}, reference stress)")
-                st.plotly_chart(mesh_figure(tgt["pts"], tgt["tris"], None, tgt["vm"], lo, hi,
-                                            flat2d=tgt["kind"] == "CAD section"), key=f"target_{r['task']}")
+                st.markdown(f"**Target: the actual structure** ({tgt['kind']}" + (", reference stress" if stressed else "") + ")")
+                st.plotly_chart(mesh_figure(tgt["pts"], tgt["tris"], None, tgt["vm"], lo, hi, flat2d=tgt["flat"]),
+                                key=f"target_{r['task']}")
+                if not stressed and tgt["kind"] != "flow domain":
+                    st.caption(f"No stress reference on disk for this task, so no stress colours or error map. "
+                               f"The dashboard does not build one (in 3D it can need more memory than a laptop has); "
+                               f"`python -m ace.field_error --precompute {r['task']}` does.")
         left, right = st.columns([1, 1.2])
         with left:
             st.markdown(f"**{short(r['task'])}** · rank {r['rank']} of {r['group_size']} · `{r['run_id']}`")
             st.table(pd.DataFrame({"": {
-                "base score": f"{r['base']:.3f}", "bonus": f"{r['bonus']:.3f}", "DOFs": f"{int(r['dofs']):,}",
+                "base score": f"{r['base']:.3f}", "bonus": f"{r['bonus']:.3f}",
+                "DOFs": f"{int(r['dofs']):,}" if pd.notna(r["dofs"]) else "-",
                 "field error": f"{r['field_error']:.2%}" if pd.notna(r["field_error"]) else "-",
                 "check-point error": f"{r['probe_error']:.2%}" if pd.notna(r["probe_error"]) else "-",
-                "meets 2x target": "yes" if r["meets_target"] else "no"}}))
-            if st.toggle("Show where the error is (2D tasks)", key="errmap"):
+                "scored error": f"{r['error']:.2%}" if pd.notna(r["error"]) else "-",
+                # field mode's target is 2x the automesher; otherwise it is the task's tolerance
+                ("meets 2x target" if pd.notna(r["field_error"]) else "within tolerance"):
+                    "yes" if r["meets_target"] else "no"}}))
+            if stressed and st.toggle("Show where the error is (2D tasks)", key="errmap"):
                 png = error_map_png(r["path"])
                 if png:
                     st.image(png, caption="error density; dark = large")
