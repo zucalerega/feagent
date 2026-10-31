@@ -49,6 +49,11 @@ ERRORS_CACHE: Path | None = None    # where errors_of_setup caches results (None
 #                 other only estimates the reference's own error (reference_check)
 QUAD_DIVISOR = {2: 4.5, 3: 2.25}
 REF_DIVISORS = {2: (6, 9), 3: (3, 4.5)}
+# Per problem, explicit sizes (m) where h0 / the divisors would be too heavy to solve:
+# (quadrature mesh, coarse reference, fine reference). The C-bracket is scored against its physical
+# test, so its field reference only informs reports, teachers and the diversity grid; h0 / 4.5 there
+# would be a ~1M-node P2 solve.
+REF_SIZES = {"abc_00000065_compression": (0.002, 0.00225, 0.0015)}
 
 # Zones left out of the integral: (group, distance). A support along a line in 3D makes the stress
 # so singular that the energy integral diverges near it (no mesh converges there), so that zone
@@ -178,11 +183,19 @@ def _solve(problem, mesh: dict, setup: dict, qoi: str):
     return res
 
 
-def _reference_solve(problem_id: str, divisor: float, workdir: Path):
-    """The problem's own (correct) setup solved on a uniform quadratic mesh of size h0 / divisor."""
+def _ref_h(problem_id: str, p, level: int) -> float:
+    """Element size of the coarse (level 0) or fine (level 1) reference solve."""
+    if problem_id in REF_SIZES:
+        return REF_SIZES[problem_id][1 + level]
+    return p.params["h0"] / REF_DIVISORS[p.dim][level]
+
+
+def _reference_solve(problem_id: str, level: int, workdir: Path):
+    """The problem's own (correct) setup solved on a uniform quadratic mesh: the coarse (level 0) or
+    fine (level 1) reference size, h0 / REF_DIVISORS unless REF_SIZES sets it."""
     from ace.config import TASKS
     p = fea.get_problem(problem_id)
-    mesh = fea.make_mesh(p, workdir / f"ref_{divisor:g}.msh", h=p.params["h0"] / divisor, order=2)
+    mesh = fea.make_mesh(p, workdir / f"ref_{level}.msh", h=_ref_h(problem_id, p, level), order=2)
     if not mesh.get("ok"):
         raise RuntimeError(f"reference mesh failed: {mesh.get('error')}")
     return _solve(p, mesh, reference_setup(p), TASKS[problem_id]["qoi"]), mesh
@@ -190,7 +203,8 @@ def _reference_solve(problem_id: str, divisor: float, workdir: Path):
 
 def _integration_points(problem_id: str, workdir: Path) -> tuple[np.ndarray, np.ndarray]:
     p = fea.get_problem(problem_id)
-    mesh = fea.make_mesh(p, workdir / "quad.msh", h=p.params["h0"] / QUAD_DIVISOR[p.dim], order=1)
+    h = REF_SIZES[problem_id][0] if problem_id in REF_SIZES else p.params["h0"] / QUAD_DIVISOR[p.dim]
+    mesh = fea.make_mesh(p, workdir / "quad.msh", h=h, order=1)
     pts, w = quadrature(mesh["path"], p.dim, reference_setup(p)["formulation"] == "axisymmetric")
     if problem_id in EXCLUDE:
         from scipy.spatial import cKDTree
@@ -219,7 +233,7 @@ def reference(problem_id: str) -> dict:
         _needs_uniform_reference(p)
         with tempfile.TemporaryDirectory() as tmp:
             pts, w = _integration_points(problem_id, Path(tmp))
-            res, mesh = _reference_solve(problem_id, REF_DIVISORS[p.dim][1], Path(tmp))
+            res, mesh = _reference_solve(problem_id, 1, Path(tmp))
             sigma = stresses(res, pts, p.dim)
         np.savez_compressed(f, pts=pts, w=w, nodes=mesh["nodes"], n_dofs=res.info.n_dofs,
                             **{f"s_{k}": v for k, v in sigma.items()})
@@ -298,7 +312,7 @@ def coarse_reference(problem_id: str) -> dict:
         _needs_uniform_reference(p)
         pts = reference(problem_id)["pts"]
         with tempfile.TemporaryDirectory() as tmp:
-            res, mesh = _reference_solve(problem_id, REF_DIVISORS[p.dim][0], Path(tmp))
+            res, mesh = _reference_solve(problem_id, 0, Path(tmp))
             sigma = stresses(res, pts, p.dim)
         np.savez_compressed(f, nodes=mesh["nodes"], **{f"s_{k}": v for k, v in sigma.items()})
     z = np.load(f)
