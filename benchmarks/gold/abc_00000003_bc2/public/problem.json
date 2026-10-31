@@ -1,0 +1,98 @@
+{
+  "id": "abc_00000003_bc2",
+  "title": "Gold benchmark abc_00000003_bc2",
+  "family": "abc_00000003",
+  "tags": [
+    "gold",
+    "3d",
+    "abc"
+  ],
+  "dim": 3,
+  "physics": "elasticity",
+  "formulation": "3d",
+  "units": "SI (m, N, Pa)",
+  "description": "Static linear-elastic analysis of the part in geometry.step (third-party CAD 00000003_1ffb81a71e5b402e966b9341_step_002.step, rescaled to SI metres; bounding-box diagonal 100.0 mm).\nMaterial: isotropic linear elastic steel, E = 210 GPa, Poisson's ratio 0.3. No gravity.\nFaces are named f<tag> by their OCC face tag in this STEP file; positions below are in mm.\nClamped (all displacements zero): face f23 (centroid (0.00, -0.00, 29.58) mm, area 4434.0 mm^2).\nRoller (zero z-displacement only): planar face f25 (outward normal (0.000, -0.000, 1.000), centroid (0.00, -0.00, 61.25) mm, area 630.2 mm^2).\nUniform pressure 6 MPa pushing into the part on face f3 (centroid (27.19, 0.00, 30.59) mm, area 736.6 mm^2).\nUniform pressure 1 MPa pushing into the part on face f16 (centroid (-27.19, -0.00, 30.59) mm, area 736.6 mm^2).\nAll other faces are free.\nReport: strain_energy (J); u_max = maximum displacement magnitude (m); vm_mean = volume-average von Mises stress (Pa); u_mean_<face> = mean displacement magnitude over each loaded face (m); with several supports, the support reactions R<x|y|z>_<face> (N).",
+  "qois": [
+    {
+      "name": "strain_energy",
+      "type": "strain_energy",
+      "field": null,
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "u_max",
+      "type": "max",
+      "field": "u_mag",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "u_mean_f3",
+      "type": "mean",
+      "field": "u_mag",
+      "point": null,
+      "group": "f3",
+      "component": null
+    },
+    {
+      "name": "u_mean_f16",
+      "type": "mean",
+      "field": "u_mag",
+      "point": null,
+      "group": "f16",
+      "component": null
+    },
+    {
+      "name": "Rx_f23",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "f23",
+      "component": 0
+    },
+    {
+      "name": "Ry_f23",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "f23",
+      "component": 1
+    },
+    {
+      "name": "Rz_f23",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "f23",
+      "component": 2
+    },
+    {
+      "name": "Rz_f25",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "f25",
+      "component": 2
+    }
+  ],
+  "geometry_file": "geometry.step"
+}
