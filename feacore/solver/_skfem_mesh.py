@@ -12,6 +12,13 @@ used by any domain cell, and maps every physical group to skfem entities by dime
 Geometry order: a quadratic file with analysis order 2 gives an isoparametric (curved)
 MeshTri2 / MeshTet2. Analysis order 1 always runs on the straight-sided corner mesh
 (MeshTri1 / MeshTet1), i.e. P1 on a tri6 / tet10 file ignores the midside nodes.
+
+Curved meshes use ``RobustIsoparametric``: skfem's inverse map (used for every facet quadrature
+point by ``FacetBasis``) starts Newton at (0.5, 0.5, 0.5), outside the reference simplex, clips to
+the unit cube and requires every point at once to converge to 1e-12; on valid but strongly curved
+cells it gives up, so the whole mesh was rejected. This one starts from the exact inverse of the
+straight-sided cell, never clips (Newton may wander far before converging) and accepts a residual
+relative to the cell size.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ from dataclasses import dataclass, field
 import meshio
 import numpy as np
 from skfem import MeshTet1, MeshTet2, MeshTri1, MeshTri2
+from skfem.mapping import MappingIsoparametric
 
 DOMAIN_TYPES = {2: ("triangle", "triangle6"), 3: ("tetra", "tetra10")}
 FACET_TYPES = {2: ("line", "line3"), 3: ("triangle", "triangle6")}
@@ -31,6 +39,53 @@ UNSUPPORTED_DOMAIN = {"quad", "quad8", "quad9", "hexahedron", "hexahedron20", "h
 
 class MeshError(ValueError):
     """Unreadable / unsupported mesh or unknown physical group."""
+
+
+class RobustIsoparametric(MappingIsoparametric):
+    """Isoparametric mapping whose inverse (``invF``) works on strongly curved simplices."""
+
+    RESIDUAL_ACCEPT = 1e-8      # |x - F(X)| / cell size at which a point counts as located
+
+    def invF(self, x, tind=None, newton_max_iters=100, newton_tol=1e-12):
+        mesh, dim = self.mesh, self.dim
+        t = mesh.t if tind is None else mesh.t[:, tind]
+        V = mesh.p[:, t[: dim + 1]]                                   # (dim, dim+1, n) corners
+        A = np.transpose(V[:, 1:] - V[:, :1], (2, 0, 1))              # (n, dim, dim)
+        h = np.linalg.norm(A, axis=(1, 2))[:, None]                   # cell size, (n, 1)
+        X = np.einsum("nij,jnq->inq", np.linalg.inv(A), x - V[:, 0][:, :, None])   # straight-cell inverse
+        for _ in range(newton_max_iters):
+            r = x - self.F(X, tind)
+            if (np.linalg.norm(r, axis=0) / h).max() < newton_tol:
+                return X
+            dX = np.einsum("ijkl,jkl->ikl", self.invDF(X, tind), r)
+            # no clipping: on strongly curved cells Newton makes a large excursion before converging
+            # quadratically (seen: residual 2.6 -> 32 -> ... -> 2e-13 cell sizes), and clipping stalls it
+            X = X + dX
+            if not np.all(np.isfinite(X)):
+                break
+            if np.abs(dX).max() < newton_tol:
+                return X
+        rel = np.linalg.norm(x - self.F(X, tind), axis=0) / h
+        if rel.max() < self.RESIDUAL_ACCEPT:
+            return X
+        bad = np.unique(np.nonzero(rel >= self.RESIDUAL_ACCEPT)[0])
+        raise MeshError(f"inverse isoparametric map failed in {len(bad)} cells (max residual {rel.max():.1e} of "
+                        f"the cell size): folded or degenerate curved cells")
+
+
+class _Robust:
+    def _mapping(self):
+        if not hasattr(self, "_cached_mapping"):
+            self._cached_mapping = RobustIsoparametric(self, self.elem(), self.bndelem)
+        return self._cached_mapping
+
+
+class CurvedTri(_Robust, MeshTri2):
+    """MeshTri2 with ``RobustIsoparametric``."""
+
+
+class CurvedTet(_Robust, MeshTet2):
+    """MeshTet2 with ``RobustIsoparametric``."""
 
 
 @dataclass
@@ -188,7 +243,7 @@ def read_mesh(path, dim: int, order: int) -> MeshData:
     n_file_nodes = int(len(np.unique(cells)))
 
     if use_quadratic:
-        mesh = (MeshTri2 if dim == 2 else MeshTet2)(p, t)
+        mesh = (CurvedTri if dim == 2 else CurvedTet)(p, t)
         # skfem renumbers vertices as np.unique(t[:nv]) and puts the midside nodes after them
         uniq = np.unique(t[:nv])
         vmap_c = np.full(p.shape[1], -1, dtype=np.int64)

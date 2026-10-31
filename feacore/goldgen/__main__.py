@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -116,23 +117,58 @@ def cmd_mesh(a) -> int:
     return 0
 
 
-def cmd_run(a) -> int:
+def _solve_job(job) -> dict:
+    """One BC set on all levels of its part (solve-pool worker); appends its rows to solves.jsonl."""
     from feacore.goldgen.parts import Part
     from feacore.goldgen.run import run_bcset
 
+    path, part_json, s, meshes, out, linear_solver = job
+    t0 = time.perf_counter()
+    try:
+        with open(Path(out) / "solves.jsonl", "a") as log:
+            summ = run_bcset(path, Part.from_json(part_json), s, meshes, Path(out), linear_solver, log)
+    except Exception as e:  # noqa: BLE001 - one bad BC set must not stop the run
+        summ = {"id": s.id, "result": "error", "error": f"{type(e).__name__}: {str(e)[:300]}"}
+    summ["seconds_total"] = round(time.perf_counter() - t0, 1)
+    return summ
+
+
+def _gpu_sampler(path: Path, stop: threading.Event, every: float = 10.0) -> None:
+    """GPU utilisation / memory every ``every`` s to gpu.jsonl (is the GPU being fed?)."""
+    import subprocess
+
+    with open(path, "a") as f:
+        while not stop.wait(every):
+            try:
+                q = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used",
+                                    "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10)
+                util, mem = (float(x) for x in q.stdout.split("\n")[0].split(","))
+            except Exception:  # noqa: BLE001 - no GPU / no nvidia-smi: stop sampling
+                return
+            f.write(json.dumps({"t": time.time(), "gpu_util": util, "gpu_mem_mib": mem}) + "\n")
+            f.flush()
+
+
+def cmd_run(a) -> int:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     selected = _select(a)
-    log = open(out / "solves.jsonl", "a")
     summaries = open(out / "summary.jsonl", "a")
+    meshlog = open(out / "meshes.jsonl", "a")
     todo = {row["part"]["id"]: (row, [s for s in sets if not (out / s.id / "private" / "reference.json").exists()])
             for row, sets in selected}
     todo = {k: v for k, v in todo.items() if v[1]}
     jobs = [j for j in _mesh_jobs(a, selected) if j[0]["part"]["id"] in todo]
-    with ProcessPoolExecutor(max(1, a.mesh_workers)) as ex:
-        futs = {ex.submit(_mesh_part, j): j[0]["part"]["id"] for j in jobs}
-        for f in as_completed(futs):                      # solve each part as soon as it is meshed
-            pid = futs[f]
+    stop = threading.Event()
+    threading.Thread(target=_gpu_sampler, args=(out / "gpu.jsonl", stop), daemon=True).start()
+    t_start = time.perf_counter()
+    # two pools: gmsh meshes parts on CPU cores while solve workers keep the GPU busy; each part's
+    # BC sets enter the solve pool the moment its meshes are ready
+    with ProcessPoolExecutor(max(1, a.mesh_workers)) as mesh_ex, ProcessPoolExecutor(max(1, a.solve_workers)) as solve_ex:
+        mesh_futs = {mesh_ex.submit(_mesh_part, j): j[0]["part"]["id"] for j in jobs}
+        solve_futs = []
+        for f in as_completed(mesh_futs):
+            pid = mesh_futs[f]
             row, sets = todo[pid]
             try:
                 meshes = f.result()
@@ -140,23 +176,23 @@ def cmd_run(a) -> int:
                 print(f"[{pid}] mesh FAILED: {type(e).__name__}: {str(e)[:200]}", flush=True)
                 continue
             for m in meshes:
-                log.write(json.dumps({k: m.get(k) for k in ("part", "mesh_level", "h", "cells", "seconds", "scheme",
-                                                             "folded_before_fix", "failed_attempts", "fallback_reason")}) + "\n")
+                meshlog.write(json.dumps({k: m.get(k) for k in ("part", "mesh_level", "h", "cells", "seconds", "scheme",
+                                                                 "nested", "alg3d", "folded_before_fix", "min_sj",
+                                                                 "min_linear_quality", "failed_attempts", "fallback_reason")}) + "\n")
                 print(f"[{pid}] L{m['mesh_level']}: {m['cells']} cells, {m['seconds']:.1f}s, {m['scheme']}"
-                      f" (folded before fix: {m['folded_before_fix']})", flush=True)
-            log.flush()
-            part = Part.from_json(json.dumps(row["part"]))
-            for s in sets:
-                t0 = time.perf_counter()
-                try:
-                    summ = run_bcset(row["path"], part, s, meshes, out, a.linear_solver, log)
-                except Exception as e:  # noqa: BLE001 - one bad BC set must not stop the part
-                    summ = {"id": s.id, "result": "error", "error": f"{type(e).__name__}: {str(e)[:300]}"}
-                summ["seconds_total"] = round(time.perf_counter() - t0, 1)
-                summaries.write(json.dumps(summ) + "\n")
-                summaries.flush()
-                print(f"[{s.id}] {summ.get('result')} gold={summ.get('gold')} singular={summ.get('singular')} "
-                      f"dofs={summ.get('dofs')} t={summ['seconds_total']}s", flush=True)
+                      f"{'' if m.get('nested', True) else ' remesh'}", flush=True)
+            meshlog.flush()
+            part_json = json.dumps(row["part"])
+            solve_futs += [solve_ex.submit(_solve_job, (row["path"], part_json, s, meshes, str(out), a.linear_solver))
+                           for s in sets]
+        for f in as_completed(solve_futs):
+            summ = f.result()
+            summaries.write(json.dumps(summ) + "\n")
+            summaries.flush()
+            print(f"[{summ['id']}] {summ.get('result')} gold={summ.get('gold')} singular={summ.get('singular')} "
+                  f"dofs={summ.get('dofs')} t={summ['seconds_total']}s", flush=True)
+    stop.set()
+    print(f"run done in {time.perf_counter() - t_start:.0f}s", flush=True)
     return 0
 
 
@@ -188,7 +224,8 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     _common(r, parts_default=3)
     r.add_argument("step_dir", help="unused; STEP paths come from the screen file (kept for compatibility)")
-    r.add_argument("--mesh-workers", type=int, default=1)
+    r.add_argument("--mesh-workers", type=int, default=1, help="parallel gmsh processes (CPU)")
+    r.add_argument("--solve-workers", type=int, default=1, help="parallel solve processes sharing the GPU")
     r.add_argument("--linear-solver", default=None)
     r.set_defaults(func=cmd_run)
     a = ap.parse_args(argv)

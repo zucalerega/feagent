@@ -82,6 +82,9 @@ def certify(bcset: BCSet, runs: list[dict]) -> tuple[list[Reference], dict]:
     refs, study = [], {}
     for q, family in qois_for(bcset):
         vals = [r["qois"][q.name] for r in runs]
+        if len(runs) < 3:                   # a convergence study needs three levels: record, certify nothing
+            study[q.name] = {"values": vals, "h": h, "kind": "insufficient_levels", "gold": False}
+            continue
         p_th = default_expected_order(q, 2)
         a = analyze(h, vals, p_theory=p_th)
         g = a["gci"]

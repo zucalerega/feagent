@@ -127,12 +127,20 @@ def mesh_quality(mesh) -> np.ndarray:
 
 
 def check_mesh(res, rep: Report) -> None:
-    """M1/M2: inverted (folded curved) cells and poorly shaped cells."""
+    """M1/M2: inverted (folded curved) cells and poorly shaped cells. Corner (chord) quality decides
+    validity only for straight-sided meshes: a valid curved cell can have a flat chord tet, and its
+    validity is the Jacobian check below (the integration actually uses the curved map)."""
     q = mesh_quality(res.md.mesh)
     worst = int(np.argmin(q))
     at = res.md.mesh.p[:, res.md.mesh.t[:, worst]].mean(axis=1).tolist()
     rep.metrics["mesh_min_quality"] = float(q.min())
-    if q.min() < T["quality_fail"]:
+    curved = getattr(res.md, "geom_order", 1) == 2
+    if q.min() < T["quality_fail"] and curved:
+        rep.add(Flag("poor_element_quality", "mesh", "warn",
+                     f"curved mesh: {int((q < T['quality_fail']).sum())} cells have a near-flat corner tet "
+                     f"(quality {q.min():.2g}); the curved cells are valid (Jacobian check)",
+                     value=float(q.min()), threshold=T["quality_fail"], where=at))
+    elif q.min() < T["quality_fail"]:
         rep.add(Flag("degenerate_element", "mesh", "fail", f"near-degenerate cell (quality {q.min():.2g})",
                      value=float(q.min()), threshold=T["quality_fail"], where=at))
     elif q.min() < T["quality_warn"]:
