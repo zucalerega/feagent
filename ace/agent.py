@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from ace import fea
+from ace.checks import tolerance
 from ace.config import MAX_SOLVES, MAX_TURNS, TASKS
 
 # Deliberately short and non-expert: the playbook is where expertise should accumulate.
@@ -24,10 +25,15 @@ Workflow: call inspect_geometry to see the named groups, call mesh to build a me
 solve with your analysis setup. You may re-mesh and solve again within the limits stated in the
 task. When you are done, call submit with the number of the solve you want scored; that ends
 the run. If you never submit, your last successful solve is scored. The solver computes the
-scored quantity; you do not report it. You are scored on how close it is to the true value,
-which you never see. Judge your result from your own meshes and solves; do not rely on
-reference values or closed-form estimates you remember, because the problem may differ from
-any textbook case.
+scored quantity; you do not report it.
+
+How you are scored: the submitted solve must be ACCURATE ENOUGH (the scored quantity within the
+tolerance stated in the task of the true value, which you never see) and CHEAP (few degrees of
+freedom, DOFs). The best score goes to the cheapest mesh that is still within tolerance:
+missing the tolerance loses accuracy, and using more DOFs than needed loses efficiency. Only the
+submitted solve counts, so extra solves on other meshes cost nothing. Judge accuracy from your
+own meshes and solves; do not rely on reference values or closed-form estimates you remember,
+because the problem may differ from any textbook case.
 
 Playbook: lessons learned from earlier runs, each with an ID. Every tool call has a `using`
 argument: list there the IDs of the playbook lessons that shaped that call (empty if none).
@@ -94,9 +100,24 @@ TOOLS = [
                 "thickness": {"type": "number", "description": "plane stress/strain thickness"},
                 "material": {
                     "type": "object",
-                    "properties": {"E": {"type": "number"}, "nu": {"type": "number"}},
+                    "properties": {"E": {"type": "number"}, "nu": {"type": "number"},
+                                   "alpha": {"type": "number", "description": "thermal expansion coefficient (1/K), "
+                                                                             "needed only with a temperature load"}},
                     "required": ["E", "nu"],
                 },
+                "loads": {
+                    "type": "array",
+                    "description": "volume loads (optional): temperature = a temperature field T (number or an "
+                                   "expression in x, y, z, e.g. 'x + y'; axisymmetric: x = r, y = z), causing "
+                                   "thermal strain alpha * (T - T_ref); body_force = force per volume vector",
+                    "items": {
+                        "type": "object",
+                        "properties": {"type": {"type": "string", "enum": ["temperature", "body_force"]},
+                                       "value": {}, "group": {"type": "string", "description": "cell group; '*' = all"}},
+                        "required": ["type", "value"],
+                    },
+                },
+                "T_ref": {"type": "number", "description": "stress-free reference temperature (default 0)"},
                 "bcs": {
                     "type": "array",
                     "items": {
@@ -131,8 +152,11 @@ TOOLS = [
     },
 ]
 
-CITATION = re.compile(r"\[using ([a-z]+-\d{4})\]")
-BULLET_ID = re.compile(r"^[a-z]+-\d{4}$")
+# Checkpoint bookkeeping kept in the run record but not shown to the agent.
+HIDDEN_KEYS = {"path", "request", "index", "sha256", "gmsh", "info"}
+
+CITATION = re.compile(r"\[using ((?:a\d+-)?[a-z]+-\d{4})\]")
+BULLET_ID = re.compile(r"^(?:a\d+-)?[a-z]+-\d{4}$")          # shared "mesh-0001" or private "a3-mesh-0001"
 
 
 def system_prompt(playbook_text: str) -> str:
@@ -148,8 +172,9 @@ def task_prompt(problem_id: str) -> str:
         f"Problem id: {problem_id}\n\n{problem.description()}\n\n"
         f"SCORED QUANTITY: {q.name} = {q.type} of {q.field}{where}. Only this quantity is scored; "
         f"ignore any other quantities the statement asks you to report.\n"
-        f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes. "
-        f"You may call solve at most {MAX_SOLVES} times."
+        f"TARGET: {q.name} within {tolerance(problem_id):.0%} of the true value, with as few DOFs as possible.\n"
+        f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
+        f"target). You may call solve at most {MAX_SOLVES} times."
     )
 
 
@@ -197,11 +222,14 @@ class Tools:
         path = self.workdir / f"mesh_{len(self.meshes)}.msh"
         m = fea.make_mesh(self.problem, path, h=args.get("h", 0), order=args.get("order", 1),
                           refinements=args.get("refinements"))
+        # Checkpoint: the request that produced this mesh, so it can be rebuilt or varied later.
+        m["request"] = {k: v for k, v in args.items() if k != "using"}
+        m["index"] = len(self.meshes)
         self.meshes.append(m)
+        out = {k: v for k, v in m.items() if k not in HIDDEN_KEYS}
         if not m["ok"]:
-            return m, True
+            return out, True
         cap = self.task["node_cap"]
-        out = {k: v for k, v in m.items() if k != "path"}
         out.update(node_cap=cap, within_cap=m["nodes"] <= cap)
         if m["nodes"] > cap:
             # Node count scales like (1/size)^dim, so this factor on all sizes roughly hits the cap.
@@ -227,8 +255,8 @@ class Tools:
             return {"error": f"solve limit ({MAX_SOLVES}) reached; call submit"}, True
         setup = {k: v for k, v in args.items() if k != "using"}
         result = fea.run_solve(self.problem, mesh, setup, self.task["qoi"])
-        self.solves.append({"mesh": mesh, "setup": setup, "result": result})
-        return {**result, "solve": len(self.solves), "nodes": mesh["nodes"],
+        self.solves.append({"mesh": mesh, "mesh_index": len(self.meshes) - 1, "setup": setup, "result": result})
+        return {**{k: v for k, v in result.items() if k not in HIDDEN_KEYS}, "solve": len(self.solves), "nodes": mesh["nodes"],
                 "solves_left": MAX_SOLVES - len(self.solves)}, not result["ok"]
 
 

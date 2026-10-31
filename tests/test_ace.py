@@ -6,7 +6,6 @@ import pytest
 
 from ace import config
 from ace.agent import parse_citations
-from ace.checks import score_from_error
 from ace.curator import curate
 from ace.merge import apply_ops, save_generation
 from ace.curator import Op
@@ -124,20 +123,19 @@ def test_curator_drops_same_idea_twice_in_one_batch():
 
 
 def test_submitted_solve_is_scored_not_the_last():
-    from ace.checks import check_run, load_calibration
+    from ace import fea
+    from ace.checks import check_run
     pid = config.TRAIN[0]
-    ref = __import__("ace.fea", fromlist=["x"]).reference_value(
-        __import__("ace.fea", fromlist=["x"]).get_problem(pid), config.TASKS[pid]["qoi"])
+    ref = fea.reference_value(fea.get_problem(pid), config.TASKS[pid]["qoi"])
     mesh = {"ok": True, "nodes": 10, "order": 2, "min_quality": 0.9}
     run = {"meshes": [mesh], "submitted": 0, "solves": [
         {"mesh": mesh, "setup": {}, "result": {"ok": True, "value": ref * 1.001}},
         {"mesh": mesh, "setup": {}, "result": {"ok": True, "value": ref * 1.5}},
     ]}
-    c = check_run(pid, run, load_calibration([pid]))
+    c = check_run(pid, run)
     assert c["rel_error"] == pytest.approx(0.001) and c["submitted"]
     run["submitted"] = None                                          # never submitted: last solve
-    assert check_run(pid, run, load_calibration([pid]))["rel_error"] == pytest.approx(0.5)
-
+    assert check_run(pid, run)["rel_error"] == pytest.approx(0.5)
 
 def test_over_cap_mesh_gets_a_scaling_hint(tmp_path):
     from ace.agent import Tools
@@ -151,11 +149,21 @@ def test_over_cap_mesh_gets_a_scaling_hint(tmp_path):
     assert tools.solves == []
 
 
-def test_score_from_error():
-    assert score_from_error(0.05, 0.05) == 0
-    assert score_from_error(0.005, 0.05) == pytest.approx(1)
-    assert score_from_error(1e9, 0.05) == config.SCORE_FLOOR
-    assert score_from_error(0.0, 0.05) == config.SCORE_CEIL
+def test_speed_accuracy_score_rewards_the_cheapest_accurate_run():
+    from ace.checks import score_population
+    mk = lambda rid, err, dofs: {"run_id": rid, "problem_id": "nafems_le1", "checks": {   # noqa: E731
+        "tolerance": 0.02, "rel_error": err, "dofs": dofs, "failed_gate": None, "solved": True}}
+    runs = [mk("cheap_ok", 0.01, 1000), mk("dear_ok", 0.005, 4000), mk("cheap_bad", 0.08, 500)]
+    score_population(runs)
+    s = {r["run_id"]: r["checks"] for r in runs}
+    assert s["cheap_ok"]["score"] == pytest.approx(1.0)                 # cheapest within tolerance
+    assert s["dear_ok"]["score"] == pytest.approx(0.25)                 # accurate, 4x the DOFs
+    assert s["cheap_bad"]["accuracy"] == pytest.approx(0.25)            # 0.02 / 0.08
+    assert s["cheap_bad"]["score"] == pytest.approx(0.25)               # efficiency capped at 1, not 2
+    runs.append({"run_id": "crashed", "problem_id": "nafems_le1", "error": "boom",
+                 "checks": {"tolerance": 0.02, "rel_error": None, "dofs": None, "failed_gate": "no successful solve", "solved": False}})
+    score_population(runs)
+    assert runs[-1]["checks"]["score"] == 0 and not runs[-1]["checks"]["valid"]
 
 
 def test_condense_trace_is_capped():
@@ -167,24 +175,24 @@ def test_condense_trace_is_capped():
 
 
 def test_loop_end_to_end_mock(tmp_path):
-    main(["--mock", "--runs-per-problem", "1", "--generations", "2", "--concurrency", "2",
+    main(["--mock", "--memory", "shared", "--runs-per-problem", "1", "--generations", "2", "--concurrency", "2",
           "--out", str(tmp_path)])
     for name in ("playbook_gen0.json", "playbook_gen1.json", "diff_gen1.md", "summary.md", "cost.jsonl"):
         assert (tmp_path / name).exists(), name
     assert len(Playbook.load(tmp_path / "playbook_gen1.json").bullets) >= 1
     for pid in config.TRAIN:
-        assert (tmp_path / "gen0" / f"reflection_{pid}.json").exists()
+        assert (tmp_path / "gen0" / f"diagnosis_{pid}.json").exists()     # REFLECTOR_MODE = "diagnoser"
     for pid in config.HOLDOUT:                                 # held out: never reflected on
-        assert not (tmp_path / "gen0" / f"reflection_{pid}.json").exists()
+        assert not (tmp_path / "gen0" / f"diagnosis_{pid}.json").exists()
     record = json.loads((tmp_path / "gen1" / "runs" / f"g1-{config.TRAIN[0]}-0.json").read_text())
-    for key in ("problem_id", "run_id", "generation", "trace", "cited", "checks"):
+    for key in ("problem_id", "run_id", "generation", "trace", "cited", "checks", "oracles", "stages"):
         assert key in record
     assert record["cited"]                                     # gen 1 agent cited a gen-0 bullet
     assert "score" in record["checks"]
 
 
 def test_budget_stops_cleanly(tmp_path):
-    main(["--mock", "--runs-per-problem", "1", "--generations", "3", "--concurrency", "1",
+    main(["--mock", "--memory", "shared", "--runs-per-problem", "1", "--generations", "3", "--concurrency", "1",
           "--budget-usd", "0.01", "--out", str(tmp_path)])
     assert (tmp_path / "summary.md").exists()
     assert not (tmp_path / "playbook_gen1.json").exists()      # stopped before any update
@@ -208,3 +216,42 @@ def test_attribution_recovers_planted_effects():
     est = estimate(rows, train=["A", "B"], n_boot=300)
     assert est["good-0001"]["lo"] > 0 and est["bad-0001"]["hi"] < 0
     assert est["null-0001"]["lo"] < 0 < est["null-0001"]["hi"]
+
+
+# --------------------------------------------------------------------------- shared + private memory
+
+
+def _diag(lessons):
+    from ace.diagnoser import Diagnosis, DiagnosisLesson
+    return Diagnosis(divergence="", runs=[], lessons=[
+        DiagnosisLesson(section="meshing", scope="general", evidence="", content=c, evidence_type=et,
+                        confidence="medium", run_ids=rids) for c, et, rids in lessons])
+
+
+def test_only_counterfactual_lessons_reach_shared_memory_contrast_stays_private():
+    from ace.memory import Memory
+    mem = Memory(3)
+    d = _diag([("When refining, use quadratic elements, because they resolve gradients.", "counterfactual", ["g0-p-a0"]),
+               ("When over the cap, coarsen the far field first, because the hot spot matters.", "contrast", ["g0-p-a1"])])
+    mem.update([("p", d, ["g0-p-a0", "g0-p-a1"])], MockLLM(), generation=0)
+    assert [b.content[:20] for b in mem.shared.bullets] == ["When refining, use q"]
+    assert mem.private[1].bullets and mem.private[1].bullets[0].id.startswith("a1-")
+    assert not mem.private[2].bullets                                 # agent 2 had no evidence
+
+
+def test_an_idea_two_agents_learned_privately_is_promoted_to_shared():
+    from ace.memory import Memory
+    mem = Memory(3)
+    text = "When over the cap, coarsen the far field first, because the hot spot matters."
+    d = _diag([(text, "contrast", ["g0-p-a0", "g0-p-a2"])])
+    log = mem.update([("p", d, ["g0-p-a0", "g0-p-a2"])], MockLLM(), generation=0)
+    assert len(log["promoted"]) == 1 and mem.shared.bullets[0].content == text
+    assert not mem.private[0].bullets and not mem.private[2].bullets   # moved, not duplicated
+
+
+def test_private_ids_are_cited_and_routed():
+    from ace.memory import Memory
+    trace = [{"type": "tool_call", "name": "mesh", "input": {"using": ["a3-mesh-0002", "mesh-0001"]}}]
+    assert parse_citations(trace) == ["a3-mesh-0002", "mesh-0001"]
+    mem = Memory(4)
+    assert mem.owner("a3-mesh-0002") is mem.private[3] and mem.owner("mesh-0001") is mem.shared

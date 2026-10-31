@@ -26,7 +26,7 @@ def find_duplicate(playbook: Playbook, section: str, content: str) -> tuple[Bull
     return (best, best_score) if best_score >= DEDUP_THRESHOLD else (None, best_score)
 
 
-def apply_ops(playbook: Playbook, ops: list, generation: int) -> dict:
+def apply_ops(playbook: Playbook, ops: list, generation: int, prune_margin: int = PRUNE_MARGIN) -> dict:
     """Mutates `playbook`. Returns a change log for the diff."""
     changes = {"added": [], "voted": [], "deduped": [], "pruned": []}
 
@@ -41,17 +41,19 @@ def apply_ops(playbook: Playbook, ops: list, generation: int) -> dict:
         dup, score = find_duplicate(playbook, op.section, op.content)
         if dup:
             dup.helpful += 1
+            if op.evidence_type == "counterfactual":
+                dup.evidence_type = "counterfactual"
             dup.source_runs = sorted(set(dup.source_runs) | set(op.source_runs))
             changes["deduped"].append((op.content, dup.id, round(score)))
             continue
         b = Bullet(id=playbook.next_id(op.section), section=op.section, content=op.content,
-                   source_runs=list(op.source_runs), created_gen=generation)
+                   source_runs=list(op.source_runs), created_gen=generation, evidence_type=op.evidence_type)
         playbook.bullets.append(b)
         changes["added"].append((b.id, b.content))
 
     keep = []
     for b in playbook.bullets:
-        if b.harmful >= b.helpful + PRUNE_MARGIN:
+        if b.harmful >= b.helpful + prune_margin:
             changes["pruned"].append((b.id, b.content, b.helpful, b.harmful))
         else:
             keep.append(b)

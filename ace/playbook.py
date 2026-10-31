@@ -22,6 +22,9 @@ class Bullet:
     harmful: int = 0
     source_runs: list[str] = field(default_factory=list)
     created_gen: int = 0
+    # How the lesson was established: "counterfactual" (a rerun confirmed it), "contrast"
+    # (best-vs-worst comparison), or None (older single-call Reflector lessons).
+    evidence_type: str | None = None
 
     @property
     def net(self) -> int:
@@ -33,6 +36,7 @@ class Playbook:
     bullets: list[Bullet] = field(default_factory=list)
     # Last number handed out per ID prefix, so an ID is never reused after its bullet is pruned.
     counters: dict[str, int] = field(default_factory=dict)
+    id_prefix: str = ""          # private playbooks: "a3-" gives IDs like "a3-mesh-0001"
 
     def __post_init__(self):
         # Reserve the numbers of bullets that arrived without next_id (older files, tests).
@@ -47,10 +51,10 @@ class Playbook:
         if not path.exists():
             return cls()
         data = json.loads(path.read_text())
-        return cls([Bullet(**b) for b in data["bullets"]], data.get("counters", {}))
+        return cls([Bullet(**b) for b in data["bullets"]], data.get("counters", {}), data.get("id_prefix", ""))
 
     def save(self, path: Path) -> None:
-        data = {"bullets": [asdict(b) for b in self.bullets], "counters": self.counters}
+        data = {"bullets": [asdict(b) for b in self.bullets], "counters": self.counters, "id_prefix": self.id_prefix}
         Path(path).write_text(json.dumps(data, indent=2) + "\n")
 
     # ---- lookup
@@ -62,20 +66,20 @@ class Playbook:
 
     def next_id(self, section: str) -> str:
         """Hand out a fresh ID for the section (this reserves it)."""
-        prefix = SECTIONS[section]
-        used = [int(b.id.split("-")[1]) for b in self.bullets if b.id.startswith(prefix + "-")]
+        prefix = self.id_prefix + SECTIONS[section]
+        used = [int(b.id.rsplit("-", 1)[1]) for b in self.bullets if b.id.startswith(prefix + "-")]
         n = max(self.counters.get(prefix, 0), max(used, default=0)) + 1
         self.counters[prefix] = n
         return f"{prefix}-{n:04d}"
 
     # ---- prompt text
     def render(self, top_n: int = TOP_N_BULLETS) -> str:
-        """Top-N bullets by (helpful - harmful), grouped by section, each prefixed by its ID.
-        Ties keep the older bullet first. Empty playbook -> empty string."""
-        top = sorted(self.bullets, key=lambda b: -b.net)[:top_n]
+        """Top-N bullets, grouped by section, each prefixed by its ID: counterfactual-backed bullets
+        first, then by (helpful - harmful); ties keep the older bullet first. Empty -> ""."""
+        top = sorted(self.bullets, key=lambda b: (b.evidence_type != "counterfactual", -b.net))[:top_n]
         lines = []
         for section in SECTIONS:
-            chosen = [b for b in top if b.section == section]
+            chosen = [b for b in top if b.section == section]   # keeps the order above within a section
             if chosen:
                 lines.append(f"## {section}")
                 lines += [f"[{b.id}] {b.content}" for b in chosen]

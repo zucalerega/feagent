@@ -34,8 +34,9 @@ class LLM:
         import anthropic
         self.client = anthropic.Anthropic()
 
-    def agent_turn(self, system: str, messages: list, tools: list[dict], run_id: str = ""):
-        role = "generator"
+    def agent_turn(self, system: str, messages: list, tools: list[dict], run_id: str = "",
+                   role: str = "generator"):
+        """One step of a tool-use loop for `role` (the generator, or the diagnoser)."""
         resp = self.client.beta.messages.create(
             model=MODELS[role],
             max_tokens=MAX_TOKENS[role],

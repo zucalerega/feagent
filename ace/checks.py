@@ -1,16 +1,17 @@
 """Deterministic checks and the score. No LLM calls: these numbers are ground truth for the Reflector.
 
-score = log10(e_uniform / e_agent), clipped to [SCORE_FLOOR, SCORE_CEIL]
-  e_agent   relative error of the scored QoI from the solve the agent submitted (its last
-            successful solve if it never called submit)
-  e_uniform relative error of the best uniform mesh (linear or quadratic, whichever is better)
-            with about node_cap nodes and the correct setup (calibrated once per problem,
-            cached in ace/calibration.json)
-Gates (mesh within the node cap, element quality, solve succeeded) score SCORE_FLOOR on failure.
+The score is the team's speed/accuracy metric (feacore.diagnostics.score.score_population):
+  accuracy   = min(1, tolerance / error)   error = relative error of the scored quantity from the
+                                           solve the agent submitted, vs the problem's reference
+  efficiency = DOFs of the cheapest valid agent that met tolerance / own DOFs
+  score      = valid * accuracy * efficiency  in [0, 1]; 1 = the cheapest setup accurate enough
+It is relative to a population: here every agent on that problem in the whole run, so scores are
+comparable across generations (score_population below). A run that fails a gate (no solve, over
+the node cap, degenerate mesh) or has a fail-severity feacore flag is invalid and scores 0.
 
-TODO: mesh-refinement convergence check (re-run the agent's mesh recipe at h/2 and h/4 and use
-feacore.verification.gci). Skipped for now: refined meshes break the node cap by design, so it
-would only be a diagnostic, and the reference values already tell us the true error.
+check_run gives one run's facts (error, DOFs, gates); score_population turns the facts of all runs
+on a problem into scores. calibrate()/load_calibration() measure what a uniform mesh achieves at
+the node cap; the mock agent uses that to pick plausible mesh sizes.
 """
 
 from __future__ import annotations
@@ -21,7 +22,9 @@ import tempfile
 from pathlib import Path
 
 from ace import fea
-from ace.config import MIN_QUALITY, SCORE_CEIL, SCORE_FLOOR, TASKS
+from ace.config import MIN_QUALITY, TASKS
+
+DEFAULT_TOL = 0.02
 
 CALIBRATION_PATH = Path(__file__).with_name("calibration.json")
 
@@ -38,6 +41,7 @@ def reference_setup(problem) -> dict:
         "material": next(iter(rc["materials"].values())),
         "bcs": [{k: v for k, v in bc.items() if v is not None} for bc in rc["bcs"]],
         "loads": rc["loads"],
+        "T_ref": rc["analysis"]["T_ref"],
     }
 
 
@@ -96,10 +100,11 @@ def load_calibration(problem_ids: list[str]) -> dict:
 # --------------------------------------------------------------------------- per-run checks
 
 
-def score_from_error(e_agent: float, e_uniform: float) -> float:
-    if e_agent <= 0:
-        return SCORE_CEIL
-    return max(SCORE_FLOOR, min(SCORE_CEIL, math.log10(e_uniform / e_agent)))
+def tolerance(problem_id: str) -> float:
+    """Accuracy target: the reference's stated tolerance for the scored quantity."""
+    problem = fea.get_problem(problem_id)
+    qoi = TASKS[problem_id]["qoi"]
+    return next((r.tolerance for r in problem.references() if r.qoi == qoi), DEFAULT_TOL)
 
 
 def bc_report(problem, setup: dict) -> dict:
@@ -136,21 +141,24 @@ def bc_report(problem, setup: dict) -> dict:
         "sign_flips": sign_flips,
         "formulation_ok": setup.get("formulation") == ref["formulation"],
         "thickness_ok": math.isclose(float(setup.get("thickness", 1.0)), ref["thickness"], rel_tol=1e-6),
-        "material_ok": all(math.isclose(float(mat.get(k, 0)), ref_mat[k], rel_tol=1e-3) for k in ("E", "nu")),
+        "material_ok": all(math.isclose(float(mat.get(k, 0)), ref_mat[k], rel_tol=1e-3, abs_tol=1e-12)
+                           for k in ("E", "nu", "alpha")),
     }
 
 
-def check_run(problem_id: str, run: dict, calibration: dict) -> dict:
-    """Checks + score for one agent run. `run` is the record produced by ace.agent.run_agent."""
+def check_run(problem_id: str, run: dict) -> dict:
+    """The facts of one agent run (`run` is the record from ace.agent.run_agent): its scored
+    solve's error and cost (DOFs), and the gates. The score itself needs the whole population
+    of runs on the problem: see score_population."""
     task = TASKS[problem_id]
     problem = fea.get_problem(problem_id)
-    cal = calibration[problem_id]
     out = {
         "node_cap": task["node_cap"],
-        "e_uniform": cal["e_uniform"],
+        "tolerance": tolerance(problem_id),
         "n_meshes": len(run["meshes"]),
         "n_solves": len(run["solves"]),
         "meshed": any(m.get("ok") for m in run["meshes"]),
+        "score": None,                       # filled in by score_population
     }
     # The scored solve: the one the agent submitted, else its last successful one.
     sub = run.get("submitted")
@@ -160,24 +168,63 @@ def check_run(problem_id: str, run: dict, calibration: dict) -> dict:
         final = next((s for s in reversed(run["solves"]) if s["result"].get("ok")), None)
     out["submitted"] = sub is not None
     if final is None:
-        return {**out, "solved": False, "failed_gate": "no successful solve", "score": SCORE_FLOOR}
+        return {**out, "solved": False, "failed_gate": "no successful solve"}
 
     mesh = final["mesh"]
     ref = fea.reference_value(problem, task["qoi"])
     rel_err = abs(final["result"]["value"] - ref) / abs(ref)
+    info = final["result"].get("info") or {}
+    ncomp = 3 if problem.dim == 3 else 2
     out.update({
         "solved": True,
         "nodes": mesh["nodes"],
+        "dofs": info.get("n_dofs") or mesh["nodes"] * ncomp,   # older records: nodes x components
         "order": mesh["order"],
         "min_quality": mesh["min_quality"],
         "within_cap": mesh["nodes"] <= task["node_cap"],
         "quality_ok": (mesh["min_quality"] or 0) >= MIN_QUALITY,
         "qoi_value": final["result"]["value"],
         "rel_error": rel_err,
+        "meets_tol": rel_err <= out["tolerance"],
         "setup": bc_report(problem, final["setup"]),
     })
-    if not out["within_cap"]:
-        return {**out, "failed_gate": "over node cap", "score": SCORE_FLOOR}
-    if not out["quality_ok"]:
-        return {**out, "failed_gate": f"min element quality < {MIN_QUALITY}", "score": SCORE_FLOOR}
-    return {**out, "failed_gate": None, "score": score_from_error(rel_err, cal["e_uniform"])}
+    gate = None if out["within_cap"] else "over node cap"
+    if gate is None and not out["quality_ok"]:
+        gate = f"min element quality < {MIN_QUALITY}"
+    return {**out, "failed_gate": gate}
+
+
+def score_population(runs: list[dict]) -> None:
+    """Score every run on ONE problem against each other with feacore's score_population.
+    Each run needs "checks" (check_run) and, if computed, "oracles" (its feacore flags make a run
+    invalid when one is fail-severity). Writes score, accuracy, efficiency, valid, cost and
+    pareto_rank into each run's checks."""
+    from feacore.diagnostics.flags import Flag, Report
+    from feacore.diagnostics.score import score_population as feacore_score
+
+    from ace.oracles import baseline_fail_flags
+
+    agents = []
+    for r in runs:
+        c = r["checks"]
+        rep = Report()
+        base = baseline_fail_flags(r["problem_id"])
+        for f in (r.get("oracles") or {}).get("flags", []):
+            if not (f["severity"] == "fail" and f["id"] in base):    # see oracles.baseline_fail_flags
+                rep.add(Flag(**f))
+        if r.get("error") or c["failed_gate"] or not c.get("solved"):
+            rep.add(Flag("ace_gate", "setup", "fail", r.get("error") and "run crashed" or c["failed_gate"] or "no solve"))
+        rep.metrics["n_dofs"] = c.get("dofs")
+        errors = {"q": {"est_err": c["rel_error"]}} if c.get("rel_error") is not None else {}
+        agents.append({"agent_id": r["run_id"], "report": rep, "errors": errors})
+    tol = {"q": runs[0]["checks"]["tolerance"]} if runs else {}
+    for r, row in zip(runs, feacore_score(agents, tol=tol)):
+        # feacore's efficiency (cheapest in-tolerance DOFs / own DOFs) exceeds 1 for a run that is
+        # cheaper but OUTSIDE tolerance, which can push the score above its documented [0, 1]
+        # (e.g. 0.32 accuracy x 5.8 efficiency). Cap it at 1: cheaper than the cheapest accurate
+        # run earns no extra credit; its missing accuracy is already in the accuracy term.
+        eff = min(1.0, row["efficiency"])
+        score = row["accuracy"] * eff if row["valid"] else 0.0
+        r["checks"].update(score=score, accuracy=row["accuracy"], efficiency=eff, efficiency_uncapped=row["efficiency"],
+                           valid=row["valid"], cost=row["cost"], pareto_rank=row["pareto_rank"],
+                           invalid_because=None if row["valid"] else [f for f in row["flags"]])

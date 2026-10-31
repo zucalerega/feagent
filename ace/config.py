@@ -4,15 +4,16 @@
 # Switch any role to another model with one line.
 MODELS = {
     "generator": "claude-sonnet-5-5",   # the FEA agent (many calls per run)
-    "reflector": "claude-opus-5-5",     # the hard step: one call per problem per generation
+    "reflector": "claude-sonnet-5-5",   # single-call reflector (REFLECTOR_MODE = "single_call")
+    "diagnoser": "claude-sonnet-5-5",   # agentic diagnoser; switch to "claude-opus-5-5" if Sonnet falls short
     "curator": "claude-sonnet-5-5",     # bookkeeping: lesson -> ADD or duplicate-of
 }
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
-MAX_TOKENS = {"generator": 8000, "reflector": 16000, "curator": 4000}
+MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000}
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
-EFFORT = {"generator": "medium", "reflector": "high", "curator": "low"}
+EFFORT = {"generator": "medium", "reflector": "high", "diagnoser": "medium", "curator": "low"}
 
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
@@ -23,18 +24,21 @@ PRICES = {
 }
 
 # --------------------------------------------------------------------------- tasks
-# One scored QoI per problem. node_cap is a hard limit on mesh nodes (mid-side nodes of
-# quadratic elements count). Caps were picked so a uniform linear mesh at the cap is roughly 5%
-# off. The baseline is the best uniform mesh of either order (ace/calibration.json).
-# These are the easy, well-known benchmarks: they show that agents can use the harness to solve
-# a problem. Their published answers are known to the model (see ace/README.md).
+# Catalogue of problems the loop can use: one scored quantity (QoI) each, and a node cap that is
+# only a safety limit (the speed/accuracy score already makes wasted nodes cost). Tolerances come
+# from each problem's reference (feacore references(): 2% for NAFEMS, 1% for Cook).
 TASKS = {
-    "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 120},
-    "nafems_le10": {"qoi": "syy_D", "node_cap": 1300},
-    "nafems_le1": {"qoi": "syy_D", "node_cap": 250},
+    # NAFEMS linear elastic benchmarks
+    "nafems_le1": {"qoi": "syy_D", "node_cap": 20000},            # 2D elliptic membrane, plane stress
+    "nafems_le10": {"qoi": "syy_D", "node_cap": 30000},           # 3D thick plate under pressure
+    "nafems_le11_axisym": {"qoi": "szz_A", "node_cap": 20000},    # solid cylinder/cone, thermal load, axisymmetric
+    "nafems_le11_3d": {"qoi": "szz_A", "node_cap": 30000},        # the same, as a 3D solid
+    "cooks_membrane": {"qoi": "uy_C", "node_cap": 20000},         # tapered panel in shear (classic, not NAFEMS)
+    # easy sanity problem (planted-failure tests use it; not in the loop)
+    "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 20000},
 }
-TRAIN = ["lame_cylinder_plane_strain", "nafems_le10"]
-HOLDOUT = ["nafems_le1"]          # evaluated every generation, never reflected on
+TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
+HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
 
 # --------------------------------------------------------------------------- agent limits
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)
@@ -42,10 +46,14 @@ MAX_TURNS = 25                    # model calls per run
 MIN_QUALITY = 0.1                 # gate: minimum element quality (gmsh minSICN) of the mesh
 
 # --------------------------------------------------------------------------- score
-# score = log10(e_uniform / e_agent): 0 = as good as the best uniform mesh (linear or quadratic)
-# at the cap, +1 = 10x less error. Clipped; any failed gate scores SCORE_FLOOR.
-SCORE_FLOOR = -2.0
-SCORE_CEIL = 3.0
+# The team's speed/accuracy score (feacore.diagnostics.score.score_population, docs/failure-modes.md):
+#   accuracy   = min(1, tolerance / error)        1 when the scored quantity is within tolerance
+#   efficiency = DOFs of the cheapest agent that met tolerance / own DOFs
+#   score      = valid * accuracy * efficiency, in [0, 1]; 1 = the cheapest setup accurate enough
+# The population is every agent on that problem in the whole run (all generations), so scores
+# compare across generations. A run that fails a gate (no solve, over the cap, bad mesh) is invalid.
+SCORE_FLOOR = 0.0
+SCORE_CEIL = 1.0
 
 # --------------------------------------------------------------------------- playbook
 SECTIONS = {  # section -> bullet id prefix
@@ -69,6 +77,24 @@ CI = 0.90                         # confidence level of the reported intervals
 # Retire a bullet when its effect's upper bound is below 0 (confidently harmful) once it has been
 # both shown and hidden at least MIN_ARM runs each.
 MIN_ARM = 6
+
+# --------------------------------------------------------------------------- diagnosis
+# "diagnoser": the agentic diagnoser (ace/diagnoser.py) with oracles, stage checks and
+# counterfactual reruns; "single_call": the original one-call Reflector (ace/reflector.py).
+REFLECTOR_MODE = "diagnoser"
+DIAGNOSER_MAX_TOOL_CALLS = 15       # per session (one problem, one generation); then it must wrap up
+DIAGNOSER_MAX_RERUNS = 3            # counterfactual reruns per session
+TRACE_PAGE = 6                      # read_trace returns this many steps per page
+TRACE_FIELD_CHARS = 500             # each step's text is cut to this many characters
+
+# --------------------------------------------------------------------------- memory
+# Persistent agents a0..a{AGENTS-1}; each attempts every problem every generation. Each has a
+# PRIVATE playbook (low bar) and all share one SHARED playbook (high bar). See ace/memory.py.
+MEMORY = "shared+private"          # or "shared": one playbook, anonymous runs (RUNS_PER_PROBLEM each)
+AGENTS = 6
+PRIVATE_PRUNE_MARGIN = 1          # private bullet dropped when harmful >= helpful + 1
+SHARED_PRUNE_MARGIN = 3           # shared bullet dropped only when harmful >= helpful + 3
+PROMOTE_MIN_AGENTS = 2            # an idea in this many agents' private notes becomes shared
 
 # --------------------------------------------------------------------------- loop defaults
 RUNS_PER_PROBLEM = 6              # more runs = scores you can tell apart from noise
