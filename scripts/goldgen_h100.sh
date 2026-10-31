@@ -14,7 +14,11 @@ stamp() { echo "$(( $(date +%s) - T0 ))s $*" | tee -a "$W/timing.log"; }
 
 stamp "setup start"
 if [ ! -x "$REPO/.venv/bin/python" ]; then (cd "$REPO" && bash scripts/setup_gpu_box.sh) > "$W/setup.log" 2>&1; fi
-command -v 7z >/dev/null || sudo apt-get install -y -qq p7zip-full >/dev/null
+# a woken node keeps only ~ (the venv): system packages (gmsh's GL/X libs, 7z) must be reinstalled
+if ! command -v 7z >/dev/null || ! ldconfig -p | grep -q libGLU.so.1; then
+  sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full libglu1-mesa libxcursor1 libxft2 \
+    libxinerama1 libxrender1 libxi6 libgl1 >/dev/null
+fi
 PY="$REPO/.venv/bin/python"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | tee -a "$W/timing.log"
 echo "cpu_limit=${GMN_CPU_LIMIT:-?} mem_limit=${GMN_MEMORY_LIMIT_BYTES:-?}" | tee -a "$W/timing.log"

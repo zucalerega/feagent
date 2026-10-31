@@ -44,12 +44,35 @@ def _screen_one(path: str):
 
 def cmd_screen(a) -> int:
     files = sorted(str(p) for p in Path(a.step_dir).rglob("*.step"))
-    n_ok = 0
-    with ProcessPoolExecutor(a.workers) as ex, open(a.out, "w") as f:
-        for row in ex.map(_screen_one, files):
-            f.write(json.dumps(row) + "\n")
-            n_ok += row["ok"]
-    print(f"screened {len(files)}: {n_ok} accepted -> {a.out}")
+    rows: dict[str, dict] = {}
+    todo = list(files)
+    # a file that crashes gmsh (segfault / double free) kills its worker and breaks the whole pool:
+    # rebuild the pool and retry what was in flight; after two broken rounds each leftover file runs
+    # alone, so the crasher is identified and rejected without losing the rest
+    for rnd in range(3):
+        if not todo:
+            break
+        with ProcessPoolExecutor(a.workers if rnd < 2 else 1) as ex:
+            futs = {ex.submit(_screen_one, p): p for p in todo} if rnd < 2 else {}
+            for f in as_completed(futs):
+                try:
+                    rows[futs[f]] = f.result()
+                except BrokenProcessPool:
+                    pass
+        todo = [p for p in files if p not in rows]
+    for p in todo:                                    # alone, one process each
+        with ProcessPoolExecutor(1) as ex:
+            try:
+                rows[p] = ex.submit(_screen_one, p).result()
+            except BrokenProcessPool:
+                rows[p] = {"ok": False, "path": p, "id": "abc_" + Path(p).name.split("_")[0],
+                           "reason": "crashed the CAD kernel"}
+    with open(a.out, "w") as f:
+        for p in files:                               # input order: the same file on every machine
+            f.write(json.dumps(rows[p]) + "\n")
+    n_ok = sum(r["ok"] for r in rows.values())
+    n_crash = sum(r["reason"] == "crashed the CAD kernel" for r in rows.values() if not r["ok"])
+    print(f"screened {len(files)}: {n_ok} accepted, {n_crash} crashed -> {a.out}")
     return 0
 
 
