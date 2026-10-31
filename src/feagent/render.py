@@ -9,6 +9,7 @@ import numpy as np
 import pyvista as pv
 
 from .types import FaceInfo, GeometryModel, Tessellation
+from .vec import bbox_diag
 
 if TYPE_CHECKING:
     from .meshdata import MeshData
@@ -199,7 +200,7 @@ def render_quality(mesh: MeshData, sicn_per_tet: np.ndarray, out_png: str | Path
     mid = (lo + hi) / 2
     axes = [clip_axis] + [a for a in "xyz" if a != clip_axis]
     worst = np.argsort(s)[:10]
-    markers = _markers(mesh, worst, float(np.linalg.norm(hi - lo)) * 0.015)
+    markers = _markers(mesh, worst, bbox_diag((lo, hi)) * 0.015)
     labels = ["iso"] + [f"clip {ax}={mid[_AXES[ax]]:.4g}" for ax in axes]
 
     def draw(pl: pv.Plotter, i: int) -> None:

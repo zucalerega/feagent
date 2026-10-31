@@ -5,16 +5,12 @@ import pytest
 from feagent import gmsh_util as gu
 from feagent.gates import failed, passed, skipped, threshold_gate, warned
 from feagent.gmsh_session import gmsh_session
-from feagent.vec import (angle_deg, axis_angle_deg, bbox_contains, bbox_diag, bbox_union,
-                         box_dist, dist, extreme_gap, unit, vec3)
+from feagent.vec import angle_deg, axis_angle_deg, bbox_diag, box_dist, dist, extreme_gap, vec3
 
 BB = ((0.0, 0.0, 0.0), (1.0, 2.0, 3.0))
 
 
 def test_vec_basics():
-    assert unit(np.array([0, 3.0, 4.0])) == (0.0, 0.6, 0.8)
-    with pytest.raises(ValueError):
-        unit((0, 0, 0))
     assert vec3(np.array([1, 2, 3])) == (1.0, 2.0, 3.0) and type(vec3([1, 2, 3])[0]) is float
     assert dist((0, 0, 0), (3, 4, 0)) == 5.0
     assert angle_deg((1, 0, 0), (0, 2, 0)) == pytest.approx(90.0)
@@ -25,9 +21,6 @@ def test_vec_basics():
 
 def test_bbox_helpers():
     assert box_dist((0.5, 1, 1), BB) == 0.0 and box_dist((-3, 1, -4), BB) == 5.0
-    assert bbox_contains(BB, (1, 2, 3)) and not bbox_contains(BB, (1.1, 0, 0))
-    assert bbox_contains(BB, (1.1, 0, 0), tol=0.2)
-    assert bbox_union([BB, ((-1, 0.5, 0), (0, 5, 1))]) == ((-1.0, 0.0, 0.0), (1.0, 5.0, 3.0))
     assert bbox_diag(((0, 0, 0), (2, 3, 6))) == 7.0
     face = ((0, 0, 3), (1, 2, 3))
     assert extreme_gap(face, BB, "zmax") == 0.0
@@ -72,6 +65,7 @@ def test_gmsh_util_on_box_mesh():
         assert set(q) == {"minSICN", "volume"} and len(q["volume"]) == 3
         assert gu.element_qualities([], ("gamma",))["gamma"].shape == (0,)
         assert all(f in range(1, 7) for f in gu.element_faces(etags[0]))
-        pts = gu.with_boundary_points(2, 1)
-        assert (2, 1) in pts and {d for d, _ in pts} == {0, 2}
+        face = gu.closure(2, 1)
+        assert (2, 1) in face and len(face) == 1 + 4 + 4  # face, its 4 curves, 4 corners
+        assert len(gu.closure(3, 1)) == 1 + 6 + 12 + 8
         assert gu.node_entity(tags[0])[0] == 0

@@ -70,12 +70,16 @@ def element_faces(element_tag: int) -> list[int]:
     return sorted({tag for dim, tag in map(node_entity, nodes) if dim == 2})
 
 
-def with_boundary_points(dim: int, tag: int) -> set[tuple[int, int]]:
-    """The entity plus its boundary points (gmsh's recursive boundary stops at dim 0)."""
+def closure(dim: int, tag: int) -> set[tuple[int, int]]:
+    """The entity plus every lower-dimensional entity on its boundary (e.g. curves, points)."""
     import gmsh
 
-    bnd = gmsh.model.getBoundary([(dim, tag)], combined=False, oriented=False, recursive=True)
-    return {(dim, tag), *((int(d), int(t)) for d, t in bnd)}
+    out, level = {(dim, tag)}, [(dim, tag)]
+    while level and level[0][0] > 0:
+        bnd = gmsh.model.getBoundary(level, combined=False, oriented=False, recursive=False)
+        level = [(int(d), int(t)) for d, t in bnd]
+        out.update(level)
+    return out
 
 
 def element_qualities(tags: Iterable[int], measures: Iterable[str]) -> dict[str, np.ndarray]:

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from . import gmsh_util as gu
-from .gates import gate, skipped, threshold_gate
+from .gates import failed, passed, skipped, threshold_gate, warned
 from .types import Gate, GeometryModel, MeshResult, Vec3, _Base
 from .vec import vec3
 
@@ -255,8 +255,8 @@ def _face_edge_lengths(face_tags: list[int], tets: np.ndarray,
 
 
 def _triangles_on_face(face: int, tris: np.ndarray, node_tags: np.ndarray) -> np.ndarray:
-    """Rows of ``tris`` whose nodes are all classified on ``face`` or its boundary points."""
-    allowed = gu.with_boundary_points(2, face)
+    """Rows of ``tris`` whose nodes all lie on ``face`` or its boundary curves/points."""
+    allowed = gu.closure(2, face)
 
     @cache
     def on_face(i: int) -> bool:
@@ -418,53 +418,56 @@ def _area_gate(c: _GateInputs) -> Gate:
 
 def _connectivity_gate(c: _GateInputs) -> Gate:
     have, want = c.rep.components, c.rep.expected_components
-    bad = have != want
-    return gate(
-        "fail" if bad else "pass", "connectivity", "Mesh connectivity",
-        f"mesh has {have} face-connected component(s), geometry expects {want}",
-        float(have), float(want),
-        "Mesh is split (or merged) relative to the CAD: check for tiny gaps or unfused bodies; "
-        "set heal: true or lower size.global / size.min so thin necks are resolved."
-        if bad else "")
+    args = ("connectivity", "Mesh connectivity",
+            f"mesh has {have} face-connected component(s), geometry expects {want}",
+            float(have), float(want))
+    if have == want:
+        return passed(*args)
+    return failed(*args, hint="Mesh is split (or merged) relative to the CAD: check for tiny gaps "
+                  "or unfused bodies; set heal: true or lower size.global / size.min so thin "
+                  "necks are resolved.")
+
+
+def _thin_wall_ratio(thin: dict[int, tuple[float, float | None]],
+                     n: int) -> tuple[float | None, list[tuple[int, float, float]], list[int]]:
+    """(min thickness/edge ratio over measured faces or None, faces with fewer than ``n``
+    elements across as (face, thickness, edge), unmeasured faces)."""
+    measured = {f: (t, e) for f, (t, e) in thin.items() if e is not None}
+    unmeasured = [f for f, (_, e) in thin.items() if e is None]
+    ratio = min((t / e for t, e in measured.values()), default=None)  # elements across wall
+    under = [(f, t, e) for f, (t, e) in measured.items() if e > t / n]
+    return ratio, under, unmeasured
 
 
 def _thin_wall_gate(c: _GateInputs) -> Gate:
     n, name = c.q.thin_wall_min_elements, "Thin-wall resolution"
-    measured = {f: (t, e) for f, (t, e) in c.thin.items() if e is not None}
-    unmeasured = [f for f, (_, e) in c.thin.items() if e is None]
     if not c.thin:
         return skipped("thin_walls", name, "no thin-wall hazards in geometry", threshold=float(n))
-    if not measured:
+    ratio, under, unmeasured = _thin_wall_ratio(c.thin, n)
+    if ratio is None:
         return skipped("thin_walls", name,
                        f"no surface triangles found on thin-wall faces {unmeasured}",
                        threshold=float(n))
-    ratio = min(t / e for t, e in measured.values())  # elements across the wall (approx.)
-    bad = [(f, t, e) for f, (t, e) in measured.items() if e > t / n]
-    if bad:
-        return _thin_wall_warning(bad, ratio, n)
+    if under:
+        faces = ", ".join(f"face {f} (t={t:.3g}, mean edge {e:.3g})" for f, t, e in under)
+        return warned("thin_walls", name, f"fewer than {n} elements across thickness on: {faces}",
+                      ratio, float(n), "Raise size.thin_wall_layers, add a `refine` entry with "
+                      f"size <= thickness/{n} on those faces, or use element.order: 2.")
     msg = f"min thickness/edge ratio {ratio:.2f} (need >= {n})"
     msg += f"; unmeasured faces {unmeasured}" if unmeasured else ""
-    return gate("pass", "thin_walls", name, msg, ratio, float(n))
-
-
-def _thin_wall_warning(bad: list[tuple[int, float, float]], ratio: float, n: int) -> Gate:
-    faces = ", ".join(f"face {f} (t={t:.3g}, mean edge {e:.3g})" for f, t, e in bad)
-    return gate("warn", "thin_walls", "Thin-wall resolution",
-                f"fewer than {n} elements across thickness on: {faces}", ratio, float(n),
-                "Raise size.thin_wall_layers, add a `refine` entry with size <= thickness/"
-                f"{n} on those faces, or use element.order: 2.")
+    return passed("thin_walls", name, msg, ratio, float(n))
 
 
 def _non_ortho_gate(c: _GateInputs) -> Gate:
     mx, limit = c.rep.non_ortho.max if c.rep.non_ortho else 0.0, c.q.max_non_ortho
-    status = "fail" if mx > limit else ("warn" if mx > NON_ORTHO_WARN else "pass")
-    return gate(
-        status, "non_ortho", "Non-orthogonality",
+    make = failed if mx > limit else (warned if mx > NON_ORTHO_WARN else passed)
+    return make(
+        "non_ortho", "Non-orthogonality",
         f"max non-orthogonality {mx:.1f} deg (fail > {limit}, warn > {NON_ORTHO_WARN}); "
         f"mean {c.non_ortho_mean:.1f}", mx, float(limit),
-        "Reduce non-orthogonality: lower size.global, add `refine` near the offending region, "
-        "use algorithm.mesh3d: 1 / element.optimize: netgen, or adjust quality.max_non_ortho."
-        if status != "pass" else "")
+        "" if make is passed else "Reduce non-orthogonality: lower size.global, add `refine` "
+        "near the offending region, use algorithm.mesh3d: 1 / element.optimize: netgen, or "
+        "adjust quality.max_non_ortho.")
 
 
 def _skewness_gate(c: _GateInputs) -> Gate:
