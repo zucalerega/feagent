@@ -84,6 +84,29 @@ ACE_SCORE=field .venv/bin/python -m ace.single_loop --problems cooks_membrane,na
 `--personas a0,a3,a5` or `--persona-count 3` = only some (default: none). Who has which style is
 written to `<out>/personas.json`.
 
+### Use a trained swarm on new problems (export, then inference)
+
+`ace.export_swarm` copies what a finished `--deep` run (or `single_loop` run) has learned into a
+small folder: the final shared playbook, every agent's private notes, the personas, each agent's
+last teacher feedback / reflection / run summary (`state.json`), a `manifest.json` (run, generation,
+tasks, agents, models, git commit) and `context/<agent>.md`, the context each agent gets on a new
+problem. No meshes, no traces. The final generation is the last one whose notes were saved, so a
+run stopped mid-generation still exports its most trained state.
+
+`ace.infer` runs the trained agents on any feacore problem (trained on or not; e.g. a NAFEMS case
+or a gold part), one process per agent, with that context and the training tools and agent loop.
+Nothing learns: no teacher, reflection or organizer. It writes `summary.md` and `results.json`: per
+agent the submitted solve's statement quantities, mesh, ZZ error estimate and mesh/stress images;
+a consensus (median and spread of each quantity across agents, and the agent with the smallest own
+error estimate). When the problem has references and field caches (`ace/field_refs/`), each run is
+also scored in field mode.
+
+```bash
+.venv/bin/python -m ace.export_swarm ace_runs/scale_s8 swarms/scale_s8
+.venv/bin/python -m ace.infer --swarm swarms/scale_s8 --problem abc_00000065_bc0 --agents a0,a3 --mock  # free
+.venv/bin/python -m ace.infer --swarm swarms/scale_s8 --problem nafems_le1 --out ace_runs/infer_le1      # real
+```
+
 ## Watch it evolve
 
 Live, while a run is going (refreshes itself every few seconds):

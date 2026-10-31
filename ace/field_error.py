@@ -22,8 +22,11 @@ a large field error just like a coarse mesh does.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import meshio
@@ -32,6 +35,7 @@ import numpy as np
 from ace import checkpoint as ckpt
 from ace import fea
 from ace.checks import reference_setup
+from feacore.solver._skfem_locate import Locator
 
 # Cached references and baselines. ACE_FIELD_REFS points it elsewhere (e.g. files built on a GPU box).
 # Per problem: <id>.npz (integration points + fine reference stresses), <id>_coarse.npz (coarser
@@ -87,19 +91,50 @@ def quadrature(msh_path: str | Path, dim: int, axisymmetric: bool) -> tuple[np.n
     return pts.reshape(-1, 3), wts.reshape(-1)
 
 
+class FastLocator(Locator):
+    """feacore's Locator with one change, in the Newton iteration that inverts the map of a curved
+    (quadratic) cell: each candidate cell stops iterating once its own Newton step is below 1e-13,
+    instead of every candidate iterating until the slowest one has converged. Each point is tried in
+    its 16 nearest cells and most of them converge in 2-3 steps, so this does ~3.5x less work for the
+    same answer (identical up to round-off, ~1e-13). Locating the 10^5 reference points was ~95% of
+    the time to score a 3D run."""
+
+    def _ref(self, e, pts):
+        xi = np.einsum("nij,jn->in", self.Ainv[e], pts - self.x0[:, e])   # exact for straight cells
+        if self.curved:
+            act = np.arange(len(e))                                         # candidates still iterating
+            for _ in range(12):
+                x, J = self._map(e[act], xi[:, act])
+                try:
+                    d = np.linalg.solve(J, (x - pts[:, act]).T[..., None])[..., 0].T
+                except np.linalg.LinAlgError:
+                    break
+                xi[:, act] -= d
+                act = act[np.max(np.abs(d), axis=0) >= 1e-13]
+                if not len(act):
+                    break
+        return xi
+
+
 def stresses(result, pts: np.ndarray, dim: int) -> dict:
     """All six stress components at pts. Same as result.probe(k, pts) for each k, but the points are
-    located in the mesh once instead of six times (locating is ~95% of probe's cost)."""
-    from feacore.solver._skfem_locate import Locator
+    located in the mesh once instead of six times (locating is ~95% of probe's cost), with the faster
+    FastLocator. Memoised on the result per point set: scoring a run and building its report ask the
+    same result for the same points (see shared_solves)."""
     p = pts[:, :dim] if dim == 2 else pts
+    key = hashlib.sha1(np.ascontiguousarray(p).tobytes()).hexdigest() + str(p.shape)
+    memo = result.__dict__.setdefault("_ace_stresses", {})
+    if key in memo:
+        return memo[key]
     md = result.model
-    if result._locator is None:
-        result._locator = Locator(md.mesh, md.md.bbox_diag)
+    if not isinstance(result._locator, FastLocator):
+        result._locator = FastLocator(md.mesh, md.md.bbox_diag)
     cells, xi, _ = result._locator.locate(p, tol_out=LOCATE_TOL * md.md.bbox_diag)
     sb = md.sb
     phi = np.stack([sb.elem.lbasis(xi, i)[0] for i in range(sb.element_dofs.shape[0])])
     dofs = sb.element_dofs[:, cells]
-    return {k: np.sum(phi * result.fields[k][dofs], axis=0) for k in DIAG + OFFDIAG}
+    memo[key] = {k: np.sum(phi * result.fields[k][dofs], axis=0) for k in DIAG + OFFDIAG}
+    return memo[key]
 
 
 def energy_sq(s: dict, w: np.ndarray, E: float, nu: float) -> float:
@@ -112,9 +147,35 @@ def energy_sq(s: dict, w: np.ndarray, E: float, nu: float) -> float:
 # --------------------------------------------------------------------------- the reference
 
 
+_SHARED: dict | None = None     # {(problem, mesh file, order, setup, qoi): Result} inside shared_solves()
+
+
+@contextmanager
+def shared_solves():
+    """Inside this block, _solve returns the same Result for the same problem, mesh file (by content),
+    order, setup and QoI. The scoring worker wraps one run's check_run and run report in it, so the
+    run is solved once and its points located once (stresses memoises on the Result), not twice.
+    The solver is deterministic, so the outputs are the same as with two solves."""
+    global _SHARED
+    _SHARED = {}
+    try:
+        yield
+    finally:
+        _SHARED = None
+
+
 def _solve(problem, mesh: dict, setup: dict, qoi: str):
     from feacore.solver import solve
-    return solve(fea.build_case(problem, mesh, setup, qoi), backend="skfem")
+    key = None
+    if _SHARED is not None and Path(mesh.get("path") or "").is_file():
+        sha = hashlib.sha256(Path(mesh["path"]).read_bytes()).hexdigest()
+        key = json.dumps([problem.id, sha, mesh.get("order"), setup, qoi], sort_keys=True, default=str)
+        if key in _SHARED:
+            return _SHARED[key]
+    res = solve(fea.build_case(problem, mesh, setup, qoi), backend="skfem")
+    if key is not None:
+        _SHARED[key] = res
+    return res
 
 
 def _reference_solve(problem_id: str, divisor: float, workdir: Path):

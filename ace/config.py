@@ -14,17 +14,26 @@ MODELS = {
     "reflect": "claude-sonnet-5-5",     # each agent looks at its own final results and writes notes
     "organizer": "claude-sonnet-5-5",   # merges and rewrites an agent's (or the shared) notes
     # the single-agent baseline (ace/single_loop.py): ONE big agent doing every task in one conversation
-    "big_generator": "claude-opus-5-5",
+    "big_generator": "claude-sonnet-5-5",   # the swarm agents' model
 }
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
 MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000,
-              "teacher": 16000, "reflect": 8000, "organizer": 8000,   # teacher: one agent's feedback per call (~3k + thinking)
+              # teacher: one agent's feedback per call (~3k + thinking); its cross-run call once hit 16k
+              # and was retried, so 32k (the call streams, so a long answer does not time out)
+              "teacher": 32000, "reflect": 8000, "organizer": 8000,
               "big_generator": 32000}   # max effort can think long in one turn (ace.llm passes a long timeout)
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
 EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
-          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "medium"}   # big_generator: Opus at its default effort (medium)
+          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "high"}   # big_generator: same model and effort as the swarm agents
+
+# Fast mode (research preview, Claude API only): the same model and effort, output generated faster,
+# at twice the price ($8 / $40 per MTok on Opus 5.5 instead of $4 / $20). Off to save money. If the
+# API rejects it, ace.llm logs that once and continues at normal speed.
+# NOTE ace.cost prices every call at the normal rate, so with this on the $ tracker under-counts the
+# teacher by 2x.
+FAST = {"teacher": False}
 
 # ace/requirements.py (offline, not part of a loop run): the translator rewrites a problem's statement
 # as engineering requirements (the teacher's model); the back-translator reads them the way an agent
@@ -77,7 +86,7 @@ STATEMENT = os.environ.get("ACE_STATEMENT", "bcs")
 
 # --------------------------------------------------------------------------- agent limits
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)
-MAX_TURNS = 25                    # model calls per run
+MAX_TURNS = 35                    # model calls per run
 MIN_QUALITY = 0.1                 # gate: minimum element quality (gmsh minSICN) of the mesh
 
 # --------------------------------------------------------------------------- score
@@ -112,6 +121,17 @@ PROBE_DISCLOSED = int(os.environ.get("ACE_PROBE_DISCLOSED", 4))
 # "Be the best" bonus: on each hidden probe point, the run with the smallest error among that
 # generation's runs on the problem wins 1/n_hidden of BEST_BONUS (a tie pays nobody), added to the score.
 BEST_BONUS = 0.25
+# Diversity bonus: a valid run whose mesh recipe is structurally different from every other run of
+# its generation on the problem, and whose base score is at least DIVERSITY_MARGIN x the best base
+# score there, gets +DIVERSITY_BONUS. Different = another element order, or global h off by more than
+# DIVERSITY_H_RATIO, or Jaccard distance >= DIVERSITY_JACCARD between the sets of refinement targets
+# (groups, edges, and boxes/points rounded to a grid of DIVERSITY_GRID x the part's diagonal).
+# Why: agents on a task converged on one recipe, so the swarm explored little (results/scaling_gold_2026-10-31).
+DIVERSITY_BONUS = 0.1
+DIVERSITY_MARGIN = 0.9
+DIVERSITY_H_RATIO = 1.5
+DIVERSITY_JACCARD = 0.5
+DIVERSITY_GRID = 0.05
 FIELD_ERR_FLOOR = 0.005   # errors below this count as this: the reference itself is good to ~0.3%
 SCORE_FLOOR = 0.0
 SCORE_CEIL = 1.0
