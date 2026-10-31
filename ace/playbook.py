@@ -31,6 +31,14 @@ class Bullet:
 @dataclass
 class Playbook:
     bullets: list[Bullet] = field(default_factory=list)
+    # Last number handed out per ID prefix, so an ID is never reused after its bullet is pruned.
+    counters: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Reserve the numbers of bullets that arrived without next_id (older files, tests).
+        for b in self.bullets:
+            prefix, n = b.id.rsplit("-", 1)
+            self.counters[prefix] = max(self.counters.get(prefix, 0), int(n))
 
     # ---- persistence
     @classmethod
@@ -38,10 +46,12 @@ class Playbook:
         path = Path(path)
         if not path.exists():
             return cls()
-        return cls([Bullet(**b) for b in json.loads(path.read_text())["bullets"]])
+        data = json.loads(path.read_text())
+        return cls([Bullet(**b) for b in data["bullets"]], data.get("counters", {}))
 
     def save(self, path: Path) -> None:
-        Path(path).write_text(json.dumps({"bullets": [asdict(b) for b in self.bullets]}, indent=2) + "\n")
+        data = {"bullets": [asdict(b) for b in self.bullets], "counters": self.counters}
+        Path(path).write_text(json.dumps(data, indent=2) + "\n")
 
     # ---- lookup
     def get(self, bullet_id: str) -> Bullet | None:
@@ -51,9 +61,12 @@ class Playbook:
         return [b for b in self.bullets if b.section == section]
 
     def next_id(self, section: str) -> str:
+        """Hand out a fresh ID for the section (this reserves it)."""
         prefix = SECTIONS[section]
         used = [int(b.id.split("-")[1]) for b in self.bullets if b.id.startswith(prefix + "-")]
-        return f"{prefix}-{max(used, default=0) + 1:04d}"
+        n = max(self.counters.get(prefix, 0), max(used, default=0)) + 1
+        self.counters[prefix] = n
+        return f"{prefix}-{n:04d}"
 
     # ---- prompt text
     def render(self, top_n: int = TOP_N_BULLETS) -> str:

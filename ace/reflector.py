@@ -49,10 +49,12 @@ You are the Reflector in a loop that improves an FEA setup agent through a playb
 lessons that is pasted into its system prompt. Several agent runs attempted the same problem.
 
 How runs are scored (computed by code; treat these numbers as ground truth):
-- The agent meshes the geometry under a hard node cap, then solves (at most {MAX_SOLVES} solves).
+- The agent meshes the geometry under a hard node cap, solves (at most {MAX_SOLVES} solves), and
+  submits one solve; that solve is scored (its last successful solve if it never submitted).
 - rel_error = |agent value - true value| / |true value| for one scored quantity.
-- score = log10(e_uniform / rel_error), where e_uniform is the error of a naive uniform linear
-  mesh at the node cap. 0 = naive, +1 = 10x more accurate, -2 = failed (gate failed or no solve).
+- score = log10(e_uniform / rel_error), where e_uniform is the error of the best uniform mesh
+  (linear or quadratic) at the node cap. 0 = as good as that, +1 = 10x more accurate,
+  -2 = failed (gate failed or no solve).
 - `setup` lists differences from the reference setup (missing/unexpected BCs, sign flips,
   wrong formulation/thickness/material). The agent never saw the true value or reference setup.
 
@@ -66,16 +68,21 @@ Your job:
    Never put this problem's true value or numeric answer in a lesson.
 4. Vote on every bullet the runs cited: helpful if applying it went with better results,
    harmful if it misled the run, neutral if it made no visible difference.
+If a run's reasoning relied on a remembered reference value or textbook formula to judge its
+result, say so in its root cause; never turn that into a lesson.
 """
 
 
-def condense_trace(trace: list[dict], max_chars: int = 6000) -> str:
+def condense_trace(trace: list[dict], max_chars: int = 12000) -> str:
     """One line per step, long payloads truncated, whole trace capped at max_chars."""
     lines = []
     for t in trace:
         if t["type"] == "text":
             body = t["text"].replace("\n", " ")[:400]
             lines.append(f"turn {t['turn']} said: {body}")
+        elif t["type"] == "thinking":
+            body = t["text"].replace("\n", " ")[:200]   # short: tool calls/results matter more
+            lines.append(f"turn {t['turn']} reasoning (summary): {body}")
         elif t["type"] == "tool_call":
             lines.append(f"turn {t['turn']} call {t['name']}({json.dumps(t['input'])[:600]})")
         else:
@@ -92,6 +99,8 @@ def build_prompt(problem_id: str, runs: list[dict], checks: dict[str, dict], pla
     ranked = sorted(runs, key=lambda r: (-checks[r["run_id"]]["score"], r["turns"]))
     parts = [f"# Task given to the agent\n{task_prompt(problem_id)}\n", "# Runs, best to worst"]
     for rank, run in enumerate(ranked, 1):
+        # The Reflector can infer a TRAIN problem's true value (value + rel_error); that is fine
+        # because held-out problems are never reflected on and lessons may not contain answers.
         c = {k: v for k, v in checks[run["run_id"]].items() if k != "e_uniform"}
         cited = [f"[{b}] {playbook.get(b).content}" if playbook.get(b) else f"[{b}] (not in playbook)"
                  for b in run["cited"]]
@@ -104,10 +113,10 @@ def build_prompt(problem_id: str, runs: list[dict], checks: dict[str, dict], pla
     return "\n".join(parts)
 
 
-def reflect(problem_id: str, runs: list[dict], checks: dict[str, dict], playbook, llm):
+def reflect(problem_id: str, runs: list[dict], checks: dict[str, dict], playbook, llm, records=None):
     """Returns (Reflection or None if the output was invalid twice, usage records)."""
     prompt = build_prompt(problem_id, runs, checks, playbook)
-    reflection, usage = llm.structured("reflector", SYSTEM, prompt, Reflection)
+    reflection, usage = llm.structured("reflector", SYSTEM, prompt, Reflection, records)
     if reflection is not None:
         reflection.lessons = reflection.lessons[:3]
     return reflection, usage

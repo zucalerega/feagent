@@ -23,6 +23,7 @@ import statistics
 import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 from ace import config
@@ -39,33 +40,53 @@ from ace.reflector import build_prompt, reflect
 # --------------------------------------------------------------------------- one agent run
 
 
+def _error_run(job: dict, error: str, usage: list) -> dict:
+    return {**{k: job[k] for k in ("problem_id", "run_id", "generation")}, "error": error,
+            "stop": "error", "turns": len(usage), "cited": [], "submitted": None, "trace": [],
+            "meshes": [], "solves": [], "usage": usage}
+
+
 def _worker(job: dict) -> dict:
     """Runs in a child process (gmsh is process-global, so one run per process at a time)."""
+    usage: list = []   # filled call by call, so a crash halfway still reports its tokens
     try:
         return run_agent(job["problem_id"], job["run_id"], job["generation"], job["playbook_text"],
-                         Path(job["workdir"]), make_llm(job["mock"]))
+                         Path(job["workdir"]), make_llm(job["mock"]), usage=usage)
     except Exception:  # noqa: BLE001  one broken run must not kill the generation
-        return {**{k: job[k] for k in ("problem_id", "run_id", "generation")},
-                "error": traceback.format_exc(), "stop": "error", "turns": 0, "cited": [],
-                "trace": [], "meshes": [], "solves": [], "usage": []}
+        return _error_run(job, traceback.format_exc(), usage)
 
 
 def run_generation(jobs: list[dict], concurrency: int, cost: CostLog) -> list[dict]:
     """Run jobs with at most `concurrency` in flight; stop starting new ones once over budget."""
-    runs, pending, todo = [], set(), list(jobs)
-    with ProcessPoolExecutor(concurrency, mp_context=mp.get_context("spawn")) as pool:
+    runs, pending, todo = [], {}, list(jobs)
+    new_pool = lambda: ProcessPoolExecutor(concurrency, mp_context=mp.get_context("spawn"))  # noqa: E731
+    pool = new_pool()
+    try:
         while todo or pending:
             while todo and len(pending) < concurrency and not cost.over_budget():
-                pending.add(pool.submit(_worker, todo.pop(0)))
+                job = todo.pop(0)
+                try:
+                    pending[pool.submit(_worker, job)] = job
+                except BrokenProcessPool:   # a worker died earlier: carry on with a fresh pool
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    pool = new_pool()
+                    pending[pool.submit(_worker, job)] = job
             if not pending:
                 break
-            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
             for f in done:
-                run = f.result()
+                job = pending.pop(f)
+                try:
+                    run = f.result()
+                except Exception as e:  # noqa: BLE001  the worker process itself died
+                    # Its token usage died with it: it is missing from the cost log (flagged).
+                    run = _error_run(job, f"worker process failed: {e!r} (token usage unknown)", [])
                 cost.add(run["usage"])
                 runs.append(run)
                 status = "ERROR" if run.get("error") else f"{run['turns']} turns"
                 print(f"  run {run['run_id']} done ({status}), spent ${cost.total:.2f}", flush=True)
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
     return runs
 
 
@@ -74,12 +95,13 @@ def run_generation(jobs: list[dict], concurrency: int, cost: CostLog) -> list[di
 
 def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
     lines = ["# ACE run summary", "",
-             "score = log10(e_uniform / e_agent): 0 = naive uniform mesh, +1 = 10x more accurate, -2 = failed.",
-             "", "| gen | problem | split | mean score | min | max | failed | median rel. error |",
-             "|---|---|---|---|---|---|---|---|"]
+             "score = log10(e_uniform / e_agent): 0 = best uniform mesh at the node cap, +1 = 10x more accurate, -2 = failed.",
+             "'failed' counts runs that failed a gate; 'errored' counts runs that crashed (API or code errors).",
+             "", "| gen | problem | split | mean score | min | max | failed | errored | median rel. error |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         lines.append(f"| {r['gen']} | {r['problem']} | {r['split']} | {r['mean']:+.2f} | {r['min']:+.2f} | "
-                     f"{r['max']:+.2f} | {r['failed']}/{r['n']} | {r['median_err']} |")
+                     f"{r['max']:+.2f} | {r['failed']}/{r['n']} | {r['errored']} | {r['median_err']} |")
     lines += ["", "| gen | playbook bullets used | added | voted | deduped | pruned | cumulative $ |",
               "|---|---|---|---|---|---|---|"]
     for g in gen_notes:
@@ -120,15 +142,21 @@ def plot_scores(rows: list[dict], path: Path) -> None:
 
 
 def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> list[dict]:
+    """Per-problem score statistics. Crashed runs are counted but left out of the scores: they
+    say nothing about the agent."""
     rows = []
     for pid in sorted({r["problem_id"] for r in runs}):
-        scores = [checks[r["run_id"]]["score"] for r in runs if r["problem_id"] == pid]
-        errs = [checks[r["run_id"]].get("rel_error") for r in runs if r["problem_id"] == pid]
-        errs = [e for e in errs if e is not None]
+        mine = [r for r in runs if r["problem_id"] == pid]
+        ok = [r for r in mine if not r.get("error")]
+        if not ok:
+            continue
+        scores = [checks[r["run_id"]]["score"] for r in ok]
+        errs = [e for r in ok if (e := checks[r["run_id"]].get("rel_error")) is not None]
         rows.append({
             "gen": gen, "problem": pid, "split": "holdout" if pid in holdout else "train",
             "n": len(scores), "mean": statistics.mean(scores), "min": min(scores), "max": max(scores),
-            "failed": sum(checks[r["run_id"]]["failed_gate"] is not None for r in runs if r["problem_id"] == pid),
+            "failed": sum(checks[r["run_id"]]["failed_gate"] is not None for r in ok),
+            "errored": len(mine) - len(ok),
             "median_err": f"{statistics.median(errs):.2e}" if errs else "-",
         })
     return rows
@@ -171,9 +199,11 @@ def main(argv=None) -> int:
             print(f"\n=== generation {gen}: {len(playbook.bullets)} bullets, ${cost.total:.2f} spent")
 
             # 1. run all agents
+            # Interleaved (run 0 of every problem, then run 1, ...) so that if the budget stops a
+            # generation early, every problem still has a similar number of runs.
             jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-{i}", "generation": gen,
                      "playbook_text": text, "workdir": str(gdir / "work" / f"{pid}-{i}"), "mock": args.mock}
-                    for pid in train + holdout for i in range(args.runs_per_problem)]
+                    for i in range(args.runs_per_problem) for pid in train + holdout]
             runs = run_generation(jobs, args.concurrency, cost)
             if runs and all(r.get("error") for r in runs):
                 print(runs[0]["error"])
@@ -196,21 +226,33 @@ def main(argv=None) -> int:
             cost.check()
             reflections = []
             for pid in train:
-                pruns = [r for r in runs if r["problem_id"] == pid]
+                # Runs that crashed (API or code errors) say nothing about the agent: leave them out.
+                pruns = [r for r in runs if r["problem_id"] == pid and not r.get("error")]
                 if not pruns:
                     continue
                 (gdir / f"reflection_prompt_{pid}.md").write_text(build_prompt(pid, pruns, checks, playbook))
-                refl, usage = reflect(pid, pruns, checks, playbook, llm)
+                usage = []          # filled per API call, so billed attempts count even on an error
+                try:
+                    refl, _ = reflect(pid, pruns, checks, playbook, llm, records=usage)
+                    if refl is None:
+                        print(f"  reflector output invalid twice for {pid}; skipped")
+                except Exception as e:  # noqa: BLE001  e.g. an API error: skip this problem
+                    print(f"  reflector call failed for {pid}: {e!r}; skipped")
+                    refl = None
                 cost.add(usage)
                 if refl is None:
-                    print(f"  reflector output invalid twice for {pid}; skipped")
                     continue
                 (gdir / f"reflection_{pid}.json").write_text(refl.model_dump_json(indent=2))
                 reflections.append((pid, refl, [r["run_id"] for r in pruns]))
                 cost.check()
 
             # 4. curate  5. merge
-            ops, usage = curate(reflections, playbook, llm)
+            usage = []
+            try:
+                ops, _ = curate(reflections, playbook, llm, records=usage)
+            except Exception as e:  # noqa: BLE001  keep the playbook unchanged this generation
+                print(f"  curator call failed: {e!r}; no playbook update")
+                ops = []
             cost.add(usage)
             (gdir / "curator_ops.json").write_text(json.dumps([vars(o) for o in ops], indent=1))
             changes = apply_ops(playbook, ops, generation=gen)

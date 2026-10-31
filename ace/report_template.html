@@ -158,7 +158,8 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
   const gens = D.generations;
   const pids = [...new Set(gens.flatMap(g => g.runs.map(r => r.problem_id)))].sort((a, b) => isHold(a) - isHold(b) || a.localeCompare(b));
   const colorOf = pid => `var(--s${pids.indexOf(pid) % 4 + 1})`;
-  const scoresBy = (g, pid) => g.runs.filter(r => r.problem_id === pid).map(r => r.checks.score);
+  // Crashed runs (API/code errors) say nothing about the agent; like summary.md, leave them out of scores.
+  const scoresBy = (g, pid) => g.runs.filter(r => r.problem_id === pid && !r.error).map(r => r.checks.score);
   const totalUsd = D.cost.reduce((s, r) => s + r.usd, 0);
   const lastGen = gens[gens.length - 1];
 
@@ -183,7 +184,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 
   // ---------- overview: score per problem per generation
   const ov = h("section", {id: "overview"}, h("h2", {}, "Result"),
-    h("p", {class: "lede"}, "Score = log10(e_uniform / e_agent): 0 means as accurate as a naive uniform linear mesh with the same node budget, +1 means 10× more accurate, " + FLOOR + " means the run failed a gate (no solve, over the node cap, or a degenerate mesh)."));
+    h("p", {class: "lede"}, "Score = log10(e_uniform / e_agent): 0 means as accurate as the best uniform mesh (linear or quadratic) with the same node budget, +1 means 10× more accurate, " + FLOOR + " means the run failed a gate (no solve, over the node cap, or a degenerate mesh). Runs that crashed (API or code errors) are left out of the scores."));
   const tbl = h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "problem"), h("th", {}, "split"),
     gens.map(g => h("th", {class: "n"}, "gen " + g.gen + " mean")), h("th", {class: "n"}, "change"))));
   const tb = h("tbody");
@@ -202,7 +203,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 
   function chart() {
     const W = 760, H = 300, L = 48, R = 150, T = 16, B = 36;
-    const all = gens.flatMap(g => g.runs.map(r => r.checks.score));
+    const all = gens.flatMap(g => g.runs.filter(r => !r.error).map(r => r.checks.score));
     const yMin = Math.min(FLOOR, ...all), yMax = Math.max(1, ...all);
     const x = i => L + (gens.length === 1 ? (W - L - R) / 2 : i * (W - L - R) / (gens.length - 1));
     const y = v => T + (yMax - v) / (yMax - yMin) * (H - T - B);
@@ -355,6 +356,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
         h("div", {}, "Setup vs reference: ", issues.length ? h("span", {class: "pill p-warn"}, issues.join("; ")) : (c.solved ? h("span", {class: "pill p-good"}, "matches") : "–"))),
       h("div", {class: "panel grid"}, h("h4", {}, "Run"),
         h("div", {class: "mono"}, `stop: ${r.stop} · turns: ${r.turns} · meshes: ${c.n_meshes} · solves: ${c.n_solves}`),
+        h("div", {class: "mono"}, r.error ? "crashed: not scored" : r.submitted != null ? `scored: solve ${r.submitted + 1} (submitted by the agent)` : "scored: last successful solve (the agent did not submit)"),
         h("div", {class: "mono"}, `tokens: ${fmtInt((r.usage || []).reduce((a, u) => a + u.input + u.cache_write + u.cache_read, 0))} in (${fmtInt((r.usage || []).reduce((a, u) => a + u.cache_read, 0))} from cache), ${fmtInt((r.usage || []).reduce((a, u) => a + u.output, 0))} out · ${fmtUsd(runCost(r))}`),
         r.error ? pre(r.error) : null)));
     body.push(det("Task prompt this agent received", pre(D.prompts.tasks[r.problem_id] || "")));
@@ -362,6 +364,7 @@ ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
     for (const e of r.trace) {
       let kind, content;
       if (e.type === "text") { kind = h("span", {class: "k k-said"}, "agent said"); content = h("div", {class: "say"}, e.text); }
+      else if (e.type === "thinking") { kind = h("span", {class: "k k-said"}, "agent's reasoning (summary)"); content = h("div", {class: "say muted"}, e.text); }
       else if (e.type === "tool_call") { kind = h("span", {class: "k k-call"}, "call " + e.name); content = pre(pretty(e.input)); }
       else { kind = h("span", {class: "k " + (e.is_error ? "k-error" : "k-result")}, (e.is_error ? "error from " : "result of ") + e.name); content = pre(pretty(e.result)); }
       tr.append(h("div", {class: "ev"}, h("div", {class: "t"}, "turn " + e.turn), h("div", {class: "c"}, kind, content)));

@@ -77,8 +77,8 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
 
     h: global element size. order: 1 (linear) or 2 (quadratic, curved).
     refinements: [{"group": name | "point": [x, y(, z)], "size": s, "radius": r}]
-      smaller elements (size s) within distance r of a named group or a point,
-      growing to h further away.
+      element size s at the group or point, growing linearly to h at distance r
+      (same meaning for groups and points).
     Returns stats; `ok` is False with an `error` message on failure.
     """
     refinements = refinements or []
@@ -92,9 +92,10 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
         h = max(float(h), floor)
 
         names = {gmsh.model.getPhysicalName(d, t): (d, t) for d, t in gmsh.model.getPhysicalGroups()}
-        fields = []
+        fields, sizes_used = [], []
         for r in refinements:
             size = max(float(r.get("size", h)), floor)
+            sizes_used.append(size)
             radius = float(r.get("radius", 0.0))
             if radius <= 0:
                 return {"ok": False, "error": f"refinement {r}: radius must be > 0"}
@@ -109,9 +110,11 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
                 fields.append(distance_threshold_field(**{kw: ents}, size_min=size, size_max=h,
                                                        dist_min=0.0, dist_max=radius))
             elif "point" in r:
+                # A Ball of zero radius whose transition layer is `radius` thick: size at the
+                # point, growing linearly to h at distance radius, like the group Threshold above.
                 x, y, z = (list(r["point"]) + [0.0, 0.0])[:3]
                 f = gmsh.model.mesh.field.add("Ball")
-                for k, v in {"XCenter": x, "YCenter": y, "ZCenter": z, "Radius": radius,
+                for k, v in {"XCenter": x, "YCenter": y, "ZCenter": z, "Radius": 0.0,
                              "Thickness": radius, "VIn": size, "VOut": h}.items():
                     gmsh.model.mesh.field.setNumber(f, k, v)
                 fields.append(f)
@@ -149,7 +152,8 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
         "elements": len(tags),
         "order": order,
         "min_quality": round(float(min(q)), 4) if len(q) else None,
-        "h_used": h,
+        "h_used": h,                       # after clamping to the size floor
+        "sizes_used": sizes_used,          # refinement sizes after clamping, in request order
     }
 
 

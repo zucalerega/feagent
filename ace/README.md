@@ -9,15 +9,18 @@ of short lessons pasted into its system prompt.
 Each generation:
 
 1. **Generator** (`agent.py`, Sonnet). Several copies of a small tool-use agent each attempt an
-   FEA problem: `inspect_geometry` → `mesh(h, order, refinements)` → `solve(setup)`. The system
-   prompt is a short, deliberately non-expert base prompt plus the current playbook. The agent
-   cites bullets it uses, e.g. `[using mesh-0003]`.
-2. **Checks** (`checks.py`, no LLM). Each run's final solve is scored:
+   FEA problem: `inspect_geometry` → `mesh(h, order, refinements)` → `solve(setup)` (repeat
+   within the limits) → `submit(solve)`, which picks the solve that gets scored. The system
+   prompt is a short, deliberately non-expert base prompt plus the current playbook. Every tool
+   call has a `using` argument where the agent lists the bullet IDs it applied (citations as
+   free text were never written in practice). Its reasoning summaries are kept in the trace.
+2. **Checks** (`checks.py`, no LLM). The submitted solve is scored:
    `score = log10(e_uniform / e_agent)`. `e_agent` is the relative error of one scored quantity
-   (QoI), computed by our solver from the agent's mesh and setup. `e_uniform` is the error of a
-   naive uniform linear mesh with the same node budget. 0 = naive, +1 = 10x more accurate.
-   Gates score -2: no successful solve, mesh over the node cap, element quality < 0.1. A setup
-   diagnostic (missing BCs, sign flips, wrong formulation) is recorded for the Reflector.
+   (QoI), computed by our solver from the agent's mesh and setup. `e_uniform` is the error of the
+   best uniform mesh (linear or quadratic) with the same node budget. 0 = that, +1 = 10x more
+   accurate. Gates score -2: no successful solve, mesh over the node cap, element quality < 0.1.
+   A setup diagnostic (BCs that differ from the reference, sign flips, wrong formulation) is
+   recorded for the Reflector; it can flag equivalent setups, so it is not a gate.
 3. **Reflector** (`reflector.py`, Opus). One call per training problem: all runs ranked best to
    worst, with checks and condensed traces. Returns validated JSON: where best and worst
    diverged, root causes, 1-3 lessons ("When X, do Y, because Z.") with a scope, and a
@@ -28,8 +31,14 @@ Each generation:
 5. **Merge** (`merge.py`, no LLM). Applies the ops, deduplicates again with rapidfuzz, prunes
    bullets where harmful ≥ helpful + 2, and saves the new playbook version plus a diff.
 
-Generation 0 runs with an empty playbook as the baseline. The held-out problem (`nafems_le1`)
-runs every generation but is never reflected on, so its score shows whether lessons transfer.
+Generation 0 runs with an empty playbook as the baseline. The held-out problems run every
+generation but are never reflected on, so their scores show whether lessons transfer:
+`notched_bar_t10_r4` (same family as a training problem, different notch) and
+`plate_hole_finite_width_d03` (a different shape).
+
+The problems are stress concentrations whose references come from the team's own converged FE
+studies (the plate with a hole uses a handbook value). We moved off the NAFEMS and Lamé problems
+because the agent recalled their published answers and used them to decide when to stop.
 
 Why the node cap: without it, a dense mesh is always more accurate, and nothing is learned.
 With a cap, accuracy depends on skill: element order, where to refine, getting the BCs right.
@@ -43,8 +52,9 @@ python3.13 -m venv .venv && .venv/bin/pip install -e ".[dev,ace]"
 .venv/bin/python -m ace.run_loop --mock
 .venv/bin/pytest tests/test_ace.py
 
-# real: reads ANTHROPIC_API_KEY from the environment (never put it in a file)
-.venv/bin/python -m ace.run_loop --runs-per-problem 3 --generations 3 --budget-usd 30
+# real: reads ANTHROPIC_API_KEY from the environment (never put it in the repo)
+.venv/bin/python -m ace.run_loop                     # defaults: 6 runs/problem, 4 generations, $10 cap
+.venv/bin/python -m ace.report ace_runs/<dir>        # the whole run as one HTML page
 ```
 
 Useful flags: `--problems a,b` (train), `--holdout c`, `--concurrency 4`, `--top-n 30`,
@@ -66,7 +76,10 @@ Everything goes to `ace_runs/<timestamp>/` (gitignored):
 | `diff_gen{N}.md` | what changed from N-1 to N, plus the rendered playbook |
 | `gen{N}/reflection_<problem>.json` | the Reflector's analysis |
 | `gen{N}/runs/<run_id>.json` | full run record: trace, meshes, solves, cited bullets, checks |
+| `gen{N}/reflection_prompt_<problem>.md` | exactly what the Reflector was shown |
+| `gen{N}/curator_ops.json`, `gen{N}/merge_changes.json` | the proposed ops and what merge did with them |
 | `cost.jsonl` | one line per LLM call: tokens and estimated $ |
+| `report.html` | after `python -m ace.report ace_runs/<dir>`: the whole run as one page |
 
 ## Knobs that matter (`ace/config.py`)
 
@@ -83,5 +96,7 @@ Everything goes to `ace_runs/<timestamp>/` (gitignored):
 ## Not done yet
 
 - Mesh-refinement convergence check (GCI) as a diagnostic: TODO in `checks.py`.
+- A rediscovered lesson counts as a helpful vote on the existing bullet. That rewards ideas the
+  Reflector keeps finding, not ideas shown to help; cited-bullet votes are the stronger signal.
 - The agent works on the problem's own named geometry, not raw STEP. Swapping its tools for
   the `feagent` mesh-harness MCP is the natural next step.

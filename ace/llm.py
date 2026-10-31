@@ -43,7 +43,9 @@ class LLM:
             messages=messages,
             tools=tools,
             cache_control={"type": "ephemeral"},   # also cache the growing conversation
-            thinking={"type": "adaptive"},
+            # "summarized" returns a readable summary of the reasoning (the default returns
+            # empty thinking text). Same cost; it is what the trace and the Reflector see.
+            thinking={"type": "adaptive", "display": "summarized"},
             output_config={"effort": EFFORT[role]},
             # If a safety classifier declines, re-run on a fallback model instead of failing.
             betas=["server-side-fallback-2026-07-01"],
@@ -51,7 +53,8 @@ class LLM:
         )
         return resp, usage_record(role, resp.model, resp.usage, run_id)
 
-    def structured(self, role: str, system: str, user: str, schema: type[pydantic.BaseModel]):
+    def structured(self, role: str, system: str, user: str, schema: type[pydantic.BaseModel],
+                   records: list | None = None):
         """Returns (parsed model or None, usage records). Retries once, then gives up.
 
         The API constrains the output to the JSON schema; we still validate with pydantic
@@ -59,7 +62,7 @@ class LLM:
         """
         import anthropic
         fmt = {"type": "json_schema", "schema": anthropic.transform_schema(schema.model_json_schema())}
-        records = []
+        records = [] if records is None else records   # caller's list survives an exception
         for _attempt in range(2):
             resp = self.client.messages.create(
                 model=MODELS[role],

@@ -44,9 +44,12 @@ class MockLLM:
         knows_p2 = re.search(r"quadratic|order 2|order=2", system, re.I) is not None
         last = json.loads(messages[-1]["content"][-1]["content"]) if turn else {}
 
+        using = playbook_ids[:2]
+
         def tool(name, args):
-            return _response([NS(type="text", text=f"calling {name}"),
-                              NS(type="tool_use", id=f"t{turn}", name=name, input=args)], "tool_use", "generator")
+            return _response([NS(type="thinking", thinking=f"mock: next I call {name}"),
+                              NS(type="tool_use", id=f"t{turn}", name=name, input={**args, "using": using})],
+                             "tool_use", "generator")
 
         if turn == 0:
             return tool("inspect_geometry", {}), self._rec(run_id)
@@ -55,25 +58,26 @@ class MockLLM:
                 return tool("mesh", {"h": last["h_used"] * 1.3, "order": last["order"]}), self._rec(run_id)
             cal = load_calibration([problem_id])[problem_id]
             order = 2 if knows_p2 else rng.choice([1, 2])
-            # Quadratic meshes have ~4x (2D) to ~8x (3D) the nodes at the same h: coarsen ~2x to fit.
-            h = cal["h"] * (2.2 if order == 2 else 1.0) * rng.uniform(0.85, 1.3)
+            h = cal["by_order"][order - 1]["h"] * rng.uniform(0.85, 1.3)   # near the uniform size that fits
             return tool("mesh", {"h": h, "order": order}), self._rec(run_id)
         if "value" not in last and "error" not in last:   # meshed and within cap: solve
             setup = reference_setup(fea.get_problem(problem_id))
-            if rng.random() < 0.2:                       # sometimes get a load sign wrong
+            if rng.random() < 0.2:                       # sometimes get a load direction wrong
                 for bc in setup["bcs"]:
-                    if bc["type"] == "pressure":
-                        bc["value"] = -bc["value"]
+                    if bc["type"] == "traction":
+                        bc["value"] = [-v for v in bc["value"]]
             return tool("solve", setup), self._rec(run_id)
-        cites = " ".join(f"[using {i}]" for i in playbook_ids[:2])
-        return _response([NS(type="text", text=f"Done. {cites}")], "end_turn", "generator"), self._rec(run_id)
+        if "solve" in last and last.get("ok"):
+            return tool("submit", {"solve": last["solve"]}), self._rec(run_id)
+        return _response([NS(type="text", text="Done.")], "end_turn", "generator"), self._rec(run_id)
 
     def _rec(self, run_id):
         return usage_record("generator", MODELS["generator"], _usage(1500, 200), run_id)
 
     # ---------------------------------------------------------------- reflector / curator
-    def structured(self, role: str, system: str, user: str, schema):
-        rec = [usage_record(role, MODELS[role], _usage(6000, 800))]
+    def structured(self, role: str, system: str, user: str, schema, records: list | None = None):
+        rec = [] if records is None else records
+        rec.append(usage_record(role, MODELS[role], _usage(6000, 800)))
         if schema is Reflection:
             cited = sorted(set(BULLET_ID.findall(user)))
             return Reflection(
@@ -88,10 +92,15 @@ class MockLLM:
                 ],
                 bullet_votes=[BulletVote(bullet_id=b, vote="helpful", reason="mock") for b in cited],
             ), rec
-        if schema is CuratorOutput:   # every candidate is a duplicate of the first existing bullet
+        if schema is CuratorOutput:
+            # Every candidate duplicates the first existing bullet; with none yet, the first
+            # candidate is added and the rest duplicate it.
             n = len(re.findall(r"^\d+\. \(", user, re.M))
-            first = BULLET_ID.findall(user)[0]
+            existing = BULLET_ID.findall(user)
             return CuratorOutput(decisions=[
-                Decision(lesson_index=i, action="DUPLICATE", duplicate_of=first, content="") for i in range(n)
+                Decision(lesson_index=i, action="DUPLICATE", duplicate_of=existing[0], content="") if existing
+                else Decision(lesson_index=i, action="ADD", content="") if i == 0
+                else Decision(lesson_index=i, action="DUPLICATE", duplicate_of="#0", content="")
+                for i in range(n)
             ]), rec
         raise ValueError(f"mock has no canned answer for {schema}")

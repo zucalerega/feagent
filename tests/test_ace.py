@@ -96,9 +96,59 @@ def test_curator_votes_and_duplicates():
 # --------------------------------------------------------------------------- small helpers
 
 
-def test_parse_citations():
-    assert parse_citations(["ok [using mesh-0003] and [using bc-0010]", "[using mesh-0003]"]) == \
-        ["bc-0010", "mesh-0003"]
+def test_parse_citations_from_tool_args_and_text():
+    trace = [
+        {"type": "tool_call", "name": "mesh", "input": {"h": 1, "using": ["mesh-0003", "not an id"]}},
+        {"type": "tool_call", "name": "solve", "input": {"using": ["bc-0010"]}},
+        {"type": "tool_call", "name": "inspect_geometry", "input": {}},
+        {"type": "text", "text": "done [using solv-0002]"},
+    ]
+    assert parse_citations(trace) == ["bc-0010", "mesh-0003", "solv-0002"]
+
+
+def test_ids_are_never_reused_after_pruning(tmp_path):
+    pb = Playbook([Bullet("mesh-0001", "meshing", "a", harmful=2)])
+    apply_ops(pb, [], generation=0)                                  # prunes mesh-0001
+    assert pb.get("mesh-0001") is None
+    pb.save(tmp_path / "p.json")
+    pb = Playbook.load(tmp_path / "p.json")
+    apply_ops(pb, [Op("ADD", section="meshing", content="When b, do c, because d.")], generation=1)
+    assert [b.id for b in pb.bullets] == ["mesh-0002"]
+
+
+def test_curator_drops_same_idea_twice_in_one_batch():
+    refl = Reflection(divergence="", root_causes=[], bullet_votes=[],
+                      lessons=[lesson(content="first"), lesson(content="first, reworded")])
+    ops, usage = curate([("p", refl, ["r1"])], Playbook(), MockLLM())
+    assert [o.kind for o in ops] == ["ADD"] and len(usage) == 1     # mock marks #1 as dup of #0
+
+
+def test_submitted_solve_is_scored_not_the_last():
+    from ace.checks import check_run, load_calibration
+    pid = config.TRAIN[0]
+    ref = __import__("ace.fea", fromlist=["x"]).reference_value(
+        __import__("ace.fea", fromlist=["x"]).get_problem(pid), config.TASKS[pid]["qoi"])
+    mesh = {"ok": True, "nodes": 10, "order": 2, "min_quality": 0.9}
+    run = {"meshes": [mesh], "submitted": 0, "solves": [
+        {"mesh": mesh, "setup": {}, "result": {"ok": True, "value": ref * 1.001}},
+        {"mesh": mesh, "setup": {}, "result": {"ok": True, "value": ref * 1.5}},
+    ]}
+    c = check_run(pid, run, load_calibration([pid]))
+    assert c["rel_error"] == pytest.approx(0.001) and c["submitted"]
+    run["submitted"] = None                                          # never submitted: last solve
+    assert check_run(pid, run, load_calibration([pid]))["rel_error"] == pytest.approx(0.5)
+
+
+def test_over_cap_mesh_gets_a_scaling_hint(tmp_path):
+    from ace.agent import Tools
+    tools = Tools(config.TRAIN[0], tmp_path)
+    cap = config.TASKS[config.TRAIN[0]]["node_cap"]
+    out, is_err = tools.call("mesh", {"h": 0.002, "order": 2, "using": []})
+    assert not is_err and out["nodes"] > cap and "hint" in out
+    out, is_err = tools.call("solve", {"formulation": "plane_stress", "material": {"E": 1, "nu": 0.3},
+                                       "bcs": [], "using": []})
+    assert is_err and "over the cap" in out["error"]                # refused, no solve used
+    assert tools.solves == []
 
 
 def test_score_from_error():

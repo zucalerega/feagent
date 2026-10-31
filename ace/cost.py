@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from ace.config import PRICES
@@ -16,6 +17,7 @@ def usage_record(role: str, model: str, usage, run_id: str = "") -> dict:
     """Turn an API `usage` object into a plain dict with an estimated $ cost."""
     get = lambda k: getattr(usage, k, None) or 0  # noqa: E731  (missing/None fields count as 0)
     rec = {
+        "t": round(time.time(), 3),
         "role": role,
         "model": model,
         "run_id": run_id,
@@ -25,11 +27,12 @@ def usage_record(role: str, model: str, usage, run_id: str = "") -> dict:
         "cache_read": get("cache_read_input_tokens"),
     }
     p = PRICES.get(model)
-    if p is None:  # unknown model: count tokens but flag the cost as unknown
-        rec["usd"] = 0.0
+    if p is None:
+        # Unknown model (e.g. a refusal fallback): price it at the most expensive known rates so
+        # the budget errs on the safe side, and flag it.
+        p = {k: max(pr[k] for pr in PRICES.values()) for k in ("input", "output", "cache_write", "cache_read")}
         rec["price_unknown"] = True
-    else:
-        rec["usd"] = sum(rec[k] * p[k] for k in ("input", "output", "cache_write", "cache_read")) / 1e6
+    rec["usd"] = sum(rec[k] * p[k] for k in ("input", "output", "cache_write", "cache_read")) / 1e6
     return rec
 
 

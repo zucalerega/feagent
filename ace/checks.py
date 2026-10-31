@@ -1,9 +1,11 @@
 """Deterministic checks and the score. No LLM calls: these numbers are ground truth for the Reflector.
 
 score = log10(e_uniform / e_agent), clipped to [SCORE_FLOOR, SCORE_CEIL]
-  e_agent   relative error of the scored QoI from the agent's final solve
-  e_uniform relative error of a naive uniform P1 mesh with about node_cap nodes and the
-            correct setup (calibrated once per problem, cached in ace/calibration.json)
+  e_agent   relative error of the scored QoI from the solve the agent submitted (its last
+            successful solve if it never called submit)
+  e_uniform relative error of the best uniform mesh (linear or quadratic, whichever is better)
+            with about node_cap nodes and the correct setup (calibrated once per problem,
+            cached in ace/calibration.json)
 Gates (mesh within the node cap, element quality, solve succeeded) score SCORE_FLOOR on failure.
 
 TODO: mesh-refinement convergence check (re-run the agent's mesh recipe at h/2 and h/4 and use
@@ -39,34 +41,42 @@ def reference_setup(problem) -> dict:
     }
 
 
-def _uniform_error(problem, qoi, h, workdir) -> tuple[int, float]:
-    mesh = fea.make_mesh(problem, Path(workdir) / "uniform.msh", h=h, order=1)
+def _uniform_error(problem, qoi, h, order, workdir) -> tuple[int, float]:
+    mesh = fea.make_mesh(problem, Path(workdir) / "uniform.msh", h=h, order=order)
     sol = fea.run_solve(problem, mesh, reference_setup(problem), qoi)
     ref = fea.reference_value(problem, qoi)
     return mesh["nodes"], abs(sol["value"] - ref) / abs(ref)
 
 
-def calibrate(problem_id: str) -> dict:
-    """Find the uniform P1 mesh size that just fits the node cap, and its error.
+def _calibrate_order(problem, qoi, cap, order, tmp) -> dict:
+    lo, hi = problem.params["h0"] / 20, problem.params["h0"] * 20   # bisection on h
+    for _ in range(25):
+        h = math.sqrt(lo * hi)
+        n, _ = _uniform_error(problem, qoi, h, order, tmp)
+        lo, hi = (h, hi) if n > cap else (lo, h)
+    nodes, errs = [], []
+    for f in (1.0, 1.05, 1.1, 1.15, 1.2):
+        n, e = _uniform_error(problem, qoi, hi * f, order, tmp)
+        nodes.append(n)
+        errs.append(e)
+    return {"order": order, "h": hi, "nodes": nodes, "errors": errs,
+            "e_uniform": math.exp(sum(math.log(e) for e in errs) / len(errs))}
 
-    Point errors on coarse meshes jump around with node placement, so we average (geometric
-    mean) over three slightly different sizes that all fit the cap.
+
+def calibrate(problem_id: str) -> dict:
+    """The best uniform mesh that fits the node cap, and its error.
+
+    For each element order, find the uniform size that just fits the cap. Point and peak errors
+    on coarse meshes jump around with node placement, so average (geometric mean) over five
+    slightly coarser sizes that all fit. The baseline is the better of the two orders, so an
+    agent gets no credit for merely choosing quadratic elements.
     """
     task = TASKS[problem_id]
     problem = fea.get_problem(problem_id)
     with tempfile.TemporaryDirectory() as tmp:
-        lo, hi = problem.params["h0"] / 20, problem.params["h0"] * 20   # bisection on h
-        for _ in range(25):
-            h = math.sqrt(lo * hi)
-            n, _ = _uniform_error(problem, task["qoi"], h, tmp)
-            lo, hi = (h, hi) if n > task["node_cap"] else (lo, h)
-        errs, nodes = [], []
-        for f in (1.0, 1.06, 1.12):
-            n, e = _uniform_error(problem, task["qoi"], hi * f, tmp)
-            nodes.append(n)
-            errs.append(e)
-    e_uniform = math.exp(sum(math.log(e) for e in errs) / len(errs))
-    return {"h": hi, "nodes": nodes, "errors": errs, "e_uniform": e_uniform}
+        per_order = [_calibrate_order(problem, task["qoi"], task["node_cap"], o, tmp) for o in (1, 2)]
+    best = min(per_order, key=lambda c: c["e_uniform"])
+    return {**best, "by_order": per_order}
 
 
 def load_calibration(problem_ids: list[str]) -> dict:
@@ -74,7 +84,7 @@ def load_calibration(problem_ids: list[str]) -> dict:
     cal = json.loads(CALIBRATION_PATH.read_text()) if CALIBRATION_PATH.exists() else {}
     changed = False
     for pid in problem_ids:
-        stale = cal.get(pid, {}).get("node_cap") != TASKS[pid]["node_cap"]
+        stale = cal.get(pid, {}).get("node_cap") != TASKS[pid]["node_cap"] or "by_order" not in cal.get(pid, {})
         if pid not in cal or stale:
             cal[pid] = {"node_cap": TASKS[pid]["node_cap"], **calibrate(pid)}
             changed = True
@@ -96,14 +106,29 @@ def bc_report(problem, setup: dict) -> dict:
     """Compare the agent's setup with the reference setup (diagnostic, not a gate: other
     setups can be equivalent, and a wrong one already shows up as a large error)."""
     ref = reference_setup(problem)
-    key = lambda bc: (bc.get("group"), bc.get("type"))  # noqa: E731
+
+    def key(bc):
+        # Point BCs (e.g. pinning one node against rigid-body motion) are matched by type and
+        # components only: any suitable node is equivalent, and [-0.1, 0] == [-0.1, 0.0].
+        where = bc.get("group") or f"a point (components {sorted(bc.get('components') or [])})"
+        return where, bc.get("type")
+
     ref_bcs = {key(b): b for b in ref["bcs"]}
     got_bcs = {key(b): b for b in setup.get("bcs", [])}
     sign_flips = []
     for k in ref_bcs.keys() & got_bcs.keys():
         a, b = ref_bcs[k].get("value"), got_bcs[k].get("value")
-        if isinstance(a, (int, float)) and isinstance(b, (int, float)) and a * b < 0:
-            sign_flips.append(f"{k[1]} on {k[0]}: reference sign {'+' if a > 0 else '-'}")
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            flipped = a * b < 0
+        elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+            try:   # vectors (tractions, forces): pointing in opposite directions
+                flipped = sum(float(x) * float(y) for x, y in zip(a, b)) < 0
+            except (TypeError, ValueError):   # expressions: not compared
+                flipped = False
+        else:
+            flipped = False
+        if flipped:
+            sign_flips.append(f"{k[1]} on {k[0]}: reversed relative to the reference")
     mat, ref_mat = setup.get("material") or {}, ref["material"]
     return {
         "missing": [f"{t} on {g}" for g, t in ref_bcs.keys() - got_bcs.keys()],
@@ -127,7 +152,13 @@ def check_run(problem_id: str, run: dict, calibration: dict) -> dict:
         "n_solves": len(run["solves"]),
         "meshed": any(m.get("ok") for m in run["meshes"]),
     }
-    final = next((s for s in reversed(run["solves"]) if s["result"].get("ok")), None)
+    # The scored solve: the one the agent submitted, else its last successful one.
+    sub = run.get("submitted")
+    if sub is not None and 0 <= sub < len(run["solves"]) and run["solves"][sub]["result"].get("ok"):
+        final = run["solves"][sub]
+    else:
+        final = next((s for s in reversed(run["solves"]) if s["result"].get("ok")), None)
+    out["submitted"] = sub is not None
     if final is None:
         return {**out, "solved": False, "failed_gate": "no successful solve", "score": SCORE_FLOOR}
 
