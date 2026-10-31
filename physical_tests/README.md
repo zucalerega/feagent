@@ -25,9 +25,19 @@ Breakerspace Instron 68TM-50: 5 kN load cell, wedge grips, video extensometer.
 
 | Part | Lower end | Upper end | Extensometer marks | Fixtures to make |
 |---|---|---|---|---|
-| `abc_00000003_pull` | one stub in V-face wedge jaws | other stub in V-face wedge jaws | one dot on each boss (about 39 mm apart) | none, if the V faces take Ø15.3 rounds |
+| `abc_00000003_pull` | one stub in V-face wedge jaws | other stub in V-face wedge jaws | one dot on the front of each original stub, at x = −27 and +27 mm (54 mm apart; y = +7.66 mm, z = 30.59 mm) | none, if the V faces take Ø15.3 rounds |
 | `abc_00000065_pull` | base tab in flat wedge jaws | M6 bolt through the clamp-bolt hole, finger-tight (a pin, not a clamp), through a steel tongue in the slot | arm vs base block; a transverse pair across the bore | tongue: 6 mm steel flat bar, at most 16 mm wide, Ø6.5 hole |
 | `mounting_bracket_vertical` | base bolted with 4 × M8 (at x ±38, y ±25 mm) to a steel plate of at least 10 mm with a tongue for the grip | Ø14 pin through the load hole, in a U-clevis over the 8 mm web | web near the load hole vs base near the web root | base plate, U-clevis |
+
+FEA of the `abc_00000003_pull` test (problem `abc_00000003_pull`, branch `ace-requirements`, PR #20):
+- **Expected signal:** the dots at x = ±27 mm separate by 0.158 µm per newton, about 47 µm at 300 N
+  with E = 10 GPa. Use the video extensometer; the crosshead cannot resolve this.
+- **Keep the elastic runs at or below 300 N.** The highest stress away from the grips is at the sharp
+  edge where each boss shoulder meets its stub (singular in the CAD, finite but high on the print).
+- **Don't put the dots on the bosses:** they sit next to that edge, where the FEA does not converge
+  reliably.
+- **Feeding the results back:** give the export to the loop with `python -m ace.run_loop ... --evidence <dir>`
+  (`ace/evidence.py` on that branch).
 
 The benchmark models the bracket's bolts as fixed bores. Real bolts clamp the base onto the plate,
 so expect a measurable difference there: that is data on how agents should model bolted joints.
@@ -47,7 +57,8 @@ What this means for the tests:
 - **Cure:** post-cure every part and coupon the same way and record it. The modulus spans
   7.5–11 GPa across cure states.
 - **Brittle:** keep the peak FEA stress at or below 25 MPa (about 0.25 % strain) for the elastic
-  runs. Until the per-part FEA load caps exist, stop the first loading at 100 N.
+  runs. For `abc_00000003_pull` that means at most 300 N (below). The other two parts have no FEA
+  load caps yet: stop their first loading at 100 N.
 - **Temperature:** 1 °C over a 40 mm gauge length is about 2 µm, a few % of the expected signal.
   Use LED lighting, keep cycles short, and re-zero before each cycle.
 
@@ -80,5 +91,5 @@ The quantity compared is the slope of mark displacement against load (mm/N), mea
 at the same points.
 
 Still to do:
-- FEA predictions and load caps for each part;
+- FEA predictions and load caps for `abc_00000065_pull` and the bracket;
 - problem statements of these setups for the agents.
