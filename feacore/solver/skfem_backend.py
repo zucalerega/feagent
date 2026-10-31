@@ -629,6 +629,11 @@ def _check_rigid_modes(md: _Model, D: np.ndarray, has_robin: bool = False) -> No
 def solve(case: Case, **options) -> "SkfemResult":
     t0 = time.perf_counter()
     case.check()
+    if case.analysis.nonlinear:
+        raise NotImplementedError(
+            "skfem backend: nonlinear analyses (analysis.options.nonlinear / material plasticity) are not "
+            "implemented; the fixed solver is linear elastic. Use backend='ccx' (opt-in elastoplastic, "
+            "docs/solver_ccx_nonlinear.md)")
     opts = {**(case.analysis.options or {}), **options}
     md = _Model(case, opts)
     solver_opts = {"method": opts.get("linear_solver")}
