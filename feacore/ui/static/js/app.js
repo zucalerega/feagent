@@ -10,7 +10,13 @@ const ROUTES = {
   solve: () => import('./pages/solve.js'),
   health: () => import('./pages/health.js'),
   connect: () => import('./pages/connect.js'),
+  runs: () => import('./pages/runs.js'),
+  swarm: () => import('./pages/swarm.js'),
 };
+
+// top-level sections; deeper pages highlight their parent
+const SECTION = { benchmarks: 'benchmarks', batch: 'benchmarks', runs: 'runs', study: 'runs', viewer: 'runs',
+                  consensus: 'runs', swarm: 'swarm', solve: 'solve', connect: 'connect', health: 'connect' };
 
 let cleanup = null;
 let renderToken = 0;
@@ -26,7 +32,10 @@ async function render() {
   const token = ++renderToken;
   if (cleanup) { try { cleanup(); } catch (e) { console.warn(e); } cleanup = null; }
   const { page, args } = parse();
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.route === page));
+  // old index pages now live under Runs
+  if (!args.length && (page === 'viewer' || page === 'consensus')) { location.replace(`#/runs?tab=${page === 'viewer' ? 'solves' : 'consensus'}`); return; }
+  const section = SECTION[page] || page;
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.route === section));
   const main = document.getElementById('app');
   main.className = page === 'viewer' && args.length ? 'full' : '';
   clear(main);
@@ -48,16 +57,12 @@ async function health() {
   const el = document.getElementById('health');
   try {
     const hl = await api('/api/health');
-    const b = hl.backends || {};
-    clear(el);
-    const items = ['skfem', 'ccx', 'nn'].filter(k => b[k]).map(k =>
-      h('span', { class: 'pill', title: b[k].ok ? (b[k].doc || 'available') : (b[k].error || 'unavailable') },
-        h('span', { class: `dot ${b[k].ok ? 'good' : 'critical'}` }), k));
-    if (!hl.backends) items.push(h('span', { class: 'pill' }, h('span', { class: 'spinner', style: { width: '12px', height: '12px' } }), 'checking backends'));
+    const b = (hl.backends || {}).skfem;
     const gpus = (hl.gpu && hl.gpu.gpus) || [];
-    const hw = gpus.length ? `${gpus[0].name}` : `${hl.cpu.count} CPU · no GPU`;
-    items.push(h('a', { class: 'pill', href: '#/health', title: 'System health' }, hw));
-    el.append(...items);
+    const hw = gpus.length ? gpus[0].name : `${hl.cpu.count} CPU`;
+    const state = !hl.backends ? ['', 'checking solver\u2026'] : b && b.ok ? ['good', 'solver ready'] : ['critical', 'solver unavailable'];
+    const jobs = hl.active_jobs ? ` \u00b7 ${hl.active_jobs} job${hl.active_jobs === 1 ? '' : 's'} running` : '';
+    clear(el).append(h('a', { class: 'pill', href: '#/health', title: 'system health' }, h('span', { class: `dot ${state[0]}` }), `${state[1]} \u00b7 ${hw}${jobs}`));
     if (!hl.backends || hl.backends_checking) setTimeout(health, 3000);
   } catch (e) {
     clear(el).append(h('span', { class: 'pill' }, h('span', { class: 'dot critical' }), 'server unreachable'));
@@ -104,4 +109,4 @@ window.addEventListener('hashchange', render);
 if (!location.hash) history.replaceState(null, '', '#/benchmarks');
 render();
 health();
-setInterval(health, 60000);
+setInterval(health, 20000);
