@@ -24,5 +24,5 @@ fi
 run "cd $DIR && bash scripts/setup_gpu_box.sh"
 run "cd $DIR && PORT=${PORT:-8000} FEACORE_UI_TOKEN=${FEACORE_UI_TOKEN:-} bash scripts/serve.sh"
 echo
-echo "feagent is set up in $DIR and serving on port 8000."
+echo "feagent is set up in $DIR and serving on port ${PORT:-8000}."
 echo "Brev: console > your instance > HTTP Ports > add port 8000, then open the https link."
