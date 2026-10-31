@@ -1,11 +1,14 @@
 """Small 3-vector and bounding-box helpers.
 
-Inputs may be tuples, lists or numpy arrays; outputs are plain floats/tuples.
+Inputs may be tuples, lists or numpy arrays; outputs are plain floats/tuples, except the
+vectorised ``unit`` / ``unit_rows`` which return numpy arrays.
 """
 from __future__ import annotations
 
 import math
 from typing import Sequence
+
+import numpy as np
 
 from .types import BBox, Vec3
 
@@ -23,6 +26,19 @@ def _norm(v: Sequence[float]) -> float:
 
 def _dot(a: Sequence[float], b: Sequence[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
+
+
+def unit(v: Sequence[float]) -> np.ndarray:
+    """``v / |v|`` as a float array; a zero vector is returned unchanged."""
+    v = np.asarray(v, dtype=float)
+    n = np.linalg.norm(v)
+    return v / n if n > 0 else v
+
+
+def unit_rows(a) -> np.ndarray:
+    """Each row of an (n, 3) array scaled to unit length (zero rows stay zero)."""
+    a = np.asarray(a, float)
+    return a / np.maximum(np.linalg.norm(a, axis=1), 1e-300)[:, None]
 
 
 def dist(a: Sequence[float], b: Sequence[float]) -> float:
@@ -47,7 +63,8 @@ def box_dist(p: Sequence[float], bb: BBox) -> float:
 
 
 def bbox_diag(bb: BBox) -> float:
-    return dist(bb[0], bb[1])
+    """Length of the box diagonal (numpy norm: the model ``diag`` every size/tolerance derives from)."""
+    return float(np.linalg.norm(np.subtract(bb[1], bb[0])))
 
 
 def extreme_gap(inner: BBox, outer: BBox, side: str) -> float:

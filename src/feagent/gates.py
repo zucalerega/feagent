@@ -6,30 +6,30 @@ from typing import Any
 from .types import Gate
 
 
-def gate(status: str, gate_id: str, name: str, message: str, value: float | None = None,
-         threshold: float | None = None, hint: str = "") -> Gate:
+def _gate(status: str, gate_id: str, name: str, message: str, value: float | None = None,
+          threshold: float | None = None, hint: str = "") -> Gate:
     return Gate(id=gate_id, name=name, status=status, value=value, threshold=threshold,
                 message=message, hint=hint)
 
 
 def passed(gate_id: str, name: str, message: str, value: float | None = None,
            threshold: float | None = None, hint: str = "") -> Gate:
-    return gate("pass", gate_id, name, message, value, threshold, hint)
+    return _gate("pass", gate_id, name, message, value, threshold, hint)
 
 
 def warned(gate_id: str, name: str, message: str, value: float | None = None,
            threshold: float | None = None, hint: str = "") -> Gate:
-    return gate("warn", gate_id, name, message, value, threshold, hint)
+    return _gate("warn", gate_id, name, message, value, threshold, hint)
 
 
 def failed(gate_id: str, name: str, message: str, value: float | None = None,
            threshold: float | None = None, hint: str = "") -> Gate:
-    return gate("fail", gate_id, name, message, value, threshold, hint)
+    return _gate("fail", gate_id, name, message, value, threshold, hint)
 
 
 def skipped(gate_id: str, name: str, message: str, value: float | None = None,
             threshold: float | None = None, hint: str = "") -> Gate:
-    return gate("skip", gate_id, name, message, value, threshold, hint)
+    return _gate("skip", gate_id, name, message, value, threshold, hint)
 
 
 def threshold_gate(gate_id: str, name: str, value: float, limit: float, *, message_fmt: str,
@@ -42,5 +42,5 @@ def threshold_gate(gate_id: str, name: str, value: float, limit: float, *, messa
     """
     bad = value > limit if worse == "above" else value < limit
     message = message_fmt.format(value=value, limit=limit, **fmt)
-    return gate(fail_status if bad else "pass", gate_id, name, message, value, float(limit),
-                hint if bad else "")
+    return _gate(fail_status if bad else "pass", gate_id, name, message, value, float(limit),
+                 hint if bad else "")

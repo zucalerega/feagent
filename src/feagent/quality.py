@@ -14,6 +14,7 @@ import numpy as np
 
 from . import gmsh_util as gu
 from .gates import failed, passed, skipped, threshold_gate, warned
+from .graph import connected_groups
 from .types import Gate, GeometryModel, MeshResult, Vec3, _Base
 from .vec import vec3
 
@@ -185,19 +186,9 @@ def _components(tets: np.ndarray) -> int:
 def _expected_components(geometry: GeometryModel | None) -> int:
     if geometry is None or not geometry.volumes:
         return 1
-    parent = {v.tag: v.tag for v in geometry.volumes}
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    for f in geometry.faces:
-        vs = [v for v in f.volumes if v in parent]
-        if len(vs) == 2:
-            parent[find(vs[0])] = find(vs[1])
-    return len({find(t) for t in parent})
+    tags = [v.tag for v in geometry.volumes]
+    shared = ([v for v in f.volumes if v in tags] for f in geometry.faces)
+    return len(connected_groups(tags, [(vs[0], vs[1]) for vs in shared if len(vs) == 2]))
 
 
 # --- gmsh-side measurements -----------------------------------------------

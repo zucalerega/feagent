@@ -70,8 +70,9 @@ def test_unknown_key_raises(model):
 def test_bad_value_raises(model):
     with pytest.raises(QueryError):
         select_faces(model, {"normal": [1, 0]})
-    with pytest.raises(QueryError):
+    with pytest.raises(QueryError) as e:
         select_faces(model, {"at": "top"})
+    assert "xmin, xmax, ymin, ymax, zmin, zmax" in e.value.hint and "bounding box" in e.value.hint
 
 
 def test_explain_miss_lists_candidates(model):

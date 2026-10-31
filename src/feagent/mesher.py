@@ -15,7 +15,6 @@ import os
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,10 +23,10 @@ import numpy as np
 import yaml
 
 from .errors import CadLoadError, FeagentError, QueryError, SpecError
-from .gates import gate
+from .gates import failed, passed, skipped
 from .geometry import analyze, analyze_current_model
 from .gmsh_session import gmsh_messages, gmsh_session, load_cad
-from .gmsh_util import entity_tags
+from .gmsh_util import entity_tags, pinned_options
 from .select import explain_miss, select_faces
 from .spec import DomainSpec, GroupSpec, MeshSpec, load_spec
 from .types import Gate, GeometryModel, GroupResult, MeshResult
@@ -281,14 +280,9 @@ def _thin_wall_targets(run: _Run) -> list[RefineTarget]:
 # ----------------------------------------------------------------------------------------------
 # stages (each appends its gate; False stops the pipeline)
 
-def _gate(gid: str, status: str, message: str, value: float | None = None,
-          threshold: float | None = None, hint: str = "") -> Gate:
-    return gate(status, gid, _GATE_NAMES[gid], message, value, threshold, hint)
-
-
 def _fail(run: _Run, gid: str, message: str, hint: str = "") -> bool:
     run.errors.append(f"{message} (hint: {hint})" if hint else message)
-    run.gates.append(_gate(gid, "fail", message, hint=hint))
+    run.gates.append(failed(gid, _GATE_NAMES[gid], message, hint=hint))
     return False
 
 
@@ -311,8 +305,8 @@ def _stage_geometry(run: _Run) -> bool:
     no_vol = [z for z in run.model.hazards if z.kind == "no_volume"]
     if no_vol:
         return _fail(run, "geometry", no_vol[0].message, no_vol[0].suggestion)
-    run.gates.append(_gate("geometry", "pass", f"{len(vols)} volume(s), {len(run.model.faces)} "
-                           f"faces", value=float(len(vols)), threshold=1.0))
+    run.gates.append(passed("geometry", _GATE_NAMES["geometry"], f"{len(vols)} volume(s), "
+                            f"{len(run.model.faces)} faces", value=float(len(vols)), threshold=1.0))
     return True
 
 
@@ -326,8 +320,8 @@ def _stage_groups(run: _Run) -> bool:
     if dg and dg not in run.faces:
         run.warnings.append(f"default_group '{dg}' is empty: every boundary face is in a group")
     summary = ", ".join(f"{k}={len(v)}" for k, v in run.faces.items()) or "none"
-    run.gates.append(_gate("groups", "pass", f"{len(run.faces)} group(s) resolved (faces: "
-                           f"{summary})", value=float(len(run.faces))))
+    run.gates.append(passed("groups", _GATE_NAMES["groups"], f"{len(run.faces)} group(s) resolved "
+                            f"(faces: {summary})", value=float(len(run.faces))))
     return True
 
 
@@ -347,8 +341,8 @@ def _stage_mesh(run: _Run) -> bool:
     if not n_tets:
         return _fail(run, "mesh_generated", _gmsh_error("gmsh produced 0 volume elements",
                                                         RuntimeError("empty mesh")))
-    run.gates.append(_gate("mesh_generated", "pass", f"{n_tets} volume elements, {run.n_nodes} "
-                           f"nodes", value=float(n_tets), threshold=1.0))
+    run.gates.append(passed("mesh_generated", _GATE_NAMES["mesh_generated"], f"{n_tets} volume "
+                            f"elements, {run.n_nodes} nodes", value=float(n_tets), threshold=1.0))
     return True
 
 
@@ -417,28 +411,16 @@ def _collect(run: _Run, n_tets: int) -> None:
 # ----------------------------------------------------------------------------------------------
 # files
 
-@contextmanager
-def _options(opts: dict[str, float]):
-    saved = {k: gmsh.option.getNumber(k) for k in opts}
-    try:
-        for k, v in opts.items():
-            gmsh.option.setNumber(k, v)
-        yield
-    finally:
-        for k, v in saved.items():
-            gmsh.option.setNumber(k, v)
-
-
 def _export(run: _Run) -> None:
     run.out.mkdir(parents=True, exist_ok=True)
     msh = run.out / "mesh.msh"
-    with _options({"Mesh.MshFileVersion": 4.1, "Mesh.Binary": 0}):
+    with pinned_options({"Mesh.MshFileVersion": 4.1, "Mesh.Binary": 0}):
         gmsh.write(str(msh))
     run.mesh_path = run.exports["msh"] = str(msh)
     for name in run.spec.export:
         if name != "msh":
             path = run.out / _EXPORT_FILES[name]
-            with _options(_EXPORT_OPTIONS.get(name, {})):
+            with pinned_options(_EXPORT_OPTIONS.get(name, {})):
                 gmsh.write(str(path))
             run.exports[name] = str(path)
 
@@ -470,16 +452,8 @@ def _write_log(out: Path) -> None:
     (out / "mesh.log").write_text("\n".join(lines) + "\n")
 
 
-def _np_default(x):
-    if isinstance(x, np.generic):
-        return x.item()
-    if isinstance(x, np.ndarray):
-        return x.tolist()
-    raise TypeError(f"not JSON serializable: {type(x).__name__}")
-
-
 def _dumps(res: MeshResult, indent: int | None = None) -> str:
-    return json.dumps(res.to_dict(), indent=indent, default=_np_default)
+    return json.dumps(res.to_dict(), indent=indent)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -487,8 +461,8 @@ def _dumps(res: MeshResult, indent: int | None = None) -> str:
 
 def _result(run: _Run) -> MeshResult:
     done = {g.id for g in run.gates}
-    run.gates += [_gate(gid, "skip", "skipped: an earlier stage failed")
-                  for gid in _STAGES if gid not in done]
+    run.gates += [skipped(gid, name, "skipped: an earlier stage failed")
+                  for gid, name in _STAGES.items() if gid not in done]
     ok = run.mesh_path is not None and all(g.status != "fail" for g in run.gates)
     return MeshResult(
         ok=ok, spec_path=str(Path(run.spec.path).resolve()), out_dir=str(run.out),
@@ -504,7 +478,7 @@ def _failed(spec_path: str | Path, scale: float, message: str, gid: str,
     return MeshResult(
         ok=False, spec_path=str(spec_path), out_dir="", mesh_path=None, exports={}, groups={},
         n_nodes=0, n_elements=0, order=1, size_scale=float(scale), elapsed_s=elapsed,
-        errors=[message], warnings=[], gates=[_gate(gid, "fail", message)], geometry=None)
+        errors=[message], warnings=[], gates=[failed(gid, _GATE_NAMES[gid], message)], geometry=None)
 
 
 # ----------------------------------------------------------------------------------------------

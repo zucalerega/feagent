@@ -5,7 +5,9 @@ import pytest
 from feagent import gmsh_util as gu
 from feagent.gates import failed, passed, skipped, threshold_gate, warned
 from feagent.gmsh_session import gmsh_session
-from feagent.vec import angle_deg, axis_angle_deg, bbox_diag, box_dist, dist, extreme_gap, vec3
+from feagent.graph import connected_groups
+from feagent.vec import (angle_deg, axis_angle_deg, bbox_diag, box_dist, dist, extreme_gap, unit,
+                         unit_rows, vec3)
 
 BB = ((0.0, 0.0, 0.0), (1.0, 2.0, 3.0))
 
@@ -19,9 +21,20 @@ def test_vec_basics():
     assert axis_angle_deg((1, 0, 0), (1, 1, 0)) == pytest.approx(45.0)
 
 
+def test_unit_forms():
+    assert unit([3, 0, 4]).tolist() == [0.6, 0.0, 0.8] and unit([0, 0, 0]).tolist() == [0, 0, 0]
+    rows = unit_rows([[0, 2, 0], [0, 0, 0]])
+    assert rows.tolist() == [[0.0, 1.0, 0.0], [0.0, 0.0, 0.0]]
+
+
+def test_connected_groups():
+    assert connected_groups([5, 1, 3, 2, 4], [(3, 1), (4, 5), (5, 3)]) == [[1, 3, 4, 5], [2]]
+    assert connected_groups([], []) == []
+
+
 def test_bbox_helpers():
     assert box_dist((0.5, 1, 1), BB) == 0.0 and box_dist((-3, 1, -4), BB) == 5.0
-    assert bbox_diag(((0, 0, 0), (2, 3, 6))) == 7.0
+    assert bbox_diag(((0, 0, 0), (2, 3, 6))) == 7.0 and type(bbox_diag(BB)) is float
     face = ((0, 0, 3), (1, 2, 3))
     assert extreme_gap(face, BB, "zmax") == 0.0
     assert extreme_gap(face, BB, "zmin") == 3.0
@@ -69,3 +82,15 @@ def test_gmsh_util_on_box_mesh():
         assert (2, 1) in face and len(face) == 1 + 4 + 4  # face, its 4 curves, 4 corners
         assert len(gu.closure(3, 1)) == 1 + 6 + 12 + 8
         assert gu.node_entity(tags[0])[0] == 0
+        assert [t for t, _, _ in gu.element_blocks(2, 1)] == [2]  # types=None: every type
+
+
+def test_pinned_options_restores_on_error():
+    with gmsh_session():
+        gmsh.option.setNumber("Mesh.MeshSizeMax", 7.0)
+        with pytest.raises(RuntimeError):
+            with gu.pinned_options({"Mesh.MeshSizeMax": 0.5, "Mesh.ElementOrder": 2}):
+                assert gmsh.option.getNumber("Mesh.MeshSizeMax") == 0.5
+                raise RuntimeError("boom")
+        assert gmsh.option.getNumber("Mesh.MeshSizeMax") == 7.0
+        assert gmsh.option.getNumber("Mesh.ElementOrder") == 1

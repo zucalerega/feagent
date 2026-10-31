@@ -1,6 +1,7 @@
 """Helpers for repeated gmsh model/mesh access patterns (call inside a gmsh session)."""
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Iterable, Iterator
 
 import numpy as np
@@ -26,14 +27,14 @@ def node_table() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return ntags, np.asarray(coords).reshape(-1, 3), lookup
 
 
-def element_blocks(dim: int, tag: int,
-                   types: Iterable[int]) -> Iterator[tuple[int, np.ndarray, np.ndarray]]:
-    """Yield (type, element tags, node tags [n, nodes per element]) of the wanted types."""
+def element_blocks(dim: int, tag: int, types: Iterable[int] | None = None
+                   ) -> Iterator[tuple[int, np.ndarray, np.ndarray]]:
+    """Yield (type, element tags, node tags [n, nodes per element]) of the wanted types (all if None)."""
     import gmsh
 
-    wanted = set(types)
+    wanted = None if types is None else set(types)
     for t, etags, enodes in zip(*gmsh.model.mesh.getElements(dim, tag)):
-        if t in wanted:
+        if wanted is None or t in wanted:
             nn = gmsh.model.mesh.getElementProperties(t)[3]
             yield int(t), np.asarray(etags), np.asarray(enodes).reshape(-1, nn)
 
@@ -89,3 +90,18 @@ def element_qualities(tags: Iterable[int], measures: Iterable[str]) -> dict[str,
     tl = [int(t) for t in tags]
     get = gmsh.model.mesh.getElementQualities
     return {m: np.asarray(get(tl, m), float) if tl else np.zeros(0) for m in measures}
+
+
+@contextmanager
+def pinned_options(opts: dict[str, float]) -> Iterator[None]:
+    """Set numeric gmsh options for the block; the previous values are restored afterwards."""
+    import gmsh
+
+    saved = {k: gmsh.option.getNumber(k) for k in opts}
+    try:
+        for k, v in opts.items():
+            gmsh.option.setNumber(k, v)
+        yield
+    finally:
+        for k, v in saved.items():
+            gmsh.option.setNumber(k, v)

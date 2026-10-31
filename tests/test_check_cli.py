@@ -204,9 +204,9 @@ def test_cli_internal_error_exit3(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_query_value_error_has_hint(parts_dir):
-    p = cli("faces", str(parts_dir / "cantilever.step"), "--query", '{"at": "left"}')
-    assert p.returncode == 2
-    assert "'at'" in p.stderr and "hint: fix the query value" in p.stderr
+    p = cli("faces", str(parts_dir / "cantilever.step"), "--query", '{"normal": [1, 0]}')
+    assert p.returncode == 2  # a value error without its own hint gets the CLI's generic one
+    assert "'normal'" in p.stderr and "hint: fix the query value" in p.stderr
 
 
 def test_spec_edit_during_check_reads_stale(tmp_path, parts_dir, monkeypatch):

@@ -80,7 +80,10 @@ def _v_concave(k, v, path) -> None:
 
 def _v_at(k, v, path) -> None:
     if v not in _AT:
-        raise _bad(f"query key 'at' must be one of {list(_AT)}, got {v!r}")
+        raise _bad(f"query key 'at' must be one of {list(_AT)}, got {v!r}",
+                   f"valid values: {', '.join(_AT)}; each picks the faces lying flat on that side "
+                   "of the model bounding box (e.g. zmin = faces in the plane z = bbox min z, "
+                   "zmax = the top plane); for a plane inside the part use box: or near:")
 
 
 def _v_box(k, v, path) -> None:
