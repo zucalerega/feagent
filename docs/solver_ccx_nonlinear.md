@@ -124,23 +124,29 @@ runs as a chain of **restart blocks**, one ccx static step each:
   `peeq_step` × limit (0.2), clipped to [1/`fine_increments`, 1/`increments`] of the ramp, and
   at most 1/`near_increments` once a cell is within `refine_at` (0.5) × limit or has failed.
 * After a block: cells with PEEQ (mean over the cell's integration points; `aggregate: "max"`
-  for the max) ≥ limit fail. Then, repeatedly, cells at **hinge contacts** (a node shared by two
+  for the max) ≥ limit fail. They are removed at the start of the next block, at most
+  `max_remove` (8) per block, highest PEEQ first. The rest are **deferred**, and the blocks that
+  remove them advance the travel by only 1/10 of the fine increment, so the crack runs at nearly
+  constant travel. If a block does not converge it is retried at dt/4, then with the cap halved
+  down to one cell. Removing many stressed cells at once makes Newton diverge (residual ~1e6 %,
+  in the 003 crush: 29 cells at once diverge at any increment size, 4 converge, and the same step
+  without removal converges in 4 iterations). Then, repeatedly, cells at **hinge contacts** (a node shared by two
   face-connected fragments: the smaller fragments' cells at that node) are removed, and so are
   fragments with fewer than 3 constrained nodes (unsupported). Without this, cells hanging on a
   node or an edge are mechanisms: Newton diverges (2000 % residual at any increment size), and
   those contacts still carry load, so a face-separated part kept 16 % of its peak force.
-* Stop: no supported fragment joins all `path_groups` (default: the Dirichlet groups). One more
-  block is then solved with the cut applied, so the last increment shows the residual force (0 in
+* Stop: no supported fragment joins all `path_groups` (default: the Dirichlet groups); the block
+  that applies the cut is still solved, so the last increment shows the residual force (0 in
   the notched-bar test). Also stops when the force on the driven groups drops below
-  `stop_force_ratio` × peak after the first failure, or at the end of the ramp. If a block fails
-  to converge: retry at dt/4, then erode the cells at ≥ `retry_erode` (0.9) × limit and retry,
-  then stop (`converged = False`).
+  `stop_force_ratio` × peak after the first failure, or at the end of the ramp. A block that
+  fails every retry stops the run (`converged = False`, `stop_reason` names it).
 * Result: `history` (one record per increment: λ, reaction on the driven groups, n_failed,
   n_detached, max PEEQ, iterations, block), `state` per cell (0 intact, 1 failed, 2 removed as a
   hinge / unsupported fragment), `removed_at`, `stop_reason`, `separated`. Solver option
   `series_dir` writes `result_NNNN.vtu` per increment while running (point: displacement (frozen
   at its last value on nodes left without intact cells), von_mises, PEEQ; cell: PEEQ, failed,
-  state), plus a closing frame after the last erosion. `on_increment(record)` streams the records.
+  state; failed = state > 0; cells removed at the start of a block are flagged from that block's
+  first increment on). `on_increment(record)` streams the records.
   Each block's `.frd` / `.dat` is deleted once parsed (`keep_files` keeps them).
 
 Limits:
@@ -151,6 +157,8 @@ Limits:
   depends on the mesh size at the crack (no regularisation).
 * Displacement-driven loading only: force / pressure / body / thermal loads are refused, because
   they would keep acting on eroded faces.
+* The staggered release limits the crack speed to `max_remove` cells per block; deferred cells
+  wait (over the limit) for a few nearly fixed-travel blocks.
 * Each block is a separate ccx run (restart read + matrix setup): fine increments near failure
   make this overhead dominate on small meshes.
 

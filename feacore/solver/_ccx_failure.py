@@ -147,6 +147,32 @@ class _Topology:
         return np.unique(np.concatenate(removed)).astype(np.int64), bool(np.any(joined & supported))
 
 
+def _attempts(max_remove: int):
+    """(removal cap, increment scale) per attempt: full size, then smaller increments, then the cap halved
+    down to one cell (a staggered release converges where removing many stressed cells at once does not)."""
+    out, cap = [(max_remove, 1.0), (max_remove, 0.25)], max_remove // 2
+    while cap >= 1:
+        out.append((cap, 0.25))
+        cap //= 2
+    return out
+
+
+def _plan(state, agg_peeq, limit, cap, topo):
+    """Cells to remove at the start of the next block: the (up to ``cap``) cells over the limit with the
+    highest PEEQ, then hinge contacts / unsupported fragments. -> (new state, removal, joined, deferred)."""
+    st = state.copy()
+    cand = np.nonzero((st == ALIVE) & (agg_peeq >= limit))[0]
+    cand = cand[np.argsort(-agg_peeq[cand], kind="stable")]
+    take = cand[:cap]
+    st[take] = FAILED
+    if len(take):
+        det, joined = topo.analyse(st == ALIVE)
+        st[det] = DETACHED
+    else:
+        det, joined = np.zeros(0, np.int64), True
+    return st, np.concatenate([take, det]).astype(np.int64), joined, int(len(cand) - len(take))
+
+
 def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     a = case.analysis
     fo = dict(a.options["failure"])
@@ -155,7 +181,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     n_fine = int(fo.get("fine_increments", 5 * n))
     n_near = int(fo.get("near_increments", max(n, n_fine // 2)))
     peeq_step, refine_at = float(fo.get("peeq_step", 0.2)), float(fo.get("refine_at", 0.5))
-    retry_erode = float(fo.get("retry_erode", 0.9))
+    max_remove = int(fo.get("max_remove", 8))
     stop_ratio, max_blocks = float(fo.get("stop_force_ratio", 0.01)), int(fo.get("max_blocks", 5000))
     paths = fo.get("path_groups") or list(dict.fromkeys(deck.dirichlet_groups))
     moved = np.zeros(model.n_nodes, bool)
@@ -171,30 +197,28 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     removed_at = np.full(model.n_elems, -1)
     agg_peeq = np.zeros(model.n_elems)
     frozen_U = np.zeros((model.n_nodes, 3))
-    history, pending = [], np.zeros(0, np.int64)
+    history = []
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
     while t < 1.0 - 1e-12 and k < max_blocks:
         pk = agg_peeq[state == ALIVE].max(initial=0.0)
         hi = 1.0 / (n_near if (state.any() or pk >= refine_at * limit) else n)
         dt = float(np.clip(peeq_step * limit / rate, 1.0 / n_fine, hi)) if rate > 0 else hi
-        t1 = min(1.0, t + dt)
-        run, attempt, forced, errors = None, 0, np.zeros(0, np.int64), []
-        for attempt, scale in enumerate((1.0, 0.25, 0.25)):
-            if attempt == 2:      # still diverging: erode the cells close to failure and their fragments
-                forced = np.nonzero((state == ALIVE) & (agg_peeq >= retry_erode * limit))[0]
-                state[forced], removed_at[forced] = FAILED, history[-1]["step"] if history else 0
-                det, _ = topo.analyse(state == ALIVE)
-                state[det], removed_at[det] = DETACHED, history[-1]["step"] if history else 0
-                pending = np.concatenate([pending, forced, det]).astype(np.int64)
-                if len(forced) == 0:
-                    break
+        run, errors, plan, tried = None, [], None, set()
+        for attempt, (cap, scale) in enumerate(_attempts(max_remove)):
+            plan = _plan(state, agg_peeq, limit, cap, topo)
+            key = (tuple(plan[1].tolist()), scale)
+            if key in tried:                            # same removal and increment as an earlier attempt
+                continue
+            tried.add(key)
+            ddt = dt if plan[3] == 0 else 0.1 / n_fine     # deferred failures: let the crack run at ~fixed travel
+            t1 = min(1.0, t + ddt)
             job = f"b{k:04d}" + ("" if attempt == 0 else f"r{attempt}")
             if k > 0:
                 rin = wd / f"{job}.rin"
                 rin.unlink(missing_ok=True)
                 rin.symlink_to(wd / f"{prev_job}.rout")
             head = model_txt if k == 0 else "*RESTART, READ\n"
-            txt = head + _block_step(step, t1, t1 - t, dt * scale, pending)
+            txt = head + _block_step(step, t1, t1 - t, ddt * scale, plan[1])
             try:
                 run = run_ccx(txt, job=job, workdir=wd, ccx=options.get("ccx"), threads=options.get("threads"),
                               timeout=options.get("timeout"), check=False)
@@ -205,8 +229,11 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
                 break
             run = None
         if run is None:
-            stop = cut or f"no convergence in block {k} (t {t:.6g} -> {t1:.6g}): " + "; ".join(errors[:2])
+            stop = f"no convergence in block {k} (t {t:.6g}): " + "; ".join(errors[:2])
             break
+        st, removal, joined, deferred = plan
+        removed_at[removal] = (history[-1]["step"] + 1) if history else 1
+        state[:] = st
         series = [(tt, b) for tt, b in parse_frd_series(run.frd) if "DISP" in b and "STRESS" in b]
         dat = parse_dat_series(run.dat)
         if not series:
@@ -217,6 +244,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         res.info.warnings = [w for w in res.info.warnings if not w.startswith("nonlinear run stopped")]
         for i, inc in enumerate(res.increments):
             rec = _record(res, i, inc, k, attempt, state, agg, limit, driven, frozen_U, history)
+            rec["removed_in_block"], rec["deferred"] = int(len(removal)), int(deferred)
             if series_dir:
                 _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg)
             peak = max(peak, rec["force"])
@@ -228,33 +256,20 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         if last.peeq_ip is not None:
             agg_peeq = last.peeq_ip.mean(axis=1) if agg == "mean" else last.peeq_ip.max(axis=1)
         rate = max(0.0, (agg_peeq[state == ALIVE].max(initial=0.0) - pk_before) / max(last.time - t, 1e-300))
-        new = np.nonzero((state == ALIVE) & (agg_peeq >= limit))[0]
-        state[new], removed_at[new] = FAILED, history[-1]["step"]
-        detached, joined = topo.analyse(state == ALIVE)
-        state[detached], removed_at[detached] = DETACHED, history[-1]["step"]
-        pending = np.concatenate([new, detached]).astype(np.int64)
-        history[-1]["removed_after"] = int(len(pending))
         if not options.get("keep_files"):
             for suf in (".frd", ".dat"):
                 (wd / f"{job}{suf}").unlink(missing_ok=True)
             if k > 0:
                 (wd / f"{prev_job}.rout").unlink(missing_ok=True)
         prev_job, t, k = job, float(last.time), k + 1
-        if cut:                     # the block after the cut has been solved: its force is the residual
-            stop = cut
-        elif not joined:            # solve one more block with the cut applied, then stop
-            cut = "separated: no remaining fragment connects " + ", ".join(paths)
+        if not joined:              # this block was solved with the cut applied: its force is the residual
+            stop = cut = "separated: no remaining fragment connects " + ", ".join(paths)
         elif state.any() and history[-1]["force"] < stop_ratio * peak:
             stop = f"force {history[-1]['force']:.4g} < {stop_ratio:g} x peak {peak:.4g}"
         if stop:
             break
     if res is None:
         raise CcxError(f"ccx failure run produced no converged increment in {wd}: {stop}")
-    if series_dir and history and len(pending):   # closing frame: erosion after the last solved state
-        rec = dict(history[-1], step=history[-1]["step"] + 1, n_failed=int((state != ALIVE).sum()), final=True)
-        _write_vtu(res, len(res.increments) - 1, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec,
-                   frozen_U, agg, peeq=agg_peeq)
-        history.append(rec)
     res.history, res.state, res.removed_at, res.stop_reason = history, state, removed_at, stop or "end of ramp"
     res.separated = bool(cut)
     res.converged = not (stop or "").startswith("no convergence")
