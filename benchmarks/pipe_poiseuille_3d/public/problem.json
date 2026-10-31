@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "id": "pipe_poiseuille_3d",
+  "title": "Hagen-Poiseuille flow in a circular pipe, fully developed inflow (3D laminar, exact)",
+  "family": "pipe_poiseuille",
+  "tags": [
+    "cfd",
+    "3d",
+    "flow",
+    "laminar",
+    "analytical",
+    "internal_flow",
+    "expression_bc"
+  ],
+  "dim": 3,
+  "physics": "flow",
+  "formulation": "3d",
+  "units": "SI (m, s, kg, Pa, N)",
+  "params": {
+    "R": 0.005,
+    "L": 0.05,
+    "U": 0.01,
+    "rho": 1000.0,
+    "mu": 0.01,
+    "h0": 0.00125
+  },
+  "description": "Steady laminar flow of an incompressible Newtonian fluid in a straight circular pipe (Hagen-Poiseuille flow), 3D.\nGeometry (STEP solid): cylinder of radius R = 0.005 m along the x-axis, 0 <= x <= L with L = 0.05 m (axis y = z = 0).\nFluid: density rho = 1000.0 kg/m^3, dynamic viscosity mu = 0.01 Pa s.\nBoundary conditions:\n  inlet x = 0: fully developed parabolic profile with mean velocity U = 0.01 m/s,\n    u_x = 2 U (1 - (y^2 + z^2)/R^2) = 0.02*(1 - (y**2 + z**2)/2.5e-05)  [m/s, y and z in m],  u_y = u_z = 0\n  outlet x = L: static pressure p = 0 Pa\n  pipe wall r = R: no slip (stationary)\nReport (SI units):\n  dp_AB             static pressure difference p(A) - p(B) between the axis points A = (0.025, 0, 0) and B = (0.045, 0, 0) [Pa]\n  u_centreline      u_x on the axis at C = (0.025, 0, 0) [m/s]\n  wall_force        x-component of the force of the fluid (pressure + viscous) on the pipe wall [N]\n  flow_rate_outlet  volumetric flow rate through the outlet, positive out of the pipe [m^3/s]\nThe force and flow-rate QoIs refer to the boundary groups wall and outlet: use these names for the corresponding mesh groups.",
+  "qois": [
+    {
+      "name": "dp_AB",
+      "type": "point_difference",
+      "field": "p",
+      "point": [
+        0.025,
+        0.0,
+        0.0
+      ],
+      "group": null,
+      "component": null,
+      "point2": [
+        0.045,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "name": "u_centreline",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.025,
+        0.0,
+        0.0
+      ],
+      "group": null,
+      "component": null,
+      "point2": null
+    },
+    {
+      "name": "wall_force",
+      "type": "force",
+      "field": null,
+      "point": null,
+      "group": "wall",
+      "component": 0,
+      "point2": null
+    },
+    {
+      "name": "flow_rate_outlet",
+      "type": "flow_rate",
+      "field": null,
+      "point": null,
+      "group": "outlet",
+      "component": null,
+      "point2": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

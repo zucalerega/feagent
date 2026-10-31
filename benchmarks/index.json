@@ -69,6 +69,24 @@
     "formulation": "plane_stress"
   },
   {
+    "id": "cylinder_channel_dfg_2d1",
+    "title": "DFG benchmark 2D-1: steady flow around a cylinder in a channel, Re = 20 (Schaefer & Turek 1996)",
+    "family": "cylinder_channel_dfg",
+    "tags": [
+      "cfd",
+      "2d",
+      "flow",
+      "laminar",
+      "published_benchmark",
+      "external_flow",
+      "bluff_body",
+      "expression_bc"
+    ],
+    "dim": 2,
+    "physics": "flow",
+    "formulation": "2d"
+  },
+  {
     "id": "kirsch_exact_traction",
     "title": "Plate with a circular hole, exact Kirsch tractions on a finite quarter domain (plane stress)",
     "family": "kirsch",
@@ -244,6 +262,23 @@
     "dim": 2,
     "physics": "elasticity",
     "formulation": "plane_stress"
+  },
+  {
+    "id": "lid_driven_cavity_re100",
+    "title": "Lid-driven square cavity, Re = 100 (Ghia, Ghia & Shin 1982)",
+    "family": "lid_driven_cavity",
+    "tags": [
+      "cfd",
+      "2d",
+      "flow",
+      "laminar",
+      "published_benchmark",
+      "closed_cavity",
+      "moving_wall"
+    ],
+    "dim": 2,
+    "physics": "flow",
+    "formulation": "2d"
   },
   {
     "id": "lshape_poisson",
@@ -463,6 +498,23 @@
     "formulation": "plane_stress"
   },
   {
+    "id": "pipe_poiseuille_3d",
+    "title": "Hagen-Poiseuille flow in a circular pipe, fully developed inflow (3D laminar, exact)",
+    "family": "pipe_poiseuille",
+    "tags": [
+      "cfd",
+      "3d",
+      "flow",
+      "laminar",
+      "analytical",
+      "internal_flow",
+      "expression_bc"
+    ],
+    "dim": 3,
+    "physics": "flow",
+    "formulation": "3d"
+  },
+  {
     "id": "plate_hole_finite_width_d01",
     "title": "Finite-width plate with a central circular hole in tension (plane stress, quarter model)",
     "family": "plate_hole_finite_width",
@@ -509,6 +561,23 @@
     "dim": 2,
     "physics": "elasticity",
     "formulation": "plane_stress"
+  },
+  {
+    "id": "poiseuille_channel",
+    "title": "Plane Poiseuille flow in a 2D channel, fully developed inflow (laminar, exact)",
+    "family": "poiseuille_channel",
+    "tags": [
+      "cfd",
+      "2d",
+      "flow",
+      "laminar",
+      "analytical",
+      "internal_flow",
+      "expression_bc"
+    ],
+    "dim": 2,
+    "physics": "flow",
+    "formulation": "2d"
   },
   {
     "id": "pressure_vessel_axi_equal",

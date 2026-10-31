@@ -99,6 +99,14 @@ Decisions:
   which a Brev Launchable can also run as its setup script. Expose port 8000 via the instance's HTTP Ports.
 - The UI shows small trendless mesh-to-mesh changes (under 2%) as "scatter between meshes", not as
   divergence. Real singularities still show as diverging.
+- **CFD (`backend="openfoam"`, physics "flow"):** OpenFOAM ESI (v1912 from Ubuntu's `openfoam`
+  package works) plus `foamlib` (the `cfd` extra). It runs 2D/3D laminar steady SIMPLEC with tight
+  residuals; forces and the probes are computed in numpy, because v1912's function objects crash.
+  Benchmarks: Poiseuille channel, lid-driven cavity Re 100, DFG 2D-1 cylinder, 3D pipe
+  (`docs/benchmarks_cfd.md`). Use quad/hex meshes for GCI: on unstructured triangles OpenFOAM's cell
+  values stop converging. Ghia's cavity table is itself 1.4-3.5% off converged solutions, so its
+  tolerances are 3-5%. Pressure drops use the `point_difference` QoI. To enable it on a box:
+  `sudo apt-get install -y openfoam && uv pip install --python .venv/bin/python foamlib`.
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
