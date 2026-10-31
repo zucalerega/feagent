@@ -161,6 +161,14 @@ def test_scale_writes_subdir(tmp_path, parts_dir):
     assert res.out_dir == str(tmp_path / "out" / "scale_1.3")
 
 
+def test_thin_wall_refinement_scales_with_size_scale(tmp_path, parts_dir, bracket):
+    def walls(res):
+        return [w.split(": auto-refined")[0] for w in res.warnings if w.startswith("thin wall")]
+    res = run_mesh(load_spec(bracket_spec(tmp_path, parts_dir)), 1.3)
+    assert walls(res) and walls(res) == walls(bracket[1])  # same faces at every scale
+    assert any("t=6 on faces" in w and "size 3.9 " in w for w in res.warnings)  # 6/2 * 1.3
+
+
 def test_subprocess_matches(bracket):
     path, res = bracket
     sub = run_mesh_subprocess(path)
@@ -182,8 +190,66 @@ def test_cli_spec_error_is_json(tmp_path, capsys):
     p = tmp_path / "bad.yaml"
     p.write_text("analysis: fea\n")
     assert main([str(p), "--json"]) == 1
-    doc = json.loads(capsys.readouterr().out)
+    out = capsys.readouterr().out
+    assert len(out.splitlines()) == 1
+    doc = json.loads(out)
     assert doc["ok"] is False and "geometry" in doc["errors"][0]
+
+
+def test_cli_crash_is_one_json_doc(bracket, capsys, monkeypatch):
+    import feagent.mesher as mesher
+
+    def boom(*a, **k):
+        raise RuntimeError("kaboom")
+    monkeypatch.setattr(mesher, "run_mesh", boom)
+    assert mesher.main([str(bracket[0]), "--json"]) == 1
+    out = capsys.readouterr().out
+    assert len(out.splitlines()) == 1
+    doc = json.loads(out)
+    assert doc["ok"] is False and "kaboom" in doc["errors"][0]
+    assert doc["gates"][0]["status"] == "fail"
+
+
+def test_export_failure_leaves_no_mesh_files(tmp_path, parts_dir, monkeypatch):
+    real = gmsh.write
+
+    def write(path):
+        if path.endswith(".vtk"):
+            raise Exception("disk full")
+        real(path)
+    monkeypatch.setattr(gmsh, "write", write)
+    res = run_mesh(load_spec(bracket_spec(tmp_path, parts_dir, export=["msh", "inp", "vtk"])))
+    assert not res.ok and res.mesh_path is None and res.exports == {}
+    assert gate(res, "mesh_generated").status == "fail" and "disk full" in res.errors[0]
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["manifest.json", "mesh.log"]
+
+
+@pytest.mark.parametrize("where", ["group", "default_group"])
+def test_domain_group_name_is_reserved(tmp_path, parts_dir, where):
+    body = {"analysis": "fea", "size": {"global": 5.0}}
+    if where == "group":
+        body["groups"] = {"domain": {"select": {"feature": "hole", "radius": 5}}}
+    else:
+        body["default_group"] = "domain"
+    res = run_mesh(load_spec(write_spec(tmp_path, parts_dir / "bracket.step", **body)))
+    assert not res.ok and res.mesh_path is None
+    g = gate(res, "groups")
+    assert g.status == "fail" and "reserved" in g.message and "domain" in g.hint + g.message
+
+
+def test_auto_spec_cfd_passes_volume_gate(tmp_path, parts_dir):
+    from feagent.quality import assess_mesh
+    from feagent.spec import QualitySpec
+    res = auto_mesh(parts_dir / "tee.step", "cfd", out_dir=tmp_path)
+    assert res.ok and res.order == 1, res.errors
+    q = assess_mesh(res.mesh_path, res, QualitySpec(), "cfd")
+    vf = next(g for g in q.gates if g.id == "volume_fidelity")
+    assert vf.status == "pass", vf.message
+
+
+def test_auto_spec_rejects_unknown_analysis(parts_dir):
+    with pytest.raises(ValueError, match="fea' or 'cfd"):
+        auto_spec(parts_dir / "bracket.step", "thermal")
 
 
 @pytest.mark.parametrize("name", PARTS)
@@ -204,7 +270,7 @@ def test_auto_spec_roundtrips_through_load_spec(tmp_path, parts_dir):
     s = load_spec(p)
     assert s.geometry == (parts_dir / "bracket.step").resolve()
     assert s.size.global_ == d["size"]["global"] == 2.6  # diag 102.5 / 40 = 2.56 -> 2 s.f.
-    assert s.size.min == pytest.approx(s.size.global_ / 20)
+    assert s.size.min == d["size"]["min"] == 0.13  # 2.6 / 20, 2 s.f.
     assert (s.order, s.optimize, s.export, s.groups) == (2, "netgen", ["msh", "inp"], {})
 
 
@@ -213,3 +279,4 @@ def test_auto_spec_cfd_defaults(parts_dir):
     assert Path(d["geometry"]).is_absolute()
     assert d["default_group"] == "walls" and d["domain"] == {"type": "internal"}
     assert d["element"]["order"] == 1 and d["export"] == ["msh", "msh22", "su2"]
+    assert d["size"]["curvature"] == 24
