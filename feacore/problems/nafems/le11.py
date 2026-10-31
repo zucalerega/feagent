@@ -239,7 +239,7 @@ class NafemsLE11Solid(_LE11Base):
 
     def apply_sizing(self, h: float) -> None:
         a = point_tag(0.0, 1.0, 0.0)
-        f = distance_threshold_field(points=[a], size_min=h / 3, size_max=h, dist_min=0.1, dist_max=0.8)
+        f = distance_threshold_field(points=[a], size_min=h / 6, size_max=h, dist_min=0.05, dist_max=0.6)
         use_min_field([f], h_max=h)
 
     def qois(self) -> list[QoI]:

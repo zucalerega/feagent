@@ -567,7 +567,7 @@ def test_insufficient_constraints_reported(meshdir):
     # symmetry on two orthogonal edges + nothing else is enough in 2D
     r = solve(_case(mesh, bcs=[BC(type="symmetry", group="bottom"), BC(type="symmetry", group="left"),
                                BC(type="traction", group="right", value=[1.0, 0.0])],
-                    qois=[QoI(name="R", type="reaction", group="top", component=0)]))
+                    qois=[QoI(name="R", type="reaction", group="right", component=0)]))
     assert abs(r.evaluate_all()["R"]) < 1e-12 and any("no Dirichlet" in w for w in r.info.warnings)
 
 
