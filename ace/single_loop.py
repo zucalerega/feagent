@@ -142,13 +142,18 @@ def _big_worker(job: dict) -> list[dict]:
     usage: list = []      # filled call by call, so a crash halfway still reports its tokens
     trace, stop, error = [], "error", None
     nudges = [0]
+    # Time-matched with the swarm: the conversation stops once its wall-clock budget is spent (checked
+    # after each turn; a turn already in flight finishes). Unsubmitted tasks are then scored on their
+    # last successful solve, the same rule as for a swarm run that never submits.
+    deadline = time.monotonic() + job["seconds"] if job.get("seconds") else None
+    out_of_time = lambda: deadline is not None and time.monotonic() > deadline  # noqa: E731
 
     def on_stop(reason: str) -> str | None:
         """One turn without a tool call (a text-only status line, or a turn spent on thinking up to
         max_tokens) would end the conversation for every task, where in the swarm it costs one run.
         So remind it of the open tasks, at most MAX_NUDGES times."""
         left = [t for t, tl in tools.tools.items() if tl.submitted is None]
-        if not left or nudges[0] >= MAX_NUDGES:
+        if not left or nudges[0] >= MAX_NUDGES or out_of_time():
             return None
         nudges[0] += 1
         return (f"Not submitted yet: {', '.join(left)}. Continue working on them with tool calls "
@@ -157,11 +162,23 @@ def _big_worker(job: dict) -> list[dict]:
     try:
         trace, stop = tool_loop(make_llm(job["mock"]), system_prompt(job["context"]),
                                 first_message(tasks, job["max_solves"]), task_tool_specs(tasks), tools.call,
-                                tools.finished, job["max_turns"], f"g{gen}-{AGENT}", usage, role="big_generator",
+                                lambda: tools.finished() or out_of_time(), job["max_turns"], f"g{gen}-{AGENT}", usage, role="big_generator",
                                 on_stop=on_stop)
     except Exception:  # noqa: BLE001  as the swarm: a crashed run is recorded, not scored
         error = traceback.format_exc()
     return split_records(tasks, gen, trace, tools, usage, stop, error, nudges[0])
+
+
+def swarm_agent_seconds(swarm_dir: Path | None, gen: int) -> float | None:
+    """How long the swarm's agents took in generation `gen` (its solver.jsonl phase line), or in its
+    latest finished generation if `gen` is not done yet; None without a swarm run."""
+    f = Path(swarm_dir) / "solver.jsonl" if swarm_dir else None
+    if f is None or not f.exists():
+        return None
+    phases = [json.loads(l) for l in f.read_text().splitlines() if '"phase"' in l]
+    phases = [p for p in phases if p.get("what") == "phase" and p.get("agents")]
+    same = [p["agents"] for p in phases if p["gen"] == gen]
+    return same[0] if same else (phases[-1]["agents"] if phases else None)
 
 
 def run_big(job: dict) -> list[dict]:
@@ -345,6 +362,9 @@ def main(argv=None) -> int:
     ap.add_argument("--concurrency", type=int, default=config.CONCURRENCY, help="scoring processes")
     ap.add_argument("--out", type=Path, help="output dir (default ace_runs/single-<timestamp>)")
     ap.add_argument("--mock", action="store_true", help="canned LLM responses, no API calls")
+    ap.add_argument("--gen-seconds", type=float, default=60.0,
+                    help="wall-clock budget of the big agent per generation when the swarm's own time for "
+                         "that generation is not known yet (see --swarm-dir)")
     ap.add_argument("--swarm-dir", type=Path, help="a swarm run dir (run_loop --deep) to compare $ with each "
                                                    "generation, and with ace.compare at the end")
     args = ap.parse_args(argv)
@@ -390,9 +410,11 @@ def main(argv=None) -> int:
                                                         "reflection": state["reflection"].get(t),
                                                         "task_feedback": state["teacher"].get(t)} for t in tasks})
             (gdir / "context" / f"{AGENT}.md").write_text(context)
+            seconds = swarm_agent_seconds(args.swarm_dir, gen) or args.gen_seconds
+            print(f"  time budget: {seconds:.0f} s (the swarm's agents phase)")
             t0 = time.perf_counter()
             runs = run_big({"tasks": tasks, "generation": gen, "gdir": str(gdir), "context": context,
-                            "max_solves": solves, "max_turns": turns, "mock": args.mock})
+                            "max_solves": solves, "max_turns": turns, "mock": args.mock, "seconds": seconds})
             phase = {"gen": gen, "what": "phase", "agents": round(time.perf_counter() - t0, 2)}
             cost.add(runs[0]["usage"])
             for r in runs:
