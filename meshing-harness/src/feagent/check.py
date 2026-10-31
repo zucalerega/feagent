@@ -121,8 +121,16 @@ def _report(spec: MeshSpec, mesh: MeshResult, qrep: QualityReport | None,
 def bcs_dict(spec: MeshSpec) -> dict | None:
     """The spec's ``bcs:`` section as plain JSON data, or None if it declares none."""
     found = {"fea": spec.bcs_fea, "cfd": spec.bcs_cfd}
-    out = {kind: _jsonable(asdict(b)) for kind, b in found.items() if b is not None}
+    out = {kind: _drop_empty_optional(_jsonable(asdict(b))) for kind, b in found.items() if b is not None}
     return out or None
+
+
+_OPTIONAL_BC_LISTS = ("symmetry", "pressure", "displacement")
+
+
+def _drop_empty_optional(d: dict) -> dict:
+    """Leave optional BC lists out of the report when unused, so existing reports keep their shape."""
+    return {k: v for k, v in d.items() if not (k in _OPTIONAL_BC_LISTS and v == [])}
 
 
 def write_report(r: CheckReport, out: Path) -> None:

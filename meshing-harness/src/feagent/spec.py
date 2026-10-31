@@ -66,12 +66,29 @@ class FeaLoad:
 
 
 @dataclass
+class FeaPressure:
+    group: str
+    value: float                    # traction = -value * outward normal (positive pushes into the part)
+
+
+@dataclass
+class FeaDisplacement:
+    group: str
+    components: list[int]           # 0 = x, 1 = y, 2 = z
+    value: float = 0.0
+    where: str | None = None        # node filter in x, y, z (feacore syntax), e.g. "abs(z) < 1e-6"
+
+
+@dataclass
 class FeaBcs:
     """Structural boundary conditions declared for the downstream solver."""
     fixed: list[str]
     loads: list[FeaLoad]
     E: float = 210000.0
     nu: float = 0.3
+    symmetry: list[str] = field(default_factory=list)       # zero normal displacement (planar faces)
+    pressure: list[FeaPressure] = field(default_factory=list)
+    displacement: list[FeaDisplacement] = field(default_factory=list)
 
 
 @dataclass
@@ -387,12 +404,46 @@ def _bcs_of(bc: dict, kind: str, done: dict, parse: Callable[[Any, dict], Any]) 
     return parse(bc[kind], done["groups"])
 
 
+_FEA_KEYS = ("E", "nu", "fixed", "loads", "symmetry", "pressure", "displacement")
+
+
 def _parse_fea(v: Any, groups: dict) -> FeaBcs:
-    fd = _mapping(v, "bcs.fea", ("E", "nu", "fixed", "loads"))
-    fixed = _group_refs(fd.get("fixed", []), "bcs.fea.fixed", groups)
-    loads = [_parse_load(ld, f"bcs.fea.loads[{i}]", groups)
-             for i, ld in enumerate(_list(fd.get("loads", []), "bcs.fea.loads"))]
-    return FeaBcs(fixed=fixed, loads=loads, **_values(fd, "bcs.fea", _FEA_SCALARS))
+    fd = _mapping(v, "bcs.fea", _FEA_KEYS)
+    return FeaBcs(
+        fixed=_group_refs(fd.get("fixed", []), "bcs.fea.fixed", groups),
+        loads=_fea_items(fd, "loads", _parse_load, groups),
+        symmetry=_group_refs(fd.get("symmetry", []), "bcs.fea.symmetry", groups),
+        pressure=_fea_items(fd, "pressure", _parse_pressure, groups),
+        displacement=_fea_items(fd, "displacement", _parse_displacement, groups),
+        **_values(fd, "bcs.fea", _FEA_SCALARS))
+
+
+def _fea_items(fd: dict, key: str, parse: Callable[[Any, str, dict], Any], groups: dict) -> list:
+    path = f"bcs.fea.{key}"
+    return [parse(item, f"{path}[{i}]", groups) for i, item in enumerate(_list(fd.get(key, []), path))]
+
+
+def _parse_pressure(d: Any, path: str, groups: dict) -> FeaPressure:
+    d = _mapping(d, path, ("group", "value"))
+    _require(d, path, ("group", "value"))
+    return FeaPressure(_group_ref(d["group"], f"{path}.group", groups), _num(d["value"], f"{path}.value"))
+
+
+def _parse_displacement(d: Any, path: str, groups: dict) -> FeaDisplacement:
+    d = _mapping(d, path, ("group", "components", "value", "where"))
+    _require(d, path, ("group", "components"))
+    where = _text(d["where"], f"{path}.where", "an expression string") if "where" in d else None
+    return FeaDisplacement(_group_ref(d["group"], f"{path}.group", groups),
+                           _components(d["components"], f"{path}.components"),
+                           _num(d.get("value", 0.0), f"{path}.value"), where)
+
+
+def _components(v: Any, path: str) -> list[int]:
+    ok = isinstance(v, list) and v and len(set(v)) == len(v) and all(c in (0, 1, 2) for c in v)
+    if not ok:
+        raise _err(path, f"expected a non-empty list of distinct axes from [0, 1, 2], got {v!r}",
+                   "0 = x, 1 = y, 2 = z")
+    return [int(c) for c in v]
 
 
 def _parse_load(ld: Any, lp: str, groups: dict) -> FeaLoad:
