@@ -53,6 +53,47 @@ one thing, compare). Specific beats generic: name groups, points, sizes, radii a
 """
 
 
+# The single-agent baseline (ace/single_loop.py): PROCESS_BRIEF rewritten for ONE agent that works on
+# every task in one conversation. Same scoring, same learning (teacher, self-reflection, organizer),
+# no peers and no be-the-best bonus. ace/single_loop.py swaps it in for PROCESS_BRIEF in every
+# prompt (the agent's context and the teacher, reflection and organizer system prompts).
+SINGLE_BRIEF = """\
+## HOW THIS SYSTEM WORKS (read by the agent, the teacher, the reflector and the organizer)
+
+ONE persistent meshing agent learns over many generations to mesh FEA problems well. Every
+generation it works on ALL the training tasks in one conversation: for each task it inspects the
+geometry, meshes it (global size h, element order, local refinements at named groups or points),
+solves within the task's solve budget and submits one solve. Every tool call names its task.
+
+Remembered values. Never use a published or remembered benchmark value (e.g. a NAFEMS target
+stress) to judge or choose a solve: scoring is the error of the whole field, and a remembered
+number can be wrong for this model. Choose your submitted solve by evidence from your own solves.
+
+Scoring. The submitted solution is compared with a very fine reference solution: the error is the
+larger of (a) the energy-norm stress error over the WHOLE part and (b) the RMS von Mises error at a
+set of check points spread over the part (a few are disclosed to the agent, the rest are hidden).
+The yardstick is an automesher (gmsh default sizes, quadratic elements). The target is half the
+automesher's error: below that target the score falls quadratically, above it beating it keeps
+paying. DOFs cost: the score is divided by DOFs relative to the automesher, so extra elements must
+buy at least proportional accuracy. There are no other agents and no bonus: only this score counts.
+
+Learning. After each generation a teacher looks at the agent's run on every task: the whole mesh,
+where the error is (error maps and region grids), the setup and the agent's reasoning. It tells the
+agent in depth what went wrong and exactly what to change, and what it did really well. The agent
+also looks at its own final results and whole mesh and writes notes for itself. An organizer then
+merges, rewrites and orders the agent's notes and its playbook of task-level lessons: it keeps
+every useful specific idea and drops only what newer evidence superseded or contradicted.
+
+Notes are tagged by task (source "...@<task>" or "@general"): another task's note is a hint to
+test. Address every point: the agent answers every item of its teacher feedback in its first
+message, and the teacher checks next generation that each promise was kept and flags repeats.
+
+Rules of the game. Notes are earned evidence from earlier runs: respect them, but test them, and
+report when one fails. Every generation the agent must deliberately change at least one thing on
+each task compared with its last run, and say what and why. Use solves as controlled experiments
+(change one thing, compare). Specific beats generic: name groups, points, sizes, radii and orders.
+"""
+
 def mesh_call_text(call: dict | None) -> str:
     """A MeshCall (ace.deep_teacher) as the agent's own tool call reads: mesh(h=..., order=..., refinements=[...])."""
     if not call:
@@ -170,43 +211,60 @@ def _contested_lines(items) -> str:
     return "\n".join(out) or "- (none)"
 
 
+def _feedback_block(last_run: dict | None, last_feedback: dict | None) -> str:
+    """The agent's last run and the teacher's feedback on it."""
+    fb_head = "## YOUR LAST RUN\n" + run_summary_text(last_run)
+    if not last_feedback:
+        return f"{fb_head}\n\n## YOUR TEACHER'S FEEDBACK ON YOUR LAST RUN\n(none yet)"
+    f = last_feedback
+    return (f"{fb_head}\n\n## YOUR TEACHER'S FEEDBACK ON YOUR LAST RUN (task {_task_of(f)}, run {f.get('run_id')})\n"
+            f"Diagnosis: {f.get('diagnosis')}\n\n"
+            f"Step-by-step critique of your last run:\n{_critique_lines(f.get('step_critique'))}\n\n"
+            f"Mistakes:\n{_bullets(f.get('mistakes'))}\n\n"
+            f"Strengths:\n{_bullets(f.get('strengths'))}\n\n"
+            f"Suggested next mesh call: {mesh_call_text(f.get('next_mesh_call'))}")
+
+
+def _task_blocks(task: str, task_feedback: dict | None) -> list[str]:
+    """The teacher's setup warnings and contested regions for a task."""
+    tf = task_feedback or {}
+    return [f"## SETUP WARNINGS FOR THIS TASK ({task})\n{_bullets(tf.get('setup_warnings'))}",
+            f"## CONTESTED REGIONS ON THIS TASK ({task}): where last generation's agents disagreed most\n"
+            f"{_contested_lines(tf.get('contested_regions'))}"]
+
+
+def _reflection_block(last_reflection: dict | None) -> str:
+    if not last_reflection:
+        return "## YOUR OWN REFLECTION ON YOUR LAST RUN\n(none yet)"
+    r = last_reflection
+    return (f"## YOUR OWN REFLECTION ON YOUR LAST RUN (task {_task_of(r)})\n"
+            f"Plan: {r.get('plan_next')}\n"
+            f"Mesh call you planned: {mesh_call_text(r.get('next_mesh_call'))}")
+
+
+def persona_block(persona: str) -> str:
+    """A fixed exploration style for one agent (run_loop --personas)."""
+    return "## YOUR EXPLORATION STYLE (yours alone)\n" + persona
+
+
 def deep_context(agent: str, task: str | None, shared_text, private_text,
                  last_feedback: dict | None, last_reflection: dict | None, highlights: list[dict],
-                 peers_text: str, last_run: dict | None = None, task_feedback: dict | None = None) -> str:
+                 peers_text: str, last_run: dict | None = None, task_feedback: dict | None = None,
+                 persona: str | None = None) -> str:
     """The full context block agent `agent` ("a3") sees on `task` (None: a held-out task) in deep
     mode. shared_text / private_text: a Playbook (rendered grouped by task, other tasks' notes cut
     first to keep the block under CONTEXT_CHARS) or ready text. last_feedback: the teacher's
     AgentFeedback for this agent from the last generation it ran (dict, with "task" or a run id);
     last_reflection: its own SelfReflection from that run; last_run: run_loop._run_summary of that
     run; task_feedback: the teacher's last TeacherFeedback dict on `task` (its setup warnings and
-    contested regions); highlights: last generation's Highlights; peers_text: run_loop.peers_text."""
+    contested regions); highlights: last generation's Highlights; peers_text: run_loop.peers_text;
+    persona: this agent's fixed exploration style (run_loop --personas), None for most agents."""
     parts = [PROCESS_BRIEF.strip(), f"You are agent {agent}" + (f", working on task {task}." if task else ".")]
 
-    fb_head = "## YOUR LAST RUN\n" + run_summary_text(last_run)
-    if last_feedback:
-        f = last_feedback
-        parts.append(f"{fb_head}\n\n## YOUR TEACHER'S FEEDBACK ON YOUR LAST RUN (task {_task_of(f)}, run {f.get('run_id')})\n"
-                     f"Diagnosis: {f.get('diagnosis')}\n\n"
-                     f"Step-by-step critique of your last run:\n{_critique_lines(f.get('step_critique'))}\n\n"
-                     f"Mistakes:\n{_bullets(f.get('mistakes'))}\n\n"
-                     f"Strengths:\n{_bullets(f.get('strengths'))}\n\n"
-                     f"Suggested next mesh call: {mesh_call_text(f.get('next_mesh_call'))}")
-    else:
-        parts.append(f"{fb_head}\n\n## YOUR TEACHER'S FEEDBACK ON YOUR LAST RUN\n(none yet)")
-
+    parts.append(_feedback_block(last_run, last_feedback))
     if task is not None:
-        tf = task_feedback or {}
-        parts.append(f"## SETUP WARNINGS FOR THIS TASK ({task})\n{_bullets(tf.get('setup_warnings'))}")
-        parts.append(f"## CONTESTED REGIONS ON THIS TASK ({task}): where last generation's agents disagreed most\n"
-                     f"{_contested_lines(tf.get('contested_regions'))}")
-
-    if last_reflection:
-        r = last_reflection
-        parts.append(f"## YOUR OWN REFLECTION ON YOUR LAST RUN (task {_task_of(r)})\n"
-                     f"Plan: {r.get('plan_next')}\n"
-                     f"Mesh call you planned: {mesh_call_text(r.get('next_mesh_call'))}")
-    else:
-        parts.append("## YOUR OWN REFLECTION ON YOUR LAST RUN\n(none yet)")
+        parts += _task_blocks(task, task_feedback)
+    parts.append(_reflection_block(last_reflection))
 
     hl = [f"- {h.get('agent')} on {_task_of(h)}: {h.get('what')} Why it works: {h.get('why_it_works')} "
           f"How to copy: {h.get('how_to_copy')}" for h in highlights if h.get("agent") != agent]
@@ -220,7 +278,8 @@ def deep_context(agent: str, task: str | None, shared_text, private_text,
     # Notes last; other tasks' notes get whatever room is left under CONTEXT_CHARS (split evenly).
     def render(x, budget):
         return x if isinstance(x, str) else render_notes_by_task(x, task, budget)
-    fixed = sum(len(p) + 2 for p in parts) + len(closing) + 200
+    style = [persona_block(persona)] if persona else []     # just before the closing block
+    fixed = sum(len(p) + 2 for p in parts + style) + len(closing) + 200
     full = [render(x, None) for x in (shared_text, private_text)]
     if fixed + sum(map(len, full)) > CONTEXT_CHARS:
         base = [render(x, 0) for x in (shared_text, private_text)]
@@ -228,5 +287,35 @@ def deep_context(agent: str, task: str | None, shared_text, private_text,
         full = [render(x, room // 2) for x in (shared_text, private_text)]
     parts.append("## SHARED PLAYBOOK (all agents)\n" + full[0])
     parts.append("## YOUR NOTES (only you see these)\n" + full[1])
+    parts += style
     parts.append(closing)
+    return "\n\n".join(parts)
+
+
+def single_context(tasks: list[str], playbook, notes, per_task: dict[str, dict]) -> str:
+    """The context block of the single-agent baseline (ace/single_loop.py): SINGLE_BRIEF, then for
+    each task the same feedback blocks a swarm agent gets (its last run on that task, the teacher's
+    feedback on it, setup warnings, contested regions, its own reflection), then its playbook and
+    notes (Playbooks, grouped by task; no length cap: every task is the agent's own) and the closing
+    checklist. per_task: {task: {"last_run", "feedback", "reflection", "task_feedback"}} (each may
+    be missing). There are no peers' highlights: nobody else ran."""
+    parts = [SINGLE_BRIEF.strip(), f"You are the single agent, working on all of these tasks: {', '.join(tasks)}."]
+    for t in tasks:
+        d = per_task.get(t) or {}
+        parts.append(f"# TASK {t}: WHAT HAPPENED LAST TIME")
+        parts.append(_feedback_block(d.get("last_run"), d.get("feedback")))
+        parts += _task_blocks(t, d.get("task_feedback"))
+        parts.append(_reflection_block(d.get("reflection")))
+
+    def by_task(pb) -> str:
+        groups: dict[str, list] = {}
+        for b in pb.bullets:
+            groups.setdefault(note_task(b), []).append(b)
+        order = ["general"] + [t for t in groups if t != "general"]
+        return "\n\n".join(f"#### {'general notes' if t == 'general' else f'notes for task {t}'}\n"
+                            + render_notes(Playbook(bullets=groups[t])) for t in order if t in groups) or "(empty)"
+    parts.append("## YOUR PLAYBOOK (task-level lessons)\n" + by_task(playbook))
+    parts.append("## YOUR NOTES\n" + by_task(notes))
+    parts.append("## THIS GENERATION\n" + CLOSING + "\nDo this for every task. Use solves as experiments: "
+                 "change one thing and compare.")
     return "\n\n".join(parts)

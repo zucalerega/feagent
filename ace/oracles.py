@@ -63,7 +63,10 @@ def baseline_fail_flags(problem_id: str) -> frozenset:
     if fea.is_flow(problem):
         return frozenset()
     with tempfile.TemporaryDirectory() as tmp:
-        m = fea.make_mesh(problem, Path(tmp) / "ref.msh", h=problem.params["h0"], order=2)
+        if "h0" in problem.params:
+            m = fea.make_mesh(problem, Path(tmp) / "ref.msh", h=problem.params["h0"], order=2)
+        else:    # gold CAD problems have no default size: use their own coarsest study mesh
+            m = {"path": str(problem.mesh_file(0)), "order": 2}
         rep, _ = diagnose(fea.build_case(problem, m, reference_setup(problem), TASKS[problem_id]["qoi"]))
     return frozenset(f.id for f in rep.flags if f.severity == "fail")
 

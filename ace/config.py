@@ -13,15 +13,18 @@ MODELS = {
     "teacher": "claude-opus-5-5",       # reviews every run on a task: whole meshes, error maps, setups
     "reflect": "claude-sonnet-5-5",     # each agent looks at its own final results and writes notes
     "organizer": "claude-sonnet-5-5",   # merges and rewrites an agent's (or the shared) notes
+    # the single-agent baseline (ace/single_loop.py): ONE big agent doing every task in one conversation
+    "big_generator": "claude-opus-5-5",
 }
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
 MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000,
-              "teacher": 16000, "reflect": 8000, "organizer": 8000}   # teacher: one agent's feedback per call (~3k + thinking)
+              "teacher": 16000, "reflect": 8000, "organizer": 8000,   # teacher: one agent's feedback per call (~3k + thinking)
+              "big_generator": 32000}   # max effort can think long in one turn (ace.llm passes a long timeout)
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
 EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
-          "teacher": "high", "reflect": "low", "organizer": "low"}
+          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "medium"}   # big_generator: Opus at its default effort (medium)
 
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
@@ -44,6 +47,10 @@ TASKS = {
     "cooks_membrane": {"qoi": "uy_C", "node_cap": 20000},         # tapered panel in shear (classic, not NAFEMS)
     # easy sanity problem (planted-failure tests use it; not in the loop)
     "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 20000},
+    # gold ABC CAD parts (feacore/problems/gold.py): qoi = GoldProblem.scored_qoi(); node cap about the
+    # L1 study mesh (48827 / 37613 nodes). Field scoring needs their adaptive reference (ace.gold_reference).
+    "abc_00000003_bc7": {"qoi": "strain_energy", "node_cap": 49000},
+    "abc_00000065_bc0": {"qoi": "strain_energy", "node_cap": 38000},
     # CFD (physics "flow", steady laminar, openfoam backend). The caps are safety limits like the
     # others: a uniform mesh at the cap meets the tolerance (calibration.json), so the score is about
     # the cheapest accurate mesh.

@@ -40,7 +40,10 @@ def image_block(path) -> dict:
 # Seconds before a structured call gives up. The --deep roles are on the generation's critical path
 # and their answers are a few thousand tokens, so a stalled call should fail fast (the loop then
 # skips that one update) rather than hold the whole generation for 10 minutes.
-TIMEOUT = {"teacher": 420, "reflect": 240, "organizer": 240}   # teacher: Opus, high effort, up to 16k tokens
+TIMEOUT = {"teacher": 420, "reflect": 240, "organizer": 240,   # teacher: Opus, high effort, up to 16k tokens
+           # agent_turn of the single-agent baseline: without an explicit timeout the SDK refuses a
+           # non-streaming call whose max_tokens (32k) could take over 10 minutes
+           "big_generator": 1200}
 
 
 def _cached_system(text: str) -> list[dict]:
@@ -71,6 +74,7 @@ class LLM:
             # If a safety classifier declines, re-run on a fallback model instead of failing.
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
+            **({"timeout": TIMEOUT[role]} if role in TIMEOUT else {}),
         )
         return resp, usage_record(role, resp.model, resp.usage, run_id)
 
