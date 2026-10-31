@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+# downloaded datasets (SimJEB etc.): never commit, licensing + size
+data/
+# solver scratch
+*.frd
+*.dat
+*.sta
+*.cvg
+*.12d
+spooles.out
+!benchmarks/**/*.dat.ref

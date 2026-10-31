@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "feabench"
+version = "0.1.0"
+description = "Benchmarks and evaluation harness for agents that set up FEA problems from CAD"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "meshio", "gmsh"]
+
+[project.optional-dependencies]
+med = ["h5py"]      # reading code_aster MED meshes
+test = ["pytest"]
+
+[project.scripts]
+feabench = "feabench.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["feabench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
