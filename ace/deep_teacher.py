@@ -573,7 +573,9 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
     for rid, af in zip(rids, per_agent):
         if af is not None:
             af.run_id, af.agent = rid, agent_name(rid)   # the caller's ids, whatever the model wrote
-            if af.assignment is not None:                 # and the role allocate() gave, likewise
+            if af.agent not in role_of:                   # a lone agent gets no role: drop any the model wrote
+                af.assignment = None
+            elif af.assignment is not None:               # and the role allocate() gave, likewise
                 af.assignment.agent, af.assignment.role = af.agent, role_of[af.agent]
             got.append(af)
     if not got and cross_fb is None:
