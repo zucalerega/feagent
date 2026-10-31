@@ -1,21 +1,46 @@
-[build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "feacore"
+name = "feagent"
 version = "0.1.0"
-description = "Fixed FEA solver, solution verification (Richardson/GCI) and benchmark problems for feagent"
-requires-python = ">=3.10"
-dependencies = ["numpy", "scipy", "scikit-fem>=10", "meshio>=5.3", "gmsh>=4.11"]
+description = "Agentic FEA: meshing harness (feagent) plus the fixed solver, solution verification and benchmarks (feacore)"
+readme = "README.md"
+authors = [
+    { name = "Alexander Aghili", email = "alexander.w.aghili@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "gmsh>=4.15.2",
+    "mcp[cli]>=2.3.0",
+    "meshio>=5.3",
+    "numpy>=2.5.4",
+    "pyamg>=5.4.1",
+    "pyvista>=0.49.2",
+    "pyyaml>=6.0.3",
+    "scikit-fem>=12.0.2",
+    "scipy>=1.18.1",
+]
 
 [project.optional-dependencies]
-dev = ["pytest", "matplotlib", "sympy", "httpx"]
 ui = ["fastapi", "uvicorn", "python-multipart"]
 gpu = ["nvmath-python", "cupy-cuda12x"]
+pardiso = ["pypardiso"]
 
-[tool.setuptools.packages.find]
-include = ["feacore*"]
+[project.scripts]
+feagent = "feagent.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/feagent", "feacore"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "matplotlib",
+    "sympy",
+    "httpx",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

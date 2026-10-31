@@ -16,7 +16,7 @@ echo "== arch: $ARCH"
 echo "== system packages (gmsh runtime libs, CalculiX)"
 $SUDO apt-get update -qq
 $SUDO apt-get install -y -qq libglu1-mesa libxcursor1 libxft2 libxinerama1 libxrender1 libxi6 libgl1 \
-  calculix-ccx curl bzip2 git tmux python3-venv >/dev/null
+  calculix-ccx curl bzip2 git tmux python3-venv xvfb >/dev/null
 
 if [ "$ARCH" = "x86_64" ]; then
   # uv gives Python 3.12 regardless of the image's system Python (the mesh harness needs >= 3.12)
@@ -69,6 +69,7 @@ except Exception as e:  # the module may not exist on older checkouts
 EOF
 echo "== done. Python: $PY"
 echo "   GPU check:  $PY scripts/gpu_check.py"
+echo "   Headless renders (mesh harness / pyvista) need a virtual display: prefix with  xvfb-run -a"
 echo "   UI:         tmux new -d -s ui '$PY -m feacore.ui --host 0.0.0.0 --port 8000'"
 echo "               then expose port 8000: Brev console > instance > Access > Using Tunnels,"
 echo "               or from your laptop: brev port-forward <instance> --port 8000:8000"
