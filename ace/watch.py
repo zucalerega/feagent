@@ -135,8 +135,8 @@ def serve(run_dir: Path, port: int) -> None:
         def do_GET(self):
             if self.path.startswith("/data.json"):
                 body, ctype = json.dumps(collect(run_dir), default=str).encode(), "application/json"
-            elif self.path in ("/", "/index.html"):
-                body, ctype = PAGE.read_bytes(), "text/html; charset=utf-8"
+            elif self.path in ("/", "/index.html"):   # no embedded snapshot: the page polls data.json
+                body, ctype = PAGE.read_text().replace("/*__DATA__*/null", "null").encode(), "text/html; charset=utf-8"
             else:
                 self.send_error(404)
                 return
