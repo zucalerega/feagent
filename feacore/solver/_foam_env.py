@@ -63,7 +63,8 @@ def _version_key(path: str) -> tuple:
 
 def _source(bashrc: str) -> dict:
     out = subprocess.run(
-        ["bash", "--norc", "--noprofile", "-c", '. "$1" >/dev/null 2>&1; env -0', "_", bashrc],
+        # 'set --': the bashrc evaluates its own arguments (file names are sourced again)
+        ["bash", "--norc", "--noprofile", "-c", 'f="$1"; set --; . "$f" >/dev/null 2>&1; env -0', "_", bashrc],
         capture_output=True, timeout=60, env={"HOME": os.environ.get("HOME", "/tmp"),
                                               "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                                               "USER": os.environ.get("USER", "user")})
