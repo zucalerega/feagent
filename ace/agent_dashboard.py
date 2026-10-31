@@ -37,7 +37,8 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: E402
 RUNS = Path(__file__).resolve().parent.parent / "ace_runs"
 SHORT = {"nafems_le11_3d": "LE11 3D", "nafems_le11_axisym": "LE11 axisym", "nafems_le1": "LE1",
          "nafems_le10": "LE10", "cooks_membrane": "Cook's membrane"}
-RUN_ID = re.compile(r"^g(\d+)-(.+)-a(\d+)$")
+# swarm agents a<k>; "big" = the single-agent baseline (ace/single_loop.py), whose notes are memory slot 0
+RUN_ID = re.compile(r"^g(\d+)-(.+)-(a\d+|big)$")
 
 st.set_page_config(page_title="Agent tracker", page_icon=":material/monitoring:", layout="wide")
 
@@ -75,7 +76,7 @@ def load_runs(run: str, version: float) -> pd.DataFrame:
             continue
         c = r.get("checks") or {}
         rows.append({
-            "gen": int(m.group(1)), "task": r["problem_id"], "agent": f"a{m.group(3)}", "run_id": r["run_id"],
+            "gen": int(m.group(1)), "task": r["problem_id"], "agent": m.group(3), "run_id": r["run_id"],
             "score": c.get("score"), "base": c.get("base_score", c.get("score")), "bonus": c.get("best_bonus", 0.0),
             "dofs": c.get("dofs"), "field_error": c.get("field_error"), "probe_error": c.get("probe_error"),
             "error": c.get("rel_error"), "meets_target": c.get("meets_tol"), "valid": c.get("valid"),
@@ -462,7 +463,9 @@ def page() -> None:
     finished = sorted(df["gen"].unique()) if not df.empty else []
     in_progress = current not in finished
     agents = sorted({f"a{k}" for k in range(12) if (d / "private" / f"agent{k}_gen0.json").exists()}
-                    | (set(df["agent"]) if not df.empty else set()), key=lambda a: int(a[1:]))
+                    | (set(df["agent"]) if not df.empty else set()), key=lambda a: int(a[1:]) if a != "big" else -1)
+    if "big" in agents:     # a single-agent baseline run: its a0 files are the big agent's own notes
+        agents = ["big"]
     if not agents:
         st.info("Waiting for the first generation…")
         return
@@ -482,7 +485,7 @@ def page() -> None:
     agent = st.segmented_control("Agent", agents, default=agents[0], key="agent", bind="query-params")
     if agent is None:
         return
-    k = int(agent[1:])
+    k = 0 if agent == "big" else int(agent[1:])
     mine = df[df["agent"] == agent].sort_values("gen") if not df.empty else df
 
     # ---- live: what the agent is doing in the running generation

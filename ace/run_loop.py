@@ -294,6 +294,36 @@ def _accepted(fn, kwargs: dict) -> dict:
     return {k: v for k, v in kwargs.items() if k in params}
 
 
+def private_incoming(af: dict | None, refl: dict | None) -> list[dict]:
+    """What the organizer files into one agent's notes after a run: the teacher's notes and next mesh
+    call for it (af: its AgentFeedback dict with "task") and its own reflection's notes (refl: its
+    SelfReflection dict with "task"), each tagged "@<task>". Also used by ace/single_loop.py."""
+    items = []
+    if af is not None:
+        items += [{**n, "source": f"teacher@{n.get('task') or af['task']}"} for n in af.get("notes") or []]
+        items.append({"section": "meshing", "kind": "fix", "source": f"teacher@{af['task']}",
+                      "content": f"Teacher's next mesh call for {af['task']}: "
+                                 f"{process_brief.mesh_call_text(af.get('next_mesh_call'))}"})
+    if refl is not None:
+        items += [{**n, "source": f"self@{n.get('task') or refl['task']}"} for n in refl.get("what_i_learned") or []]
+    return items
+
+
+def shared_incoming(pid: str, fb: dict) -> list[dict]:
+    """What the organizer files into the shared playbook from the teacher's review of task pid (fb: a
+    TeacherFeedback dict): shared lessons, highlights, setup warnings and contested regions. Also used
+    by ace/single_loop.py."""
+    items = [{**n, "source": f"shared-lesson@{n.get('task') or pid}"} for n in fb.get("shared_lessons") or []]
+    items += [_highlight_note({**h, "task": pid}) for h in fb.get("highlights") or []]
+    items += [{"section": "solver_setup", "kind": "avoid", "source": f"teacher@{pid}", "content": w}
+              for w in fb.get("setup_warnings") or []]
+    items += [{"section": "meshing", "kind": "fix", "source": f"teacher@{pid}",
+               "content": f"Contested region on {pid}: {c.get('region')}. Why: {c.get('why_contested')} "
+                          f"What to do: {c.get('what_to_do')}"}
+              for c in fb.get("contested_regions") or [] if isinstance(c, dict)]
+    return items
+
+
 def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memory, train: list[str], llm,
                cost: CostLog, state: dict) -> dict:
     """--deep steps 3-4 for one generation.
@@ -393,29 +423,8 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
     incoming = {}
     for r in ok:
         a = name(r)
-        items = []
-        if a in per_agent:
-            af = per_agent[a]
-            items += [{**n, "source": f"teacher@{n.get('task') or af['task']}"} for n in af.get("notes") or []]
-            items.append({"section": "meshing", "kind": "fix", "source": f"teacher@{af['task']}",
-                          "content": f"Teacher's next mesh call for {af['task']}: "
-                                     f"{process_brief.mesh_call_text(af.get('next_mesh_call'))}"})
-        if a in own:
-            items += [{**n, "source": f"self@{n.get('task') or own[a]['task']}"}
-                      for n in own[a].get("what_i_learned") or []]
-        incoming[a] = items
-    shared_in = []
-    for pid, fb in feedback.items():
-        if fb is None:
-            continue
-        shared_in += [{**n, "source": f"shared-lesson@{n.get('task') or pid}"} for n in fb.get("shared_lessons") or []]
-        shared_in += [_highlight_note({**h, "task": pid}) for h in fb.get("highlights") or []]
-        shared_in += [{"section": "solver_setup", "kind": "avoid", "source": f"teacher@{pid}", "content": w}
-                      for w in fb.get("setup_warnings") or []]
-        shared_in += [{"section": "meshing", "kind": "fix", "source": f"teacher@{pid}",
-                       "content": f"Contested region on {pid}: {c.get('region')}. Why: {c.get('why_contested')} "
-                                  f"What to do: {c.get('what_to_do')}"}
-                      for c in fb.get("contested_regions") or [] if isinstance(c, dict)]
+        incoming[a] = private_incoming(per_agent.get(a), own.get(a))
+    shared_in = [x for pid, fb in feedback.items() if fb is not None for x in shared_incoming(pid, fb)]
     owners = {a: mem.private[int(a[1:])] for a in incoming}
     jobs = {f"organize {a}": (organize_private, dict(agent=a, current=notes_as_dicts(owners[a]), incoming=items, llm=llm))
             for a, items in incoming.items()}
@@ -452,8 +461,9 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
 
 # --------------------------------------------------------------------------- what an agent sees
 
-# --personas: a fixed exploration style per agent. Without one, agents reading the same playbook
-# converge on near-identical meshes, so the population stops exploring (and ties earn nothing).
+# --personas: a fixed exploration style for some (or all) agents. Without one, agents reading the same
+# playbook converge on near-identical meshes, so the population stops exploring (and ties earn
+# nothing). The i-th chosen agent gets PERSONAS[i], so up to len(PERSONAS) chosen agents all differ.
 PERSONAS = [
     "Grade strongly at singular or re-entrant corners and other stress concentrations: very small local "
     "sizes there, coarse elsewhere.",
@@ -465,7 +475,30 @@ PERSONAS = [
     "Compare element orders: try linear and quadratic elements at similar DOFs and keep the better one.",
     "Run a mini convergence study within the solve budget: solve on two or three successively refined "
     "meshes and submit the one where the result has settled.",
+    "Point refinements: refine at specific points (corners, load application points, the disclosed check "
+    "points) with `point` refinements and small radii, rather than whole named groups.",
+    "Gentle grading: give every local refinement a radius of 3-5 times its local size, so element sizes grow "
+    "smoothly and no region has abrupt size jumps.",
+    "Coarse quadratic background: order 2 with a global h 1.5-2 times the automesher's, and spend the DOFs "
+    "saved on two or three local refinements where the stress varies fastest.",
+    "Error-driven moves: after each solve, move elements from where your results changed least to where they "
+    "changed most between your last two meshes, keeping the DOF count about the same.",
 ]
+
+
+def persona_agents(spec: str | None, count: int | None, n_agents: int) -> list[int]:
+    """Which agents get a persona: --personas alone ("all") = every agent, --personas a0,a3,a5 = those,
+    --persona-count N = a0..a{N-1}; neither = none."""
+    if count is not None:
+        return list(range(min(count, n_agents)))
+    if spec is None:
+        return []
+    if spec == "all":
+        return list(range(n_agents))
+    ks = sorted({int(a.strip().removeprefix("a")) for a in spec.split(",") if a.strip()})
+    if any(k >= n_agents for k in ks):
+        raise SystemExit(f"--personas {spec}: there are only {n_agents} agents (a0..a{n_agents - 1})")
+    return ks
 
 
 def _fmt(x) -> str:
@@ -614,7 +647,9 @@ def main(argv=None) -> int:
                     help="shared+private: which teacher lessons may enter the shared playbook (see ace/memory.py)")
     ap.add_argument("--peers", action=argparse.BooleanOptionalAction, default=None,
                     help="show each agent what the other agents did on its task last generation (default: on with --split)")
-    ap.add_argument("--personas", action="store_true", help="give each agent a fixed exploration style")
+    ap.add_argument("--personas", nargs="?", const="all", default=None,
+                    help="give agents a fixed exploration style: every agent (the flag alone) or some, e.g. a0,a3,a5")
+    ap.add_argument("--persona-count", type=int, help="give the first N agents (a0..a{N-1}) a persona")
     ap.add_argument("--deep", action="store_true",
                     help="run reports + deep teacher + self-reflection + organizer (see deep_learn); needs "
                          "--memory shared+private, --split and ACE_SCORE=field; implies --peers, --shared-scope all")
@@ -638,7 +673,9 @@ def main(argv=None) -> int:
         raise SystemExit("--teacher inspect/both needs field scoring (ACE_SCORE=field): its tools read the field error")
     if args.split and not (private and len(train) > 1):
         raise SystemExit("--split needs --memory shared+private and at least two --problems")
-    if (peers or args.personas) and not private:
+    persona_of = {k: PERSONAS[i % len(PERSONAS)]
+                  for i, k in enumerate(persona_agents(args.personas, args.persona_count, args.agents))}
+    if (peers or persona_of) and not private:
         raise SystemExit("--peers and --personas need --memory shared+private (persistent agents)")
     if args.deep:
         if not (private and args.split and config.SCORE == "field"):
@@ -656,6 +693,8 @@ def main(argv=None) -> int:
     all_runs: dict[str, list[dict]] = {pid: [] for pid in train + holdout}   # every run so far, per problem
     rows, gen_notes = [], []
     print(f"output: {out}")
+    if persona_of:   # who has which persona, so analysis can split the population by it
+        (out / "personas.json").write_text(json.dumps({f"a{k}": p for k, p in persona_of.items()}, indent=1))
     ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
     # --deep: what the next generation's contexts are built from (filled by deep_learn)
     deep = {"teacher": {}, "feedback": {}, "reflection": {}, "highlights": [], "last_run": {}}
@@ -669,13 +708,13 @@ def main(argv=None) -> int:
                 a, pid, mem.shared, mem.private[k],     # Playbooks: rendered grouped by task
                 deep["feedback"].get(a), deep["reflection"].get(a), deep["highlights"],
                 peers_text(k, pid, prev) if pid is not None else "",
-                last_run=deep["last_run"].get(a), task_feedback=deep["teacher"].get(pid))
+                last_run=deep["last_run"].get(a), task_feedback=deep["teacher"].get(pid), persona=persona_of.get(k))
         else:
             text = mem.prompt_text(k, args.top_n, pid)
         if peers and pid is not None and not args.deep:
             text += peers_text(k, pid, prev)
-        if args.personas:
-            text += "\n\n## YOUR EXPLORATION STYLE (yours alone)\n" + PERSONAS[k % len(PERSONAS)]
+        if k in persona_of and not args.deep:     # --deep: inside deep_context, before its closing block
+            text += "\n\n" + process_brief.persona_block(persona_of[k])
         return text
 
     try:

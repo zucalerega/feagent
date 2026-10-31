@@ -13,15 +13,18 @@ MODELS = {
     "teacher": "claude-opus-5-5",       # reviews every run on a task: whole meshes, error maps, setups
     "reflect": "claude-sonnet-5-5",     # each agent looks at its own final results and writes notes
     "organizer": "claude-sonnet-5-5",   # merges and rewrites an agent's (or the shared) notes
+    # the single-agent baseline (ace/single_loop.py): ONE big agent doing every task in one conversation
+    "big_generator": "claude-opus-5-5",
 }
 
 # max_tokens caps one response (thinking counts toward it). You pay for what is used, not the cap.
 MAX_TOKENS = {"generator": 8000, "reflector": 16000, "diagnoser": 12000, "curator": 4000,
-              "teacher": 16000, "reflect": 8000, "organizer": 8000}   # teacher: one agent's feedback per call (~3k + thinking)
+              "teacher": 16000, "reflect": 8000, "organizer": 8000,   # teacher: one agent's feedback per call (~3k + thinking)
+              "big_generator": 32000}   # max effort can think long in one turn (ace.llm passes a long timeout)
 
 # output_config.effort: how hard the model thinks. Lower = cheaper.
 EFFORT = {"generator": "high", "reflector": "high", "diagnoser": "medium", "curator": "low",
-          "teacher": "high", "reflect": "low", "organizer": "low"}
+          "teacher": "high", "reflect": "low", "organizer": "low", "big_generator": "max"}
 
 # USD per million tokens. VERIFY these against https://www.anthropic.com/pricing before a real run.
 # cache_write = 5-minute cache write (1.25x input); cache_read = cache hit.
