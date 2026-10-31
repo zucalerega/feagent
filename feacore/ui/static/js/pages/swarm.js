@@ -53,7 +53,7 @@ function draw(el, d, refresh) {
       label: `gen ${x.generation}`, sub: `${x.n_submissions} agent${x.n_submissions === 1 ? '' : 's'}`, median: x.median,
       points: x.points.map(p => ({ y: p.score, muted: p.gated, tip: `<b>${p.ace_run_id}</b> · ${p.problem_id}<br>score ${fmt(p.score, 3)}${p.gated ? '<br><span class="t-muted">gated</span>' : ''}` })),
     })),
-    yTitle: 'score', zeroLabel: '0 = uniform mesh, same node budget', width: 600, height: 280,
+    yTitle: 'score (0 = uniform mesh, same nodes)', width: 600, height: 280,
   });
   el.append(h('div', { class: 'grid-2', style: { marginBottom: '28px' } },
     h('div', { class: 'card' }, h('h2', {}, 'Score by generation'),
@@ -110,7 +110,7 @@ function board(p) {
       h('tbody', {}, rows.map((r, i) => h('tr', { class: r.status === 'running' ? 'dim' : '' },
         h('td', { class: 'num muted' }, r.status === 'finished' ? i + 1 : ''),
         h('td', {}, h('div', { class: 'mono' }, r.ace_run_id), h('div', { class: 'small muted' }, r.status === 'running' ? `running \u00b7 ${timeAgo(r.created_at)}` : timeAgo(r.created_at),
-          r.tokens ? ` \u00b7 ${fmtInt(r.tokens)} tokens` : '', r.n_cited_bullets ? ` \u00b7 ${r.n_cited_bullets} playbook bullets` : '')),
+          r.tokens ? ` \u00b7 ${fmtInt(r.tokens)} tokens` : '', r.n_cited_bullets ? ` \u00b7 ${r.n_cited_bullets} playbook bullet${r.n_cited_bullets === 1 ? '' : 's'}` : '')),
         h('td', {}, scoreCell(r)),
         h('td', { class: 'num' }, fmt(r.value, 6), r.qoi && r.qoi !== p.qoi ? h('div', { class: 'small muted' }, r.qoi) : null),
         h('td', { class: 'num' }, r.rel_error === null || r.rel_error === undefined ? '' : `${r.rel_error > 0 ? '+' : ''}${fmt(100 * r.rel_error, 2)}%`),

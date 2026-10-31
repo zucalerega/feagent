@@ -228,6 +228,15 @@ Python: `store.create_run(..., source="ace", meta=...)` then `store.update_run(.
 
 **Score** = log10(e_uniform / e_agent): 0 means as good as the best uniform mesh with the same node budget, +1 means ten times better, and a failed gate scores −2. The bridge computes it; the UI only displays it.
 
+Details the UI relies on (as written by the bridge, `ace/ui_bridge.py` on `ace-ui-bridge`):
+
+- `meta.mesh.refinements` is the agent's list of refinement dicts. The leaderboard shows their count, with the details in a tooltip.
+- `solve_index` counts from 0, and the "scored #k" note is 1-based.
+- `submitted_run_id` is the solve ACE scored, and the QoI value comes from that run. The reference is matched by the QoI name in that run's case (or `meta.qoi`), not by the problem's first reference.
+- `tokens` = `{input, output, cache_write, cache_read, total}`.
+- An agent run with **no successful solve** is a submission with `run_ids: []`, score −2 and the gate "no successful solve". A **crashed** run has score `null` and `meta.error`. Both show as finished (crashed in red), never as running.
+- ACE ids are unique only within a loop, so the page keys agents by `(loop_id, ace_run_id)` and the Consensus view labels ACE agents with their loop.
+
 Per agent run, the leaderboard shows:
 
 - the score;
@@ -333,7 +342,7 @@ python -m pytest tests/test_ui_api.py -q
 
 The tests use FastAPI's TestClient on a temporary store and cover every endpoint. That includes real solves through `POST /api/solve`, a real three-level study, a benchmark batch (run, CSV / JSON, cancel), submissions, consensus and the token auth. They skip if no 2D elasticity problem is registered or `skfem` does not import.
 
-The screenshots were made with headless Chromium (Playwright) against a scratch store. `swarm_empty.png` shows the Swarm page before any ACE records exist. The populated view is covered by the API tests (synthetic records following the contract), and no ACE data is shown in a screenshot until the bridge has produced real records. `batch_*.png` show a real batch (8 fast 2D benchmarks + NAFEMS LE10); `study_live_le10.png` / `study_le10.png` show LE10 started with *Run with defaults*. The consensus screenshot shows **scripted test agents**: deterministic scripts (`agent_id` `scripted-*`) that mesh the CAD themselves, change the reference setup (P1 vs P2, other mesh sizes, two meshes only, a symmetry edge clamped by mistake) and solve through `POST /api/solve`. Every number is a real solve. None of them is an LLM agent.
+The screenshots were made with headless Chromium (Playwright) against a scratch store. `swarm_empty.png` shows the Swarm page before any ACE records exist. `swarm.png` and `consensus_ace.png` show real bridge records from the ACE loop's **mock-LLM** path: 3 generations × 3 agent runs on Lamé / LE10 (train) and LE1 (held out), written by `python -m ace.run_loop --mock --ui-runs-dir <dir>`. The loop and its solves are real; the LLM decisions are the mock's. `batch_*.png` show a real batch (8 fast 2D benchmarks + NAFEMS LE10); `study_live_le10.png` / `study_le10.png` show LE10 started with *Run with defaults*. The consensus screenshot shows **scripted test agents**: deterministic scripts (`agent_id` `scripted-*`) that mesh the CAD themselves, change the reference setup (P1 vs P2, other mesh sizes, two meshes only, a symmetry edge clamped by mistake) and solve through `POST /api/solve`. Every number is a real solve. None of them is an LLM agent.
 
 ## Known gaps
 
