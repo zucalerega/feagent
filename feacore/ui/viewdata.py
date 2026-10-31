@@ -84,7 +84,7 @@ def mesh_triangulation(points: np.ndarray, cells: np.ndarray, cell_type: str) ->
         F = F.reshape(-1, 3)
         cell_of = np.repeat(np.arange(len(cells)), 4)
         face_of = np.tile(np.arange(4), len(cells))
-        _, first, counts = _unique_rows(np.sort(F, axis=1), len(points))
+        first, counts = _unique_rows(np.sort(F, axis=1), len(points))
         sel = first[counts == 1]
         F, cell_of, face_of = F[sel], cell_of[sel], face_of[sel]
         # orient outward: normal must point away from the opposite corner
@@ -97,7 +97,8 @@ def mesh_triangulation(points: np.ndarray, cells: np.ndarray, cell_type: str) ->
     else:
         F = cells[:, :3].copy()
         p0, p1, p2 = points[F[:, 0]], points[F[:, 1]], points[F[:, 2]]
-        flip = np.cross((p1 - p0)[:, :2], (p2 - p0)[:, :2]) < 0
+        d1, d2 = p1 - p0, p2 - p0
+        flip = d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0] < 0
         F[flip] = F[flip][:, [0, 2, 1]]
         cell_of = np.arange(len(cells))
         local = np.tile(np.arange(3), (len(cells), 1))
@@ -172,7 +173,7 @@ class _NodalSampler:
         self.dim = dim
         span = np.ptp(points, axis=0).max() if len(points) else 1.0
         self.tol = 1e-7 * max(span, 1e-300)
-        self._trees: list = []  # [(coords, tree)]
+        self._trees: list = []  # [(coords, nearest index, matched mask)]
 
     def _index(self, coords: np.ndarray):
         from scipy.spatial import cKDTree
@@ -315,9 +316,8 @@ def save_view(view: dict, path: str | Path, relto: str | Path | None = None) -> 
 def encode_array(a: np.ndarray, dtype: str | None = None, encoding: str = "b64") -> dict:
     """Typed array for JSON transport: little-endian base64 (``b64``) or plain list."""
     a = np.ascontiguousarray(a, dtype=dtype or a.dtype)
-    if encoding == "list":
-        return {"dtype": str(a.dtype), "shape": list(a.shape), "data": np.where(np.isfinite(a), a, np.nan).tolist()
-                if a.dtype.kind == "f" else a.tolist()}
+    if encoding == "list":  # NaN -> null happens in the JSON response (runstore.jsonable)
+        return {"dtype": str(a.dtype), "shape": list(a.shape), "data": a.tolist()}
     return {"dtype": str(a.dtype), "shape": list(a.shape),
             "b64": base64.b64encode(a.astype(a.dtype.newbyteorder("<"), copy=False).tobytes()).decode("ascii")}
 
