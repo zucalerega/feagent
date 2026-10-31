@@ -188,7 +188,7 @@ def mesh_level(step: str | Path, part: Part, k: int, out: str | Path, threads: i
         gmsh.write(str(out))
     solver_check(out)
     return {"path": str(out), "h": h0 / RATIO**k, "cells": cells, "seconds": time.perf_counter() - t0,
-            "fix_seconds": round(t_fix, 1), "scheme": used, "nested": nested, "alg3d": alg3d,
+            "fix_seconds": round(t_fix, 1), "scheme": used, "nested": nested, "alg3d": alg3d, "h0_frac": h0_frac,
             "folded_before_fix": folded,
             "min_sj": sj, "min_linear_quality": quality}
 
@@ -213,6 +213,21 @@ def mesh_level_safe(step, part: Part, k: int, out, threads: int = 0, h0_frac: fl
         tail = (p.stderr or p.stdout).strip().splitlines()[-3:]
         raise MeshFailed(f"L{k} {scheme}{'' if nested else ' remesh'}: exit {p.returncode}: {' | '.join(tail)}")
     return json.loads(p.stdout.strip().splitlines()[-1])
+
+
+def fit_h0(step, part: Part, h0_frac: float, finest: int, max_cells: int, out_dir, threads: int = 0,
+           timeout: float | None = ATTEMPT_TIMEOUT) -> float:
+    """Base size fraction for which the finest nested level stays under ``max_cells`` (L_k ~ 8^k L0):
+    a straight L0 (cheap, cannot fold) is counted and h0 enlarged by the cube root of the excess.
+    Curvature sizing does not scale with h0, so this iterates (at most 4 times)."""
+    for _ in range(4):
+        m = mesh_level_safe(step, part, 0, Path(out_dir) / "L0_sizing.msh", threads, h0_frac, "straight", timeout)
+        Path(m["path"]).unlink(missing_ok=True)
+        predicted = m["cells"] * RATIO ** (3 * finest)
+        if predicted <= max_cells:
+            break
+        h0_frac *= 1.05 * (predicted / max_cells) ** (1 / 3)
+    return h0_frac
 
 
 def mesh_part(step, part: Part, levels: list[int], out_dir, threads: int = 0, h0_frac: float = H0_FRAC,

@@ -27,6 +27,7 @@ import sys
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, as_completed, wait
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 
@@ -77,16 +78,18 @@ def _select(a) -> list[tuple[dict, list]]:
 def _mesh_part(job) -> list[dict]:
     """Every level of one part (worker process). A complete cached sequence (all sidecars) is
     reused; otherwise all levels are (re)made with one scheme (feacore.goldgen.mesh.mesh_part)."""
-    from feacore.goldgen.mesh import mesh_part
+    from feacore.goldgen.mesh import fit_h0, mesh_part
     from feacore.goldgen.parts import Part
 
-    row, out, levels, start, h0_frac, threads = job
+    row, out, levels, start, h0_frac, threads, max_cells = job
     part = Part.from_json(json.dumps(row["part"]))
     d = Path(out) / "_meshes" / part.id
     ks = list(range(start, start + levels))
     sides = [d / f"L{k}.json" for k in ks]
     if all(p.exists() and p.with_suffix(".msh").exists() for p in sides):
         return [json.loads(p.read_text()) for p in sides]
+    if max_cells:
+        h0_frac = fit_h0(row["path"], part, h0_frac, max(ks), max_cells, d, threads=threads)
     metas = [{"part": part.id, "mesh_level": k, **m}
              for k, m in zip(ks, mesh_part(row["path"], part, ks, d, threads=threads, h0_frac=h0_frac))]
     for p, m in zip(sides, metas):
@@ -95,7 +98,7 @@ def _mesh_part(job) -> list[dict]:
 
 
 def _mesh_jobs(a, selected):
-    return [(row, a.out, a.levels, a.start_level, a.h0_frac, a.threads) for row, _ in selected]
+    return [(row, a.out, a.levels, a.start_level, a.h0_frac, a.threads, a.max_cells) for row, _ in selected]
 
 
 def cmd_mesh(a) -> int:
@@ -124,6 +127,10 @@ def _solve_job(job) -> dict:
     from feacore.goldgen.run import run_bcset
 
     path, part_json, s, meshes, out, linear_solver = job
+    kill = Path(out) / f".kill_{s.id}"                   # test hook: simulate the OOM killer once
+    if os.environ.get("GOLDGEN_TEST_KILL") == s.id and not kill.exists():
+        kill.touch()
+        os.kill(os.getpid(), 9)
     t0 = time.perf_counter()
     try:
         with open(Path(out) / "solves.jsonl", "a") as log:
@@ -133,6 +140,17 @@ def _solve_job(job) -> dict:
     summ["seconds_total"] = round(time.perf_counter() - t0, 1)
     summ["worker_maxrss_gb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6, 1)
     return summ
+
+
+# solve-process memory, from the H100 pilot: ~20 GB peak RSS for ~1M dofs (assembly, factorisation,
+# stress recovery and diagnostics in one process); tet10 meshes carry ~4.6 dofs per cell
+MEM_GB_PER_MDOF = 24.0
+MEM_GB_BASE = 1.5
+DOFS_PER_CELL = 4.6
+
+
+def _host_memory_gb() -> float:
+    return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9
 
 
 def _gpu_sampler(path: Path, stop: threading.Event, every: float = 10.0) -> None:
@@ -166,13 +184,38 @@ def cmd_run(a) -> int:
     t_start = time.perf_counter()
     # two pools: gmsh meshes parts on CPU cores while solve workers keep the GPU busy; each part's
     # BC sets enter the solve pool the moment its meshes are ready
-    with ProcessPoolExecutor(max(1, a.mesh_workers)) as mesh_ex, ProcessPoolExecutor(max(1, a.solve_workers)) as solve_ex:
+    limit_gb = float(os.environ.get("GMN_MEMORY_LIMIT_BYTES", 0)) / 1e9 or _host_memory_gb()
+    budget = 0.8 * limit_gb - 1.5 * a.mesh_workers               # what the solve workers may use together
+    print(f"memory: limit {limit_gb:.0f} GB, solve budget {budget:.0f} GB", flush=True)
+    ready: list = []                                              # (mdofs, tries, job) waiting for memory
+    running: dict = {}                                            # solve future -> (mdofs, tries, job, est_gb)
+    gb_per_mdof = [MEM_GB_PER_MDOF]                               # raised whenever a solve measures more
+    solve_ex = ProcessPoolExecutor(max(1, a.solve_workers))
+
+    def est(mdofs: float) -> float:
+        return MEM_GB_BASE + gb_per_mdof[0] * mdofs
+
+    def launch():
+        used = sum(r[3] for r in running.values())
+        ready.sort(key=lambda r: -r[0])                           # biggest first while there is room
+        for item in list(ready):
+            if len(running) >= a.solve_workers:
+                break
+            e = est(item[0])
+            if used + e <= budget or not running:                 # always admit one, however large
+                ready.remove(item)
+                running[solve_ex.submit(_solve_job, item[2])] = (*item, e)
+                used += e
+
+    with ProcessPoolExecutor(max(1, a.mesh_workers)) as mesh_ex:
         mesh_futs = {mesh_ex.submit(_mesh_part, j): j[0]["part"]["id"] for j in jobs}
-        pending = set(mesh_futs)
-        while pending:                                     # one loop drives both pools
-            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+        pending_mesh = set(mesh_futs)
+        while pending_mesh or running or ready:
+            launch()
+            done, _ = wait(pending_mesh | set(running), return_when=FIRST_COMPLETED)
             for f in done:
                 if f in mesh_futs:
+                    pending_mesh.discard(f)
                     pid = mesh_futs[f]
                     row, sets = todo[pid]
                     try:
@@ -182,21 +225,47 @@ def cmd_run(a) -> int:
                         continue
                     for m in meshes:
                         meshlog.write(json.dumps({k: m.get(k) for k in (
-                            "part", "mesh_level", "h", "cells", "seconds", "scheme", "nested", "alg3d", "folded_before_fix",
-                            "min_sj", "min_linear_quality", "failed_attempts", "fallback_reason")}) + "\n")
+                            "part", "mesh_level", "h", "h0_frac", "cells", "seconds", "scheme", "nested", "alg3d",
+                            "folded_before_fix", "min_sj", "min_linear_quality", "failed_attempts",
+                            "fallback_reason")}) + "\n")
                         print(f"[{pid}] L{m['mesh_level']}: {m['cells']} cells, {m['seconds']:.1f}s, {m['scheme']}"
                               f"{'' if m.get('nested', True) else ' remesh'}", flush=True)
                     meshlog.flush()
+                    mdofs = DOFS_PER_CELL * max(m["cells"] for m in meshes) / 1e6
                     part_json = json.dumps(row["part"])
-                    pending |= {solve_ex.submit(_solve_job, (row["path"], part_json, s, meshes, str(out), a.linear_solver))
-                                for s in sets}
-                else:
+                    ready += [(mdofs, 0, (row["path"], part_json, s, meshes, str(out), a.linear_solver)) for s in sets]
+                    continue
+                if f not in running:                       # a stale future of a pool already rebuilt
+                    continue
+                mdofs, tries, job, e_gb = running.pop(f)
+                try:
                     summ = f.result()
-                    summaries.write(json.dumps(summ) + "\n")
-                    summaries.flush()
-                    print(f"[{summ['id']}] {summ.get('result')} gold={summ.get('gold')} singular={summ.get('singular')} "
-                          f"dofs={summ.get('dofs')} t={summ['seconds_total']}s rss={summ.get('worker_maxrss_gb')}GB",
-                          flush=True)
+                except BrokenProcessPool:
+                    # a worker was killed (out of memory): every in-flight job is lost with the pool.
+                    # Rebuild it and retry them; a job that keeps killing workers is given up.
+                    lost = [(mdofs, tries, job)] + [r[:3] for r in running.values()]
+                    gb_per_mdof[0] *= 1.5                         # it took more memory than we thought
+                    running.clear()
+                    solve_ex.shutdown(wait=False, cancel_futures=True)
+                    solve_ex = ProcessPoolExecutor(max(1, a.solve_workers))
+                    for e_, t_, j_ in lost:
+                        if t_ + 1 > 2:
+                            summ = {"id": j_[2].id, "result": "error", "error": "solve worker killed twice (memory)"}
+                            summaries.write(json.dumps(summ) + "\n")
+                            print(f"[{j_[2].id}] error: solve worker killed twice (memory)", flush=True)
+                        else:
+                            ready.append((e_, t_ + 1, j_))
+                    print(f"solve pool rebuilt after a worker died; {len(lost)} jobs requeued", flush=True)
+                    continue
+                rss = summ.get("worker_maxrss_gb") or 0.0       # a worker's lifetime peak: an upper bound
+                if mdofs > 0.05 and rss > est(mdofs):
+                    gb_per_mdof[0] = 1.1 * (rss - MEM_GB_BASE) / mdofs
+                summaries.write(json.dumps(summ) + "\n")
+                summaries.flush()
+                print(f"[{summ['id']}] {summ.get('result')} gold={summ.get('gold')} singular={summ.get('singular')} "
+                      f"dofs={summ.get('dofs')} t={summ['seconds_total']}s rss={rss}GB est={e_gb:.0f}GB "
+                      f"(now {gb_per_mdof[0]:.0f} GB/Mdof)", flush=True)
+    solve_ex.shutdown()
     stop.set()
     print(f"run done in {time.perf_counter() - t_start:.0f}s", flush=True)
     return 0
@@ -212,6 +281,8 @@ def _common(p, parts_default: int) -> None:
     p.add_argument("--start-level", type=int, default=0)
     p.add_argument("--h0-frac", type=float, default=1 / 8, help="base mesh size / bbox diagonal")
     p.add_argument("--threads", type=int, default=1, help="gmsh threads per part")
+    p.add_argument("--max-cells", type=int, default=250_000,
+                   help="cap on the finest level's cells (base size enlarged per part); 0 = no cap")
     p.add_argument("--shard", default="0/1", help="i/n: this machine's slice of the selected parts")
 
 
