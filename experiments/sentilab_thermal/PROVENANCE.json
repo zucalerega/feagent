@@ -1,0 +1,16 @@
+{
+  "origin": "GB10 Host reply to SentiLab message #57170, 2026-10-31T20:54:14Z",
+  "solver_commit": "a5c556f7047ec7b051d30f4e1130743f29fb4fbf",
+  "original_environment": {
+    "python": "3.13.16 (main, Sep 30 2026, 18:57:20) [Clang 21.0.0 (clang-2100.3.34.2)]",
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "skfem": "12.0.2",
+    "meshio": "5.3.5",
+    "git_commit": "a5c556f7047ec7b051d30f4e1130743f29fb4fbf"
+  },
+  "original_run_script_sha256": "85ac9086270f875a2d087f5d57fde0704e1dfa9e592976223332197b9dd1d7b1",
+  "handoff_changes": "Added output-directory selection only; original archived results unchanged. Added reproducibility documentation, direct dependency pins and SHA256 manifest. No solver changes.",
+  "runtime_note": "Original timings are single local runs, not performance comparisons. Reproduction timings and environment strings will differ."
+}

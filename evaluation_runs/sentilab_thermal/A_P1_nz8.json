@@ -1,0 +1,78 @@
+{
+  "mesh": "slab_nz8.msh",
+  "analysis": {
+    "physics": "heat",
+    "formulation": "3d",
+    "order": 1,
+    "thickness": 1.0,
+    "T_ref": 0.0,
+    "options": {
+      "linear_solver": "scipy"
+    }
+  },
+  "materials": {
+    "slab": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 150.0,
+      "rho": 1.0,
+      "mu": 0.0
+    }
+  },
+  "bcs": [
+    {
+      "type": "temperature",
+      "group": "bottom",
+      "point": null,
+      "components": null,
+      "value": 25.0,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    }
+  ],
+  "loads": [
+    {
+      "type": "source",
+      "value": 24999999.999999996,
+      "group": "*"
+    }
+  ],
+  "regions": [],
+  "qois": [
+    {
+      "name": "peak_C",
+      "type": "max",
+      "field": "T",
+      "point": null,
+      "group": null,
+      "component": null,
+      "point2": null
+    },
+    {
+      "name": "mean_C",
+      "type": "mean",
+      "field": "T",
+      "point": null,
+      "group": null,
+      "component": null,
+      "point2": null
+    },
+    {
+      "name": "bottom_mean_C",
+      "type": "mean",
+      "field": "T",
+      "point": null,
+      "group": "bottom",
+      "component": null,
+      "point2": null
+    }
+  ],
+  "meta": {
+    "origin": "GB10 Host, Senti room reply #57170, 2026-10-31T20:54:14Z",
+    "units": "SI; temperature in Celsius",
+    "adiabatic": "top and sides (natural zero flux)"
+  },
+  "schema_version": 1
+}

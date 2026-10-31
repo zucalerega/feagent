@@ -1,0 +1,7 @@
+# Direct runtime versions from the original run (Python 3.13.16).
+# This benchmark imports feacore from the checkout; no editable install is needed.
+numpy==2.5.4
+scipy==1.18.1
+scikit-fem==12.0.2
+meshio==5.3.5
+matplotlib==3.11.2
