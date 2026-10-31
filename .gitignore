@@ -1,0 +1,16 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+/work/
+*.msh
+!benchmarks/**/*.msh
+*.vtu
+*.frd
+*.sta
+*.cvg
+*.12d
+spooles.out
+.venv/
+runs/
+models/*
+!models/.gitignore

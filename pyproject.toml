@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "feacore"
+version = "0.1.0"
+description = "Fixed FEA solver, solution verification (Richardson/GCI) and benchmark problems for feagent"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "scikit-fem>=10", "meshio>=5.3", "gmsh>=4.11"]
+
+[project.optional-dependencies]
+dev = ["pytest", "matplotlib", "sympy", "httpx"]
+ui = ["fastapi", "uvicorn", "python-multipart"]
+gpu = ["nvmath-python", "cupy-cuda12x"]
+
+[tool.setuptools.packages.find]
+include = ["feacore*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: longer convergence / 3D checks (deselect with -m 'not slow')"]

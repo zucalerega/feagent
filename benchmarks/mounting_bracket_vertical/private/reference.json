@@ -1,0 +1,89 @@
+{
+  "id": "mounting_bracket_vertical",
+  "expected_behavior": "stress_concentration",
+  "expectations": {},
+  "references": [],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "elasticity",
+      "formulation": "3d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {}
+    },
+    "materials": {
+      "al6061": {
+        "E": 69000000000.0,
+        "nu": 0.33,
+        "alpha": 0.0,
+        "k": 1.0
+      }
+    },
+    "bcs": [
+      {
+        "type": "fixed",
+        "group": "bolt_holes",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "force",
+        "group": "load_hole",
+        "point": null,
+        "components": null,
+        "value": [
+          0.0,
+          0.0,
+          4000.0
+        ],
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "symmetry",
+        "group": "sym_x0",
+        "point": null,
+        "components": null,
+        "value": null,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [],
+    "qois": [
+      {
+        "name": "max_vm_web_root",
+        "type": "max",
+        "field": "von_mises",
+        "point": null,
+        "group": "web_root_fillets",
+        "component": null
+      },
+      {
+        "name": "load_displacement",
+        "type": "mean",
+        "field": "u_mag",
+        "point": null,
+        "group": "load_hole",
+        "component": null
+      }
+    ],
+    "meta": {
+      "problem": "mounting_bracket_vertical",
+      "load_case": "vertical",
+      "reference_portion": "half (x >= 0) with symmetry; force halved"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.006,
+    0.004,
+    0.0026666666666666666
+  ]
+}

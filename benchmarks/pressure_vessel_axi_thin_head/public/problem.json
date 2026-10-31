@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "pressure_vessel_axi_thin_head",
+  "title": "Pressure vessel with hemispherical heads, thin heads with tapered transition (axisymmetric)",
+  "family": "pressure_vessel_axisym",
+  "tags": [
+    "part",
+    "axisymmetric",
+    "pressure_vessel",
+    "internal_pressure",
+    "shell_junction",
+    "thickness_transition",
+    "singular_trap"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "axisymmetric",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "inner_radius": 0.25,
+    "wall_thickness": 0.02,
+    "head_thickness": 0.012,
+    "taper_ratio": 3.0,
+    "cylinder_length": 1.0,
+    "pressure": 5000000.0,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "h0": 0.01
+  },
+  "description": "Steel pressure vessel: a cylindrical shell closed by two hemispherical heads, under internal pressure. Axisymmetric problem.\nGeometry file (STEP): the meridional section of the vessel wall, drawn in the xy-plane: x is the radius (x >= 0, axis of revolution x = 0) and y is the axial coordinate z, with z = 0 at mid-length.\nCylinder: inner radius 250 mm, wall thickness 20 mm, straight length 1000 mm between the head junctions (z from -500 mm to 500 mm). The hemispherical heads have inner radius 250 mm and a thinner wall of 12 mm; the inside surface is flush across the junction. On the outside, the cylinder wall tapers linearly from 20 mm to 12 mm over the last 24 mm before each junction (a 3:1 taper).\nMaterial: steel, linear elastic and isotropic, E = 200 GPa, Poisson's ratio 0.3.\nLoad: internal pressure 5 MPa on every inner surface (cylinder and heads). No other loads; the vessel is free (self-equilibrated): constrain only the axial rigid-body translation, without stressing the vessel.\nAnalysis: linear static, small displacements, axisymmetric.\nReport (in an axisymmetric model, x = r and y = z):\n  hoop_stress_mid: the hoop (circumferential) stress at the inner surface at mid-length, the point (r, z) = (250 mm, 0) [Pa];\n  peak_von_mises: the maximum von Mises stress anywhere in the vessel wall [Pa].",
+  "qois": [
+    {
+      "name": "hoop_stress_mid",
+      "type": "point",
+      "field": "stt",
+      "point": [
+        0.25,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "peak_von_mises",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

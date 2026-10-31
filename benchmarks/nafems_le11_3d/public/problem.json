@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "nafems_le11_3d",
+  "title": "NAFEMS LE11: cylinder/taper/sphere, thermal load (3D quarter model)",
+  "family": "nafems_le11",
+  "tags": [
+    "nafems",
+    "3d",
+    "solid",
+    "thermal_stress",
+    "curved_boundary",
+    "symmetry"
+  ],
+  "dim": 3,
+  "physics": "elasticity",
+  "formulation": "3d",
+  "units": "SI (m, N, Pa, degC)",
+  "params": {
+    "h0": 0.2
+  },
+  "description": "NAFEMS benchmark LE11, solid cylinder/taper/sphere under a temperature load (3D linear elastic solid, static).\nGeometry: a hollow solid of revolution about the z axis; the STEP file holds the quarter x >= 0, y >= 0 (faces on the planes x = 0 and y = 0 are symmetry planes of the full body). The meridian section (r = radial distance from the z axis, z = axial coordinate, metres) is bounded by: the bottom face z = 0 from A = (r 1.0, z 0) to B = (r 1.4, z 0); an outer spherical surface of radius 1.4 centred at the origin from B up to D = (r sqrt(1.4^2 - 0.7^2) = 1.2124, z 0.7); an outer conical taper (straight in the section) from D to G = (r 1.0, z 1.39); an outer cylinder r = 1.0 from G to I = (r 1.0, z 1.79); the top face z = 1.79 from I to H = (r 0.70711, z 1.79); an inner cylinder r = 0.70711 from H down to E = (r 0.70711, z 0.70711), the 45-degree point of the unit circle; and an inner spherical surface of radius 1.0 centred at the origin from E back to A. The body is hollow (it does not reach the axis).\nMaterial: isotropic linear elastic, E = 210 GPa, Poisson's ratio 0.3, coefficient of thermal expansion 2.3e-4 per degC.\nLoad: a prescribed temperature field (no heat-transfer analysis needed), linear in the radial and axial directions: T [degC] = sqrt(x^2 + y^2) + z with the axis along z, i.e. T = r + z. The stress-free reference temperature is 0 degC. No mechanical loads.\nSupports: symmetry on the xz-plane (face on y = 0): zero y-displacement. Symmetry on the yz-plane (face on x = 0): zero x-displacement. Bottom face (z = 0): zero z-displacement. Top face (z = 1.79): zero z-displacement. All curved faces are free.\nReport: szz_A = direct stress sigma_zz at point A = (0, 1.0, 0) (inner edge of the bottom face, on the y axis), in Pa.",
+  "qois": [
+    {
+      "name": "szz_A",
+      "type": "point",
+      "field": "szz",
+      "point": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "notched_bar_t10_r2",
+  "title": "Flat bar with opposite U-notches in tension, t = 10 mm, r = 2 mm",
+  "family": "notched_bar",
+  "tags": [
+    "part",
+    "2d",
+    "plane_stress",
+    "notch",
+    "tension",
+    "stress_concentration"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "plane_stress",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "length": 0.2,
+    "width": 0.05,
+    "thickness": 0.005,
+    "notch_depth": 0.01,
+    "notch_radius": 0.002,
+    "force": 20000.0,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "h0": 0.004
+  },
+  "description": "Flat steel bar with two opposite U-notches, in tension. Plane stress.\nGeometry file (STEP): the planar outline of the bar in the xy-plane (the thickness is not modelled in the STEP).\nPurpose: a 5 mm thick flat tension strap, 200 mm long (x from -100 mm to 100 mm) and H = 50 mm wide (y from -25 mm to 25 mm), with two opposite U-shaped notches at mid-length (x = 0), one in each long edge. Each notch is 10 mm deep measured from the edge, has parallel flanks 4 mm apart and a semicircular root of radius r = 2 mm; the net width between the notch roots is 30 mm.\nMaterial: steel, linear elastic and isotropic, E = 200 GPa, Poisson's ratio 0.3. Thickness 5 mm (plane stress).\nSupports: the end x = -100 mm is held in the x direction only (free to contract in y; a frictionless support); remove the remaining rigid-body motion (y translation) with a constraint that does not stress the bar.\nLoad: a total tensile force P = 20 kN in +x, applied as a uniform traction on the end x = 100 mm.\nAnalysis: linear static, small displacements.\nReport:\n  peak_stress_notch: the maximum value of the maximum principal stress s1 on the semicircular notch roots [Pa];\n  elongation: the average x-displacement of the loaded end x = 100 mm [m].",
+  "qois": [
+    {
+      "name": "peak_stress_notch",
+      "type": "max",
+      "field": "s1",
+      "point": null,
+      "group": "notch_roots",
+      "component": null
+    },
+    {
+      "name": "elongation",
+      "type": "mean",
+      "field": "ux",
+      "point": null,
+      "group": "end_right",
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

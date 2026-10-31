@@ -1,0 +1,3 @@
+# checkpoints and datasets stay out of git (see docs/surrogate.md)
+*
+!.gitignore

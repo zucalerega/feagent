@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "plate_hole_finite_width_d05",
+  "title": "Finite-width plate with a central circular hole in tension (plane stress, quarter model)",
+  "family": "plate_hole_finite_width",
+  "tags": [
+    "2d",
+    "plane_stress",
+    "stress_concentration",
+    "handbook",
+    "curved_boundary",
+    "symmetry"
+  ],
+  "dim": 2,
+  "physics": "elasticity",
+  "formulation": "plane_stress",
+  "units": "SI (m, N, Pa, K)",
+  "params": {
+    "W": 0.2,
+    "d_over_W": 0.5,
+    "length_over_W": 4.0,
+    "sigma0": 100000000.0,
+    "E": 200000000000.0,
+    "nu": 0.3,
+    "thickness": 0.002,
+    "h0": 0.006,
+    "far": 3.0
+  },
+  "description": "Long flat steel bar (strip) with a central circular through-hole, pulled along its length, plane stress. By double symmetry only the quarter x >= 0, y >= 0 is modelled (STEP: planar face in the xy-plane); the hole centre is at the origin.\nGeometry: full bar width W = 0.2 m (y from -W/2 to W/2), hole diameter d = 0.1 m (d/W = 0.5), full length 0.8 m (x from -0.4 to 0.4 m). Quarter model: rectangle [0, 0.4] x [0, 0.1] m minus the quarter disk of radius 0.05 m. Edges: y = 0 (from (0.05, 0) to (0.4, 0)), x = 0.4 (loaded end), y = 0.1 (free side), x = 0 (from (0, 0.05) to (0, 0.1)), and the quarter-circle hole edge.\nMaterial: linear elastic, E = 2e+11 Pa, nu = 0.3, thickness 0.002 m.\nLoads: uniform tensile traction sigma0 = 1e+08 Pa (100 MPa) along +x on the end x = 0.4 m (gross-section stress). The side y = W/2 and the hole are free.\nSupports: symmetry on x = 0 (u_x = 0) and on y = 0 (u_y = 0).\nReport (SI units):\n  s_peak   sigma_xx at the edge of the hole on the transverse axis, (0, 0.05) [Pa]\n  vm_max   maximum von Mises stress [Pa]",
+  "qois": [
+    {
+      "name": "s_peak",
+      "type": "point",
+      "field": "sxx",
+      "point": [
+        0.0,
+        0.05
+      ],
+      "group": null,
+      "component": null
+    },
+    {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises",
+      "point": null,
+      "group": null,
+      "component": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}
