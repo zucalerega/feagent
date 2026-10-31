@@ -33,6 +33,15 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   prompt for a NAFEMS benchmark and score the reply against the reference. LE10 comes first, with
   `benchmarks/nafems_le10/public/mesh.msh`.
 - `cfd-openfoam` branch (PR #3): OpenFOAM backend and CFD benchmarks, in progress.
+- `benchmarks` branch (PR #13): `feabench/` plus `benchmarks/{verification,code_aster,calculix,simjeb}`
+  and `docs/eval-design.md`. It was built before `feacore` landed, and its ccx-deck evaluator and
+  `model.inp` contract are superseded by the decisions below (skfem, case JSON + `.msh`).
+  Still useful:
+  - code_aster reference values with locations;
+  - the CalculiX deck corpus;
+  - the SimJEB loader (needs `dataverse.harvard.edu` allowed);
+  - the scoring proposal in `docs/eval-design.md`.
+  Next: port the verification cases and QoIs to `feacore` Problems.
 
 ## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
 

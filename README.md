@@ -51,3 +51,15 @@ Suggested first swarm problems (3D, so the mesh harness can mesh them):
 
 These need `symmetry`, `pressure` or `displacement` BCs as well as `fixed` / `force`; the adapter
 already accepts them under `bcs.fea`.
+
+## Benchmark library and evaluation design (`feabench/`, PR #13)
+
+Built before `feacore` landed; complementary to it (see `docs/decisions.md` D19).
+
+- `benchmarks/code_aster/`: 3,589 analytical / literature reference values from 253 code_aster
+  validation tests, with locations (`manifest.json`, `CATALOG.md`).
+- `benchmarks/calculix/`: CalculiX regression suite verified against ccx 2.21; 214 known-good decks.
+- `benchmarks/verification/`: 10 CAD tasks with exact / NAFEMS / converged references, scored on
+  CalculiX decks by `feabench evaluate`.
+- `benchmarks/simjeb/`: SimJEB fetcher and `.fem` → ccx converter. Needs `dataverse.harvard.edu`.
+- `docs/eval-design.md`: accuracy vs speed vs compute-cost scoring proposal for the evaluator.

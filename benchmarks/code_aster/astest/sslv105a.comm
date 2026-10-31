@@ -1,0 +1,125 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="EXCEPTION"), DEBUG=_F(SDVERI="OUI"))
+
+#
+#
+#         PRE_IDEAS()
+#
+#
+
+MAILET = LIRE_MAILLAGE(FORMAT="MED", UNITE=20)
+
+#
+#
+
+MODELE = AFFE_MODELE(MAILLAGE=MAILET, AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="3D"))
+
+#
+#
+MATER = DEFI_MATERIAU(ELAS=_F(E=2.0e11, NU=0.0, RHO=7800.0))
+
+#
+#
+CHAMPMAT = AFFE_MATERIAU(MAILLAGE=MAILET, AFFE=_F(TOUT="OUI", MATER=MATER))
+
+#
+#
+CHARGE = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    DDL_IMPO=_F(GROUP_NO="PIED", DX=0.0, DY=0.0, DZ=0.0),
+    ROTATION=_F(VITESSE=3000.0, AXE=(1.0, 0.0, -1.0)),
+)
+
+#
+#
+RIGIELEM = CALC_MATR_ELEM(MODELE=MODELE, CHARGE=CHARGE, CHAM_MATER=CHAMPMAT, OPTION="RIGI_MECA")
+
+#
+#
+ROTELEM = CALC_MATR_ELEM(MODELE=MODELE, CHARGE=CHARGE, CHAM_MATER=CHAMPMAT, OPTION="RIGI_ROTA")
+
+#
+#
+INELEM = CALC_VECT_ELEM(OPTION="CHAR_MECA", CHAM_MATER=CHAMPMAT, CHARGE=CHARGE)
+
+#
+#
+NUMEROTA = NUME_DDL(MATR_RIGI=RIGIELEM)
+
+#
+#
+ELAS = ASSE_MATRICE(MATR_ELEM=RIGIELEM, NUME_DDL=NUMEROTA)
+
+#
+#
+INERTIE = ASSE_VECTEUR(VECT_ELEM=INELEM, NUME_DDL=NUMEROTA)
+
+#
+#
+RIGIRO = ASSE_MATRICE(MATR_ELEM=ROTELEM, NUME_DDL=NUMEROTA)
+
+#
+#
+RAID = COMB_MATR_ASSE(COMB_R=(_F(MATR_ASSE=ELAS, COEF_R=1.0), _F(MATR_ASSE=RIGIRO, COEF_R=1.0)))
+
+#
+#
+RAID = FACTORISER(reuse=RAID, MATR_ASSE=RAID)
+
+DEP1 = RESOUDRE(MATR=RAID, CHAM_NO=INERTIE)
+
+#
+#
+TEST_RESU(
+    CHAM_NO=(
+        _F(
+            NOM_CMP="DX",
+            GROUP_NO="TEST",
+            CHAM_GD=DEP1,
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=8.75e-3,
+            VALE_CALC=8.7512221014631e-3,
+            PRECISION=1.0e-3,
+        ),
+        _F(
+            NOM_CMP="DY",
+            GROUP_NO="TEST",
+            CHAM_GD=DEP1,
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=8.75e-3,
+            VALE_CALC=8.7510234473553e-3,
+            PRECISION=1.0e-3,
+        ),
+        _F(
+            NOM_CMP="DZ",
+            GROUP_NO="TEST",
+            CHAM_GD=DEP1,
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=8.75e-3,
+            VALE_CALC=8.7508775359685e-3,
+            PRECISION=1.0e-3,
+        ),
+    )
+)
+
+#
+FIN()
+#

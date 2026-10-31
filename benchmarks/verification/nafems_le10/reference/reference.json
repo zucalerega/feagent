@@ -1,0 +1,86 @@
+{
+ "id": "verification/nafems_le10",
+ "volume": 3269219855.1418858,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -1.0004021311299149e-07,
+  -1.0002010655649574e-07,
+  -300.0000001000201,
+  3250.0000001000203,
+  2750.0000001000203,
+  300.0000001000201
+ ],
+ "n_cad_faces": 7,
+ "qois": [
+  {
+   "id": "syy_D",
+   "kind": "point",
+   "field": "S",
+   "component": "yy",
+   "point": [
+    2000.0,
+    0.0,
+    300.0
+   ],
+   "reference": -5.38,
+   "tolerance": {
+    "rel": 0.02
+   },
+   "reference_type": "published",
+   "provenance": "NAFEMS LE10 target sigma_yy(D) = -5.38 MPa (The Standard NAFEMS Benchmarks, TNSB Rev. 3, 1990)",
+   "description": "sigma_yy at point D = (2000, 0, 300)",
+   "weight": 1.0,
+   "gate": false
+  },
+  {
+   "id": "reaction_z",
+   "kind": "reaction",
+   "region": {
+    "type": "and",
+    "regions": [
+     {
+      "type": "elliptic_cylinder",
+      "center": [
+       0,
+       0
+      ],
+      "semi_axes": [
+       3250.0,
+       2750.0
+      ],
+      "label": "outer elliptic face BCB'C'"
+     },
+     {
+      "type": "plane",
+      "point": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "normal": [
+       0.0,
+       0.0,
+       1.0
+      ]
+     }
+    ]
+   },
+   "component": "z",
+   "reference": 5448699.7585697975,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "gate": true,
+   "reference_type": "analytical",
+   "provenance": "statics: total pressure load carried by the uz constraint on line EE'",
+   "description": "sum of z-reactions on line EE'",
+   "weight": 1.0
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 2,
+  "reference_n_dof": 7551,
+  "reference_solver_cpu_s": 0.361758
+ }
+}

@@ -1,0 +1,96 @@
+{
+ "id": "verification/euler_buckling",
+ "title": "Linear buckling of a slender column",
+ "description": "A steel column with a 10 x 10 mm square cross-section and length 400 mm along z, base z=0 fully fixed, top free. A reference load of 1000 N in -z (compression) is applied to the top face as a uniform traction. Compute the linear (eigenvalue) buckling load factor of the lowest mode.",
+ "units": {
+  "length": "mm",
+  "force": "N",
+  "stress": "MPa",
+  "mass": "tonne",
+  "time": "s",
+  "density": "tonne/mm^3",
+  "acceleration": "mm/s^2"
+ },
+ "geometry": {
+  "file": "geometry.step",
+  "format": "step",
+  "length_unit": "mm"
+ },
+ "analysis": {
+  "type": "buckle",
+  "n_modes": 2
+ },
+ "materials": [
+  {
+   "name": "steel",
+   "E": 210000.0,
+   "nu": 0.3,
+   "density": 7.85e-09,
+   "applies_to": "all"
+  }
+ ],
+ "boundary_conditions": [
+  {
+   "id": "base",
+   "type": "fixed",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "label": "face z=0"
+   },
+   "description": "fully fixed"
+  }
+ ],
+ "loads": [
+  {
+   "id": "top",
+   "type": "surface_force",
+   "force": [
+    0.0,
+    0.0,
+    -1000.0
+   ],
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     400.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "label": "top face z=400"
+   },
+   "description": "reference load 1000 N compression"
+  }
+ ],
+ "solver": {
+  "name": "calculix",
+  "version": "2.21",
+  "deck": "model.inp"
+ },
+ "evaluated_quantities": [
+  {
+   "id": "lambda1",
+   "kind": "buckling",
+   "description": "lowest buckling load factor",
+   "mode": 1
+  }
+ ],
+ "tags": [
+  "numerical",
+  "buckling"
+ ]
+}

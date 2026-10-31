@@ -1,0 +1,287 @@
+{
+ "case": "verification/torsion_shaft",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 6.0,
+   "n_nodes": 1635,
+   "n_dof": 4905,
+   "solver_cpu_s": 0.19974999999999998,
+   "solver_wall_s": 0.1870097020000685,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ut_mid": {
+     "value": 0.039414500000000005,
+     "error": 0.00011937559354349528,
+     "passed": true,
+     "failure": null
+    },
+    "ut_3q": {
+     "value": 0.05911902413392187,
+     "error": 7.326411206632671e-05,
+     "passed": true,
+     "failure": null
+    },
+    "mises_mid": {
+     "value": 110.56180287019444,
+     "error": 0.002684638772738092,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_torque": {
+     "value": -100000.00529982279,
+     "error": 5.299822791130282e-08,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 2,
+   "h": 4.0,
+   "n_nodes": 4447,
+   "n_dof": 13341,
+   "solver_cpu_s": 0.927843,
+   "solver_wall_s": 0.6865237969996087,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ut_mid": {
+     "value": 0.03941109999999999,
+     "error": 3.3102626056084506e-05,
+     "passed": true,
+     "failure": null
+    },
+    "ut_3q": {
+     "value": 0.05911364609432704,
+     "error": 1.771224775900686e-05,
+     "passed": true,
+     "failure": null
+    },
+    "mises_mid": {
+     "value": 110.36997038620356,
+     "error": 0.0009449105852274548,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_torque": {
+     "value": -99999.96255948118,
+     "error": 3.744051881949417e-07,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 2.8,
+   "n_nodes": 11630,
+   "n_dof": 34890,
+   "solver_cpu_s": 3.8277200000000002,
+   "solver_wall_s": 2.65058843999941,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ut_mid": {
+     "value": 0.039409500000000035,
+     "error": 7.496417466108277e-06,
+     "passed": true,
+     "failure": null
+    },
+    "ut_3q": {
+     "value": 0.05911460305383861,
+     "error": 1.524064067210593e-06,
+     "passed": true,
+     "failure": null
+    },
+    "mises_mid": {
+     "value": 110.67269111705367,
+     "error": 0.0036902839310097085,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_torque": {
+     "value": -99999.99638554524,
+     "error": 3.6144547630101445e-08,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 2.0,
+   "n_nodes": 29384,
+   "n_dof": 88152,
+   "solver_cpu_s": 16.802051,
+   "solver_wall_s": 11.140834111000004,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ut_mid": {
+     "value": 0.03940989999999999,
+     "error": 2.653343413603586e-06,
+     "passed": true,
+     "failure": null
+    },
+    "ut_3q": {
+     "value": 0.05911485874857381,
+     "error": 2.8013366341431777e-06,
+     "passed": true,
+     "failure": null
+    },
+    "mises_mid": {
+     "value": 110.43296769256074,
+     "error": 0.0015162329563230196,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_torque": {
+     "value": -100000.00151969281,
+     "error": 1.519692814326845e-08,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 1.5,
+   "n_nodes": 65817,
+   "n_dof": 197451,
+   "solver_cpu_s": 85.48221199999999,
+   "solver_wall_s": 52.373061000000234,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ut_mid": {
+     "value": 0.0394098,
+     "error": 1.1590319367562013e-07,
+     "passed": true,
+     "failure": null
+    },
+    "ut_3q": {
+     "value": 0.059114763382419125,
+     "error": 1.1880971904563831e-06,
+     "passed": true,
+     "failure": null
+    },
+    "mises_mid": {
+     "value": 110.26131619184311,
+     "error": 4.047395803441215e-05,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_torque": {
+     "value": -100000.0009526319,
+     "error": 9.526319045107811e-09,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "ut_mid": {
+   "q_fine": 0.0394098,
+   "monotone": false,
+   "value": 0.0394098,
+   "order": null,
+   "uncertainty": 2.419564680105984e-07,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "ut_3q": {
+   "q_fine": 0.059114763382419125,
+   "monotone": false,
+   "value": 0.059114763382419125,
+   "order": null,
+   "uncertainty": 2.3074457958713243e-07,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "mises_mid": {
+   "q_fine": 110.26131619184311,
+   "monotone": true,
+   "value": 109.39560061586472,
+   "order": 0.6729109249874161,
+   "uncertainty": 1.0821444699729856,
+   "method": "richardson"
+  },
+  "reaction_torque": {
+   "q_fine": -100000.0009526319,
+   "monotone": false,
+   "value": -100000.0009526319,
+   "order": null,
+   "uncertainty": 0.0023895527103642788,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   4905,
+   13341,
+   34890,
+   88152,
+   197451
+  ],
+  "accuracy": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.2,
+   0.93,
+   3.83,
+   16.8,
+   85.48
+  ]
+ }
+}

@@ -1,0 +1,188 @@
+{
+ "id": "verification/torsion_shaft",
+ "title": "Solid circular shaft in torsion",
+ "description": "A solid steel shaft of radius 10 mm and length 100 mm along z. The face z=0 is fully fixed. A pure torque of 100000 N*mm about the shaft axis (+z, right-hand rule) is applied to the free end face z=100, distributed as the Saint-Venant shear traction (proportional to the distance from the axis); the face is free to deform otherwise.",
+ "units": {
+  "length": "mm",
+  "force": "N",
+  "stress": "MPa",
+  "mass": "tonne",
+  "time": "s",
+  "density": "tonne/mm^3",
+  "acceleration": "mm/s^2"
+ },
+ "geometry": {
+  "file": "geometry.step",
+  "format": "step",
+  "length_unit": "mm"
+ },
+ "analysis": {
+  "type": "static"
+ },
+ "materials": [
+  {
+   "name": "steel",
+   "E": 210000.0,
+   "nu": 0.3,
+   "density": 7.85e-09,
+   "applies_to": "all"
+  }
+ ],
+ "boundary_conditions": [
+  {
+   "id": "root",
+   "type": "fixed",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "label": "face z=0"
+   },
+   "description": "fully fixed (all displacement components zero)"
+  }
+ ],
+ "loads": [
+  {
+   "id": "torque",
+   "type": "surface_torque",
+   "torque": 100000.0,
+   "point": [
+    0,
+    0,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     100.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ],
+    "label": "end face z=100"
+   },
+   "description": "torque 100000 N*mm about +z (Saint-Venant shear traction)"
+  }
+ ],
+ "solver": {
+  "name": "calculix",
+  "version": "2.21",
+  "deck": "model.inp"
+ },
+ "evaluated_quantities": [
+  {
+   "id": "ut_mid",
+   "kind": "point",
+   "description": "tangential displacement of the surface point [10.0, 0, 50.0]",
+   "point": [
+    10.0,
+    0,
+    50.0
+   ],
+   "field": "U",
+   "component": "t",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "ut_3q",
+   "kind": "point",
+   "description": "tangential displacement of the surface point [0, 10.0, 75.0]",
+   "point": [
+    0,
+    10.0,
+    75.0
+   ],
+   "field": "U",
+   "component": "t",
+   "frame": {
+    "type": "cylindrical",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "axis": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   }
+  },
+  {
+   "id": "mises_mid",
+   "kind": "point",
+   "description": "von Mises stress at the surface point [10.0, 0, 50.0]",
+   "point": [
+    10.0,
+    0,
+    50.0
+   ],
+   "field": "S",
+   "component": "mises"
+  },
+  {
+   "id": "reaction_torque",
+   "kind": "reaction",
+   "description": "reaction moment about z at the fixed face",
+   "region": {
+    "type": "plane",
+    "point": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "normal": [
+     0.0,
+     0.0,
+     1.0
+    ]
+   },
+   "moment": {
+    "point": [
+     0,
+     0,
+     0
+    ],
+    "axis": [
+     0,
+     0,
+     1
+    ]
+   }
+  }
+ ],
+ "tags": [
+  "exact",
+  "torque",
+  "fixed"
+ ]
+}
