@@ -202,14 +202,17 @@ def _b64(a: np.ndarray) -> str:
     return base64.b64encode(np.ascontiguousarray(a).tobytes()).decode()
 
 
-def build(mesh_path: str, title: str) -> str:
+def load(mesh_path: str) -> tuple[dict, np.ndarray]:
+    """Viewer data for a tet mesh, and the corner-node coordinates in the file's units (m), in the
+    same order as the data's points (so fields can be probed at them)."""
     m = meshio.read(mesh_path)
     ctype = "tetra10" if "tetra10" in m.cells_dict else "tetra"
     tets = m.cells_dict[ctype][:, :4]
     used = np.unique(tets)
     renum = np.full(len(m.points), -1, dtype=np.int64)
     renum[used] = np.arange(len(used))
-    P = m.points[used] * 1000.0                         # m -> mm
+    X = m.points[used]
+    P = X * 1000.0                                      # m -> mm
     lo, hi = P.min(0), P.max(0)
     centre = (lo + hi) / 2
     P = P - centre
@@ -231,6 +234,11 @@ def build(mesh_path: str, title: str) -> str:
         "radius": float(np.linalg.norm(hi - lo) / 2), "nodes": int(len(np.unique(m.cells_dict[ctype]))),
         "type": "Tet10" if ctype == "tetra10" else "Tet4",
     }
+    return data, X
+
+
+def build(mesh_path: str, title: str) -> str:
+    data, _ = load(mesh_path)
     return PAGE.replace("__TITLE__", title).replace("__DATA__", json.dumps(data))
 
 
