@@ -557,7 +557,7 @@ def add_scores(report: dict, run: dict) -> dict:
     c = run.get("checks") or {}
     auto_err = c.get("auto_error")
     report["numbers"] = {
-        "score": c.get("score"), "base_score": c.get("base_score", c.get("score")), "bonus": c.get("best_bonus"),
+        "score": c.get("score"), "base_score": c.get("base_score", c.get("score")), "bonus": c.get("best_bonus"), "diversity_bonus": c.get("diversity_bonus"),
         "field_error": c.get("field_error"), "probe_error": c.get("probe_error"), "gain": c.get("gain"),
         "accuracy": c.get("accuracy"), "efficiency": c.get("efficiency"),
         "meets_target": None if c.get("gain") is None else c["gain"] >= config.AUTO_GAIN_TARGET,
@@ -597,7 +597,9 @@ def report_text(report: dict, max_chars: int = 6000, hide_hidden: bool = False) 
     n = report.get("numbers")
     if n:
         rank = f", rank {n['rank_in_group']}/{n['group_size']}" if n.get("rank_in_group") is not None else ""
-        L.append(f"score {_g(n['score'])} (base {_g(n['base_score'])} + be-the-best bonus {_g(n['bonus'])}){rank}; "
+        L.append(f"score {_g(n['score'])} (base {_g(n['base_score'])} + be-the-best bonus {_g(n['bonus'])}"
+                 + (f" + diversity bonus {_g(n['diversity_bonus'])}" if n.get("diversity_bonus") else "")
+                 + f"){rank}; "
                  f"valid {n.get('valid')}" + (f" ({n['invalid_because']})" if n.get("invalid_because") else ""))
         L.append(f"field error {_pct(n['field_error'])}, check-point error {_pct(n['probe_error'])}; "
                  f"gain {_g(n['gain'])}x the automesher (target {config.AUTO_GAIN_TARGET:g}x: "

@@ -621,7 +621,7 @@ def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
                "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
     lines = ["# ACE run summary", "", *how,
              "'failed' counts runs that failed a gate; 'errored' counts runs that crashed (API or code errors).",
-             "'base' is the mean score without the be-the-best bonus; 'bonus' the mean bonus (field mode).",
+             "'base' is the mean score without bonuses; 'bonus' the mean be-the-best + diversity bonus (field mode).",
              "", "| gen | problem | split | mean score | base | bonus | min | max | mean accuracy | mean efficiency | within tol | median DOFs | median rel. error | failed | errored |",
              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
@@ -676,13 +676,13 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
         if not ok:
             continue
         scores = [checks[r["run_id"]]["score"] for r in ok]
-        bonus = [checks[r["run_id"]].get("best_bonus") or 0.0 for r in ok]
+        base = [checks[r["run_id"]].get("base_score", checks[r["run_id"]]["score"]) for r in ok]
         errs = [e for r in ok if (e := checks[r["run_id"]].get("rel_error")) is not None]
         dofs = [d for r in ok if (d := checks[r["run_id"]].get("dofs"))]
         rows.append({
             "gen": gen, "problem": pid, "split": "holdout" if pid in holdout else "train",
             "n": len(scores), "mean": statistics.mean(scores), "min": min(scores), "max": max(scores),
-            "base": statistics.mean(s - b for s, b in zip(scores, bonus)), "bonus": statistics.mean(bonus),
+            "base": statistics.mean(base), "bonus": statistics.mean(scores) - statistics.mean(base),
             "failed": sum(checks[r["run_id"]]["failed_gate"] is not None for r in ok),
             "errored": len(mine) - len(ok),
             "median_err": f"{statistics.median(errs):.2e}" if errs else "-",

@@ -33,7 +33,9 @@ automesher's error: below that target the score falls quadratically, above it be
 paying. DOFs cost: the score is divided by DOFs relative to the automesher, so extra elements must
 buy at least proportional accuracy. On each hidden check point, the single run with the smallest
 error among that generation's runs on the task earns a bonus; a tie pays nobody, so copying a
-peer's mesh exactly earns no bonus.
+peer's mesh exactly earns no bonus. A run whose mesh recipe differs structurally from every other
+run on the task that generation (another order, h off by more than 1.5x, or mostly different
+refinement targets) and whose base score is at least 90% of the best there earns a diversity bonus.
 
 Learning. After each generation a teacher looks at every run on a task: the whole mesh, where the
 error is (error maps and region grids), the setup and the agent's reasoning. It tells each agent in
