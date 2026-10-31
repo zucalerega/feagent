@@ -1,0 +1,427 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+MAIL = LIRE_MAILLAGE(FORMAT="ASTER", VERI_MAIL=_F(VERIF="OUI"))
+
+MODMECA = AFFE_MODELE(
+    MAILLAGE=MAIL,
+    AFFE=(
+        _F(GROUP_MA="GMA00001", PHENOMENE="MECANIQUE", MODELISATION="3D"),  # MASSIF
+        _F(GROUP_MA="GMA00003", PHENOMENE="MECANIQUE", MODELISATION="DIS_TR"),  # DISCRET
+    ),
+)
+
+MAT00001 = DEFI_MATERIAU(ELAS=_F(E=210000.0, NU=0.3))
+
+CHMAT = AFFE_MATERIAU(MAILLAGE=MAIL, AFFE=(_F(GROUP_MA="GMA00002", MATER=MAT00001),))
+
+CINE1 = AFFE_CHAR_CINE(
+    MODELE=MODMECA,
+    MECA_IMPO=(
+        _F(GROUP_NO="GNO00001", DZ=0.0),
+        _F(GROUP_NO="GNO00002", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="GNO00003", DX=0.0, DZ=0.0),
+    ),
+)
+
+B0P0 = AFFE_CHAR_MECA(
+    MODELE=MODMECA,
+    LIAISON_DDL=(
+        _F(
+            GROUP_NO=(
+                "N000009",
+                "N000003",
+                "N000003",
+                "N000003",
+                "N000002",
+                "N000002",
+                "N000002",
+                "N000007",
+                "N000007",
+                "N000007",
+                "N000006",
+                "N000006",
+                "N000006",
+            ),
+            DDL=("DX", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ"),
+            COEF_MULT=(
+                -1.0,
+                -0.25,
+                1.66967134563e-16,
+                -8.34835672814e-17,
+                -2.75,
+                1.66967134563e-16,
+                -1.25333771139e-16,
+                3.25,
+                1.25333771139e-16,
+                -8.34835672814e-17,
+                0.75,
+                1.25333771139e-16,
+                -1.25333771139e-16,
+            ),
+            COEF_IMPO=0,
+        ),
+        _F(
+            GROUP_NO=(
+                "N000009",
+                "N000003",
+                "N000003",
+                "N000003",
+                "N000002",
+                "N000002",
+                "N000002",
+                "N000007",
+                "N000007",
+                "N000007",
+                "N000006",
+                "N000006",
+                "N000006",
+            ),
+            DDL=("DY", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ"),
+            COEF_MULT=(
+                -1.0,
+                -0.5,
+                -0.625,
+                -0.875,
+                0.5,
+                -0.625,
+                0.875,
+                -0.5,
+                1.125,
+                -0.875,
+                0.5,
+                1.125,
+                0.875,
+            ),
+            COEF_IMPO=0,
+        ),
+        _F(
+            GROUP_NO=(
+                "N000009",
+                "N000003",
+                "N000003",
+                "N000003",
+                "N000002",
+                "N000002",
+                "N000002",
+                "N000007",
+                "N000007",
+                "N000007",
+                "N000006",
+                "N000006",
+                "N000006",
+            ),
+            DDL=("DZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ"),
+            COEF_MULT=(
+                -1.0,
+                0.5,
+                0.625,
+                0.875,
+                0.5,
+                0.625,
+                -0.375,
+                -0.5,
+                -0.625,
+                0.875,
+                -0.5,
+                -0.625,
+                -0.375,
+            ),
+            COEF_IMPO=0,
+        ),
+        _F(
+            GROUP_NO=(
+                "N000009",
+                "N000003",
+                "N000003",
+                "N000003",
+                "N000002",
+                "N000002",
+                "N000002",
+                "N000007",
+                "N000007",
+                "N000007",
+                "N000006",
+                "N000006",
+                "N000006",
+            ),
+            DDL=("DRX", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ"),
+            COEF_MULT=(
+                -1.0,
+                5.80822598173e-21,
+                0.25,
+                0.25,
+                -6.34471220281e-17,
+                0.25,
+                -0.25,
+                5.80822598173e-21,
+                -0.25,
+                0.25,
+                -6.34471220281e-17,
+                -0.25,
+                -0.25,
+            ),
+            COEF_IMPO=0,
+        ),
+        _F(
+            GROUP_NO=(
+                "N000009",
+                "N000003",
+                "N000003",
+                "N000003",
+                "N000002",
+                "N000002",
+                "N000002",
+                "N000007",
+                "N000007",
+                "N000007",
+                "N000006",
+                "N000006",
+                "N000006",
+            ),
+            DDL=("DRY", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ"),
+            COEF_MULT=(
+                -1.0,
+                -0.5,
+                -1.38739152791e-16,
+                -1.94289029309e-16,
+                -0.5,
+                -1.38739152791e-16,
+                1.52655665886e-16,
+                0.5,
+                2.082157068e-16,
+                -1.94289029309e-16,
+                0.5,
+                2.082157068e-16,
+                1.52655665886e-16,
+            ),
+            COEF_IMPO=0,
+        ),
+        _F(
+            GROUP_NO=(
+                "N000009",
+                "N000003",
+                "N000003",
+                "N000003",
+                "N000002",
+                "N000002",
+                "N000002",
+                "N000007",
+                "N000007",
+                "N000007",
+                "N000006",
+                "N000006",
+                "N000006",
+            ),
+            DDL=("DRZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ", "DX", "DY", "DZ"),
+            COEF_MULT=(
+                -1.0,
+                -0.5,
+                -2.22044604925e-16,
+                -1.94289029309e-16,
+                0.5,
+                -2.22044604925e-16,
+                1.94289029309e-16,
+                -0.5,
+                1.66533453694e-16,
+                -1.94289029309e-16,
+                0.5,
+                1.66533453694e-16,
+                1.94289029309e-16,
+            ),
+            COEF_IMPO=0,
+        ),
+    ),
+)
+
+
+CHARGE1 = AFFE_CHAR_MECA(
+    MODELE=MODMECA,
+    FORCE_NODALE=(
+        _F(GROUP_NO="GNO00004", FX=-0.123456701636, FY=-0.246913403273, FZ=-0.370370090008),
+    ),
+    # ne sert a rien, sauf a verifier la correction de issue23939 :
+    FORCE_INTERNE=_F(GROUP_MA="GMA00001", FZ=0.0),
+)
+
+CAEL = AFFE_CARA_ELEM(
+    MODELE=MODMECA, DISCRET=(_F(CARA="K_TR_D_N", GROUP_MA="GMA00003", VALE=(0, 0, 0, 0, 0, 0)),)
+)
+
+RESU1 = MECA_STATIQUE(
+    MODELE=MODMECA,
+    OPTION="SANS",
+    CHAM_MATER=CHMAT,
+    CARA_ELEM=CAEL,
+    EXCIT=(_F(CHARGE=CHARGE1), _F(CHARGE=CINE1), _F(CHARGE=B0P0)),
+)
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000007",
+            NOM_CMP="DX",
+            VALE_CALC=2.09288488e-05,
+            VALE_REFE=2.0928799999999999e-05,
+            CRITERE="RELATIF",
+            PRECISION=3.0000000000000001e-06,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000006",
+            NOM_CMP="DY",
+            VALE_CALC=-7.29516963e-06,
+            VALE_REFE=-7.2951699999999996e-06,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000002",
+            NOM_CMP="DZ",
+            VALE_CALC=0.0e00,
+            VALE_REFE=0.0,
+            CRITERE="ABSOLU",
+            PRECISION=1.0e-10,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000002",
+            NOM_CMP="DX",
+            VALE_CALC=-6.23696841e-06,
+            VALE_REFE=-6.2369700000000002e-06,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000002",
+            NOM_CMP="DY",
+            VALE_CALC=-2.45256619e-05,
+            VALE_REFE=-2.4525700000000001e-05,
+            CRITERE="RELATIF",
+            PRECISION=1.9999999999999999e-06,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000007",
+            NOM_CMP="DZ",
+            VALE_CALC=-2.79835167e-05,
+            VALE_REFE=-2.7983500000000001e-05,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000009",
+            NOM_CMP="DX",
+            VALE_CALC=8.65506240e-05,
+            VALE_REFE=8.6550620000000006e-05,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000009",
+            NOM_CMP="DY",
+            VALE_CALC=3.34963089e-05,
+            VALE_REFE=3.34963e-05,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000009",
+            NOM_CMP="DZ",
+            VALE_CALC=-7.13109354e-05,
+            VALE_REFE=-7.1310930000000004e-05,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000009",
+            NOM_CMP="DRX",
+            VALE_CALC=-1.83421367e-05,
+            VALE_REFE=-1.8342130000000001e-05,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000009",
+            NOM_CMP="DRY",
+            VALE_CALC=1.22280911e-05,
+            VALE_REFE=1.222809e-05,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            REFERENCE="SOURCE_EXTERNE",
+            RESULTAT=RESU1,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N000009",
+            NOM_CMP="DRZ",
+            VALE_CALC=-1.49377261e-05,
+            VALE_REFE=-1.4937720000000001e-05,
+            CRITERE="RELATIF",
+            PRECISION=9.9999999999999995e-07,
+        ),
+    )
+)
+
+FIN()

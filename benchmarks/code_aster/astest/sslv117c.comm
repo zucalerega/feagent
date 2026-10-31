@@ -1,0 +1,123 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="EXCEPTION"), DEBUG=_F(SDVERI="OUI"))
+
+MA1 = LIRE_MAILLAGE(FORMAT="MED")
+
+MA = CREA_MAILLAGE(MAILLAGE=MA1, LINE_QUAD=_F(TOUT="OUI"))
+
+# ~ MA = CREA_MAILLAGE(MAILLAGE=MA2, CREA_MAILLE=_F(NOM="CUBE_REG", GROUP_MA="CUBE", ))
+
+MA = DEFI_GROUP(reuse=MA, MAILLAGE=MA, CREA_GROUP_NO=_F(TOUT_GROUP_MA="OUI"))
+
+MO = AFFE_MODELE(
+    MAILLAGE=MA, AFFE=(_F(GROUP_MA="CUBE", PHENOMENE="MECANIQUE", MODELISATION="3D_DIL"),)
+)
+poisson = 0.0
+
+young = 1.0
+
+
+MAT = DEFI_MATERIAU(
+    ELAS=_F(E=young, NU=poisson), SECOND_ELAS=_F(A1=0.25), NON_LOCAL=_F(PENA_LAGR=young * 100)
+)
+
+CHMAT = AFFE_MATERIAU(MAILLAGE=MA, AFFE=(_F(GROUP_MA="CUBE", MATER=MAT)))
+
+R2 = FORMULE(VALE="X*X+Y*Y+Z*Z", NOM_PARA=["X", "Y", "Z"])
+
+GF = FORMULE(VALE="-1.+R2(X,Y,Z)*R2(X,Y,Z)", R2=R2, NOM_PARA=["X", "Y", "Z"])
+
+UX = FORMULE(VALE="X*(-1./3.+1./7.*R2(X,Y,Z)*R2(X,Y,Z))", R2=R2, NOM_PARA=["X", "Y", "Z"])
+
+UY = FORMULE(VALE="Y*(-1./3.+1./7.*R2(X,Y,Z)*R2(X,Y,Z))", R2=R2, NOM_PARA=["X", "Y", "Z"])
+
+UZ = FORMULE(VALE="Z*(-1./3.+1./7.*R2(X,Y,Z)*R2(X,Y,Z))", R2=R2, NOM_PARA=["X", "Y", "Z"])
+
+BX = FORMULE(VALE="X*4.*(10.-R2(X,Y,Z))", R2=R2, NOM_PARA=["X", "Y", "Z"])
+
+BY = FORMULE(VALE="Y*4.*(10.-R2(X,Y,Z))", R2=R2, NOM_PARA=["X", "Y", "Z"])
+
+BZ = FORMULE(VALE="Z*4.*(10.-R2(X,Y,Z))", R2=R2, NOM_PARA=["X", "Y", "Z"])
+
+ZERO = DEFI_CONSTANTE(VALE=0)
+
+DEPL_IMP = AFFE_CHAR_MECA_F(
+    MODELE=MO,
+    DDL_IMPO=_F(GROUP_NO="BORD_EXT", GONF=GF),
+    FACE_IMPO=(
+        _F(GROUP_MA="BORD_EXT", DX=UX, DY=UY, DZ=UZ),
+        _F(GROUP_MA="SYME_X", DX=ZERO),
+        _F(GROUP_MA="SYME_Y", DY=ZERO),
+        _F(GROUP_MA="SYME_Z", DZ=ZERO),
+    ),
+)
+
+FORC_IMP = AFFE_CHAR_MECA_F(MODELE=MO, FORCE_INTERNE=_F(GROUP_MA="CUBE", FX=BX, FY=BY, FZ=BZ))
+
+INSTANTS = DEFI_LIST_REEL(DEBUT=0, INTERVALLE=_F(JUSQU_A=1, NOMBRE=1))
+
+EVOL1 = STAT_NON_LINE(
+    MODELE=MO,
+    CHAM_MATER=CHMAT,
+    NEWTON=_F(REAC_ITER=0),
+    EXCIT=(_F(CHARGE=DEPL_IMP), _F(CHARGE=FORC_IMP)),
+    COMPORTEMENT=_F(RELATION="ELAS"),
+    INCREMENT=_F(LIST_INST=INSTANTS),
+    SOLVEUR=_F(METHODE="MUMPS"),
+)
+
+EVOL1 = CALC_CHAMP(reuse=EVOL1, RESULTAT=EVOL1, DEFORMATION="EPSI_ELGA")
+
+GAUSS = CALC_CHAM_ELEM(MODELE=MO, OPTION="COOR_ELGA")
+
+EPSI1 = CREA_CHAMP(
+    TYPE_CHAM="ELGA_EPSI_R", OPERATION="EXTR", RESULTAT=EVOL1, NOM_CHAM="EPSI_ELGA", INST=1
+)
+
+SIEF1 = CREA_CHAMP(
+    TYPE_CHAM="ELGA_SIEF_R", OPERATION="EXTR", RESULTAT=EVOL1, NOM_CHAM="SIEF_ELGA", INST=1
+)
+
+# For testing FULL_MECA
+EVOL2 = STAT_NON_LINE(
+    MODELE=MO,
+    CHAM_MATER=CHMAT,
+    NEWTON=_F(REAC_ITER=1),
+    EXCIT=(_F(CHARGE=DEPL_IMP), _F(CHARGE=FORC_IMP)),
+    COMPORTEMENT=_F(RELATION="ELAS"),
+    INCREMENT=_F(LIST_INST=INSTANTS),
+    SOLVEUR=_F(METHODE="MUMPS"),
+)
+
+EVOL2 = CALC_CHAMP(reuse=EVOL2, RESULTAT=EVOL2, DEFORMATION="EPSI_ELGA")
+
+
+EPSI2 = CREA_CHAMP(
+    TYPE_CHAM="ELGA_EPSI_R", OPERATION="EXTR", RESULTAT=EVOL2, NOM_CHAM="EPSI_ELGA", INST=1
+)
+
+SIEF2 = CREA_CHAMP(
+    TYPE_CHAM="ELGA_SIEF_R", OPERATION="EXTR", RESULTAT=EVOL2, NOM_CHAM="SIEF_ELGA", INST=1
+)
+
+FIN()
+# CHECKSUM:77118ba6097a5d5623460aa268cd5a0e  -:FIN CHECKSUM

@@ -1,0 +1,220 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# CAS_TEST__: SDLV100B
+# SDLV100/B                 COMMANDES                           7/11/97
+# POUTRE ELANCEE DE SECTION RECTANGULAIRE VARIABLE
+# SECT RECT:  0.04*0.04==>0.01*0.01
+# L= 1M -- ENCASTREE-LIBRE --                     REF: SFM.VPCS SDLL100
+# MODELISATION MECA_HEXA20:  368 NOEUDS -- 30 MAILLES
+# =======================================================================
+
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+MA = LIRE_MAILLAGE(FORMAT="MED")
+
+MO = AFFE_MODELE(MAILLAGE=MA, AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="3D"))
+
+MAT = DEFI_MATERIAU(ELAS=_F(E=2.0e11, NU=0.3, RHO=7800.0))
+
+CHMAT = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MAT))
+
+# PB PLAN + NOEUD 'A' ENCASTRE
+CH = AFFE_CHAR_MECA(
+    MODELE=MO, DDL_IMPO=(_F(TOUT="OUI", DZ=0.0), _F(GROUP_NO="G_1", DX=0.0, DY=0.0))
+)
+
+MASSX1 = POST_ELEM(MODELE=MO, CHAM_MATER=CHMAT, MASS_INER=_F(TOUT="OUI"))
+
+#
+
+
+TEST_TABLE(VALE_CALC=5.4600000539141, NOM_PARA="MASSE", TABLE=MASSX1)
+
+TEST_TABLE(VALE_CALC=0.32142856960334, NOM_PARA="CDG_X", TABLE=MASSX1)
+
+TEST_TABLE(CRITERE="ABSOLU", VALE_CALC=0.0, NOM_PARA="CDG_Y", TABLE=MASSX1)
+
+TEST_TABLE(CRITERE="ABSOLU", VALE_CALC=0.0, NOM_PARA="CDG_Z", TABLE=MASSX1)
+
+TEST_TABLE(VALE_CALC=8.8660002402563e-4, NOM_PARA="IX_G", TABLE=MASSX1)
+
+TEST_TABLE(VALE_CALC=0.32033616186609, NOM_PARA="IY_G", TABLE=MASSX1)
+
+TEST_TABLE(VALE_CALC=0.32033616186609, NOM_PARA="IZ_G", TABLE=MASSX1)
+
+TEST_TABLE(VALE_CALC=8.8660002402563e-4, NOM_PARA="IX_PRIN_G", TABLE=MASSX1)
+
+TEST_TABLE(VALE_CALC=0.32033616186609, NOM_PARA="IY_PRIN_G", TABLE=MASSX1)
+
+TEST_TABLE(VALE_CALC=0.32033616186609, NOM_PARA="IZ_PRIN_G", TABLE=MASSX1)
+
+# --------------------------------------------------------------------
+
+MELR1 = CALC_MATR_ELEM(MODELE=MO, CHARGE=CH, CHAM_MATER=CHMAT, OPTION="RIGI_MECA")
+
+MELM1 = CALC_MATR_ELEM(MODELE=MO, CHARGE=CH, CHAM_MATER=CHMAT, OPTION="MASS_MECA")
+
+MELM2 = CALC_MATR_ELEM(MODELE=MO, CHARGE=CH, CHAM_MATER=CHMAT, OPTION="MASS_MECA_DIAG")
+
+NUM1 = NUME_DDL(MATR_RIGI=MELR1)
+
+MATASSR1 = ASSE_MATRICE(MATR_ELEM=MELR1, NUME_DDL=NUM1)
+
+MATASSM1 = ASSE_MATRICE(MATR_ELEM=MELM1, NUME_DDL=NUM1)
+
+MATASSM2 = ASSE_MATRICE(MATR_ELEM=MELM2, NUME_DDL=NUM1)
+
+# ------------------------------------------------------------------
+#         *********   2 CALCULS  **********
+# ------------------------------------------------------------------
+
+# ---  CAS1 -------
+
+MODE1 = CALC_MODES(
+    MATR_RIGI=MATASSR1,
+    OPTION="AJUSTE",
+    SOLVEUR=_F(METHODE="MULT_FRONT"),
+    CALC_FREQ=_F(FREQ=(53.0, 1500.0)),
+    MATR_MASS=MATASSM1,
+)
+
+
+# ---  CAS2 -------
+
+MODE2 = CALC_MODES(
+    MATR_RIGI=MATASSR1,
+    OPTION="AJUSTE",
+    SOLVEUR=_F(METHODE="MULT_FRONT"),
+    CALC_FREQ=_F(FREQ=(53.0, 1500.0)),
+    MATR_MASS=MATASSM2,
+)
+
+
+# --------------------------------------------------------------------
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            PARA="FREQ",
+            RESULTAT=MODE1,
+            VALE_CALC=56.818396159,
+            VALE_REFE=56.840000000000003,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=2,
+            PARA="FREQ",
+            RESULTAT=MODE1,
+            VALE_CALC=179.960046041,
+            VALE_REFE=180.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=3,
+            PARA="FREQ",
+            RESULTAT=MODE1,
+            VALE_CALC=400.926450145,
+            VALE_REFE=401.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=4,
+            PARA="FREQ",
+            RESULTAT=MODE1,
+            VALE_CALC=723.411707221,
+            VALE_REFE=723.20000000000005,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=5,
+            PARA="FREQ",
+            RESULTAT=MODE1,
+            VALE_CALC=1.14641372e03,
+            VALE_REFE=1145.4100000000001,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            PARA="FREQ",
+            RESULTAT=MODE2,
+            VALE_CALC=56.755108966,
+            VALE_REFE=56.840000000000003,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=2,
+            PARA="FREQ",
+            RESULTAT=MODE2,
+            VALE_CALC=179.509940157,
+            VALE_REFE=180.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=3,
+            PARA="FREQ",
+            RESULTAT=MODE2,
+            VALE_CALC=399.246745839,
+            VALE_REFE=401.0,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=4,
+            PARA="FREQ",
+            RESULTAT=MODE2,
+            VALE_CALC=718.982260200,
+            VALE_REFE=723.20000000000005,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+        _F(
+            NUME_ORDRE=5,
+            PARA="FREQ",
+            RESULTAT=MODE2,
+            VALE_CALC=1.13693103e03,
+            VALE_REFE=1145.4100000000001,
+            REFERENCE="SOURCE_EXTERNE",
+            CRITERE="RELATIF",
+            PRECISION=1.0e-2,
+        ),
+    )
+)
+
+FIN()
+#

@@ -1,0 +1,226 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# CAS_TEST__: SSLV07C
+# SSLV07/C                 COMMANDES
+# ETIREMENT D'UN PARALLELIPIPEDE SOUS SON PROPRE POIDS
+# FORCE_INTERNE + FORCE_FACE + CALCUL DES CONTRAINTES
+# DECOUPAGE: Z=12  X=8     Y=8                      REF: SFM.VPCS SSLV07
+# MODELISATION 3D: 1053 NOEUDS -- 768 MAILLES HEXA8
+# A:N533  B:N521  E:N527  C:N989  D:N1001
+# =======================================================================
+
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+MA = LIRE_MAILLAGE(FORMAT="MED")
+
+MO = AFFE_MODELE(MAILLAGE=MA, AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="3D"))
+
+MAT = DEFI_MATERIAU(ELAS=_F(E=2.0e11, NU=0.3, RHO=7800.0, ALPHA=0.0))
+
+CHMAT = AFFE_MATERIAU(MAILLAGE=MA, AFFE=_F(TOUT="OUI", MATER=MAT))
+
+POIDS = DEFI_CONSTANTE(VALE=-76518.0)
+
+FZ = DEFI_CONSTANTE(VALE=229553.0)
+
+# ------------------------------------------------------------------
+#    --- STRUCTURE SUSPENDUE //Z EN A + PAS DE ROTATION
+
+CH1 = AFFE_CHAR_MECA(
+    MODELE=MO,
+    DDL_IMPO=(
+        _F(GROUP_NO="A", DX=0.0, DY=0.0, DZ=0.0),
+        _F(GROUP_NO="D", DY=0.0),
+        _F(GROUP_NO="ABSANSA", DX=0.0, DY=0.0),
+    ),
+)
+
+CH2 = AFFE_CHAR_MECA_F(
+    MODELE=MO, FORCE_INTERNE=_F(TOUT="OUI", FZ=POIDS), FORCE_FACE=_F(GROUP_MA="FACESUP", FZ=FZ)
+)
+
+# ------------------------------------------------------------------
+
+RESU = MECA_STATIQUE(MODELE=MO, CHAM_MATER=CHMAT, EXCIT=(_F(CHARGE=CH1), _F(CHARGE=CH2)))
+
+RESU = CALC_CHAMP(reuse=RESU, RESULTAT=RESU, CONTRAINTE=("SIGM_ELNO"))
+
+
+# ---------------------------------------------------------------------
+
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N521",
+            NOM_CMP="DX",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=0.0,
+            VALE_CALC=0.0,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N521",
+            NOM_CMP="DY",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=0.0,
+            VALE_CALC=0.0,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N521",
+            NOM_CMP="DZ",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=-1.721655e-06,
+            VALE_CALC=-1.7217010715155e-06,
+            PRECISION=1.0e-3,
+            CRITERE="RELATIF",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N989",
+            NOM_CMP="DX",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=0.0,
+            VALE_CALC=0.0,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N989",
+            NOM_CMP="DY",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=0.0,
+            VALE_CALC=0.0,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N989",
+            NOM_CMP="DZ",
+            REFERENCE="ANALYTIQUE",
+            VALE_CALC=-1.70953535e-06,
+            VALE_REFE=-1.707308e-06,
+            CRITERE="RELATIF",
+            PRECISION=2.0e-3,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N1001",
+            NOM_CMP="DX",
+            REFERENCE="ANALYTIQUE",
+            VALE_CALC=-1.68456213e-07,
+            VALE_REFE=-1.721655e-07,
+            CRITERE="RELATIF",
+            PRECISION=0.03,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N1001",
+            NOM_CMP="DY",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=0.0,
+            VALE_CALC=0.0,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N1001",
+            NOM_CMP="DZ",
+            REFERENCE="ANALYTIQUE",
+            VALE_CALC=1.21175961e-08,
+            VALE_REFE=1.434713e-08,
+            CRITERE="RELATIF",
+            PRECISION=0.2,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N527",
+            NOM_CMP="DX",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=0.0,
+            VALE_CALC=0.0,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N527",
+            NOM_CMP="DY",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=0.0,
+            VALE_CALC=0.0,
+            CRITERE="ABSOLU",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="DEPL",
+            GROUP_NO="N527",
+            NOM_CMP="DZ",
+            REFERENCE="ANALYTIQUE",
+            VALE_CALC=-1.291651374892e-06,
+            VALE_REFE=-1.291241e-06,
+            PRECISION=1.0e-3,
+            CRITERE="RELATIF",
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=RESU,
+            NOM_CHAM="SIGM_ELNO",
+            GROUP_NO="N533",
+            NOM_CMP="SIZZ",
+            REFERENCE="ANALYTIQUE",
+            VALE_CALC=2.173888774038e05,
+            VALE_REFE=2.29554e5,
+            CRITERE="RELATIF",
+            PRECISION=0.11,
+            GROUP_MA="HEX336",
+        ),
+    )
+)
+
+FIN()
+#
