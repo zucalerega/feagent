@@ -6,6 +6,9 @@ directory, and the ASCII ``.frd`` (U, RF, NT, nodal-averaged S / HFL) plus the `
 (reaction forces, internal energy) are parsed back. See ``docs/solver_ccx.md`` for the mapping,
 conventions and verification.
 
+Nonlinear (elastoplastic, load-stepped) cases (``analysis.options.nonlinear``) are run by
+``feacore.solver._ccx_nl`` and return a ``CcxNonlinearResult`` (docs/solver_ccx_nonlinear.md).
+
 Options (all optional):
   workdir   directory for the ccx run (default: a fresh dir under $FEACORE_CCX_TMP or /tmp/ccx)
   keep      keep the scratch directory (default False; always kept when ccx fails)
@@ -22,7 +25,8 @@ import time
 
 import numpy as np
 
-from feacore.case import BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field, eval_expr
+from feacore.case import (BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field, eval_expr,
+                          hardening_table)
 from feacore.solver._ccx_fem import Locator, _bary, interpolate, map_points, quadrature, shape
 from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_totals, parse_frd, run_ccx
 from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh  # noqa: F401
@@ -68,6 +72,9 @@ def solve(case: Case, **options) -> "CcxResult":
     _check_curvature(model, a.formulation)
     deck = _Deck(case, model)
     inp = deck.build()
+    if a.nonlinear:   # opt-in elastoplastic load stepping: docs/solver_ccx_nonlinear.md
+        from feacore.solver._ccx_nl import solve_nonlinear
+        return solve_nonlinear(case, model, deck, inp, options, t0)
     keep = bool(options.get("keep", False)) or options.get("workdir") is not None
     run = run_ccx(inp, job="job", workdir=options.get("workdir"), ccx=options.get("ccx"),
                   threads=options.get("threads"), timeout=options.get("timeout"))
@@ -167,6 +174,9 @@ class _Deck:
         self.thermal = False
         self.warnings: list[str] = []
         self.has_thermal_load = any(l.type == "temperature" for l in case.loads)
+        # nonlinear (opt-in): every load / prescribed value is written x lf and ramped over the step
+        self.nonlinear = a.nonlinear
+        self.lf = float(a.options.get("load_factor_max", 1.0)) if self.nonlinear else 1.0
         # Plane stress: CalculiX expands CPS elements into a 3D slab of the section thickness whose
         # faces are free, so only a slab that is thin compared with the cells is in plane stress
         # (a thick slab carries transverse shear between cells and converges to a 3D plate
@@ -352,6 +362,8 @@ class _Deck:
                 L += ["*ELASTIC", f"{fnum(mt.E)}, {fnum(mt.nu)}"]
                 if mt.alpha and self.has_thermal_load:
                     L += [f"*EXPANSION, ZERO={fnum(T_ref)}", fnum(mt.alpha)]
+                if mt.plasticity is not None:
+                    L += ["*PLASTIC"] + [f"{fnum(sv)}, {fnum(ep)}" for ep, sv in hardening_table(mt.plasticity)]
             L.append(f"*SOLID SECTION, ELSET={es}, MATERIAL=MAT{k + 1}")
             if self.plane:
                 L.append(fnum(self.t_section))
@@ -361,7 +373,8 @@ class _Deck:
         c, m = self.case, self.m
         dim = m.dim
         pre: list[str] = []          # model data before *STEP (initial conditions)
-        S: list[str] = ["*STEP", "*STATIC"]
+        S: list[str] = self._static_header()
+        lf = self.lf
         dloads: list[str] = []
         X = m.X
         for b in c.bcs:
@@ -390,7 +403,7 @@ class _Deck:
                     # right total, wrong nodal split) -> consistent nodal loads
                     self._cload_from(nodes, N, trac * (w * self.weight(x))[..., None])
                 else:
-                    dloads += [f"{e + 1}, P{f + 1}, {fnum(b.value)}" for e, f in zip(el, fc)]
+                    dloads += [f"{e + 1}, P{f + 1}, {fnum(lf * b.value)}" for e, f in zip(el, fc)]
             elif b.type in ("traction", "force"):
                 el, fc = m.facets_of(b.group)
                 nodes, N, x, w, n = self.face_quad(el, fc)
@@ -414,7 +427,7 @@ class _Deck:
                     self._cload_from(nodes, N, bf * ww[..., None])
                 else:
                     es = self.elset(ld.group)
-                    dloads += [f"{es}, B{'XYZ'[d]}, {fnum(v)}" for d, v in enumerate(ld.value) if v != 0]
+                    dloads += [f"{es}, B{'XYZ'[d]}, {fnum(lf * v)}" for d, v in enumerate(ld.value) if v != 0]
             elif ld.type == "temperature":
                 self.thermal = True
         if self.thermal:
@@ -425,22 +438,40 @@ class _Deck:
                     T[nodes] = as_field(ld.value, X[nodes, 0], X[nodes, 1], X[nodes, 2])
             self.T_nodal = T
             pre += ["*INITIAL CONDITIONS, TYPE=TEMPERATURE", f"NALL, {fnum(c.analysis.T_ref)}"]
-            S += ["*TEMPERATURE"] + [f"{i + 1}, {fnum(t)}" for i, t in enumerate(T)]
+            Tw = c.analysis.T_ref + lf * (T - c.analysis.T_ref)
+            S += ["*TEMPERATURE"] + [f"{i + 1}, {fnum(t)}" for i, t in enumerate(Tw)]
         if not self.dirichlet:
             raise CaseError("no Dirichlet boundary conditions: the problem is singular")
         S.append("*BOUNDARY")
-        S += [f"{n + 1}, {d + 1}, {d + 1}, {fnum(v)}" for (n, d), v in sorted(self.dirichlet.items())]
+        S += [f"{n + 1}, {d + 1}, {d + 1}, {fnum(lf * v)}" for (n, d), v in sorted(self.dirichlet.items())]
         if dloads:
             S += ["*DLOAD"] + dloads
         cl = getattr(self, "_cloads", None)
         if cl is not None and np.any(cl):
             S.append("*CLOAD")
             for n in np.nonzero(np.any(cl != 0, axis=1))[0]:
-                S += [f"{n + 1}, {d + 1}, {fnum(cl[n, d] * self.load_factor)}" for d in range(dim) if cl[n, d] != 0]
+                S += [f"{n + 1}, {d + 1}, {fnum(lf * cl[n, d] * self.load_factor)}" for d in range(dim)
+                      if cl[n, d] != 0]
         S += ["*NODE FILE", "U, RF" + (", NT" if self.thermal else ""), "*EL FILE", "S"]
+        if self.nonlinear:
+            S[-1] = "S, PEEQ"
+            S += ["*EL PRINT, ELSET=EALL", "PEEQ"] if self.case.analysis.options.get("ip_peeq", True) else []
         S += self._totals_requests("RF")
         S += ["*EL PRINT, ELSET=EALL, TOTALS=ONLY", "ELSE", "*END STEP"]
         return pre + S
+
+    def _static_header(self) -> list[str]:
+        """*STEP / *STATIC; nonlinear: fixed equal increments (DIRECT) over a unit step time, loads
+        ramped linearly from 0 (ccx's default for *STATIC), so step time t = load factor / lf."""
+        if not self.nonlinear:
+            return ["*STEP", "*STATIC"]
+        o = self.case.analysis.options
+        n = int(o.get("increments", 20))
+        step = "*STEP, INC=" + str(max(100, 20 * n)) + (", NLGEOM" if o.get("nlgeom") else "")
+        dt = fnum(1.0 / n)
+        if o.get("adaptive"):
+            return [step, "*STATIC", f"{dt}, 1., {fnum(1e-4 / n)}, {dt}"]
+        return [step, "*STATIC, DIRECT", f"{dt}, 1."]
 
     def _cload_from(self, nodes, N, vals):
         if getattr(self, "_cloads", None) is None:
@@ -529,6 +560,7 @@ class CcxResult(Result):
     def __init__(self, case: Case, model: FEModel, deck: _Deck, frd: dict, totals: dict, run):
         self.case, self.model, self.deck = case, model, deck
         self.totals = totals
+        self.load_scale = 1.0     # applied loads = load_scale x deck.fext (nonlinear: increment's lambda)
         self.workdir = run.workdir
         self.ccx_stdout = run.stdout
         a = case.analysis
@@ -669,7 +701,7 @@ class CcxResult(Result):
         heat = self.case.analysis.physics == "heat"
         comp = 0 if heat else int(component)
         nodes = self._group_nodes(group)
-        fext = float(d.fext[nodes, comp].sum())
+        fext = float(d.fext[nodes, comp].sum()) * self.load_scale
         key = ("heat generation" if heat else "force", d.nsets.get(group, "").upper())
         tot = self.totals.get(key)
         if tot is not None and len(tot) > comp:
