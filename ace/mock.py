@@ -36,7 +36,7 @@ class MockLLM:
     # ---------------------------------------------------------------- generator
     def agent_turn(self, system: str, messages: list, tools: list, run_id: str = "", role: str = "generator"):
         if role == "diagnoser":
-            return self._diagnoser_turn(messages)
+            return self._diagnoser_turn(messages, {t["name"] for t in tools})
         from ace import fea   # local import: only needed by the mock generator
 
         problem_id = messages[0]["content"].splitlines()[0].removeprefix("Problem id: ").strip()
@@ -76,10 +76,13 @@ class MockLLM:
         return usage_record(role, MODELS[role], _usage(1500, 200), run_id)
 
     # ---------------------------------------------------------------- diagnoser
-    def _diagnoser_turn(self, messages: list):
+    def _diagnoser_turn(self, messages: list, offered: set):
         """Scripted session: list_runs -> stage report of the worst run -> diff best/worst ->
-        one rerun of the worst run -> submit a diagnosis that CLAIMS the rerun confirmed the
-        cause (so tests can check that code downgrades the claim when the rerun did not flip)."""
+        one rerun of the worst run (if reruns are offered) -> its error map (if offered, field
+        mode) -> submit. With a rerun, the diagnosis CLAIMS the rerun confirmed the cause (so
+        tests can check that code downgrades the claim when the rerun did not flip); without one
+        (inspect mode) it claims only contrast evidence."""
+        from ace import config
         turn = sum(1 for m in messages if m["role"] == "assistant")
         rec = self._rec("diagnoser", "diagnoser")
 
@@ -93,21 +96,33 @@ class MockLLM:
         stage = "bcs" if worst["first_failing_stage"] == "bcs" else "mesh"
         change = {"name": "refine_mesh", "args": {"scope": "global", "factor": 1.5}} if stage == "mesh" else \
                  {"name": "convert_units", "args": {"target": "E", "factor": 1.0}}
-        if turn == 1:
-            return tool("get_stage_report", {"run_id": worst["run_id"]})
-        if turn == 2:
-            return tool("diff_runs", {"run_a": best["run_id"], "run_b": worst["run_id"]})
-        if turn == 3:
-            return tool("rerun_from_stage", {"run_id": worst["run_id"], "stage": stage, "change": change})
+        rerun = "rerun_from_stage" in offered
+        steps = [("get_stage_report", {"run_id": worst["run_id"]}),
+                 ("diff_runs", {"run_a": best["run_id"], "run_b": worst["run_id"]})]
+        if rerun:
+            steps.append(("rerun_from_stage", {"run_id": worst["run_id"], "stage": stage, "change": change}))
+        if "get_error_map" in offered and config.SCORE == "field":
+            steps.append(("get_error_map", {"run_id": worst["run_id"]}))
+        if turn <= len(steps):
+            return tool(*steps[turn - 1])
         cited = sorted({c for r in listing for c in r["cited"]})
+        agents = {r["run_id"]: r["run_id"].rsplit("-", 1)[-1] for r in (best, worst)}
         return tool("submit_diagnosis", {
             "divergence": "mock: the worst run diverged at its mesh",
-            "runs": [{"run_id": worst["run_id"], "diagnosis_status": "confirmed", "stage": stage,
-                      "category": "mesh_too_coarse" if stage == "mesh" else "units", "cause": "mock cause",
-                      "evidence": "mock rerun", "hypotheses_tested": [
-                          {"stage": stage, "intervention": change, "result": "confirmed"}]}],
+            "runs": [{"run_id": worst["run_id"], "diagnosis_status": "confirmed" if rerun else "contrast_only",
+                      "stage": stage, "category": "mesh_too_coarse" if stage == "mesh" else "units",
+                      "cause": "mock cause", "evidence": "mock rerun" if rerun else "mock error map",
+                      "hypotheses_tested": [{"stage": stage, "intervention": change, "result": "confirmed"}] if rerun
+                      else []}],
+            "agent_advice": [{"agent": a, "section": "meshing", "run_ids": [rid],
+                              "content": "When a mesh is refined, refine where the error is, because the score "
+                                         "covers the whole field.",
+                              "ideas_to_try": ["refine along the loaded boundary at half the global size",
+                                               "try a coarser global size with one local refinement"]}
+                             for rid, a in agents.items()],
             "lessons": [
-                {"section": "meshing", "scope": "general", "evidence": "mock", "evidence_type": "counterfactual",
+                {"section": "meshing", "scope": "general", "evidence": "mock",
+                 "evidence_type": "counterfactual" if rerun else "contrast",
                  "confidence": "high", "run_ids": [worst["run_id"]],
                  "content": "When the scored quantity is a point stress, use quadratic (order 2) elements, "
                             "because they resolve stress gradients with fewer nodes."},
