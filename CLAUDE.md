@@ -132,6 +132,12 @@ Decisions:
   values stop converging. Ghia's cavity table is itself 1.4-3.5% off converged solutions, so its
   tolerances are 3-5%. Pressure drops use the `point_difference` QoI. To enable it on a box:
   `sudo apt-get install -y openfoam && uv pip install --python .venv/bin/python foamlib`.
+  3D flow uses skew-consistent schemes (option `skew_correction`, on by default in 3D):
+  `pointCellsLeastSquares` gradients (but `grad(p)` stays Gauss linear) and a `skewCorrected linear`
+  `flux(HbyA)`. With the plain schemes, tets converged to a pressure gradient 12-15% too high at
+  every h: next to a wall, linear interpolation misses the face values in the same direction
+  everywhere. Wall forces use the wall-normal distance, as the solver does.
+  `docs/solver_openfoam.md`, "3D meshes".
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
