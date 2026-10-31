@@ -171,3 +171,108 @@ def test_cli_automesh_bracket(tmp_path, parts_dir):
     assert str(out / "mesh.yaml") in p.stdout and "| pass | volume_fidelity |" in p.stdout
     d = json.loads((out / "out" / "report.json").read_text())
     assert d["status"] == "pass" and d["schema_version"] == 1
+
+
+# --- fix round 1: error contract, state semantics ---------------------------
+
+def _entry(spec: Path) -> dict:
+    from feagent.check import load_state
+
+    return load_state()["specs"][str(spec.resolve())]
+
+
+def test_cli_usage_error_json_exit2():
+    p = cli("faces", "part.step", "--json")  # --query missing
+    assert p.returncode == 2
+    d = json.loads(p.stdout)
+    assert d["ok"] is False and "--query" in d["error"] and "usage:" in d["hint"]
+
+
+def test_cli_internal_error_exit3(tmp_path, monkeypatch, capsys):
+    import feagent.parts
+    from feagent.cli import main
+
+    def boom(out_dir):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(feagent.parts, "make_all", boom)
+    assert main(["parts", str(tmp_path), "--json"]) == 3
+    out, err = capsys.readouterr()
+    d = json.loads(out)
+    assert d["ok"] is False and d["error"] == "internal: RuntimeError: kaboom" and d["hint"]
+    assert "error: internal: RuntimeError: kaboom" in err and "Traceback" in err
+
+
+def test_cli_query_value_error_has_hint(parts_dir):
+    p = cli("faces", str(parts_dir / "cantilever.step"), "--query", '{"at": "left"}')
+    assert p.returncode == 2
+    assert "'at'" in p.stderr and "hint: fix the query value" in p.stderr
+
+
+def test_spec_edit_during_check_reads_stale(tmp_path, parts_dir, monkeypatch):
+    import feagent.mesher
+    from feagent.types import Gate, MeshResult
+
+    monkeypatch.setenv("FEAGENT_STATE", str(tmp_path / "state.json"))
+    spec = write_spec(tmp_path / "p", parts_dir / "cantilever.step", CANTILEVER)
+    before = spec.stat().st_mtime
+
+    def edit_while_meshing(spec_path, size_scale=1.0, timeout=900):
+        os.utime(spec, (before + 100, before + 100))  # the agent edits the spec mid-run
+        return MeshResult(ok=False, spec_path=str(spec_path), out_dir="", mesh_path=None,
+                          exports={}, groups={}, n_nodes=0, n_elements=0, order=1,
+                          size_scale=1.0, elapsed_s=0.0, errors=["x"], warnings=[],
+                          gates=[Gate("mesh_generated", "Mesh", "fail", None, None, "x")],
+                          geometry=None)
+
+    monkeypatch.setattr(feagent.mesher, "run_mesh_subprocess", edit_while_meshing)
+    r = run_check(spec, render=False)
+    entry = _entry(spec)
+    assert entry["spec_mtime"] == before < spec.stat().st_mtime
+    assert entry["report_created_at"] == r.created_at
+
+
+def test_spec_error_records_fail(tmp_path, parts_dir, monkeypatch):
+    from feagent.check import load_checked_spec
+    from feagent.errors import SpecError
+
+    monkeypatch.setenv("FEAGENT_STATE", str(tmp_path / "state.json"))
+    spec = write_spec(tmp_path / "p", parts_dir / "cantilever.step", CANTILEVER)
+    record_state(str(spec), "pass")
+    spec.write_text(spec.read_text() + "solve: {}\n")
+    with pytest.raises(SpecError):
+        run_check(spec)
+    entry = _entry(spec)
+    assert entry["status"] == "fail" and "solve" in entry["error"]
+    with pytest.raises(SpecError):
+        load_checked_spec(tmp_path / "missing.yaml")
+    specs = json.loads(state_path().read_text())["specs"]
+    assert str((tmp_path / "missing.yaml").resolve()) not in specs
+
+
+def test_waiver_lifecycle(tmp_path, monkeypatch):
+    from feagent.check import waive
+
+    monkeypatch.setenv("FEAGENT_STATE", str(tmp_path / "state.json"))
+    spec = tmp_path / "mesh.yaml"
+    spec.write_text("x: 1\n")
+    record_state(str(spec), "fail")
+    entry = waive(str(spec), "accepted")
+    assert entry["status"] == "fail" and entry["waiver_spec_mtime"] == spec.stat().st_mtime
+    assert record_state(str(spec), "fail")["waiver"] == "accepted"  # a failing re-check keeps it
+    assert _entry(spec)["waiver"] == "accepted"
+    assert record_state(str(spec), "pass")["waiver"] is None  # a pass clears it
+    assert _entry(spec)["waiver_spec_mtime"] is None
+
+
+def test_state_path_resolution(tmp_path, monkeypatch):
+    monkeypatch.delenv("FEAGENT_STATE", raising=False)
+    root = tmp_path / "proj"
+    (root / "a" / "b").mkdir(parents=True)
+    (root / "pyproject.toml").write_text("")
+    monkeypatch.chdir(root / "a" / "b")
+    assert state_path() == root.resolve() / ".feagent" / "state.json"
+    (root / "a" / ".feagent").mkdir()
+    assert state_path() == (root / "a").resolve() / ".feagent" / "state.json"
+    monkeypatch.setenv("FEAGENT_STATE", str(tmp_path / "s.json"))
+    assert state_path() == tmp_path / "s.json"

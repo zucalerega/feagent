@@ -442,11 +442,15 @@ def load_spec(path: str | Path) -> MeshSpec:
     """Read and validate a YAML mesh spec; raises SpecError naming the bad field."""
     p = Path(path)
     if not p.is_file():
-        raise _err("", f"spec file not found: {p}")
+        raise _err("", f"spec file not found: {p}",
+                   "pass the path of a mesh.yaml (relative to the current directory); "
+                   "`feagent automesh PART` writes a starting spec")
     try:
         data = yaml.safe_load(p.read_text())
     except yaml.YAMLError as exc:
-        raise _err("", f"invalid YAML in {p}: {exc}") from exc
+        raise _err("", f"invalid YAML in {p}: {exc}",
+                   "fix the line/column shown: YAML needs `key: value` with consistent "
+                   "indentation; quote strings containing ':' or '#'") from exc
     return parse_spec(data, p)
 
 

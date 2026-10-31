@@ -51,7 +51,8 @@ def test_missing_group_reference(tmp_path):
 
 
 def test_expect_range(tmp_path):
-    body = MIN + "groups:\n  a: {select: {kind: plane}, expect: [2, 4]}\n  b: {select: {kind: plane}, expect: 1}\n"
+    body = MIN + ("groups:\n  a: {select: {kind: plane}, expect: [2, 4]}\n"
+                  "  b: {select: {kind: plane}, expect: 1}\n")
     s = load_spec(write(tmp_path, body))
     assert s.groups["a"].expect == (2, 4)
     assert s.groups["b"].expect == 1
@@ -120,3 +121,12 @@ def test_query_keys_come_from_select():
     from feagent import select, spec
 
     assert spec._query_keys() == tuple(select.QUERY_KEYS)
+
+
+def test_file_and_yaml_errors_have_hints(tmp_path):
+    with pytest.raises(SpecError) as e:
+        load_spec(tmp_path / "nope.yaml")
+    assert "not found" in e.value.message and e.value.hint
+    with pytest.raises(SpecError) as e:
+        load_spec(write(tmp_path, "geometry: [unclosed\n"))
+    assert "invalid YAML" in e.value.message and e.value.hint

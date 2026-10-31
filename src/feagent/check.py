@@ -2,7 +2,7 @@
 
 ``run_check`` writes ``<spec out dir>/report.json`` (machine-readable, schema in
 docs/report-schema.md) and ``REPORT.md`` (gate table first), and records the result in the
-state file the Stop hook reads (``$FEAGENT_STATE`` or ``./.feagent/state.json``).
+state file the Stop hook reads (see ``state_path`` and ``record_state``).
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 SCHEMA_VERSION = 1
 STATE_ENV = "FEAGENT_STATE"
+_ROOT_MARKERS = (".feagent", "pyproject.toml")
 _RENDERS = ("groups.png", "quality.png")
 
 
@@ -56,19 +57,37 @@ class CheckReport(_Base):
 def run_check(spec_path: str | Path, render: bool = True) -> CheckReport:
     """Mesh ``spec_path`` in a child process, assess quality, render, write and record a report.
 
-    Raises SpecError (before meshing) if the spec is invalid."""
+    Raises SpecError (before meshing, recorded as state "fail") if the spec is invalid."""
     from .mesher import run_mesh_subprocess
-    from .spec import load_spec
 
-    spec = load_spec(spec_path)
+    spec, mtime = load_checked_spec(spec_path)
     mesh = run_mesh_subprocess(spec.path)
     qrep = _assess(mesh, spec)
     out = spec.out_dir()
     renders = _renders(mesh, qrep, out) if render and qrep is not None else []
     report = _report(spec, mesh, qrep, renders)
     write_report(report, out)
-    record_state(str(spec.path), report.status)
+    record_state(str(spec.path), report.status, spec_mtime=mtime,
+                 report_created_at=report.created_at)
     return report
+
+
+def load_checked_spec(spec_path: str | Path) -> tuple[MeshSpec, float | None]:
+    """``load_spec`` plus the spec file's mtime, taken *before* reading it.
+
+    Taking it first means an edit during the run leaves a recorded mtime older than the file, so
+    the result reads as stale. An invalid (existing) spec is recorded as state "fail" with the
+    error before the SpecError is re-raised, so an earlier "pass" cannot outlive it."""
+    from .errors import SpecError
+    from .spec import load_spec
+
+    mtime = _mtime(Path(spec_path))
+    try:
+        return load_spec(spec_path), mtime
+    except SpecError as e:
+        if Path(spec_path).is_file():
+            record_state(str(spec_path), "fail", spec_mtime=mtime, error=str(e))
+        raise
 
 
 def _assess(mesh: MeshResult, spec: MeshSpec) -> QualityReport | None:
@@ -210,10 +229,22 @@ def _md_problems(m: MeshResult) -> str:
 
 
 # --- state (read by the Stop hook) ------------------------------------------
+#
+# {"specs": {<abs spec path>: entry}, ...other top-level keys kept (e.g. "hook_blocks")}
+# entry: status ("unchecked" | "fail" | "pass"), checked_at and spec_mtime (epoch seconds; the
+# spec's mtime when the recorded run read it), error (spec error text or null),
+# report_created_at (created_at of the report.json this entry describes, or null),
+# waiver / waiver_spec_mtime (a waiver is valid only while the spec's mtime still equals
+# waiver_spec_mtime; a passing record clears it, other records keep it).
 
 def state_path() -> Path:
-    """``$FEAGENT_STATE`` or ``./.feagent/state.json``."""
-    return Path(os.environ.get(STATE_ENV) or Path(".feagent") / "state.json")
+    """``$FEAGENT_STATE``, else ``<root>/.feagent/state.json`` where root is the nearest ancestor
+    of the cwd (itself included) that contains ``.feagent/`` or ``pyproject.toml``, else the cwd."""
+    if os.environ.get(STATE_ENV):
+        return Path(os.environ[STATE_ENV])
+    cwd = Path.cwd().resolve()
+    roots = [d for d in (cwd, *cwd.parents) if any((d / m).exists() for m in _ROOT_MARKERS)]
+    return (roots[0] if roots else cwd) / ".feagent" / "state.json"
 
 
 def load_state() -> dict:
@@ -227,13 +258,45 @@ def load_state() -> dict:
     return data
 
 
-def record_state(spec_path: str, status: str, waiver: str | None = None) -> None:
-    """Set the state entry of ``spec_path``; other entries and top-level keys are kept."""
+def record_state(spec_path: str, status: str, waiver: str | None = None, *,
+                 spec_mtime: float | None = None, error: str | None = None,
+                 report_created_at: str | None = None) -> dict:
+    """Set and return the state entry of ``spec_path`` (format above); other entries are kept.
+
+    ``spec_mtime`` defaults to the file's current mtime; pass the value taken before reading the
+    spec to avoid recording an edit made during the run. ``waiver`` sets a waiver for that mtime;
+    with no waiver a "pass" clears any earlier one and other statuses keep it."""
     p = Path(spec_path).resolve()
+    mtime = _mtime(p) if spec_mtime is None else spec_mtime
     data = load_state()
-    data["specs"][str(p)] = {"status": status, "checked_at": time.time(),
-                             "spec_mtime": p.stat().st_mtime if p.exists() else None,
-                             "waiver": waiver}
+    old = data["specs"].get(str(p), {})
+    entry = {"status": status, "checked_at": time.time(), "spec_mtime": mtime, "error": error,
+             "report_created_at": report_created_at, **_waiver_fields(old, status, waiver, mtime)}
+    data["specs"][str(p)] = entry
+    _write_state(data)
+    return entry
+
+
+def _waiver_fields(old: dict, status: str, waiver: str | None, mtime: float | None) -> dict:
+    if waiver is not None:
+        return {"waiver": waiver, "waiver_spec_mtime": mtime}
+    if status == "pass":
+        return {"waiver": None, "waiver_spec_mtime": None}
+    return {"waiver": old.get("waiver"), "waiver_spec_mtime": old.get("waiver_spec_mtime")}
+
+
+def waive(spec_path: str, reason: str) -> dict:
+    """Waive the spec's current result (status kept; "unchecked" entry if none) at its mtime."""
+    key = str(Path(spec_path).resolve())
+    entry = load_state()["specs"].get(key) or record_state(spec_path, "unchecked")
+    entry.update(waiver=reason, waiver_spec_mtime=_mtime(Path(key)))
+    data = load_state()
+    data["specs"][key] = entry
+    _write_state(data)
+    return entry
+
+
+def _write_state(data: dict) -> None:
     path = state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
@@ -241,9 +304,8 @@ def record_state(spec_path: str, status: str, waiver: str | None = None) -> None
     os.replace(tmp, path)
 
 
-def waive(spec_path: str, reason: str) -> dict:
-    """Attach a waiver to the spec's current state entry (status kept; "unchecked" if none)."""
-    key = str(Path(spec_path).resolve())
-    status = load_state()["specs"].get(key, {}).get("status", "unchecked")
-    record_state(spec_path, status, waiver=reason)
-    return load_state()["specs"][key]
+def _mtime(p: Path) -> float | None:
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return None

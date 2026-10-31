@@ -1,7 +1,8 @@
 """`feagent` command line: inspect CAD, query faces, render, mesh, auto-mesh and check specs.
 
 Every command accepts ``--json`` (exactly one JSON document on stdout). Exit codes: 0 ok,
-1 gate or mesh failure, 2 usage / spec / query / CAD error (message and hint on stderr).
+1 gate or mesh failure, 2 usage / spec / query / CAD error, 3 internal error. On 2 and 3 the
+message and hint go to stderr and, with ``--json``, ``{"ok": false, "error", "hint"}`` to stdout.
 Library imports are deferred so ``feagent --help`` stays fast and gmsh loads only when used.
 """
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -19,25 +21,56 @@ if TYPE_CHECKING:  # pragma: no cover
     from .render import RenderResult
     from .types import GeometryModel
 
-EXIT_OK, EXIT_FAIL, EXIT_USAGE = 0, 1, 2
+EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
+EXIT_CODES = ("exit codes: 0 ok; 1 a gate failed or no mesh; 2 usage, spec, query or CAD error; "
+              "3 internal error (traceback on stderr)")
 _SPEC_SUFFIXES = (".yaml", ".yml")
 _QUERY_HINT = 'pass a JSON object, e.g. --query \'{"at": "xmin", "kind": "plane"}\''
+_INTERNAL_HINT = "unexpected failure inside feagent (traceback above on stderr); please report it"
+
+
+class _UsageError(Exception):
+    def __init__(self, message: str, usage: str):
+        super().__init__(message)
+        self.message, self.usage = message, usage
+
+
+class _Parser(argparse.ArgumentParser):
+    """Raises _UsageError instead of exiting, so main() reports it like any error (incl. JSON)."""
+
+    def error(self, message: str):  # type: ignore[override]
+        raise _UsageError(message, self.format_usage().strip())
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point of the ``feagent`` console script; returns the process exit code."""
-    args = build_parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else list(argv)
+    as_json = "--json" in argv
     try:
+        args = build_parser().parse_args(argv)
         return args.func(args)
+    except _UsageError as e:
+        return _error(as_json, e.message, e.usage, EXIT_USAGE)
     except FeagentError as e:
-        return _error(args, e)
+        return _error(as_json, e.message, e.hint or _default_hint(e), EXIT_USAGE)
+    except Exception as e:
+        sys.stderr.write(traceback.format_exc())
+        return _error(as_json, f"internal: {type(e).__name__}: {e}", _INTERNAL_HINT, EXIT_INTERNAL)
 
 
-def _error(args: argparse.Namespace, e: FeagentError) -> int:
-    sys.stderr.write(f"error: {e.message}\n" + (f"hint: {e.hint}\n" if e.hint else ""))
-    if getattr(args, "json", False):
-        _write({"ok": False, "error": e.message, "hint": e.hint}, as_json=True)
-    return EXIT_USAGE
+def _default_hint(e: FeagentError) -> str:
+    if not isinstance(e, QueryError):
+        return ""
+    from .select import QUERY_KEYS
+
+    return f"fix the query value named above; query keys: {', '.join(QUERY_KEYS)}. {_QUERY_HINT}"
+
+
+def _error(as_json: bool, message: str, hint: str, code: int) -> int:
+    sys.stderr.write(f"error: {message}\n" + (f"hint: {hint}\n" if hint else ""))
+    if as_json:
+        _write({"ok": False, "error": message, "hint": hint}, as_json=True)
+    return code
 
 
 def _write(payload: Any, as_json: bool) -> None:
@@ -182,13 +215,12 @@ _VIEWS: dict[str, Callable[[argparse.Namespace, Path], Any]] = {
 
 
 def _cmd_mesh(a: argparse.Namespace) -> int:
-    from .check import gate_table, record_state
+    from .check import gate_table, load_checked_spec, record_state
     from .mesher import run_mesh_subprocess
-    from .spec import load_spec
 
-    spec = load_spec(a.spec)
+    spec, mtime = load_checked_spec(a.spec)
     res = run_mesh_subprocess(spec.path, a.scale)
-    record_state(str(spec.path), "unchecked" if res.ok else "fail")
+    record_state(str(spec.path), "unchecked" if res.ok else "fail", spec_mtime=mtime)
     head = (f"mesh ok: {res.n_elements} tets, {res.n_nodes} nodes -> {res.mesh_path}" if res.ok
             else "mesh FAILED")
     text = "\n\n".join([head, gate_table(res.gates), *res.errors])
@@ -309,10 +341,11 @@ def build_parser() -> argparse.ArgumentParser:
     """The ``feagent`` argument parser (one subcommand per entry of ``_COMMANDS``)."""
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", action="store_true", help="write one JSON document to stdout")
-    ap = argparse.ArgumentParser(prog="feagent", description=__doc__.split("\n")[0])
+    ap = _Parser(prog="feagent", description=__doc__.split("\n")[0], epilog=EXIT_CODES)
     sub = ap.add_subparsers(dest="command", required=True)
     for name, (func, add_args, help_text) in _COMMANDS.items():
-        p = sub.add_parser(name, parents=[common], help=help_text, description=help_text)
+        p = sub.add_parser(name, parents=[common], help=help_text, description=help_text,
+                           epilog=EXIT_CODES)
         add_args(p)
         p.set_defaults(func=func)
     return ap

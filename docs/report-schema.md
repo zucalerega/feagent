@@ -106,8 +106,50 @@ go to `default_group`, which is `walls` by default.
 `quality.png` shows per-tet SICN with mid-plane clips, the 10 worst tets marked. Each caption
 gives the numbers shown in its image.
 
-## Exit codes (`feagent check` / `automesh`)
+## When to trust a `report.json`
 
-`0` all gates pass (warnings allowed), `1` a gate failed or no mesh, `2` spec / CAD / usage error
-(message and hint on stderr; with `--json`, `{"ok": false, "error", "hint"}` on stdout and no
-report written).
+A check that stops at spec validation (exit 2) writes no report. An older `report.json` from an
+earlier run stays on disk, but the state entry is set to `status: "fail"` with the spec `error`.
+A `report.json` describes the current spec only if all of the following hold:
+
+1. the state entry's `report_created_at` equals the report's `created_at`;
+2. the entry's `status` equals the report's `status`;
+3. the spec file's current mtime equals the entry's `spec_mtime`. If the spec was edited during
+   or after the check, the report is stale.
+
+## State file (`state.json`, read by the Stop hook)
+
+Location: `$FEAGENT_STATE` if set. Otherwise it is `<root>/.feagent/state.json`, where `<root>` is
+the nearest ancestor of the working directory (the directory itself included) that contains
+`.feagent/` or `pyproject.toml`. If there is none, the working directory is used. The file is
+written atomically, and top-level keys other than `specs` (e.g. the hook's `hook_blocks`) are
+kept.
+
+```json
+{"specs": {"/abs/path/mesh.yaml": {
+  "status": "pass", "checked_at": 1793416446.96, "spec_mtime": 1793416443.98,
+  "error": null, "report_created_at": "2026-10-31T03:14:06+00:00",
+  "waiver": null, "waiver_spec_mtime": null}}}
+```
+
+| field | meaning |
+|---|---|
+| `status` | `unchecked`: `feagent mesh` succeeded but no check has run. `fail`: a check failed, meshing failed, or the spec is invalid. `pass`: a check passed. |
+| `checked_at` | Epoch seconds when the entry was written. |
+| `spec_mtime` | Epoch seconds: the spec's mtime, read before the run loaded the spec. The result is stale when the file's current mtime differs. |
+| `error` | Spec validation error text (with its hint) when the spec was invalid, else `null`. |
+| `report_created_at` | `created_at` of the `report.json` this entry describes (`check` only), else `null`. |
+| `waiver`, `waiver_spec_mtime` | Set by `feagent waive SPEC --reason`. A waiver applies only while the spec's mtime equals `waiver_spec_mtime`, so editing the spec makes it stale again. A passing check clears the waiver; a failing check or a mesh run keeps it. |
+
+## Exit codes (every `feagent` command)
+
+| code | meaning |
+|---|---|
+| `0` | OK. For `check` and `automesh`, every gate passed (warnings allowed). |
+| `1` | A gate failed or no mesh was written (`check`, `automesh`, `mesh`). The report/result is still printed. |
+| `2` | Usage, spec, query or CAD error. No report is written. |
+| `3` | Internal error. The traceback goes to stderr. |
+
+For exit codes 2 and 3, stderr gets `error: <message>` and `hint: <hint>`. With `--json`, stdout
+gets exactly one document: `{"ok": false, "error": "...", "hint": "..."}`. For an internal error
+the message starts with `internal: `.
