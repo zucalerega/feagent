@@ -6,7 +6,7 @@ callers run this as ``python -m feabench.fem.meshworker <job.json>`` and read th
 ``__main__``, so scripts without a ``__name__`` guard are safe.
 
 job.json: {"step": path, "out": path.npz, "h": float, "order": 2, "curvature": 0,
-           "fields": [...] | null, "optimize": true}
+           "fields": [...] | null, "optimize": true, "options": {"Mesh.OptimizeNetgen": 1, ...}}
 """
 
 from __future__ import annotations
@@ -30,6 +30,11 @@ def run_job(job: dict) -> None:
     gmsh.option.setNumber("General.Verbosity", 1)
     gmsh.option.setNumber("General.NumThreads", 1)
     gmsh.option.setString("Geometry.OCCTargetUnit", "MM")
+    for name, value in (job.get("options") or {}).items():
+        if isinstance(value, str):
+            gmsh.option.setString(name, value)
+        else:
+            gmsh.option.setNumber(name, value)
     gmsh.model.add("m")
     gmsh.model.occ.importShapes(job["step"])
     gmsh.model.occ.synchronize()
@@ -40,7 +45,7 @@ def run_job(job: dict) -> None:
 
 
 def mesh_step(step: str | Path, h: float, order: int = 2, curvature: int = 0, fields: list | None = None,
-              timeout: float = 3600.0):
+              timeout: float = 3600.0, options: dict | None = None):
     """Mesh in a child process; if the high-order optimiser crashes, retry without it."""
     from .build import SolidMesh
 
@@ -49,7 +54,7 @@ def mesh_step(step: str | Path, h: float, order: int = 2, curvature: int = 0, fi
         for optimize in (True, False):
             out = Path(tmp) / f"mesh_{int(optimize)}.npz"
             job = {"step": str(step), "out": str(out), "h": h, "order": order, "curvature": curvature,
-                   "fields": fields, "optimize": optimize}
+                   "fields": fields, "optimize": optimize, "options": options or {}}
             jpath = Path(tmp) / "job.json"
             jpath.write_text(json.dumps(job))
             try:

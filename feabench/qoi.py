@@ -248,7 +248,8 @@ def evaluate_qoi(spec: dict, rv: ResultView, case_dir: Path | None = None) -> di
         vals = rv.locator.interpolate(loc, rv.nodal(spec["field"], idx))
         val = component(spec["field"], vals, spec["component"], p, spec.get("frame"))[0]
         rel_dist = float(loc.distance[0]) / rv._scale
-        out = {"value": float(val), "inside": bool(loc.inside[0]), "distance": float(loc.distance[0])}
+        out = {"value": float(val), "inside": bool(loc.inside[0]), "distance": float(loc.distance[0]),
+               "element_quality": element_quality(rv, loc)}
         if rel_dist > spec.get("max_distance_rel", 0.01):
             raise QoIError(f"point {spec['point']} is not inside the meshed domain (distance {loc.distance[0]:.3g})")
         return out
@@ -276,7 +277,8 @@ def evaluate_qoi(spec: dict, rv: ResultView, case_dir: Path | None = None) -> di
                          spec["component"], P, spec.get("frame"))
         w = np.full(n, 1.0)
         w[0] = w[-1] = 0.5
-        return {"value": float(np.sum(w * vals) / np.sum(w)), "n_points": n}
+        return {"value": float(np.sum(w * vals) / np.sum(w)), "n_points": n,
+                "element_quality": element_quality(rv, loc)}
     if kind == "max":
         m = np.ones(len(rv.coords), bool)
         for r in spec.get("exclude", []):
@@ -343,6 +345,27 @@ def evaluate_qoi(spec: dict, rv: ResultView, case_dir: Path | None = None) -> di
         err = np.linalg.norm(val[ok] - ref[ok]) / np.linalg.norm(ref[ok])
         return {"value": float(err), "coverage": float(ok.mean())}
     raise QoIError(f"unknown QoI kind {kind}")
+
+
+def _radius_ratio(X: np.ndarray) -> float:
+    """3 r_in / R_circ of a tet's corner nodes (1 = regular, ~0 = sliver)."""
+    a, b, c, d = X
+    V = abs(np.dot(np.cross(b - a, c - a), d - a)) / 6
+    A = sum(np.linalg.norm(np.cross(q - p, r - p)) / 2 for p, q, r in [(a, b, c), (a, b, d), (a, c, d), (b, c, d)])
+    M = np.array([b - a, c - a, d - a])
+    rhs = 0.5 * np.array([b @ b - a @ a, c @ c - a @ a, d @ d - a @ a])
+    try:
+        R = np.linalg.norm(np.linalg.solve(M, rhs) - a)
+    except np.linalg.LinAlgError:
+        return 0.0
+    return float(3 * (3 * V / A) / R) if A > 0 and R > 0 else 0.0
+
+
+def element_quality(rv: "ResultView", loc) -> float | None:
+    """Worst radius ratio of the tets that contain the located points (diagnostic for the evaluator)."""
+    q = [_radius_ratio(rv.coords[rv.elements[t][e][:4]]) for t, e in zip(loc.etype, loc.element)
+         if str(t).startswith("tet")]
+    return min(q) if q else None
 
 
 def _within(coords: np.ndarray, region: dict) -> np.ndarray:
