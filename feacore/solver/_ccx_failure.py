@@ -25,6 +25,10 @@ Options (``failure`` dict; all but criterion / limit optional):
                     [1 / fine_increments, 1 / increments] of the ramp (fine_increments default 5 x increments)
   near_increments   once a cell has PEEQ >= refine_at x limit (or has failed) the block is at most
                     1 / near_increments of the ramp (default fine_increments / 2); refine_at default 0.5
+  max_increment     bound of ccx's automatic increments inside a block (ramp fraction; default
+                    1 / increments); max_increment_near the same once failure is near (default
+                    1 / near_increments). Every converged ccx increment is an output increment.
+  max_remove        cells removed per block at most (8), see below
   stop_force_ratio  0.01
   path_groups       groups that must stay connected (default: the Dirichlet groups)
   max_blocks        5000
@@ -65,13 +69,17 @@ def _split_deck(inp: str):
     return model, step
 
 
-def _block_step(step: list[str], t1: float, period: float, dt: float, remove: np.ndarray) -> str:
-    """Step text of one block: bounded automatic incrementation, Dirichlet totals at t1, removals."""
+def _block_step(step: list[str], t1: float, period: float, dt: float, remove: np.ndarray,
+                dt_max: float | None = None) -> str:
+    """Step text of one block: automatic incrementation starting at dt, bounded by dt_max (default dt),
+    Dirichlet totals at t1, removals."""
+    dt_max = dt if dt_max is None else dt_max
     out, in_bc, k = [], False, 0
     while k < len(step):
         ln = step[k]
         if ln.startswith("*STATIC"):
-            out += ["*STATIC", f"{fnum(dt)}, {fnum(period)}, {fnum(dt * 1e-3)}, {fnum(dt)}"]
+            out += ["*STATIC", f"{fnum(min(dt, period))}, {fnum(period)}, {fnum(dt_max * 1e-3)}, "
+                                f"{fnum(min(dt_max, period))}"]
             if len(remove):
                 out += ["*MODEL CHANGE, TYPE=ELEMENT, REMOVE", id_lines(remove + 1)]
             k += 2
@@ -182,6 +190,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     n_near = int(fo.get("near_increments", max(n, n_fine // 2)))
     peeq_step, refine_at = float(fo.get("peeq_step", 0.2)), float(fo.get("refine_at", 0.5))
     max_remove = int(fo.get("max_remove", 8))
+    inc_max = float(fo.get("max_increment", 1.0 / n))                 # ccx increment bound (ramp fraction)
+    inc_near = float(fo.get("max_increment_near", 1.0 / n_near))
     stop_ratio, max_blocks = float(fo.get("stop_force_ratio", 0.01)), int(fo.get("max_blocks", 5000))
     paths = fo.get("path_groups") or list(dict.fromkeys(deck.dirichlet_groups))
     moved = np.zeros(model.n_nodes, bool)
@@ -201,7 +211,9 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
     while t < 1.0 - 1e-12 and k < max_blocks:
         pk = agg_peeq[state == ALIVE].max(initial=0.0)
-        hi = 1.0 / (n_near if (state.any() or pk >= refine_at * limit) else n)
+        near = bool(state.any() or pk >= refine_at * limit)
+        hi = 1.0 / (n_near if near else n)
+        inc = inc_near if near else inc_max
         dt = float(np.clip(peeq_step * limit / rate, 1.0 / n_fine, hi)) if rate > 0 else hi
         run, errors, plan, tried = None, [], None, set()
         for attempt, (cap, scale) in enumerate(_attempts(max_remove)):
@@ -218,7 +230,9 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
                 rin.unlink(missing_ok=True)
                 rin.symlink_to(wd / f"{prev_job}.rout")
             head = model_txt if k == 0 else "*RESTART, READ\n"
-            txt = head + _block_step(step, t1, t1 - t, ddt * scale, plan[1])
+            m = max(1, int(np.ceil((t1 - t) / inc - 1e-6)))     # equal increments <= the bound
+            d_inc = (t1 - t) / m * scale
+            txt = head + _block_step(step, t1, t1 - t, d_inc, plan[1], d_inc)
             try:
                 run = run_ccx(txt, job=job, workdir=wd, ccx=options.get("ccx"), threads=options.get("threads"),
                               timeout=options.get("timeout"), check=False)

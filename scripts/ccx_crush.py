@@ -6,10 +6,10 @@ from a calibrated material JSON and progressive failure by element erosion (anal
 
 Bottom group fixed, top group moved along -AXIS (lateral 0) up to --max-crush x height; the run stops when the
 part has separated (no fragment joins top and bottom) or the platen force is < 1 % of its peak. Increment sizes
-(fractions of the part height): --coarse through yield, at most --near once a cell is within half of the failure
-PEEQ, never below --fine. MATERIAL.json (MPa): E, nu, plastic_table_true_stress_vs_plastic_strain, failure_peeq;
+(mm of platen travel): ccx increments <= --inc through yield and <= --inc-near around failure (every increment
+is output); erosion blocks <= --block, <= --block-near near failure, >= --block-min. MATERIAL.json (MPa): E, nu, plastic_table_true_stress_vs_plastic_strain, failure_peeq;
 the mesh is in metres, so stresses are converted to Pa.
-OUT_DIR: result_NNNN.vtu per increment (point: displacement, von_mises, PEEQ; cell: PEEQ (integration-point
+OUT_DIR/<run-id>/ (never overwritten): result_NNNN.vtu per increment (point: displacement, von_mises, PEEQ; cell: PEEQ (integration-point
 mean), failed, state 0 intact / 1 failed / 2 detached fragment), force_displacement.csv, summary.json.
 """
 
@@ -40,9 +40,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mesh"), ap.add_argument("axis"), ap.add_argument("material"), ap.add_argument("out")
     ap.add_argument("--max-crush", type=float, default=0.5)
-    ap.add_argument("--coarse", type=float, default=0.005)
-    ap.add_argument("--near", type=float, default=0.002)
-    ap.add_argument("--fine", type=float, default=0.001)
+    ap.add_argument("--block", type=float, default=0.25, help="max erosion block, mm of travel")
+    ap.add_argument("--block-near", type=float, default=0.06, help="max block once failure is near, mm")
+    ap.add_argument("--block-min", type=float, default=0.02, help="min block, mm")
+    ap.add_argument("--inc", type=float, default=0.05, help="max ccx increment through yield, mm")
+    ap.add_argument("--inc-near", type=float, default=0.02, help="max ccx increment around failure, mm")
+    ap.add_argument("--run-id", default=None, help="output subdirectory (default run-YYYYmmdd-HHMM)")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--workdir", default=None)
     a = ap.parse_args()
@@ -51,21 +54,27 @@ def main():
     m = build_model(read_gmsh(a.mesh), 3, 2)
     H = float(m.X[m.nodes_of("top"), k].mean() - m.X[m.nodes_of("bottom"), k].mean())
     D = a.max_crush * H
+    mm = lambda v: v * 1e-3 / D                     # noqa: E731  mm of travel -> ramp fraction
     mat, limit, mdoc = material(a.material)
     val = [0.0, 0.0, 0.0]
     val[k] = -D
     case = Case(mesh=str(Path(a.mesh).resolve()),
                 analysis=Analysis("elasticity", "3d", order=2, options={
                     "nonlinear": True, "nlgeom": True, "load_factor_max": 1.0,
-                    "increments": int(round(a.max_crush / a.coarse)),
+                    "increments": int(round(1.0 / mm(a.block))),
                     "failure": {"criterion": "peeq", "limit": limit, "aggregate": "mean",
-                                "near_increments": int(round(a.max_crush / a.near)),
-                                "fine_increments": int(round(a.max_crush / a.fine)),
+                                "near_increments": int(round(1.0 / mm(a.block_near))),
+                                "fine_increments": int(round(1.0 / mm(a.block_min))),
+                                "max_increment": mm(a.inc), "max_increment_near": mm(a.inc_near),
                                 "path_groups": ["top", "bottom"], "stop_force_ratio": 0.01}}),
                 materials={"resin": mat},
                 bcs=[BC("fixed", group="bottom"), BC("displacement", group="top", components=[0, 1, 2], value=val)])
-    out = Path(a.out)
+    run_id = a.run_id or time.strftime("run-%Y%m%d-%H%M")
+    out = Path(a.out) / run_id
+    if out.exists() and any(out.iterdir()):
+        raise SystemExit(f"{out} exists and is not empty: never overwrite a previous run")
     out.mkdir(parents=True, exist_ok=True)
+    wd = Path(a.workdir) / run_id if a.workdir else None
     case.save(out / "case.json")
     f = open(out / "force_displacement.csv", "w", newline="")
     w = csv.writer(f)
@@ -80,7 +89,7 @@ def main():
         f.flush()
 
     t0 = time.time()
-    r = solve(case, backend="ccx", threads=a.threads, workdir=a.workdir, series_dir=str(out), on_increment=on_inc)
+    r = solve(case, backend="ccx", threads=a.threads, workdir=wd, series_dir=str(out), on_increment=on_inc)
     wall = time.time() - t0
     f.close()
     F = np.array([x[2] for x in rows])
