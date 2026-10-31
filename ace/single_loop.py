@@ -45,9 +45,9 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from ace import config, fea, process_brief
+from ace import config, evidence, fea, process_brief
 from ace.agent import TOOLS, Tools, parse_citations, system_prompt, task_prompt, tool_loop
-from ace.checks import score_population
+from ace.checks import check_run, score_population
 from ace.cost import BudgetExceeded, CostLog
 from ace.llm import make_llm
 from ace.memory import Memory, notes_as_dicts
@@ -183,14 +183,22 @@ def swarm_agent_seconds(swarm_dir: Path | None, gen: int) -> float | None:
 
 
 def run_big(job: dict) -> list[dict]:
-    with ProcessPoolExecutor(1, mp_context=mp.get_context("spawn")) as pool:
-        try:
-            return pool.submit(_big_worker, job).result()
-        except Exception as e:  # noqa: BLE001  the worker process itself died (its usage is lost)
-            err = f"worker process failed: {e!r} (token usage unknown)"
-            return [{"problem_id": t, "run_id": f"g{job['generation']}-{t}-{AGENT}", "generation": job["generation"],
-                     "error": err, "stop": "error", "turns": 0, "cited": [], "submitted": None, "trace": [],
-                     "meshes": [], "solves": [], "usage": []} for t in job["tasks"]]
+    """The single agent works on its tasks IN PARALLEL: one conversation per task, all started at once,
+    all with the same context (its one memory) and each with that task's share of the turn budget.
+    Records come back in task order, as before."""
+    tasks = job["tasks"]
+    per_task = [dict(job, tasks=[t], max_turns=max(1, job["max_turns"] // len(tasks))) for t in tasks]
+    out = []
+    with ProcessPoolExecutor(len(tasks), mp_context=mp.get_context("spawn")) as pool:
+        futures = [pool.submit(_big_worker, j) for j in per_task]
+        for t, f in zip(tasks, futures):
+            try:
+                out += f.result()
+            except Exception as e:  # noqa: BLE001  the worker process itself died (its usage is lost)
+                out.append({"problem_id": t, "run_id": f"g{job['generation']}-{t}-{AGENT}", "generation": job["generation"],
+                            "error": f"worker process failed: {e!r} (token usage unknown)", "stop": "error", "turns": 0,
+                            "cited": [], "submitted": None, "trace": [], "meshes": [], "solves": [], "usage": []})
+    return out
 
 
 def rescore(prs: list[dict]) -> None:
@@ -368,6 +376,11 @@ def main(argv=None) -> int:
                          "that generation is not known yet (see --swarm-dir)")
     ap.add_argument("--swarm-dir", type=Path, help="a swarm run dir (run_loop --deep) to compare $ with each "
                                                    "generation, and with ace.compare at the end")
+    ap.add_argument("--evidence", type=Path, action="append", default=[],
+                    help="physical test data (ace/evidence.py), as run_loop --evidence: a test spec JSON or a "
+                         "directory of them; files dropped into <out>/evidence/ are picked up each generation")
+    ap.add_argument("--evidence-score", action="store_true",
+                    help="score tasks that have test data against the test (always so for tasks without a reference)")
     args = ap.parse_args(argv)
     if config.SCORE != "field":
         raise SystemExit("ace.single_loop needs field scoring (ACE_SCORE=field), as run_loop --deep does")
@@ -382,6 +395,10 @@ def main(argv=None) -> int:
     turns = args.turns or config.MAX_TURNS * args.swarm_agents
     out = args.out or Path("ace_runs") / ("single-" + time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
+    # Physical test data (ace.evidence), exactly as run_loop: set before any process pool exists.
+    os.environ[evidence.ACTIVE_ENV] = str((out / "evidence_active").resolve())
+    os.environ[evidence.SCORE_ENV] = "1" if args.evidence_score else "0"
+    (out / "evidence").mkdir(exist_ok=True)
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
     llm = SingleBrief(make_llm(args.mock), solves)
     mem = Memory(1)
@@ -406,6 +423,15 @@ def main(argv=None) -> int:
             gdir = out / f"gen{gen}"
             (gdir / "runs").mkdir(parents=True, exist_ok=True)
             (gdir / "context").mkdir(exist_ok=True)
+            for pid in evidence.refresh(out, args.evidence, all_runs, gen):   # test data, also mid-run
+                if evidence.scored_by_test(pid) and all_runs[pid]:
+                    for r in all_runs[pid]:
+                        if not r.get("error"):
+                            r["checks"] = check_run(pid, r)
+                    rescore(all_runs[pid])
+            if gen == 0 and (missing := evidence.missing_tests(tasks)):
+                raise SystemExit(f"{', '.join(missing)}: no reference value (no ground truth) and no physical test "
+                                 "data to score against; give the test with --evidence (see ace/evidence.py)")
             mem.save(out, gen)
             print(f"\n=== generation {gen}: ${cost.total:.2f} spent")
 
@@ -421,12 +447,13 @@ def main(argv=None) -> int:
             runs = run_big({"tasks": tasks, "generation": gen, "gdir": str(gdir), "context": context,
                             "max_solves": solves, "max_turns": turns, "mock": args.mock, "seconds": seconds})
             phase = {"gen": gen, "what": "phase", "agents": round(time.perf_counter() - t0, 2)}
-            cost.add(runs[0]["usage"])
+            for r in runs:                       # one conversation per task: each record carries its own usage
+                cost.add(r["usage"])
             for r in runs:
                 r["playbook_text"] = context
             err = next((r.get("error") or r.get("conversation_error") for r in runs
                         if r.get("error") or r.get("conversation_error")), None)
-            print(f"  big agent: {runs[0]['turns']} turns, solves {[len(r['solves']) for r in runs]}, "
+            print(f"  big agent: turns {[r['turns'] for r in runs]}, solves {[len(r['solves']) for r in runs]}, "
                   f"stops {[r['stop'] for r in runs]}, nudges {runs[0].get('nudges', 0)}, spent ${cost.total:.2f}"
                   + (" (ERROR)" if err else ""))
             if err:

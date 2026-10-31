@@ -38,6 +38,9 @@ GOOD_MESH = {
     "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1883/2500 nodes, 0.43%
     "cylinder_channel_dfg_2d1": {"h": 0.015, "quads": True,                               # 5440/12000 nodes, 0.28%
                                  "refinements": [{"group": "cylinder", "size": 0.002, "radius": 0.1}]},
+    # the tube wall (2.5 mm) bends: it needs small elements everywhere around the tube, not at a point
+    "abc_00000003_pull": {"h": 0.0022, "order": 2, "refinements": []},  # 40187/60000 nodes, -2.3%
+    "abc_00000065_compression": {"h": 0.004, "order": 2, "refinements": []},  # 9506/40000 nodes, ~1.5% from h = 1.6 mm
 }
 
 

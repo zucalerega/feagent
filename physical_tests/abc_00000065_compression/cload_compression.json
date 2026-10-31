@@ -1,0 +1,11 @@
+{
+  "test_id": "cload-compression-1",
+  "problem_id": "abc_00000065_compression",
+  "description": "Formlabs Alpha Fast resin, Form Studio 1, post-cured 2 min. Compressed between the flat platens of the Breakerspace Instron 68TM-50: the upper platen on the two prong tops, the bottom face on the lower platen. One specimen loaded to failure: peak 4.80 kN at 2.56 mm, then cracking (saw-tooth load drops) to the break at 8.66 mm. Displacement is the crosshead travel (no extensometer).",
+  "data": {"file": "cload_compression.csv", "load": "Force", "displacement": "Displacement",
+           "load_unit": "N", "displacement_unit": "mm"},
+  "measurement": {"qoi": "u_top", "sign": -1},
+  "fit": {"until": "peak", "window": [0.22, 0.38]},
+  "uncertainty": {"instrument": 0.05, "material": 0.10, "geometry": 0.03},
+  "notes": "The curve is soft up to 0.5 mm / 880 N (about 1.7 kN/mm, roughly 60 % of the later slope) and stiffens sharply there: one prong probably touched the platen first (prong tops not level) or the part was seating. The fit uses the straight part after that kink, 1050-1800 N (about 2.69 kN/mm); above it the resin yields (peak 4.8 kN). The material value in the statement is the datasheet's default post-cure tensile modulus (2230 MPa; flexural 2110 MPa; max-strength post-cure 2540 MPa). An ASTM D638 Type I dogbone of the same resin, also measured by crosshead, starts at about 640 N/mm: an apparent modulus of about 1.6 GPa with nominal Type I dimensions. Crosshead readings include grip seating and machine compliance, so that is a lower bound on the modulus, not a measurement of it. The data were digitized from the plot in the machine's PDF report (about +-0.01 mm, +-15 N)."
+}

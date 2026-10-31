@@ -30,8 +30,11 @@ def _json(path: Path, default=None):
 
 
 @lru_cache(maxsize=None)
-def _reference(problem_id: str) -> float:
-    from ace import fea
+def _reference(problem_id: str) -> float | None:
+    """None for a problem without a reference value (judged by its physical test)."""
+    from ace import evidence, fea
+    if not evidence.has_reference(problem_id):
+        return None
     p = fea.get_problem(problem_id)
     return fea.reference_value(p, config.TASKS[problem_id]["qoi"])
 
@@ -57,7 +60,12 @@ def _profile(run: dict, c: dict) -> dict:
 def _finished(run: dict) -> dict:
     c = run["checks"]
     ref = _reference(run["problem_id"])
-    errs = [abs(s["result"]["value"] - ref) / abs(ref) if s["result"].get("ok") else None for s in run["solves"]]
+    if ref is None:     # judged by the physical test: each solve's error against it (ace.evidence)
+        from ace import evidence
+        errs = [evidence.value_error(run["problem_id"], s["result"]["value"]) if s["result"].get("ok") else None
+                for s in run["solves"]]
+    else:
+        errs = [abs(s["result"]["value"] - ref) / abs(ref) if s["result"].get("ok") else None for s in run["solves"]]
     issues = []
     s = c.get("setup") or {}
     issues += [f"missing {x}" for x in s.get("missing", [])] + [f"unexpected {x}" for x in s.get("unexpected", [])]

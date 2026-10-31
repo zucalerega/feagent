@@ -34,7 +34,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolE
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from ace import config, fea, process_brief, ui_bridge
+from ace import config, evidence, fea, process_brief, ui_bridge
 from ace.agent import run_agent
 from ace.checkpoint import checkpoint
 from ace.checks import check_run, score_population, tolerance
@@ -112,44 +112,75 @@ def run_generation(jobs: list[dict], concurrency: int, cost: CostLog, on_done=No
 
 def _score_worker(run: dict, report_dir: str | None = None) -> tuple:
     """check_run, oracles and stage report of one run (10-30 s each on 3D runs, hence a process).
-    With report_dir (--deep) also its run report (ace.run_report, written there), else None."""
-    checks = check_run(run["problem_id"], run)
-    if run.get("error"):
-        return checks, None, None, None
-    tol = tolerance(run["problem_id"])
-    orc = stages.run_oracles(run, tol)
-    report = None
-    if report_dir is not None:
-        from ace.run_report import build_run_report   # --deep only
-        report = build_run_report(run, Path(report_dir))
+    With report_dir (--deep) also its run report (ace.run_report, written there), else None.
+    check_run and the report share one solve of the run and one location of its points (shared_solves)."""
+    from ace.field_error import shared_solves
+    with shared_solves():
+        checks = check_run(run["problem_id"], run)
+        if run.get("error"):
+            return checks, None, None, None
+        tol = tolerance(run["problem_id"])
+        orc = stages.run_oracles(run, tol)
+        report = None
+        if report_dir is not None:
+            from ace.run_report import build_run_report   # --deep only
+            report = build_run_report(run, Path(report_dir))
     return checks, orc, stages.stage_report(run, orc, tol), report
 
 
+class Scoring:
+    """The scoring pool of one generation. start(run) as each agent finishes, so scoring overlaps the
+    slower agents instead of waiting for the last one; finish(runs) then waits for all of them and
+    fills the runs exactly as scoring them all at the end would. A run whose worker fails (or every
+    run, if the pool cannot start) is scored in this process instead."""
+
+    def __init__(self, concurrency: int, report_dir: Path | None = None):
+        self.rdir = str(report_dir) if report_dir is not None else None
+        self.futs = {}
+        try:
+            self.pool = ProcessPoolExecutor(concurrency, mp_context=mp.get_context("spawn"))
+        except Exception as e:  # noqa: BLE001
+            print(f"  scoring pool failed ({e!r}); scoring here")
+            self.pool = None
+
+    def start(self, run: dict) -> None:
+        if self.pool is None or run["run_id"] in self.futs:
+            return
+        try:
+            self.futs[run["run_id"]] = self.pool.submit(_score_worker, run, self.rdir)
+        except Exception as e:  # noqa: BLE001  the pool itself broke: the rest are scored here
+            print(f"  scoring pool failed ({e!r}); scoring the rest here")
+            self.pool = None
+
+    def finish(self, runs: list[dict]) -> dict:
+        """Fill r["checks"] (and r["oracles"], r["stages"] for runs that did not crash).
+        Returns {run_id: run report} for the runs that got one (only with report_dir, i.e. --deep)."""
+        for r in runs:
+            self.start(r)                          # any run not started yet
+        results = {}
+        for r in runs:
+            f = self.futs.get(r["run_id"])
+            try:
+                results[r["run_id"]] = f.result() if f is not None else None
+            except Exception as e:  # noqa: BLE001
+                print(f"  scoring {r['run_id']} in a worker failed ({e!r}); scoring it here")
+        if self.pool is not None:
+            self.pool.shutdown()
+        reports = {}
+        for r in runs:
+            res = results.get(r["run_id"])
+            checks, orc, rep, report = res if res is not None else _score_worker(r, self.rdir)
+            r["checks"] = checks
+            if not r.get("error"):
+                r["oracles"], r["stages"] = orc, rep
+            if report is not None:
+                reports[r["run_id"]] = report
+        return reports
+
+
 def score_runs(runs: list[dict], concurrency: int, report_dir: Path | None = None) -> dict:
-    """Fill r["checks"] (and r["oracles"], r["stages"] for runs that did not crash), in parallel.
-    A run whose worker fails (or every run, if the pool cannot start) is scored here instead.
-    Returns {run_id: run report} for the runs that got one (only with report_dir, i.e. --deep)."""
-    results = [None] * len(runs)
-    rdir = str(report_dir) if report_dir is not None else None
-    try:
-        with ProcessPoolExecutor(concurrency, mp_context=mp.get_context("spawn")) as pool:
-            futs = [pool.submit(_score_worker, r, rdir) for r in runs]
-            for i, f in enumerate(futs):
-                try:
-                    results[i] = f.result()
-                except Exception as e:  # noqa: BLE001
-                    print(f"  scoring {runs[i]['run_id']} in a worker failed ({e!r}); scoring it here")
-    except Exception as e:  # noqa: BLE001  the pool itself failed
-        print(f"  scoring pool failed ({e!r}); scoring the rest here")
-    reports = {}
-    for r, res in zip(runs, results):
-        checks, orc, rep, report = res if res is not None else _score_worker(r, rdir)
-        r["checks"] = checks
-        if not r.get("error"):
-            r["oracles"], r["stages"] = orc, rep
-        if report is not None:
-            reports[r["run_id"]] = report
-    return reports
+    """Score runs that are all done already (see Scoring)."""
+    return Scoring(concurrency, report_dir).finish(runs)
 
 
 # --------------------------------------------------------------------------- diagnosis
@@ -214,16 +245,16 @@ def diagnose_all(tasks: list[tuple], memory, gdir, out, mock, cost, gen, concurr
 # --------------------------------------------------------------------------- --deep: teacher, reflection, organizer
 
 
-def _llm_jobs(jobs: dict, cost: CostLog) -> tuple[dict, dict]:
+def _llm_jobs(jobs: dict, cost: CostLog, then=None) -> tuple[dict, dict]:
     """Run {name: (fn, kwargs)} LLM calls all at once in threads (they only wait on the API; no
-    gmsh). Each call fills its own usage records list, added to the cost log afterwards. A call that
-    raises or returns None is logged and gives None, so the rest of the generation carries on.
+    gmsh). Each call fills its own usage records list, added to the cost log as it finishes. A call
+    that raises or returns None is logged and gives None, so the rest of the generation carries on.
+    then(results so far), if given, is called after each call finishes and returns more jobs to
+    start at once (e.g. an organizer call whose inputs are all in); their results are returned too.
     Returns ({name: result or None}, {name: seconds})."""
-    records = {name: [] for name in jobs}
-    seconds = {}
+    records, seconds, results = {}, {}, {}
 
-    def call(name):
-        fn, kwargs = jobs[name]
+    def call(name, fn, kwargs):
         t0 = time.perf_counter()
         try:
             res = fn(**kwargs, records=records[name])
@@ -237,11 +268,24 @@ def _llm_jobs(jobs: dict, cost: CostLog) -> tuple[dict, dict]:
 
     if not jobs:
         return {}, {}
-    with ThreadPoolExecutor(len(jobs)) as pool:
-        results = dict(zip(jobs, pool.map(call, jobs)))
-    for name in jobs:
-        cost.add(records[name])
-    return results, seconds
+    # Threads are only started as needed: every call runs at once, as no call waits for a free thread.
+    with ThreadPoolExecutor(256) as pool:
+        pending = {}
+
+        def start(new):
+            for name, (fn, kwargs) in new.items():
+                records[name] = []
+                pending[pool.submit(call, name, fn, kwargs)] = name
+        start(jobs)
+        while pending:
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for f in done:
+                name = pending.pop(f)
+                results[name] = f.result()
+                cost.add(records[name])
+            if then is not None:
+                start(then(results))
+    return {name: results[name] for name in records}, seconds
 
 
 def _dump(x):
@@ -328,8 +372,9 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
                cost: CostLog, state: dict) -> dict:
     """--deep steps 3-4 for one generation.
       3. one thread pool: the teacher once per task and a self-reflection once per run, all at once;
-      4. a second pool: the organizer once per agent (its private notes) and once for the shared
-         playbook; their new note lists replace the old ones (Memory.replace_notes).
+      4. in the same pool, as soon as its inputs are in: the organizer once per agent (its private
+         notes) and once for the shared playbook; their new note lists replace the old ones
+         (Memory.replace_notes).
     `state` carries what the next generation's contexts need and is updated in place:
     "teacher" {task: last TeacherFeedback dict}, "feedback" {agent: its last AgentFeedback dict},
     "reflection" {agent: its last SelfReflection dict}, "highlights" [this generation's highlights],
@@ -387,56 +432,88 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
     for r in ok:
         jobs[f"reflect {r['run_id']}"] = (reflect_on_run, dict(report=reports[r["run_id"]], run=r,
                                                                own_notes_text=notes(r), llm=llm))
-    res, secs = _llm_jobs(jobs, cost)
+
+    def collect(res: dict) -> tuple[dict, dict, dict]:
+        """The teacher's feedback per task, its feedback per agent and each agent's own reflection,
+        from the calls finished so far (a missing call counts as no output)."""
+        feedback = {pid: _dump(res.get(f"teacher {pid}")) for pid in train}
+        per_agent, own = {}, {}
+        for pid, fb in feedback.items():
+            for af in (fb or {}).get("per_agent") or []:
+                k = agent_of(af.get("run_id") or "")
+                a = f"a{k}" if k is not None else af.get("agent")      # trust the run id over the name
+                per_agent[a] = {**af, "agent": a, "task": pid}
+        for r in ok:
+            refl = _dump(res.get(f"reflect {r['run_id']}"))
+            if refl is not None:
+                own[name(r)] = {**refl, "run_id": r["run_id"], "task": r["problem_id"]}
+        return feedback, per_agent, own
+
+    # 4. organizer: what each agent gets = the teacher's notes and mesh call for it and its own
+    #    reflection's notes, each tagged "@<task>"; the shared playbook gets every task's shared
+    #    lessons, highlights, setup warnings and contested regions. (Peer highlights stay out of the
+    #    private lists: agents see them in the shared playbook and the context's highlights section.)
+    #    An agent's organizer call starts as soon as its inputs are complete: the teacher of each task
+    #    it ran (the teacher attributes feedback by run id, so no other teacher writes about it) and
+    #    its own reflections. The shared one starts once every teacher is done.
+    needs = {}
+    for r in ok:
+        needs.setdefault(name(r), set()).update({f"teacher {r['problem_id']}", f"reflect {r['run_id']}"})
+    needs["shared"] = {j for j in jobs if j.startswith("teacher ")}
+    incoming, owners, decided = {}, {}, set()
+    t_phase3 = []                               # when the last teacher/reflection call finished
+
+    def organize_ready(res: dict) -> dict:
+        if set(jobs) <= set(res) and not t_phase3:
+            t_phase3.append(time.perf_counter())
+        if cost.over_budget():                  # as cost.check() before the organizer: no new spend
+            return {}
+        new, (feedback, per_agent, own) = {}, collect(res)
+        for owner, need in needs.items():
+            if owner in decided or not need <= set(res):
+                continue
+            decided.add(owner)
+            if owner == "shared":
+                items = [x for pid, fb in feedback.items() if fb is not None for x in shared_incoming(pid, fb)]
+                if not items:                   # nothing to file: no shared organizer call
+                    continue
+                owners[owner], fn, kw = mem.shared, organize_shared, {}
+            else:
+                items = private_incoming(per_agent.get(owner), own.get(owner))
+                owners[owner], fn, kw = mem.private[int(owner[1:])], organize_private, {"agent": owner}
+            incoming[owner] = items
+            new[f"organize {owner}"] = (fn, dict(**kw, current=notes_as_dicts(owners[owner]), incoming=items, llm=llm))
+        return new
+
+    res, secs = _llm_jobs(jobs, cost, then=organize_ready)
     timings.update(teacher=max([v for k, v in secs.items() if k.startswith("teacher")], default=0),
                    reflect=max([v for k, v in secs.items() if k.startswith("reflect")], default=0))
+    # organize: how long the organizer calls ran on after the last teacher / reflection call
+    timings["organize"] = round(time.perf_counter() - (t_phase3[0] if t_phase3 else time.perf_counter()), 2)
 
-    feedback = {pid: _dump(res.get(f"teacher {pid}")) for pid in train}
+    feedback, per_agent, own = collect(res)
     (gdir / "reflections").mkdir(exist_ok=True)
-    highlights, per_agent, own = [], {}, {}
+    highlights = []
     for pid, fb in feedback.items():
         if fb is None:
             continue
         (gdir / f"teacher_{pid}.json").write_text(json.dumps(fb, indent=1))
         state["teacher"][pid] = fb
         highlights += [{**h, "task": pid} for h in fb.get("highlights") or []]
-        for af in fb.get("per_agent") or []:
-            k = agent_of(af.get("run_id") or "")
-            a = f"a{k}" if k is not None else af.get("agent")      # trust the run id over the name
-            per_agent[a] = {**af, "agent": a, "task": pid}
     for r in ok:
         refl = _dump(res.get(f"reflect {r['run_id']}"))
         if refl is not None:
             (gdir / "reflections" / f"{r['run_id']}.json").write_text(json.dumps(refl, indent=1))
-            own[name(r)] = {**refl, "run_id": r["run_id"], "task": r["problem_id"]}
     state["feedback"].update(per_agent)
     state["reflection"].update(own)
     state["last_run"].update({name(r): _run_summary(r, reports.get(r["run_id"])) for r in ok})
     state["highlights"] = highlights
     cost.check()
 
-    # 4. organizer: what each agent gets = the teacher's notes and mesh call for it and its own
-    #    reflection's notes, each tagged "@<task>"; the shared playbook gets every task's shared
-    #    lessons, highlights, setup warnings and contested regions. (Peer highlights stay out of the
-    #    private lists: agents see them in the shared playbook and the context's highlights section.)
-    t0 = time.perf_counter()
-    incoming = {}
-    for r in ok:
-        a = name(r)
-        incoming[a] = private_incoming(per_agent.get(a), own.get(a))
-    shared_in = [x for pid, fb in feedback.items() if fb is not None for x in shared_incoming(pid, fb)]
-    owners = {a: mem.private[int(a[1:])] for a in incoming}
-    jobs = {f"organize {a}": (organize_private, dict(agent=a, current=notes_as_dicts(owners[a]), incoming=items, llm=llm))
-            for a, items in incoming.items()}
-    if shared_in:
-        owners["shared"] = mem.shared
-        incoming["shared"] = shared_in
-        jobs["organize shared"] = (organize_shared, dict(current=notes_as_dicts(mem.shared), incoming=shared_in, llm=llm))
-    res, _ = _llm_jobs(jobs, cost)
-
     (gdir / "organizer").mkdir(exist_ok=True)
     changes = {}
-    for owner, pb in owners.items():
+    for owner in [o for o in needs if o in owners]:     # agents in run order, then shared (as before)
+        pb = owners[owner]
         before, after = notes_as_dicts(pb), res.get(f"organize {owner}")
         rec = {"before": before, "incoming": incoming[owner], "after": None, "changes": None}
         if after is None:
@@ -445,7 +522,6 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
             changes[owner] = Memory.replace_notes(pb, after, gen)
             rec.update(after=notes_as_dicts(pb), changes=changes[owner])
         (gdir / "organizer" / f"{owner}.json").write_text(json.dumps(rec, indent=1))
-    timings["organize"] = round(time.perf_counter() - t0, 2)
 
     def counts(chs: list[dict]) -> str:
         n = max(1, len(chs))
@@ -543,9 +619,12 @@ def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
         how = ["score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
                "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
                "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
-    lines = ["# ACE run summary", "", *how,
+    told = ("Agents got each problem's engineering requirements (ace/requirements.py) and set the boundary "
+            "conditions themselves." if config.STATEMENT == "requirements" else
+            "Agents got each problem's statement, boundary conditions included.")
+    lines = ["# ACE run summary", "", told, "", *how,
              "'failed' counts runs that failed a gate; 'errored' counts runs that crashed (API or code errors).",
-             "'base' is the mean score without the be-the-best bonus; 'bonus' the mean bonus (field mode).",
+             "'base' is the mean score without bonuses; 'bonus' the mean be-the-best + diversity bonus (field mode).",
              "", "| gen | problem | split | mean score | base | bonus | min | max | mean accuracy | mean efficiency | within tol | median DOFs | median rel. error | failed | errored |",
              "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
@@ -600,13 +679,13 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
         if not ok:
             continue
         scores = [checks[r["run_id"]]["score"] for r in ok]
-        bonus = [checks[r["run_id"]].get("best_bonus") or 0.0 for r in ok]
+        base = [checks[r["run_id"]].get("base_score", checks[r["run_id"]]["score"]) for r in ok]
         errs = [e for r in ok if (e := checks[r["run_id"]].get("rel_error")) is not None]
         dofs = [d for r in ok if (d := checks[r["run_id"]].get("dofs"))]
         rows.append({
             "gen": gen, "problem": pid, "split": "holdout" if pid in holdout else "train",
             "n": len(scores), "mean": statistics.mean(scores), "min": min(scores), "max": max(scores),
-            "base": statistics.mean(s - b for s, b in zip(scores, bonus)), "bonus": statistics.mean(bonus),
+            "base": statistics.mean(base), "bonus": statistics.mean(scores) - statistics.mean(base),
             "failed": sum(checks[r["run_id"]]["failed_gate"] is not None for r in ok),
             "errored": len(mine) - len(ok),
             "median_err": f"{statistics.median(errs):.2e}" if errs else "-",
@@ -640,7 +719,8 @@ def main(argv=None) -> int:
     ap.add_argument("--agents", type=int, default=config.AGENTS, help="persistent agents (shared+private mode)")
     ap.add_argument("--split", action="store_true",
                     help="shared+private only: each generation, randomly split the agents into one group per "
-                         "train problem; private notes follow the agent")
+                         "train problem; private notes follow the agent. With one train problem every agent "
+                         "works on it")
     ap.add_argument("--teacher", choices=["rerun", "inspect", "both"], default="rerun",
                     help="what the teacher may do: counterfactual reruns, a detailed inspection, or both")
     ap.add_argument("--shared-scope", choices=["all", "task"], default="all",
@@ -655,12 +735,23 @@ def main(argv=None) -> int:
     ap.add_argument("--deep", action="store_true",
                     help="run reports + deep teacher + self-reflection + organizer (see deep_learn); needs "
                          "--memory shared+private, --split and ACE_SCORE=field; implies --peers, --shared-scope all")
+    ap.add_argument("--statement", choices=["bcs", "requirements"], default=config.STATEMENT,
+                    help="what agents are told: the problem statement with its boundary conditions, or the "
+                         "problem's engineering requirements (ace/requirements.py), from which they set the "
+                         "boundary conditions themselves")
+    ap.add_argument("--evidence", type=Path, action="append", default=[],
+                    help="physical test data (ace/evidence.py): a test spec JSON or a directory of them; repeat for "
+                         "more. Files dropped into <out>/evidence/ during the run are picked up at the next generation")
+    ap.add_argument("--evidence-score", action="store_true",
+                    help="score runs on problems with test data against the test instead of the problem's reference")
     ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
                     "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
     # Before any process pool exists: spawned children (agents, scoring, teacher) read it at import.
     os.environ["ACE_TEACHER"] = args.teacher
     config.TEACHER_MODE = args.teacher
+    os.environ["ACE_STATEMENT"] = args.statement
+    config.STATEMENT = args.statement
     peers = args.split if args.peers is None else args.peers
 
     suite_train, suite_holdout = config.SUITES[args.suite]
@@ -673,14 +764,24 @@ def main(argv=None) -> int:
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
     (out / "run_config.json").write_text(json.dumps({"suite": args.suite, "train": train, "holdout": holdout}, indent=1))
+    # Physical test data (ace.evidence): processed into <out>/evidence_active/, which the spawned agents,
+    # scorers and teachers read; set before any pool exists.
+    os.environ[evidence.ACTIVE_ENV] = str((out / "evidence_active").resolve())
+    os.environ[evidence.SCORE_ENV] = "1" if args.evidence_score else "0"
+    (out / "evidence").mkdir(exist_ok=True)
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()
     private = args.memory == "shared+private"
+    if args.statement == "requirements":
+        from ace.requirements import problems_ready
+        if not_ready := problems_ready(train + holdout):
+            raise SystemExit("--statement requirements: these problems have no clean requirements:\n  "
+                             + "\n  ".join(not_ready))
     if args.teacher != "rerun" and config.SCORE != "field":
         raise SystemExit("--teacher inspect/both needs field scoring (ACE_SCORE=field): its tools read the field error")
-    if args.split and not (private and len(train) > 1):
-        raise SystemExit("--split needs --memory shared+private and at least two --problems")
+    if args.split and not (private and train):
+        raise SystemExit("--split needs --memory shared+private and at least one --problems")
     persona_of = {k: PERSONAS[i % len(PERSONAS)]
                   for i, k in enumerate(persona_agents(args.personas, args.persona_count, args.agents))}
     if (peers or persona_of) and not private:
@@ -734,6 +835,17 @@ def main(argv=None) -> int:
                 break
             gdir = out / f"gen{gen}"
             (gdir / "runs").mkdir(parents=True, exist_ok=True)
+            # Physical test data, also when it arrives mid-run (after the population has settled): every
+            # agent, scorer and teacher of this generation sees it.
+            for pid in evidence.refresh(out, args.evidence, all_runs, gen):
+                if evidence.scored_by_test(pid) and all_runs[pid]:     # earlier runs: re-checked against the test
+                    for r in all_runs[pid]:
+                        if not r.get("error"):
+                            r["checks"] = check_run(pid, r)
+                    score_population(all_runs[pid])
+            if gen == 0 and (missing := evidence.missing_tests(train + holdout)):
+                raise SystemExit(f"{', '.join(missing)}: no reference value (no ground truth) and no physical test "
+                                 "data to score against; give the test with --evidence (see ace/evidence.py)")
             playbook.save(out / f"playbook_gen{gen}.json")
             if private:
                 mem.save(out, gen)
@@ -771,15 +883,21 @@ def main(argv=None) -> int:
                     fname = a if j["problem_id"] in train else f"{a}-{j['problem_id']}"
                     (gdir / "context" / f"{fname}.md").write_text(j["playbook_text"])
             t0 = time.perf_counter()
-            runs = run_generation(jobs, args.concurrency, cost, on_done=lambda r: ui_bridge.record_agent_run(ui, r))
+            scoring = Scoring(args.concurrency, gdir / "reports" if args.deep else None)
+
+            def on_done(r):                     # each run's scoring starts as soon as its agent is done
+                ui_bridge.record_agent_run(ui, r)
+                scoring.start(r)
+            runs = run_generation(jobs, args.concurrency, cost, on_done=on_done)
             phase = {"gen": gen, "what": "phase", "agents": round(time.perf_counter() - t0, 2)}
             if runs and all(r.get("error") for r in runs):
                 print(runs[0]["error"])
                 raise SystemExit("every run failed; see the error above")
 
-            # 2. checks: score, then oracles and stage invariants (layers 1 and 2 of diagnosis)
+            # 2. checks: score, then oracles and stage invariants (layers 1 and 2 of diagnosis). Most
+            #    runs were scored while the last agents worked: "scoring" is the wait after them.
             t_oracles = time.perf_counter()
-            reports = score_runs(runs, args.concurrency, gdir / "reports" if args.deep else None)
+            reports = scoring.finish(runs)
             for r in runs:
                 all_runs[r["problem_id"]].append(r)
             # Speed/accuracy score: each problem's runs scored against every run on it so far.

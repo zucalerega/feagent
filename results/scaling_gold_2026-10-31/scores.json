@@ -1,0 +1,440 @@
+[
+ {
+  "run": "1 agent (Sonnet)",
+  "dir": "scale_s1",
+  "gen": 0,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.1479,
+  "mean_base": 0.1479,
+  "best_field_error": 0.1305,
+  "invalid": 0
+ },
+ {
+  "run": "1 agent (Sonnet)",
+  "dir": "scale_s1",
+  "gen": 0,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.5997,
+  "mean_base": 0.5997,
+  "best_field_error": 0.1129,
+  "invalid": 0
+ },
+ {
+  "run": "1 agent (Sonnet)",
+  "dir": "scale_s1",
+  "gen": 1,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.1615,
+  "mean_base": 0.1615,
+  "best_field_error": 0.2292,
+  "invalid": 0
+ },
+ {
+  "run": "1 agent (Sonnet)",
+  "dir": "scale_s1",
+  "gen": 1,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.6437,
+  "mean_base": 0.6437,
+  "best_field_error": 0.0947,
+  "invalid": 0
+ },
+ {
+  "run": "1 agent (Sonnet)",
+  "dir": "scale_s1",
+  "gen": 2,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.201,
+  "mean_base": 0.201,
+  "best_field_error": 0.2067,
+  "invalid": 0
+ },
+ {
+  "run": "1 agent (Sonnet)",
+  "dir": "scale_s1",
+  "gen": 2,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.661,
+  "mean_base": 0.661,
+  "best_field_error": 0.0976,
+  "invalid": 0
+ },
+ {
+  "run": "1 agent (Sonnet)",
+  "dir": "scale_s1",
+  "total_usd": 3.72
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 0,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.1939,
+  "mean_base": 0.1939,
+  "best_field_error": 0.1684,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 0,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.5611,
+  "mean_base": 0.5611,
+  "best_field_error": 0.1181,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 1,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.2162,
+  "mean_base": 0.2162,
+  "best_field_error": 0.1729,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 1,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.6178,
+  "mean_base": 0.6178,
+  "best_field_error": 0.1158,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 2,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.1977,
+  "mean_base": 0.1977,
+  "best_field_error": 0.1566,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 2,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.6088,
+  "mean_base": 0.6088,
+  "best_field_error": 0.1073,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 3,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.1788,
+  "mean_base": 0.1788,
+  "best_field_error": 0.1477,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 3,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.6233,
+  "mean_base": 0.6233,
+  "best_field_error": 0.0923,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 4,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.1981,
+  "mean_base": 0.1981,
+  "best_field_error": 0.1594,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 4,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.7169,
+  "mean_base": 0.7169,
+  "best_field_error": 0.0895,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 5,
+  "task": "abc_00000003_bc7",
+  "n_runs": 1,
+  "best_base": 0.2061,
+  "mean_base": 0.2061,
+  "best_field_error": 0.1677,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "gen": 5,
+  "task": "abc_00000065_bc0",
+  "n_runs": 1,
+  "best_base": 0.5888,
+  "mean_base": 0.5888,
+  "best_field_error": 0.1165,
+  "invalid": 0
+ },
+ {
+  "run": "2 agents",
+  "dir": "scale_s2",
+  "total_usd": 8.69
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 0,
+  "task": "abc_00000003_bc7",
+  "n_runs": 2,
+  "best_base": 0.2139,
+  "mean_base": 0.2137,
+  "best_field_error": 0.1812,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 0,
+  "task": "abc_00000065_bc0",
+  "n_runs": 2,
+  "best_base": 0.559,
+  "mean_base": 0.5537,
+  "best_field_error": 0.1124,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 1,
+  "task": "abc_00000003_bc7",
+  "n_runs": 2,
+  "best_base": 0.2098,
+  "mean_base": 0.2023,
+  "best_field_error": 0.1741,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 1,
+  "task": "abc_00000065_bc0",
+  "n_runs": 2,
+  "best_base": 0.6922,
+  "mean_base": 0.6687,
+  "best_field_error": 0.0723,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 2,
+  "task": "abc_00000003_bc7",
+  "n_runs": 2,
+  "best_base": 0.2204,
+  "mean_base": 0.2137,
+  "best_field_error": 0.1571,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 2,
+  "task": "abc_00000065_bc0",
+  "n_runs": 2,
+  "best_base": 0.6571,
+  "mean_base": 0.641,
+  "best_field_error": 0.0742,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 3,
+  "task": "abc_00000003_bc7",
+  "n_runs": 2,
+  "best_base": 0.2262,
+  "mean_base": 0.2233,
+  "best_field_error": 0.1571,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 3,
+  "task": "abc_00000065_bc0",
+  "n_runs": 2,
+  "best_base": 0.6685,
+  "mean_base": 0.6625,
+  "best_field_error": 0.0737,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 4,
+  "task": "abc_00000003_bc7",
+  "n_runs": 2,
+  "best_base": 0.2148,
+  "mean_base": 0.2135,
+  "best_field_error": 0.1561,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "gen": 4,
+  "task": "abc_00000065_bc0",
+  "n_runs": 2,
+  "best_base": 0.5816,
+  "mean_base": 0.5504,
+  "best_field_error": 0.0722,
+  "invalid": 0
+ },
+ {
+  "run": "4 agents",
+  "dir": "scale_s4",
+  "total_usd": 15.52
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 0,
+  "task": "abc_00000003_bc7",
+  "n_runs": 4,
+  "best_base": 0.2254,
+  "mean_base": 0.2124,
+  "best_field_error": 0.1683,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 0,
+  "task": "abc_00000065_bc0",
+  "n_runs": 4,
+  "best_base": 0.5945,
+  "mean_base": 0.567,
+  "best_field_error": 0.112,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 1,
+  "task": "abc_00000003_bc7",
+  "n_runs": 4,
+  "best_base": 0.222,
+  "mean_base": 0.2161,
+  "best_field_error": 0.1671,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 1,
+  "task": "abc_00000065_bc0",
+  "n_runs": 4,
+  "best_base": 0.6278,
+  "mean_base": 0.6188,
+  "best_field_error": 0.0704,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 2,
+  "task": "abc_00000003_bc7",
+  "n_runs": 4,
+  "best_base": 0.2357,
+  "mean_base": 0.227,
+  "best_field_error": 0.1649,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 2,
+  "task": "abc_00000065_bc0",
+  "n_runs": 4,
+  "best_base": 0.6382,
+  "mean_base": 0.6145,
+  "best_field_error": 0.0736,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 3,
+  "task": "abc_00000003_bc7",
+  "n_runs": 4,
+  "best_base": 0.2328,
+  "mean_base": 0.2183,
+  "best_field_error": 0.1594,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 3,
+  "task": "abc_00000065_bc0",
+  "n_runs": 4,
+  "best_base": 0.6999,
+  "mean_base": 0.6204,
+  "best_field_error": 0.0775,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 4,
+  "task": "abc_00000003_bc7",
+  "n_runs": 4,
+  "best_base": 0.2341,
+  "mean_base": 0.2264,
+  "best_field_error": 0.1594,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "gen": 4,
+  "task": "abc_00000065_bc0",
+  "n_runs": 4,
+  "best_base": 0.7074,
+  "mean_base": 0.6429,
+  "best_field_error": 0.0751,
+  "invalid": 0
+ },
+ {
+  "run": "8 agents",
+  "dir": "scale_s8",
+  "total_usd": 27.41
+ }
+]

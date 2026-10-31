@@ -11,11 +11,12 @@ With mock=True, ace.mock.MockLLM answers instead and nothing is sent anywhere.
 from __future__ import annotations
 
 import base64
+import threading
 from pathlib import Path
 
 import pydantic
 
-from ace.config import EFFORT, MAX_TOKENS, MODELS
+from ace.config import EFFORT, FAST, MAX_TOKENS, MODELS
 from ace.cost import usage_record
 
 
@@ -40,7 +41,9 @@ def image_block(path) -> dict:
 # Seconds before a structured call gives up. The --deep roles are on the generation's critical path
 # and their answers are a few thousand tokens, so a stalled call should fail fast (the loop then
 # skips that one update) rather than hold the whole generation for 10 minutes.
-TIMEOUT = {"teacher": 420, "reflect": 240, "organizer": 240,   # teacher: Opus, high effort, up to 16k tokens
+# Structured calls stream, so for them this is the longest SILENCE allowed (the API sends events,
+# including keep-alive pings, while it works), not a cap on the whole call.
+TIMEOUT = {"teacher": 420, "reflect": 240, "organizer": 240,   # teacher: Opus, high effort, up to 32k tokens
            # agent_turn of the single-agent baseline: without an explicit timeout the SDK refuses a
            # non-streaming call whose max_tokens (32k) could take over 10 minutes
            "big_generator": 1200}
@@ -52,10 +55,41 @@ def _cached_system(text: str) -> list[dict]:
     return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
 
 
+# Beta flag the Claude API docs give for fast mode (with speed="fast" on the beta endpoint).
+FAST_BETA = "fast-mode-2026-02-01"
+
+
 class LLM:
     def __init__(self):
         import anthropic
         self.client = anthropic.Anthropic()
+        self._fast_ok = True               # set False (once, logged) if the API rejects fast mode
+        self._lock = threading.Lock()
+
+    def _request(self, role: str, stream: bool, **kw):
+        """Send one Messages request for `role` and return the final message.
+
+        stream=True streams it and assembles the message (get_final_message): the answer is the same,
+        but a long answer no longer has to arrive within one HTTP response time limit.
+        If FAST[role] is on, the request asks for fast mode; if the API rejects that (400), fast mode
+        is switched off for the rest of the run, logged once, and the request is resent normally."""
+        import anthropic
+        if FAST.get(role) and self._fast_ok:
+            try:
+                return self._send(self.client.beta.messages, stream, speed="fast", betas=[FAST_BETA], **kw)
+            except anthropic.BadRequestError as e:
+                with self._lock:
+                    if self._fast_ok:
+                        self._fast_ok = False
+                        print(f"  fast mode rejected for {role}, continuing at normal speed: {e}")
+        return self._send(self.client.messages, stream, **kw)
+
+    @staticmethod
+    def _send(api, stream: bool, **kw):
+        if not stream:
+            return api.create(**kw)
+        with api.stream(**kw) as s:
+            return s.get_final_message()
 
     def agent_turn(self, system: str, messages: list, tools: list[dict], run_id: str = "",
                    role: str = "generator"):
@@ -87,19 +121,19 @@ class LLM:
 
         The API constrains the output to the JSON schema; we still validate with pydantic
         ourselves (rather than messages.parse) so a failed attempt's tokens are still counted.
+        The call streams (see _request), so a long answer (the teacher's, up to 32k tokens) is fine.
         """
         import anthropic
         fmt = {"type": "json_schema", "schema": anthropic.transform_schema(schema.model_json_schema())}
         records = [] if records is None else records   # caller's list survives an exception
         for _attempt in range(2):
-            resp = self.client.messages.create(
+            resp = self._request(
+                role, stream=True,
                 model=MODELS[role],
                 max_tokens=MAX_TOKENS[role],
                 system=_cached_system(system),
                 messages=[{"role": "user", "content": user}],
                 output_config={"format": fmt, "effort": EFFORT[role]},
-                # An explicit timeout: without one the SDK refuses any non-streaming call whose
-                # max_tokens could take over 10 minutes, before sending.
                 timeout=TIMEOUT.get(role, 600),
             )
             records.append(usage_record(role, resp.model, resp.usage))
@@ -117,12 +151,13 @@ class LLM:
         calls cannot read a cache that is still being written, so the deep teacher sends this first
         and then all its per-agent calls at once: they read the long shared prefix at ~5% of the
         price. The 1-token answer is thrown away. A failure only costs the cache, so it is reported
-        and swallowed."""
+        and swallowed. It uses the same speed as the calls it warms: switching speed invalidates the
+        cache of the system prompt and messages."""
         import anthropic
         try:
             fmt = {"type": "json_schema", "schema": anthropic.transform_schema(schema.model_json_schema())}
-            resp = self.client.messages.create(
-                model=MODELS[role], max_tokens=1, system=_cached_system(system),
+            resp = self._request(
+                role, stream=False, model=MODELS[role], max_tokens=1, system=_cached_system(system),
                 messages=[{"role": "user", "content": user}],
                 output_config={"format": fmt, "effort": EFFORT[role]}, timeout=120)
         except Exception as e:      # noqa: BLE001

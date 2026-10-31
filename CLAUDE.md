@@ -28,6 +28,16 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `improver-loop` branch: improver side of the loop.
 - `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
   `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
+  `--statement requirements` (branch `ace-requirements`) gives agents engineering requirements
+  instead of boundary conditions (`ace/requirements.py`, `ace/requirements_data/`). `--evidence`
+  feeds physical test data (machine exports) into the loop, also mid-run, for agents and teachers
+  to learn from (`ace/evidence.py`); `--evidence-score` scores against the test. The printed pull test
+  of gold part abc_00000003 is the problem `abc_00000003_pull` (`feacore/problems/physical.py`).
+  `feacore` gained main's `point_difference` QoI (same code) for extensometer readings.
+  The printed C-bracket's compression test is `abc_00000065_compression`: no reference, so its runs are
+  always scored against the test (`physical_tests/abc_00000065_compression/`). `--split` also runs on
+  one task. feacore's elastoplastic ccx path (`nonlinear-setup` 9978510, cherry-picked) drives
+  `scripts/ccx_compression_ramp.py`, the test past yield.
 - `ace-cfd` branch (off `ace-loop`, with `main` merged in): the same ACE loop on steady laminar CFD.
   - Run it with `python -m ace.run_loop --suite cfd`.
   - Flow tools: finite-volume mesh with optional quads; solve with fluid, convection scheme and flow BCs on the openfoam backend.

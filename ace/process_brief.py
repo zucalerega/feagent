@@ -33,7 +33,9 @@ automesher's error: below that target the score falls quadratically, above it be
 paying. DOFs cost: the score is divided by DOFs relative to the automesher, so extra elements must
 buy at least proportional accuracy. On each hidden check point, the single run with the smallest
 error among that generation's runs on the task earns a bonus; a tie pays nobody, so copying a
-peer's mesh exactly earns no bonus.
+peer's mesh exactly earns no bonus. A run whose mesh recipe differs structurally from every other
+run on the task that generation (another order, h off by more than 1.5x, or mostly different
+refinement targets) and whose base score is at least 90% of the best there earns a diversity bonus.
 
 Learning. After each generation a teacher looks at every run on a task: the whole mesh, where the
 error is (error maps and region grids), the setup and the agent's reasoning. It tells each agent in
@@ -265,6 +267,33 @@ def _reflection_block(last_reflection: dict | None) -> str:
             f"Mesh call you planned: {mesh_call_text(r.get('next_mesh_call'))}")
 
 
+# What each role asks of the agent (the teacher assigns them, ace.deep_teacher.allocate). Shown with
+# the assignment, and alone when the agent moved to another task, where the experiment does not apply.
+ROLE_MEANING = {
+    "control": "re-run the best recipe known on your task with at most one small, deliberate tweak, so "
+               "your score shows how noisy a score is",
+    "variant": "start from the best recipe known on your task and change exactly ONE factor of it "
+               "(h, the refinement sizes, radii or places, or the order), so the effect of that factor is clear",
+    "explorer": "try a mesh STRUCTURALLY different from what agents have tried on your task (other "
+                "refinement targets, element order or strategy), chosen from the error maps and contested "
+                "regions; not a resized copy of anyone's recipe",
+}
+
+
+def assignment_block(assignment: dict | None, made_for: str, task: str | None) -> str | None:
+    """The teacher's assignment for this generation (AgentFeedback.assignment), or None when there is
+    none or the agent is on a held-out task (there it is judged, not experimenting)."""
+    if not assignment or task is None:
+        return None
+    role = assignment.get("role")
+    head = f"## YOUR ASSIGNMENT THIS GENERATION\nRole: {role}: {ROLE_MEANING.get(role, '')}.\n"
+    if made_for == task:
+        return head + (f"Experiment: {assignment.get('experiment')}\nWhy: {assignment.get('why')}\n"
+                       "Carry it out: it is how this generation's agents cover different meshes.")
+    return head + (f"The teacher's experiment was for task {made_for}, not your task {task}, so apply the "
+                   f"role, not the experiment, here. (For {made_for} it was: {assignment.get('experiment')})")
+
+
 def persona_block(persona: str) -> str:
     """A fixed exploration style for one agent (run_loop --personas)."""
     return "## YOUR EXPLORATION STYLE (yours alone)\n" + persona
@@ -283,6 +312,8 @@ def deep_context(agent: str, task: str | None, shared_text, private_text,
     contested regions); highlights: last generation's Highlights; peers_text: run_loop.peers_text;
     persona: this agent's fixed exploration style (run_loop --personas), None for most agents."""
     parts = [PROCESS_BRIEF.strip(), f"You are agent {agent}" + (f", working on task {task}." if task else ".")]
+    if block := assignment_block((last_feedback or {}).get("assignment"), _task_of(last_feedback or {}), task):
+        parts.append(block)
 
     parts.append(_feedback_block(last_run, last_feedback))
     if task is not None:

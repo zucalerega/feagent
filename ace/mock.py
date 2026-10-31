@@ -39,6 +39,16 @@ def _response(content: list, stop: str, role: str):
     return NS(content=content, stop_reason=stop, usage=_usage(1500, 200), model=MODELS[role])
 
 
+def _problem_id(task_text: str) -> str:
+    """The problem id from the first line of a task prompt; in requirements mode that line holds a
+    neutral task label instead (ace.requirements.label_for)."""
+    shown = task_text.splitlines()[0].removeprefix("Problem id: ").strip()
+    if shown.startswith("task-"):
+        from ace.requirements import problem_for_label
+        return problem_for_label(shown)
+    return shown
+
+
 class MockLLM:
     # ---------------------------------------------------------------- generator
     def agent_turn(self, system: str, messages: list, tools: list, run_id: str = "", role: str = "generator"):
@@ -48,7 +58,7 @@ class MockLLM:
             return self._big_turn(system, messages, tools, run_id)
         from ace import fea   # local import: only needed by the mock generator
 
-        problem_id = messages[0]["content"].splitlines()[0].removeprefix("Problem id: ").strip()
+        problem_id = _problem_id(messages[0]["content"])
         turn = sum(1 for m in messages if m["role"] == "assistant")
         rng = random.Random(zlib.crc32(f"{run_id}-{turn}".encode()))
         playbook_ids = BULLET_ID.findall(system)
@@ -229,9 +239,39 @@ class MockLLM:
                 for i in range(n)
             ]), rec
         text = user if isinstance(user, str) else "\n".join(b["text"] for b in user if b["type"] == "text")
+        if schema.__name__ in ("RequirementsDraft", "SetupProposal"):
+            return getattr(self, "_" + schema.__name__)(text, schema), rec
         if schema.__name__ in ("AgentFeedback", "CrossRunFeedback", "SelfReflection", "OrganizerOutput"):
             return getattr(self, "_" + schema.__name__)(text, schema), rec
+        if schema.__name__ == "AssignedFeedback":             # AgentFeedback plus the assignment
+            return self._AgentFeedback(text, schema), rec
         raise ValueError(f"mock has no canned answer for {schema}")
+
+    # ---------------------------------------------------------------- ace.requirements roles
+
+    def _RequirementsDraft(self, text: str, schema):
+        """The stored requirements of the problem if it has them; otherwise its statement with the
+        support sentences dropped (enough to exercise the code, not a real translation)."""
+        from ace import requirements
+        pid = re.search(r"^PROBLEM (\S+)", text, re.M).group(1)
+        if requirements.path_for(pid).exists():
+            d = requirements.load(pid)
+            return schema.model_validate({
+                "requirements": d["requirements"],
+                "group_aliases": [{"group": g, "alias": a} for g, a in (d.get("group_aliases") or {}).items()],
+                "mapping": d.get("mapping") or []})
+        statement = requirements.raw_problem(pid).description()
+        kept = [ln for ln in statement.splitlines() if not ln.lower().startswith("support")]
+        return schema.model_validate({"requirements": "\n".join(kept), "group_aliases": [], "mapping": []})
+
+    def _SetupProposal(self, text: str, schema):
+        """A reader that gets it right: the reference setup under the aliases it was shown."""
+        from ace import requirements
+        pid = _problem_id(text)
+        setup = reference_setup(requirements.view_problem(pid, requirements.aliases_for(pid)))
+        return schema.model_validate({"reasoning": "mock: the reference setup",
+                                      **{k: setup[k] for k in ("formulation", "thickness", "bcs", "loads", "T_ref")},
+                                      "material": {k: setup["material"][k] for k in ("E", "nu", "alpha")}})
 
     # ---------------------------------------------------------------- --deep roles
     # Deterministic answers that name the run ids / agents in the prompt, so the code downstream
@@ -249,7 +289,11 @@ class MockLLM:
         task = re.search(r"^TASK (\S+)", text, re.M).group(1)
         call = {"h": 0.1, "order": 2, "refinements": [{"group": None, "point": [0.0, 0.0], "size": 0.02,
                                                        "radius": 0.2}]}
+        role = re.search(r"^YOUR ROLE: (\w+)", text, re.M)
+        assignment = role and {"agent": rid.rsplit("-", 1)[-1], "role": role.group(1),
+                               "experiment": f"mock {role.group(1)} experiment for {rid}", "why": "mock"}
         return schema.model_validate({
+            "assignment": assignment,
             "agent": rid.rsplit("-", 1)[-1], "run_id": rid, "diagnosis": f"mock: {rid} error near the corner",
             "step_critique": [{"step": "mesh call 1", "what_it_did": "uniform mesh", "verdict": "mistake",
                                "correction": "mock: refine the corner to h/4"}],

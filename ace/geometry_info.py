@@ -16,6 +16,7 @@ this outside any other gmsh session. Results are cached per problem id.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 
@@ -41,12 +42,25 @@ _ROLE_WORDS = [
 
 def describe(problem: Problem) -> dict:
     """Geometry summary of `problem` (cached). See the module docstring."""
-    if problem.id not in _CACHE:
+    from ace import config
+    key = (problem.id, config.STATEMENT)      # the roles come from the statement the agent reads
+    if key not in _CACHE:
         with gmsh_session(problem.id):
             problem.build_geometry()
             gmsh.model.occ.synchronize()
-            _CACHE[problem.id] = _Describer(problem).run()
-    return _CACHE[problem.id]
+            _CACHE[key] = _Describer(problem).run()
+    return _CACHE[key]
+
+
+def agent_statement(problem) -> str:
+    """The statement as the agent reads it. In requirements mode (config.STATEMENT) that is the
+    problem's requirements: its own description spells out the supports and loads, and the roles
+    this module reports (supported / loaded faces) would hand them to the agent."""
+    from ace import config
+    if config.STATEMENT == "requirements":
+        from ace import requirements
+        return requirements.agent_text(problem.id)
+    return problem.description()
 
 
 # --------------------------------------------------------------------------- small helpers
@@ -81,7 +95,11 @@ class _Describer:
         # coordinates to ~1e-4 of the part's size: enough to place refinements, short to read
         self.dec = max(0, 4 - math.floor(math.log10(self.diag)))
         self.eps = 1e-3 * self.diag   # probe distance for inside/outside tests
-        self.desc = problem.description()
+        self.desc = agent_statement(problem)
+        # Requirements mode: deciding which faces are supported or loaded is the agent's task, and a
+        # keyword match on requirements misreads them ("unloaded" counts as a load), so no roles.
+        from ace import config
+        self.infer_roles = config.STATEMENT != "requirements"
         self.groups: dict[int, list[str]] = {}   # bnd tag -> physical group names
         for d, pt in gmsh.model.getPhysicalGroups(self.D - 1):
             for e in gmsh.model.getEntitiesForPhysicalGroup(d, pt):
@@ -189,6 +207,8 @@ class _Describer:
                             break
         if not found:
             return False, None
+        if not self.infer_roles:
+            return True, "mentioned"
         if role is None:   # e.g. a group called "clamped" named only in passing
             for r, words in _ROLE_WORDS:
                 if any(re.search(words, n, re.I) for n in names):
@@ -431,3 +451,81 @@ class _Describer:
             h.append(f"{curved} curved boundary {fk if curved > 1 else one}: quadratic (order 2) elements follow "
                      f"them far better than linear ones.")
         return " ".join(h)
+
+
+# --------------------------------------------------------------------------- the agent's view
+
+AGENT_MAX_CHARS = 12_000   # above this, inspect_geometry shows the agent the compact form below
+
+
+def for_agent(full: dict) -> dict:
+    """What inspect_geometry returns to the agent, given `full` = geometry_summary | describe.
+
+    A part that fits in AGENT_MAX_CHARS of JSON is returned unchanged. A bigger one (a gold CAD part
+    has ~140 edges, ~44k characters) keeps every face, one text line each, but lists in full only
+    the edges that decide where to refine: re-entrant, sharp, where a support or load ends, and
+    every edge of a face the statement names. The other edges are summarised as counts; they are
+    convex or smooth, so they need no local refinement. The groups that are just the faces
+    (f<tag>, one entity each) are not repeated."""
+    if len(json.dumps(full)) <= AGENT_MAX_CHARS:
+        return full
+    D = full["dim"]
+    fk, ek = ("faces", "edges") if D == 3 else ("curves", "corners")
+    ang_key = "dihedral_angle_deg" if D == 3 else "interior_angle_deg"
+    pt_key = "midpoint" if D == 3 else "point"
+    xyz = lambda v: "(" + ",".join(f"{c:g}" for c in v) + ")"
+    label = (lambda t: f"f{t}") if D == 3 else (lambda t: f"c{t}")
+
+    face_lines = []
+    for r in full[fk]:
+        size = r.get("area", r.get("length"))
+        s = f"{label(r['tag'])} {r['type']} {'A' if D == 3 else 'L'}={size:g} c={xyz(r['centroid'])}"
+        if "normal" in r:
+            s += f" n={xyz(r['normal'])}"
+        if "radius" in r:
+            s += f" r={r['radius']:g}"
+        s += " adj " + ",".join(r["adjacent_" + fk])
+        if r["group"] and r["group"] != label(r["tag"]):
+            s += f" group {r['group']}"
+        if r["in_statement"]:
+            s += f" NAMED in statement ({r.get('role', 'mentioned')})"
+        face_lines.append(s)
+
+    named = {label(r["tag"]) for r in full[fk] if r["in_statement"]}
+    important = (set(full["reentrant_" + ek]) | set(full["sharp_" + ek])
+                 | set(full["support_boundary"]) | set(full["load_boundary"]))
+    edge_lines, rest = [], []
+    for e in full[ek]:
+        if e["tag"] in important or named & set(e[fk]):
+            a = e[ang_key]
+            s = f"{e['tag']}"
+            if D == 3:
+                s += f" {e['type']} L={e['length']:g}"
+            s += f" {'/'.join(e[fk])} {'?' if a is None else f'{a:g}'}deg"
+            if e["concave"]:
+                s += " RE-ENTRANT"
+            edge_lines.append(s + f" at {xyz(e[pt_key])}")
+        else:
+            rest.append(e)
+    by_type: dict[str, int] = {}
+    for e in rest:
+        by_type[e.get("type", "corner")] = by_type.get(e.get("type", "corner"), 0) + 1
+    angles = [e[ang_key] for e in rest if e[ang_key] is not None]
+    other = (f"{len(rest)} more {ek}, not listed (none re-entrant, sharp, on a support or load rim, "
+             f"or on a named {fk[:-1]}): " + ", ".join(f"{n} {t}" for t, n in sorted(by_type.items(), key=lambda kv: -kv[1]))
+             + (f"; angles {min(angles):g}-{max(angles):g} deg" if angles else "") + ".")
+
+    face_names = {label(r["tag"]) for r in full[fk]}
+    groups = [g for g in full["groups"] if not (g["name"] in face_names and g["n_entities"] == 1)]
+    keep = ("dim", "units", "bbox", "diagonal", "volume", "area")
+    return {**{k: full[k] for k in keep if k in full},
+            "groups": groups,
+            "legend": (f"Each {fk[:-1]} f<tag> is also a named group (BCs and refinements can use it). "
+                       f"{fk}: label, type, A/L = area/length, c = centroid, n = outward normal, r = radius, "
+                       f"adj = adjacent {fk}. {ek}: tag, type, L = length, its two {fk}, material angle "
+                       f"(> 180 = re-entrant), a point on it."),
+            fk: face_lines,
+            ek: edge_lines,
+            "other_" + ek: other,
+            **{k: full[k] for k in ("reentrant_" + ek, "sharp_" + ek, "support_boundary", "load_boundary",
+                                    "smallest_features", "hints")}}

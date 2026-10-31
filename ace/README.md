@@ -84,6 +84,29 @@ ACE_SCORE=field .venv/bin/python -m ace.single_loop --problems cooks_membrane,na
 `--personas a0,a3,a5` or `--persona-count 3` = only some (default: none). Who has which style is
 written to `<out>/personas.json`.
 
+### Use a trained swarm on new problems (export, then inference)
+
+`ace.export_swarm` copies what a finished `--deep` run (or `single_loop` run) has learned into a
+small folder: the final shared playbook, every agent's private notes, the personas, each agent's
+last teacher feedback / reflection / run summary (`state.json`), a `manifest.json` (run, generation,
+tasks, agents, models, git commit) and `context/<agent>.md`, the context each agent gets on a new
+problem. No meshes, no traces. The final generation is the last one whose notes were saved, so a
+run stopped mid-generation still exports its most trained state.
+
+`ace.infer` runs the trained agents on any feacore problem (trained on or not; e.g. a NAFEMS case
+or a gold part), one process per agent, with that context and the training tools and agent loop.
+Nothing learns: no teacher, reflection or organizer. It writes `summary.md` and `results.json`: per
+agent the submitted solve's statement quantities, mesh, ZZ error estimate and mesh/stress images;
+a consensus (median and spread of each quantity across agents, and the agent with the smallest own
+error estimate). When the problem has references and field caches (`ace/field_refs/`), each run is
+also scored in field mode.
+
+```bash
+.venv/bin/python -m ace.export_swarm ace_runs/scale_s8 swarms/scale_s8
+.venv/bin/python -m ace.infer --swarm swarms/scale_s8 --problem abc_00000065_bc0 --agents a0,a3 --mock  # free
+.venv/bin/python -m ace.infer --swarm swarms/scale_s8 --problem nafems_le1 --out ace_runs/infer_le1      # real
+```
+
 ## Watch it evolve
 
 Live, while a run is going (refreshes itself every few seconds):
@@ -214,6 +237,175 @@ export FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp
 
 A two-generation mock run on the three 2D problems takes about 16 s that way. The solver tests in
 `tests/test_ace_cfd.py` skip without OpenFOAM.
+
+## Requirements instead of boundary conditions (`--statement requirements`)
+
+By default an agent gets the problem statement, which spells out the supports, loads and analysis
+type. With `--statement requirements` it gets the problem's **engineering requirements** instead,
+and has to set the boundary conditions and the analysis type itself. The requirements say:
+- what the part is and what the CAD holds (a quarter, a meridian section, a thin plate);
+- its material;
+- how it is loaded in service;
+- how it is held: welded, bolted, between frictionless platens, on a knife-edge;
+- what is symmetric;
+- the result wanted.
+
+```bash
+python -m ace.run_loop --statement requirements ...          # agents set the BCs themselves
+python -m ace.requirements show cooks_membrane               # the task prompt an agent gets
+python -m ace.requirements check                             # lint + staleness of every stored file
+python -m ace.requirements check --round-trip                # + an agent-like model reads them back (API)
+python -m ace.requirements generate --problems a,b --force   # (re)write with the translator (API)
+```
+
+- **What changes.** The task prompt (`agent.task_prompt`) shows the requirements and a neutral
+  task label instead of the problem id; the id names the benchmark, and a model could recall its
+  setup. Groups whose names give a support or load away get neutral names everywhere, through
+  `fea.get_problem`: Cook's `clamped`/`loaded` become `left_edge`/`right_edge`, and the `sym_*`
+  groups become `face_x0`/`face_y0` (LE11 3D) and `edge_x0`/`edge_y0` (Lamé). The reflector, diagnoser and deep teacher read the same task
+  prompt, so their lessons are about turning requirements into a setup.
+- **What does not change.** Scoring, gates and `checks.bc_report`, which compares the agent's setup
+  with the reference setup and feeds the teachers.
+- **Where the requirements live.** One JSON per problem in `ace/requirements_data/`:
+  - the agent-facing text;
+  - `group_aliases`;
+  - `mapping`: which requirement implies each reference item, for reviewers only;
+  - `source`, with a fingerprint of the statement and reference setup they were written from;
+  - `validation`.
+- **How `generate` writes them** (`ace/requirements.py`):
+  1. The translator model rewrites the statement and reference setup under rules that forbid
+     boundary-condition language.
+  2. A deterministic lint rejects BC or solver words (`fixed`, `clamped`, `traction`, `zero
+     x-displacement`, `plane stress`, ...), benchmark names, CAD group identifiers, a missing
+     number of the reference setup, telltale or colliding aliases, and a stale fingerprint.
+  3. A round trip: the agents' model reads only what an agent sees and proposes a setup, three
+     times. Each proposal is solved next to the reference setup on the same mesh, so equivalent
+     setups pass (force vs force-per-area, fixed vs zero displacement).
+  4. Failures go back to the translator for up to two re-drafts.
+- **The loop refuses to start** in requirements mode when a problem has no file, or its file fails
+  the lint.
+- **Current files.** The six `TASKS` problems are written and lint clean. They were written in a
+  session without an API key, so their round trip has not been run yet (`validation.round_trip:
+  null`): run `python -m ace.requirements check --round-trip` once a key is available.
+
+## Physical test data (`--evidence`)
+
+Raw data from a physical test (e.g. an Instron pull of a printed gold part) can be given to the loop at
+any time, including after the population has settled on a consensus. The loop compares every run with
+it and shows the comparison to the agents and the teachers, so they learn from it. Code:
+`ace/evidence.py`.
+
+```bash
+python -m ace.evidence summarize lab/abc3_pull_01.json            # check the export reads and fits
+python -m ace.evidence summarize lab/abc3_pull_01.json --predict  # + the problem's own setup vs the test
+python -m ace.run_loop --problems abc_00000003_pull --evidence lab/ ...      # data from the start
+cp -r lab/ <out>/evidence/                                        # or drop it in while the loop runs
+python -m ace.run_loop ... --evidence lab/ --evidence-score       # score against the test, not the reference
+```
+
+**The test spec.** One small JSON per test, next to the machine's export:
+
+```json
+{"test_id": "abc3-pull-01", "problem_id": "abc_00000003_pull",
+ "description": "Rigid 10K, UV cure 60 min at 70 C; V-jaw wedge grips over the added 40 mm; 5 kN cell; video extensometer dots at x = -27 and +27 mm on the stub fronts; 3 cycles to 300 N",
+ "data": {"file": "abc3_pull_01.csv", "load": "Load", "displacement": "Extension (Video)"},
+ "measurement": {"qoi": "ext_marks"},
+ "uncertainty": {"geometry": 0.05, "instrument": 0.01},
+ "material": {"E": 9.7e9, "source": "3 D638 dogbones, same batch and cure"}}
+```
+
+- **Columns:** named as in the export's header, with units from the header or the units row below
+  it. Comma, semicolon or tab delimiters and decimal commas all work. A strain channel plus
+  `gauge_length_mm` works too.
+- **Measurement:** a QoI of the problem (default: its scored QoI), or an explicit `point_difference`
+  / `point` / `mean` QoI.
+- **Material:** a measured modulus rescales every prediction to it, so the comparison tests the
+  modelling and not the datasheet. The material counts as 2% uncertainty with a measured modulus,
+  5% without one.
+
+**What the loop does with it**, at the start of every generation:
+1. It reads the export, splits it into load cycles and fits the slope of measurement vs load (the
+   compliance) between 10% and 90% of each loading's peak. A first loading that differs from the
+   others by more than 2% is left out as grip seating. It reports how much the curve bends (and
+   whether that is more than noise) and what is left after unloading.
+2. It builds the uncertainty budget: scatter between cycles, fit, instrument, material and
+   geometry.
+3. It compares each run's scored solve with the test, in percent and in standard deviations. When
+   the measurement is not the scored quantity, it re-solves the run's own mesh and setup.
+4. It computes the population's consensus (the median of the latest generation) and how far it is
+   from the test.
+5. Agents see the test and the consensus gap in their task prompt, plus a `test_check` in every
+   solve result.
+6. The diagnoser, reflector and deep teacher get the cycles, the curve, the budget and every run's
+   gap, and are asked to separate modelling causes from the test's own uncertainty.
+7. With `--evidence-score`, problems with a test are scored against it. The tolerance is at least
+   2 sigma of the test. Earlier runs are re-checked and re-scored when the data arrives.
+
+Processed evidence is kept in `<out>/evidence_active/`; each run's comparison is in
+`checks["evidence"]`.
+
+### The pull test of the printed gold part: `abc_00000003_pull`
+
+`feacore/problems/physical.py` defines this problem: the gold part `abc_00000003` with both stubs
+lengthened by 40 mm for wedge grips (the print files of `physical_tests/` on the
+`physical-validation` branch).
+- **Setup:** the −x stub is held, the +x stub is pulled with 300 N along x and held sideways,
+  Rigid 10K (E = 10 GPa, ν = 0.35).
+- **Scored quantity:** `ext_marks`, the x-elongation between video-extensometer marks at x = ±27 mm
+  on the front of the original stubs (y = 7.656 mm, z = 30.588 mm), a 54 mm gauge length.
+- **Reference:** 4.733e-5 m at 300 N (0.158 µm/N), from a P2 mesh study (h = 5 to 1.8 mm,
+  Richardson; a 4-mesh fit agrees to 0.08%); tolerance 3%.
+- **Meshing it:** the 2.5 mm tube wall bends, so it needs small elements all around the tube,
+  not at one point. Uniform 2.2 mm gives −2.3% at 40k nodes (the cap is 60k). Grading from 4 mm
+  to the 1.65 mm size floor over the tube gives −2.75% at 23k nodes.
+
+Two consequences for the lab:
+- **Use the video extensometer.** The signal is about 47 µm at 300 N, which the crosshead cannot
+  resolve.
+- **Stay at or below 300 N for the elastic runs.** The highest stress away from the grips is at
+  the sharp edge where each boss shoulder meets its stub: 21.7 MPa at 500 N on the finest mesh,
+  and still rising with refinement. Marks on the bosses were rejected because they sit next to
+  that edge and converge erratically.
+
+### The compression test of the printed C-bracket: `abc_00000065_compression` (no reference)
+
+The gold part `abc_00000065` printed in Formlabs Alpha Fast (2 min post-cure) and crushed between the
+Instron's platens: the bottom face (f33) sits on the lower platen, the upper platen pushes the two prong
+tops (f17, f34). `feacore/problems/physical.py` states it as the bottom held and 1000 N spread over the
+prong tops, E = 2230 MPa (datasheet), ν = 0.35 (assumed). Scored quantity: `u_top`, the mean
+y-displacement of the prong tops.
+- **There is no reference solution.** The test is the only check: every run is scored against it, with or
+  without `--evidence-score`, and the loop refuses to start on a problem that has neither a reference nor
+  test data. In field mode the gain is measured the same way: the automesher's error against the test
+  over the run's. There is no be-the-best bonus: the hidden probe points judge the stated setup's field,
+  not the test.
+- **The data** (`physical_tests/abc_00000065_compression/`): the Bluehill reports had no data export, so
+  `scripts/digitize_bluehill_plot.py` traced the curve in the report's plot image (±0.01 mm, ±15 N; the
+  peak and break, hidden by markers, read 1-3% low). The spec fits the straight part after a toe, up to
+  the peak: 2696 N/mm (±12% at 1 sigma, mostly the material value and the crosshead).
+- **Swarm against single agent, with a second task** (`--split` now also runs on one task):
+
+```bash
+ACE_SCORE=field python -m ace.run_loop --deep --split --memory shared+private --agents 8 \
+    --problems abc_00000065_compression,abc_00000065_bc0 --holdout "" --generations 8 \
+    --evidence physical_tests/abc_00000065_compression --budget-usd 50 --out ace_runs/cbracket_swarm
+ACE_SCORE=field python -m ace.single_loop --problems abc_00000065_compression,abc_00000065_bc0 \
+    --generations 8 --evidence physical_tests/abc_00000065_compression --budget-usd 20 \
+    --out ace_runs/cbracket_single --swarm-dir ace_runs/cbracket_swarm
+python -m ace.compare ace_runs/cbracket_swarm ace_runs/cbracket_single
+```
+
+**Past yield: `scripts/ccx_compression_ramp.py`.** The loop's solver is linear. This script ramps the part
+on feacore's opt-in elastoplastic CalculiX path (J2 plasticity, NLGEOM; from the `nonlinear-setup`
+branch): the prong tops pushed down by a rigid platen, the bottom held. It uses two calibrations of
+the same dogbone (`dogbone1.pdf`, an ASTM D638 Type I, 13 x 3.2 mm, measured by crosshead):
+- **team:** `experiments/material/alpha_fast_dogbone1.json`, strain = crosshead / 115 mm, so the
+  modulus is the apparent 1880 MPa;
+- **corrected:** the datasheet modulus, with the grip slack (the initial slope minus the printed
+  geometry's own compliance) taken out, and the plastic stretch put in the narrow section.
+
+It writes `physical_tests/abc_00000065_compression/ccx_ramp/` (curves, `summary.json`, `compare.png`)
+against the test.
 
 ## Knobs that matter (`ace/config.py`)
 
