@@ -28,12 +28,16 @@ from pathlib import Path
 
 from ace import config, ui_bridge
 from ace.agent import run_agent
-from ace.checks import check_run, load_calibration
+from ace.checks import check_run, score_population, tolerance
 from ace.cost import BudgetExceeded, CostLog
 from ace.curator import curate
 from ace.llm import make_llm
-from ace.merge import apply_ops, save_generation
+from ace.memory import Memory
+from ace.merge import apply_ops, diff_markdown, save_generation
 from ace.playbook import Playbook
+from ace import stages
+from ace.diagnoser import diagnose_problem
+from ace.mock import fake_rerun
 from ace.reflector import build_prompt, reflect
 
 
@@ -93,18 +97,57 @@ def run_generation(jobs: list[dict], concurrency: int, cost: CostLog, on_done=No
     return runs
 
 
+# --------------------------------------------------------------------------- diagnosis
+
+
+def solver_log(out: Path, rec: dict) -> None:
+    """Solver wall-clock time (oracle studies, counterfactual reruns), kept apart from token cost."""
+    with (out / "solver.jsonl").open("a") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def diagnose_step(pid, pruns, playbook, llm, target_err, gdir, out, mock, cost, gen):
+    """One diagnoser session for a training problem; saves the diagnosis, the tool log and the reruns."""
+    usage = []          # filled per API call, so billed calls count even if the session fails
+    try:
+        res = diagnose_problem(pid, pruns, playbook, llm, target_err, gdir / "diagnoser" / pid,
+                               rerun_fn=fake_rerun() if mock else None, usage=usage)
+    except Exception as e:  # noqa: BLE001  e.g. an API error: skip this problem
+        print(f"  diagnoser failed for {pid}: {e!r}; skipped")
+        cost.add(usage)
+        return None
+    cost.add(usage)
+    diag = res["diagnosis"]
+    (gdir / f"diagnosis_{pid}.json").write_text(json.dumps({
+        "diagnosis": diag.model_dump() if diag else None, "tool_calls": res["tool_calls"],
+        "reruns": res["reruns"], "solver_seconds": res["solver_seconds"], "log": res["log"]}, indent=1, default=str))
+    solver_log(out, {"gen": gen, "what": f"reruns {pid}", "seconds": res["solver_seconds"], "n": len(res["reruns"])})
+    if diag is None:
+        print(f"  diagnoser for {pid} did not submit a valid diagnosis; skipped")
+        return None
+    st = {}
+    for rd in diag.runs:
+        st[rd.diagnosis_status] = st.get(rd.diagnosis_status, 0) + 1
+    print(f"  diagnosed {pid}: {res['tool_calls']} tool calls, {len(res['reruns'])} reruns, runs {st}, "
+          f"{len(diag.lessons)} lessons" + (f", {len(diag.verification_notes)} claims corrected" if diag.verification_notes else ""))
+    return diag
+
+
 # --------------------------------------------------------------------------- summary
 
 
 def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
     lines = ["# ACE run summary", "",
-             "score = log10(e_uniform / e_agent): 0 = best uniform mesh at the node cap, +1 = 10x more accurate, -2 = failed.",
+             "score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
+             "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
+             "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;",
              "'failed' counts runs that failed a gate; 'errored' counts runs that crashed (API or code errors).",
-             "", "| gen | problem | split | mean score | min | max | failed | errored | median rel. error |",
-             "|---|---|---|---|---|---|---|---|---|"]
+             "", "| gen | problem | split | mean score | min | max | mean accuracy | mean efficiency | within tol | median DOFs | median rel. error | failed | errored |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
-        lines.append(f"| {r['gen']} | {r['problem']} | {r['split']} | {r['mean']:+.2f} | {r['min']:+.2f} | "
-                     f"{r['max']:+.2f} | {r['failed']}/{r['n']} | {r['errored']} | {r['median_err']} |")
+        lines.append(f"| {r['gen']} | {r['problem']} | {r['split']} | {r['mean']:.2f} | {r['min']:.2f} | {r['max']:.2f} | "
+                     f"{r['accuracy']:.2f} | {r['efficiency']:.2f} | {r['within_tol']}/{r['n']} | {r['median_dofs']} | "
+                     f"{r['median_err']} | {r['failed']}/{r['n']} | {r['errored']} |")
     lines += ["", "| gen | playbook bullets used | added | voted | deduped | pruned | cumulative $ |",
               "|---|---|---|---|---|---|---|"]
     for g in gen_notes:
@@ -122,19 +165,17 @@ def plot_scores(rows: list[dict], path: Path) -> None:
 
     colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
     fig, ax = plt.subplots(figsize=(7, 4), dpi=150)
-    ax.axhline(0, color="#999999", lw=1)
-    ax.annotate("naive uniform mesh", (0, 0), xytext=(2, 3), textcoords="offset points",
-                color="#666666", fontsize=8)
+    ax.set_ylim(0, 1.05)
     for i, pid in enumerate(sorted({r["problem"] for r in rows})):
         pts = [r for r in rows if r["problem"] == pid]
         label = pid + (" (held out)" if pts[0]["split"] == "holdout" else "")
         ax.plot([r["gen"] for r in pts], [r["mean"] for r in pts], lw=2, marker="o", ms=8,
                 color=colors[i % len(colors)], ls="--" if pts[0]["split"] == "holdout" else "-",
                 label=label)
-        ax.annotate(f"{pts[-1]['mean']:+.2f}", (pts[-1]["gen"], pts[-1]["mean"]), xytext=(8, -3),
+        ax.annotate(f"{pts[-1]['mean']:.2f}", (pts[-1]["gen"], pts[-1]["mean"]), xytext=(8, -3),
                     textcoords="offset points", fontsize=8, color="#333333")
     ax.set_xlabel("generation (0 = empty playbook)")
-    ax.set_ylabel("mean score (log10 error reduction)")
+    ax.set_ylabel("mean score (accuracy x efficiency)")
     ax.set_xticks(sorted({r["gen"] for r in rows}))
     ax.grid(axis="y", color="#e5e5e5", lw=0.8)
     ax.spines[["top", "right"]].set_visible(False)
@@ -155,12 +196,17 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
             continue
         scores = [checks[r["run_id"]]["score"] for r in ok]
         errs = [e for r in ok if (e := checks[r["run_id"]].get("rel_error")) is not None]
+        dofs = [d for r in ok if (d := checks[r["run_id"]].get("dofs"))]
         rows.append({
             "gen": gen, "problem": pid, "split": "holdout" if pid in holdout else "train",
             "n": len(scores), "mean": statistics.mean(scores), "min": min(scores), "max": max(scores),
             "failed": sum(checks[r["run_id"]]["failed_gate"] is not None for r in ok),
             "errored": len(mine) - len(ok),
             "median_err": f"{statistics.median(errs):.2e}" if errs else "-",
+            "accuracy": statistics.mean(checks[r["run_id"]].get("accuracy") or 0 for r in ok),
+            "efficiency": statistics.mean(checks[r["run_id"]].get("efficiency") or 0 for r in ok),
+            "within_tol": sum(bool(checks[r["run_id"]].get("meets_tol")) for r in ok),
+            "median_dofs": int(statistics.median(dofs)) if dofs else "-",
         })
     return rows
 
@@ -180,6 +226,9 @@ def main(argv=None) -> int:
     ap.add_argument("--playbook", type=Path, help="start from this playbook JSON instead of empty")
     ap.add_argument("--out", type=Path, help="output dir (default ace_runs/<timestamp>)")
     ap.add_argument("--mock", action="store_true", help="canned LLM responses, no API calls")
+    ap.add_argument("--memory", choices=["shared", "shared+private"], default=config.MEMORY,
+                    help="one shared playbook, or shared + one private playbook per persistent agent")
+    ap.add_argument("--agents", type=int, default=config.AGENTS, help="persistent agents (shared+private mode)")
     ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
                     "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
@@ -191,7 +240,9 @@ def main(argv=None) -> int:
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
     llm = make_llm(args.mock)
     playbook = Playbook.load(args.playbook) if args.playbook else Playbook()
-    calibration = load_calibration(train + holdout)
+    private = args.memory == "shared+private"
+    mem = Memory(args.agents, shared=playbook) if private else None
+    all_runs: dict[str, list[dict]] = {pid: [] for pid in train + holdout}   # every run so far, per problem
     rows, gen_notes = [], []
     print(f"output: {out}")
     ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
@@ -201,28 +252,46 @@ def main(argv=None) -> int:
             gdir = out / f"gen{gen}"
             (gdir / "runs").mkdir(parents=True, exist_ok=True)
             playbook.save(out / f"playbook_gen{gen}.json")
+            if private:
+                mem.save(out, gen)
             text = playbook.render(args.top_n)
             print(f"\n=== generation {gen}: {len(playbook.bullets)} bullets, ${cost.total:.2f} spent")
 
             # 1. run all agents
             # Interleaved (run 0 of every problem, then run 1, ...) so that if the budget stops a
             # generation early, every problem still has a similar number of runs.
-            jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-{i}", "generation": gen,
-                     "playbook_text": text, "workdir": str(gdir / "work" / f"{pid}-{i}"), "mock": args.mock,
-                     "ui": ui}
-                    for i in range(args.runs_per_problem) for pid in train + holdout]
-            runs = run_generation(jobs, args.concurrency, cost,
-                                  on_done=lambda r: ui_bridge.record_agent_run(ui, r, calibration))
+            if private:   # persistent agents a0..: each sees the shared playbook + its own notes
+                jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
+                         "playbook_text": mem.prompt_text(k, args.top_n), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
+                         "mock": args.mock} for k in range(args.agents) for pid in train + holdout]
+            else:
+                jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-{i}", "generation": gen,
+                         "playbook_text": text, "workdir": str(gdir / "work" / f"{pid}-{i}"), "mock": args.mock}
+                        for i in range(args.runs_per_problem) for pid in train + holdout]
+            jobs = [{**j, "ui": ui} for j in jobs]   # ace.ui_bridge settings (None = off)
+            runs = run_generation(jobs, args.concurrency, cost, on_done=lambda r: ui_bridge.record_agent_run(ui, r))
             if runs and all(r.get("error") for r in runs):
                 print(runs[0]["error"])
                 raise SystemExit("every run failed; see the error above")
 
-            # 2. checks
-            checks = {r["run_id"]: check_run(r["problem_id"], r, calibration) for r in runs}
+            # 2. checks: score, then oracles and stage invariants (layers 1 and 2 of diagnosis)
+            t_oracles = time.perf_counter()
             for r in runs:
-                (gdir / "runs" / f"{r['run_id']}.json").write_text(
-                    json.dumps({**r, "checks": checks[r["run_id"]]}, indent=1, default=str))
-            rows += score_rows(gen, runs, checks, holdout)
+                r["checks"] = check_run(r["problem_id"], r)
+                if not r.get("error"):
+                    tol = tolerance(r["problem_id"])
+                    r["oracles"] = stages.run_oracles(r, tol)
+                    r["stages"] = stages.stage_report(r, r["oracles"], tol)
+                all_runs[r["problem_id"]].append(r)
+            # Speed/accuracy score: each problem's runs scored against every run on it so far.
+            for pid in all_runs:
+                if all_runs[pid]:
+                    score_population(all_runs[pid])
+            ui_bridge.record_scores(ui, all_runs)   # every run so far was just (re)scored
+            checks = {r["run_id"]: r["checks"] for r in runs}
+            for r in runs:
+                (gdir / "runs" / f"{r['run_id']}.json").write_text(json.dumps(r, indent=1, default=str))
+            solver_log(out, {"gen": gen, "what": "oracles", "seconds": round(time.perf_counter() - t_oracles, 2)})
             note = {"gen": gen, "bullets": len(playbook.bullets)}
             gen_notes.append(note)
 
@@ -237,6 +306,14 @@ def main(argv=None) -> int:
                 # Runs that crashed (API or code errors) say nothing about the agent: leave them out.
                 pruns = [r for r in runs if r["problem_id"] == pid and not r.get("error")]
                 if not pruns:
+                    continue
+                if config.REFLECTOR_MODE == "diagnoser":
+                    refl = diagnose_step(pid, pruns, mem or playbook, llm, tolerance(pid), gdir, out,
+                                         args.mock, cost, gen)
+                    ui_bridge.record_diagnosis(ui, pruns, refl)
+                    if refl is not None:
+                        reflections.append((pid, refl, [r["run_id"] for r in pruns]))
+                    cost.check()
                     continue
                 (gdir / f"reflection_prompt_{pid}.md").write_text(build_prompt(pid, pruns, checks, playbook))
                 usage = []          # filled per API call, so billed attempts count even on an error
@@ -255,6 +332,29 @@ def main(argv=None) -> int:
                 cost.check()
 
             # 4. curate  5. merge
+            if private:
+                usage = []
+                try:
+                    log = mem.update(reflections, llm, gen, records=usage)
+                except Exception as e:  # noqa: BLE001  keep the memories unchanged this generation
+                    print(f"  memory update failed: {e!r}; no change")
+                    log = {"shared": {"added": [], "voted": [], "deduped": [], "pruned": []}, "private": {}, "promoted": []}
+                cost.add(usage)
+                (gdir / "memory_changes.json").write_text(json.dumps(log, indent=1, default=str))
+                mem.save(out, gen + 1)
+                diff = diff_markdown(log["shared"], gen + 1, mem.shared)
+                diff += "\n## Promoted from private notes\n" + ("\n".join(
+                    f"- `{p['shared_id']}` (agents {p['from_agents']}): {p['content']}" for p in log["promoted"]) or "none")
+                diff += "\n\n## Private notes added\n" + ("\n".join(
+                    f"- agent a{k}: " + "; ".join(f"`{i}` {c}" for i, c in ch["added"])
+                    for k, ch in sorted(log["private"].items()) if ch["added"]) or "none") + "\n"
+                (out / f"diff_gen{gen + 1}.md").write_text(diff)
+                n_priv = sum(len(c["added"]) for c in log["private"].values())
+                note.update({k: len(v) for k, v in log["shared"].items()}, usd=cost.total,
+                            private_added=n_priv, promoted=len(log["promoted"]))
+                print(f"  shared: +{len(log['shared']['added'])} added, {len(log['shared']['pruned'])} pruned; "
+                      f"private: +{n_priv} added across agents; promoted to shared: {len(log['promoted'])}")
+                continue
             usage = []
             try:
                 ops, _ = curate(reflections, playbook, llm, records=usage)
@@ -274,6 +374,17 @@ def main(argv=None) -> int:
     finally:
         for n in gen_notes:
             n.setdefault("usd", cost.total)
+        # Final scores: every generation against the whole run's population, so they compare.
+        rows = []
+        for pid, prs in all_runs.items():
+            if prs:
+                score_population(prs)
+                for r in prs:
+                    (out / f"gen{r['generation']}" / "runs" / f"{r['run_id']}.json").write_text(
+                        json.dumps(r, indent=1, default=str))
+        for g in sorted({r["generation"] for prs in all_runs.values() for r in prs}):
+            gruns = [r for prs in all_runs.values() for r in prs if r["generation"] == g]
+            rows += score_rows(g, gruns, {r["run_id"]: r["checks"] for r in gruns}, holdout)
         (out / "summary.md").write_text(summarize(rows, gen_notes, cost))
         if rows:
             plot_scores(rows, out / "scores.png")

@@ -49,12 +49,12 @@ You are the Reflector in a loop that improves an FEA setup agent through a playb
 lessons that is pasted into its system prompt. Several agent runs attempted the same problem.
 
 How runs are scored (computed by code; treat these numbers as ground truth):
-- The agent meshes the geometry under a hard node cap, solves (at most {MAX_SOLVES} solves), and
-  submits one solve; that solve is scored (its last successful solve if it never submitted).
+- The agent meshes the geometry (a node cap is only a safety limit), solves (at most {MAX_SOLVES}
+  solves), and submits one solve; that solve is scored (its last successful solve if none).
 - rel_error = |agent value - true value| / |true value| for one scored quantity.
-- score = log10(e_uniform / rel_error), where e_uniform is the error of the best uniform mesh
-  (linear or quadratic) at the node cap. 0 = as good as that, +1 = 10x more accurate,
-  -2 = failed (gate failed or no solve).
+- score = accuracy x efficiency (the team's speed/accuracy metric): accuracy = min(1, tolerance /
+  rel_error); efficiency = DOFs of the cheapest run on the problem that met the tolerance / this
+  run's DOFs. 1 = the cheapest mesh accurate enough; invalid runs (gate failed, no solve) score 0.
 - `setup` lists differences from the reference setup (missing/unexpected BCs, sign flips,
   wrong formulation/thickness/material). The agent never saw the true value or reference setup.
 
@@ -101,7 +101,7 @@ def build_prompt(problem_id: str, runs: list[dict], checks: dict[str, dict], pla
     for rank, run in enumerate(ranked, 1):
         # The Reflector can infer a TRAIN problem's true value (value + rel_error); that is fine
         # because held-out problems are never reflected on and lessons may not contain answers.
-        c = {k: v for k, v in checks[run["run_id"]].items() if k != "e_uniform"}
+        c = dict(checks[run["run_id"]])
         cited = [f"[{b}] {playbook.get(b).content}" if playbook.get(b) else f"[{b}] (not in playbook)"
                  for b in run["cited"]]
         parts.append(

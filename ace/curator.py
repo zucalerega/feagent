@@ -27,6 +27,7 @@ class Op:
     bullet_id: str = ""
     vote: str = ""                  # "helpful" | "harmful"
     source_runs: list[str] = field(default_factory=list)
+    evidence_type: str | None = None  # for ADD: counterfactual | contrast (None: single-call Reflector)
 
 
 class Decision(BaseModel):
@@ -62,14 +63,19 @@ def curate(reflections: list[tuple], playbook, llm, records=None) -> tuple[list[
         for v in refl.bullet_votes:
             if v.vote != "neutral" and playbook.get(v.bullet_id):
                 ops.append(Op("VOTE", bullet_id=v.bullet_id, vote=v.vote, source_runs=run_ids))
-        candidates += [(lesson, run_ids) for lesson in refl.lessons if lesson.scope != "one_off"]
+        # Only lessons backed by evidence: a confirmed rerun or a best-vs-worst contrast. one_off
+        # lessons and oracle_only ones (no experiment, no contrast) are dropped. Lessons from the
+        # single-call Reflector have no evidence_type and are kept as before.
+        candidates += [(lesson, run_ids) for lesson in refl.lessons if lesson.scope != "one_off"
+                       and getattr(lesson, "evidence_type", None) in (None, "counterfactual", "contrast")]
 
     if not candidates:
         return ops, []
     sections = [lesson.section for lesson, _ in candidates]
     existing = [b for s in sorted(set(sections)) for b in playbook.in_section(s)]
     if not existing and len(set(sections)) == len(sections):   # nothing to compare against
-        ops += [Op("ADD", section=les.section, content=les.content, source_runs=r) for les, r in candidates]
+        ops += [Op("ADD", section=les.section, content=les.content, source_runs=r,
+                   evidence_type=getattr(les, "evidence_type", None)) for les, r in candidates]
         return ops, []
 
     prompt = "# Existing bullets\n" + ("\n".join(f"[{b.id}] ({b.section}) {b.content}" for b in existing)
@@ -88,5 +94,6 @@ def curate(reflections: list[tuple], playbook, llm, records=None) -> tuple[list[
             continue                     # same idea as an earlier candidate: drop it
         else:  # ADD, or the curator failed / skipped this one: fall back to adding it as-is
             content = d.content if d and d.action == "ADD" and d.content else lesson.content
-            ops.append(Op("ADD", section=lesson.section, content=content, source_runs=run_ids))
+            ops.append(Op("ADD", section=lesson.section, content=content, source_runs=run_ids,
+                          evidence_type=getattr(lesson, "evidence_type", None)))
     return ops, usage

@@ -6,6 +6,7 @@ No LLM here. gmsh is process-global, so call these from one thread per process
 
 from __future__ import annotations
 
+import hashlib
 import math
 from pathlib import Path
 
@@ -154,6 +155,10 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
         "min_quality": round(float(min(q)), 4) if len(q) else None,
         "h_used": h,                       # after clamping to the size floor
         "sizes_used": sizes_used,          # refinement sizes after clamping, in request order
+        # Checkpoint fingerprint: a rebuild from the same request reproduces the mesh only with
+        # the same code and gmsh version; the hash says whether it did.
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "gmsh": gmsh.__version__,
     }
 
 
@@ -167,10 +172,12 @@ def build_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> Case
     return Case(
         mesh=mesh["path"],
         analysis=Analysis(physics="elasticity", formulation=setup.get("formulation", ""),
-                          order=mesh["order"], thickness=float(setup.get("thickness", 1.0))),
-        materials={"mat": Material(E=float(mat.get("E", 0.0)), nu=float(mat.get("nu", 0.0)))},
+                          order=mesh["order"], thickness=float(setup.get("thickness", 1.0)),
+                          T_ref=float(setup.get("T_ref", 0.0))),
+        materials={"mat": Material(E=float(mat.get("E", 0.0)), nu=float(mat.get("nu", 0.0)),
+                                   alpha=float(mat.get("alpha", 0.0)))},
         bcs=[BC(**{k: v for k, v in bc.items() if k in bc_keys}) for bc in setup.get("bcs", [])],
-        loads=[Load(**ld) for ld in setup.get("loads", [])],
+        loads=[Load(**{k: v for k, v in ld.items() if k in ("type", "value", "group")}) for ld in setup.get("loads", [])],
         qois=[official_qoi(problem, qoi_name)],
     )
 
@@ -188,4 +195,6 @@ def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_resul
         return {"ok": False, "error": f"solver failed: {type(e).__name__}: {e}"}
     if on_result is not None:
         on_result(result)
-    return {"ok": True, "qoi": qoi_name, "value": value}
+    info = {"n_dofs": int(result.info.n_dofs), "wall_time": float(result.info.wall_time),
+            "warnings": list(result.info.warnings)}
+    return {"ok": True, "qoi": qoi_name, "value": value, "info": info}

@@ -109,10 +109,13 @@ FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui
 
 - Each solve becomes a run record (agent `ace:<run_id>`, source `ace`) with the case, the scored
   quantity and the fields for the viewer, or the error if the solve failed.
-- Each agent run becomes a submission of its successful solves as soon as it finishes, with
-  the score, failed gates, setup diagnostics, cited bullets and token counts.
-- The UI's loop id is the name of the output directory. With the bridge on, each solve in
-  `gen{N}/runs/<run_id>.json` also gets `ui_run_id`, the id of its run record.
+- Each agent run becomes a submission of its successful solves as soon as it finishes, with its
+  failed gates, setup diagnostics, cited bullets and token counts. Its score (and the score's
+  parts: accuracy, efficiency, ...) is filled in when the loop scores the generation, and updated
+  each later generation, because the score is relative to every run on the problem so far. The
+  diagnoser's verdict on a run is added to its diagnostics.
+- The UI's loop id is the name of the output directory. With the bridge on, each run record in
+  `gen{N}/runs/<run_id>.json` also gets `ui_submission_id`, and each of its solves `ui_run_id`.
 - If the store can't be written (permissions, full disk), the loop only prints a warning and
   carries on; its own results don't change. Code: `ace/ui_bridge.py`.
 
