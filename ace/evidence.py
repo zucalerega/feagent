@@ -264,7 +264,11 @@ def process_test(spec: dict) -> dict:
     problem = fea.get_problem(pid)
     data_path = Path(spec["_dir"]) / spec["data"]["file"]
     table = read_table(data_path, spec["data"])
-    window = tuple((spec.get("fit") or {}).get("window", (0.1, 0.9)))
+    fit = spec.get("fit") or {}
+    window = tuple(fit.get("window", (0.1, 0.9)))
+    if fit.get("until") == "peak":      # a test run to failure: the loading up to the peak only
+        k = int(np.argmax(table["load"])) + 1
+        table = {**table, "load": table["load"][:k], "meas": table["meas"][:k]}
     cycles = fit_cycles(table["load"], table["meas"], window)
     if not cycles:
         raise ValueError(f"{data_path}: no loading with enough points in the fit window {window}")
@@ -301,6 +305,9 @@ def process_test(spec: dict) -> dict:
         "residual_after_unload": max((abs(x["residual_after_unload"]) for x in used
                                       if x["residual_after_unload"] is not None), default=None),
         "nominal_load": F, "value_at_nominal_load": c * F,
+        # the machine reads compression as positive, the FEA quantity is negative: sign -1
+        "sign": float((spec.get("measurement") or {}).get("sign", 1.0)),
+        "notes": spec.get("notes", ""),
         "e_scale": (E_model / E_test) if (E_test and E_model) else 1.0, "E_test": E_test, "E_model": E_model,
         "measurement": {"name": q.name, "type": q.type, "field": q.field, "point": q.point,
                         "point2": getattr(q, "point2", None), "group": q.group},
@@ -318,7 +325,7 @@ def combine(tests: list[dict]) -> dict:
     F = tests[0]["nominal_load"]
     return {"compliance": c, "u_rel_measurement": u_meas, "u_rel_total": math.hypot(u_meas, shared),
             "nominal_load": F, "value_at_nominal_load": c * F, "e_scale": tests[0]["e_scale"],
-            "n_tests": len(tests), "measurement": tests[0]["measurement"]}
+            "sign": tests[0].get("sign", 1.0), "n_tests": len(tests), "measurement": tests[0]["measurement"]}
 
 
 # --------------------------------------------------------------------------- predictions
@@ -348,7 +355,7 @@ def _resolve(problem_id: str, run: dict, q) -> float | None:
 
 def compare_value(value: float, ev: dict) -> dict:
     """A run's predicted measurement at the nominal load vs the test (`ev`: combined evidence)."""
-    pred = value * ev["e_scale"] / ev["nominal_load"]
+    pred = ev.get("sign", 1.0) * value * ev["e_scale"] / ev["nominal_load"]
     rel = (pred - ev["compliance"]) / ev["compliance"]
     sigma = rel / ev["u_rel_total"] if ev["u_rel_total"] else float("inf")
     return {"value": value, "predicted_compliance": pred, "rel_err": rel, "sigma": sigma,
@@ -388,7 +395,8 @@ def consensus(problem_id: str, runs: list[dict], ev: dict) -> dict | None:
     med = float(np.median(v))
     return {"generation": gen, "runs": int(len(v)), "median_compliance": med,
             "spread_rel": float(np.median(np.abs(v - med)) / abs(med)) if med else None,
-            **{k: x for k, x in compare_value(med * ev["nominal_load"] / ev["e_scale"], ev).items() if k != "value"},
+            **{k: x for k, x in compare_value(med * ev["nominal_load"] / ev["e_scale"] / ev.get("sign", 1.0), ev).items()
+               if k != "value"},
             "trend": {g: float(np.median(x)) for g, x in sorted(preds.items())}}
 
 
@@ -409,6 +417,50 @@ def load_active(problem_id: str) -> dict | None:
 
 def scoring_on() -> bool:
     return os.environ.get(SCORE_ENV) == "1"
+
+
+def has_reference(problem_id: str) -> bool:
+    """Does the problem have a reference value for its scored quantity (a ground truth)?"""
+    from ace import fea
+    qoi = TASKS[problem_id]["qoi"]
+    return any(r.qoi == qoi for r in fea.get_problem(problem_id).references())
+
+
+def scored_by_test(problem_id: str) -> bool:
+    """Is this problem scored against its physical test? With --evidence-score, and always when the
+    problem has no reference value (no ground truth: the test is the only check)."""
+    return load_active(problem_id) is not None and (scoring_on() or not has_reference(problem_id))
+
+
+def missing_tests(problem_ids: list[str]) -> list[str]:
+    """Problems with neither a reference value nor test data: nothing can score them."""
+    return [p for p in problem_ids if not has_reference(p) and load_active(p) is None]
+
+
+def automesher_test_error(problem_id: str) -> float:
+    """Field mode, scored against the test: the automesher's own error against the test (its solve
+    of the stated setup), the baseline a run's gain is measured from."""
+    from ace.field_error import automesher
+    ev = load_active(problem_id)["combined"]
+    return abs(compare_value(automesher(problem_id, need_value=True)["value"], ev)["rel_err"])
+
+
+def test_tolerance(problem_id: str) -> float:
+    """Accuracy target when scored against the test: no tighter than 2 sigma of the test. In field
+    mode also the automesher's own error divided by the target gain (as for a reference)."""
+    from ace.config import AUTO_GAIN_TARGET, SCORE
+    ev = load_active(problem_id)["combined"]
+    base = automesher_test_error(problem_id) / AUTO_GAIN_TARGET if SCORE == "field" else 0.02
+    return max(base, 2 * ev["u_rel_total"])
+
+
+def value_error(problem_id: str, value: float) -> float | None:
+    """|error| against the test of a solve whose scored value is `value`, when the test measures the
+    scored quantity (else None: it needs a re-solve, see predict_run)."""
+    rec = load_active(problem_id)
+    if rec is None or rec["combined"]["measurement"]["name"] != TASKS[problem_id]["qoi"]:
+        return None
+    return abs(compare_value(value, rec["combined"])["rel_err"])
 
 
 def discover(paths: list[Path]) -> list[Path]:
@@ -491,6 +543,8 @@ def agent_section(problem_id: str) -> str:
     lines = ["PHYSICAL TEST DATA (measured on the real part; treat it as the truth within its uncertainty)"]
     for t in rec["tests"]:
         lines.append(f"- test {t['test_id']}: {_scrub(t['description'], problem_id)}".rstrip(": "))
+        if t.get("notes"):
+            lines.append(f"  lab notes: {_scrub(t['notes'], problem_id)}")
     where = (f"between {m['point2']} and {m['point']}" if m.get("point2") else
              f"at {m['point']}" if m.get("point") else f"over group {m.get('group')!r}" if m.get("group") else "")
     lines.append(f"Measured: {m['name']} ({m['type']} of {m['field']} {where}) = {ev['value_at_nominal_load']:.4g} at "

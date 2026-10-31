@@ -66,6 +66,9 @@ TASKS = {
     # printed gold part abc_00000003 pulled on the Instron (feacore/problems/physical.py); scored on the
     # video-extensometer elongation; physical test data can be fed in with run_loop --evidence
     "abc_00000003_pull": {"qoi": "ext_marks", "node_cap": 60000},
+    # printed gold part abc_00000065 compressed on the Instron (feacore/problems/physical.py). No reference
+    # value (no ground truth): scored against its test, physical_tests/abc_00000065_compression/ (--evidence)
+    "abc_00000065_compression": {"qoi": "u_top", "node_cap": 40000},
     # gold ABC CAD parts (feacore/problems/gold.py): qoi = GoldProblem.scored_qoi(); node cap about the
     # L1 study mesh (48827 / 37613 nodes). Field scoring needs their adaptive reference (ace.gold_reference).
     "abc_00000003_bc7": {"qoi": "strain_energy", "node_cap": 49000},

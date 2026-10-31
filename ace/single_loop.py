@@ -45,9 +45,9 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from ace import config, process_brief
+from ace import config, evidence, process_brief
 from ace.agent import TOOLS, Tools, parse_citations, system_prompt, task_prompt, tool_loop
-from ace.checks import score_population
+from ace.checks import check_run, score_population
 from ace.cost import BudgetExceeded, CostLog
 from ace.llm import make_llm
 from ace.memory import Memory, notes_as_dicts
@@ -376,6 +376,11 @@ def main(argv=None) -> int:
                          "that generation is not known yet (see --swarm-dir)")
     ap.add_argument("--swarm-dir", type=Path, help="a swarm run dir (run_loop --deep) to compare $ with each "
                                                    "generation, and with ace.compare at the end")
+    ap.add_argument("--evidence", type=Path, action="append", default=[],
+                    help="physical test data (ace/evidence.py), as run_loop --evidence: a test spec JSON or a "
+                         "directory of them; files dropped into <out>/evidence/ are picked up each generation")
+    ap.add_argument("--evidence-score", action="store_true",
+                    help="score tasks that have test data against the test (always so for tasks without a reference)")
     args = ap.parse_args(argv)
     if config.SCORE != "field":
         raise SystemExit("ace.single_loop needs field scoring (ACE_SCORE=field), as run_loop --deep does")
@@ -386,6 +391,10 @@ def main(argv=None) -> int:
     turns = args.turns or config.MAX_TURNS * args.swarm_agents
     out = args.out or Path("ace_runs") / ("single-" + time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
+    # Physical test data (ace.evidence), exactly as run_loop: set before any process pool exists.
+    os.environ[evidence.ACTIVE_ENV] = str((out / "evidence_active").resolve())
+    os.environ[evidence.SCORE_ENV] = "1" if args.evidence_score else "0"
+    (out / "evidence").mkdir(exist_ok=True)
     cost = CostLog(out / "cost.jsonl", args.budget_usd)
     llm = SingleBrief(make_llm(args.mock), solves)
     mem = Memory(1)
@@ -410,6 +419,15 @@ def main(argv=None) -> int:
             gdir = out / f"gen{gen}"
             (gdir / "runs").mkdir(parents=True, exist_ok=True)
             (gdir / "context").mkdir(exist_ok=True)
+            for pid in evidence.refresh(out, args.evidence, all_runs, gen):   # test data, also mid-run
+                if evidence.scored_by_test(pid) and all_runs[pid]:
+                    for r in all_runs[pid]:
+                        if not r.get("error"):
+                            r["checks"] = check_run(pid, r)
+                    rescore(all_runs[pid])
+            if gen == 0 and (missing := evidence.missing_tests(tasks)):
+                raise SystemExit(f"{', '.join(missing)}: no reference value (no ground truth) and no physical test "
+                                 "data to score against; give the test with --evidence (see ace/evidence.py)")
             mem.save(out, gen)
             print(f"\n=== generation {gen}: ${cost.total:.2f} spent")
 

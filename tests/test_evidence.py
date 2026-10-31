@@ -147,3 +147,92 @@ def test_summarize_cli(tmp_path, capsys):
     write_export(tmp_path / "raw.csv", C_TRUE)
     assert EV.main(["summarize", str(spec_file(tmp_path, "abc_00000003_pull", "raw.csv"))]) == 0
     assert '"compliance"' in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- no ground truth: the test is the judge
+
+COMPRESSION = "physical_tests/abc_00000065_compression"
+
+
+def _active_compression(tmp_path, monkeypatch):
+    """The C-bracket compression test made active, as run_loop does at a generation start."""
+    import shutil
+    from pathlib import Path
+    lab = tmp_path / "lab"
+    lab.mkdir()
+    for f in ("cload_compression.json", "cload_compression.csv"):
+        shutil.copy(Path(COMPRESSION) / f, lab / f)
+    monkeypatch.setenv(EV.ACTIVE_ENV, str(tmp_path / "out" / "evidence_active"))
+    monkeypatch.setenv(EV.SCORE_ENV, "0")             # no --evidence-score: no reference makes it the judge
+    EV.refresh(tmp_path / "out", [lab], {"abc_00000065_compression": []}, 0)
+    return EV.load_active("abc_00000065_compression")["combined"]
+
+
+def _run_with_value(value):
+    from ace.checks import reference_setup
+    p = fea.get_problem("abc_00000065_compression")
+    mesh = {"ok": True, "nodes": 9506, "order": 2, "min_quality": 0.3, "path": "/nonexistent.msh"}
+    return {"problem_id": "abc_00000065_compression", "meshes": [mesh], "submitted": 0,
+            "solves": [{"mesh": mesh, "mesh_index": 0, "setup": reference_setup(p),
+                        "result": {"ok": True, "value": value, "info": {"n_dofs": 28518}}}]}
+
+
+def test_compression_test_reads_and_fits():
+    t = EV.process_test(EV.read_spec(__import__("pathlib").Path(COMPRESSION) / "cload_compression.json"))
+    assert abs(1e-3 / t["compliance"] - 2696) < 30                  # N/mm, the straight part after the kink
+    assert t["sign"] == -1.0 and t["cycles_used"] == [1] and 0.10 < t["u_rel_total"] < 0.13
+
+
+def test_problem_without_reference_is_scored_against_its_test(tmp_path, monkeypatch):
+    from ace.checks import check_run
+    ev = _active_compression(tmp_path, monkeypatch)
+    assert not EV.has_reference("abc_00000065_compression") and EV.scored_by_test("abc_00000065_compression")
+    c = check_run("abc_00000065_compression", _run_with_value(-0.31031e-3))    # the FEA at 1000 N, h = 1.6 mm
+    assert c["scored_by"] == "test" and c["reference_rel_error"] is None
+    assert abs(c["rel_error"] - abs(0.31031e-3 / 1000 / ev["compliance"] - 1)) < 1e-9   # about 16 % too stiff
+    assert abs(c["tolerance"] - 2 * ev["u_rel_total"]) < 1e-12 and c["meets_tol"]
+    assert c["evidence"]["rel_err"] < 0                              # FEA stiffer than the part
+
+
+def test_field_mode_gain_is_measured_from_the_automesher_against_the_test(tmp_path, monkeypatch):
+    from ace import checks, config, field_error
+    ev = _active_compression(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "SCORE", "field")
+    monkeypatch.setattr(checks, "SCORE", "field")
+    auto = {"error": 0.05, "dofs": 20000, "value": -0.3056e-3, "field": 0.05, "points": 0.05}
+    monkeypatch.setattr(field_error, "automesher", lambda pid, need_value=False: auto)
+    monkeypatch.setattr(checks, "_diagonal", lambda pid: 0.1)      # the diversity grid; skips the fine reference
+    auto_err = EV.automesher_test_error("abc_00000065_compression")
+    assert abs(auto_err - abs(0.3056e-3 / 1000 / ev["compliance"] - 1)) < 1e-9
+    assert EV.test_tolerance("abc_00000065_compression") == max(auto_err / config.AUTO_GAIN_TARGET, 2 * ev["u_rel_total"])
+    runs = [{"problem_id": "abc_00000065_compression", "generation": 0,
+             "checks": {"rel_error": e, "dofs": 20000, "point_errors": [0.1] * 12}} for e in (0.05, 0.20)]
+    checks._score_vs_automesher(runs, [{"valid": True, "flags": []}] * 2)
+    assert abs(runs[0]["checks"]["gain"] - auto_err / 0.05) < 1e-9 and runs[0]["checks"]["auto_error"] == auto_err
+    assert all(r["checks"]["best_bonus"] == 0.0 for r in runs)      # probe points judge the stated setup, not the test
+
+
+def test_loop_refuses_a_problem_with_neither_reference_nor_test(tmp_path, monkeypatch):
+    from ace.run_loop import main
+    for k, v in (("ACE_STATEMENT", "bcs"), (EV.ACTIVE_ENV, ""), (EV.SCORE_ENV, "0")):
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(config, "STATEMENT", "bcs")
+    with pytest.raises(SystemExit, match="no reference value"):
+        main(["--mock", "--memory", "shared", "--problems", "abc_00000065_compression", "--holdout", "",
+              "--generations", "1", "--out", str(tmp_path / "run")])
+
+
+def test_loop_scores_the_compression_case_against_the_test(tmp_path, monkeypatch):
+    """The swarm on the C-bracket with its Instron data: no reference anywhere, every run judged by
+    the test, and the agents told about it."""
+    from ace.run_loop import main
+    for k, v in (("ACE_STATEMENT", "bcs"), (EV.ACTIVE_ENV, ""), (EV.SCORE_ENV, "0")):
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(config, "STATEMENT", "bcs")
+    main(["--mock", "--memory", "shared", "--problems", "abc_00000065_compression", "--holdout", "",
+          "--runs-per-problem", "1", "--generations", "1", "--concurrency", "1",
+          "--evidence", COMPRESSION, "--out", str(tmp_path / "run")])
+    r = json.loads((tmp_path / "run" / "gen0" / "runs" / "g0-abc_00000065_compression-0.json").read_text())
+    c = r["checks"]
+    assert c["scored_by"] == "test" and c["evidence"] is not None and c["score"] is not None
+    assert any("test_check" in s for s in r["solves"])

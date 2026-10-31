@@ -163,3 +163,95 @@ class GoldPullTest(Problem):
 
 
 register(GoldPullTest(id="abc_00000003_pull"))
+
+
+# --------------------------------------------------------------------------- platen compression
+
+class GoldPlatenCompression(Problem):
+    """A gold part pressed between the platens of a testing machine: faces pushed by the upper
+    platen with a total force, faces on the lower platen held. No reference solution: the physical
+    test (ace.evidence) is the only check, so the loop scores runs against the test.
+
+    abc_00000065_compression
+        The gold part abc_00000065 (a clamp body: a block with a bore and two prongs above it,
+        60.7 x 77.8 x 16.2 mm), printed as is in Formlabs Alpha Fast resin (Form Studio 1, post-cured
+        2 min) and compressed on the Instron: the upper platen pushes the two prong tops (faces f17
+        and f34, plane y = 33.84 mm), the bottom face (f33, plane y = -43.96 mm) sits on the lower
+        platen. Material from the Alpha Fast TDS, default post-cure: tensile modulus 2230 MPa (ASTM
+        D638 Type 1), flexural 2110 MPa; Poisson's ratio not given (0.35 assumed).
+        Scored: u_top, the mean y-displacement of the prong tops (negative under compression).
+    """
+
+    dim = 3
+    physics = "elasticity"
+    formulation = "3d"
+    units = "SI (m, N, Pa)"
+    expected_behavior = "smooth"
+    tags = ("physical", "3d", "compression_test", "printed")
+    family = "physical"
+    default_params = {
+        "gold_set": "abc_00000065_bc0",       # the gold set whose STEP holds the part
+        "top_faces": (17, 34),                # pushed by the upper platen: the prong tops
+        "bottom_faces": (33,),                # on the lower platen: the bottom face
+        "force": 1000.0,                      # total compression (N)
+        "E": 2.23e9,                          # Alpha Fast, default post-cure (TDS, ASTM D638 Type 1)
+        "nu": 0.35,                           # not on the TDS: assumed
+        "h0": 3 * MM,
+    }
+    title = "Printed gold part abc_00000065, compressed between platens (Instron)"
+
+    def build_geometry(self) -> None:
+        p = self.params
+        gmsh.model.occ.importShapes(str(_gold_step(p["gold_set"])))
+        gmsh.model.occ.synchronize()
+        for _, tag in gmsh.model.getEntities(2):
+            gmsh.model.addPhysicalGroup(2, [tag], name=f"f{tag}")       # every face, as the gold sets
+        gmsh.model.addPhysicalGroup(2, list(p["top_faces"]), name="prong_tops")
+        gmsh.model.addPhysicalGroup(2, list(p["bottom_faces"]), name="base_bottom")
+        gmsh.model.addPhysicalGroup(3, [t for _, t in gmsh.model.getEntities(3)], name="solid")
+
+    def description(self) -> str:
+        p = self.params
+        tops = " and ".join(f"f{t}" for t in p["top_faces"])
+        return (
+            "Printed compression test (Instron) of the gold part abc_00000065 (3D linear elastic solid, static).\n"
+            "Geometry (the STEP file holds it in metres; faces are named f<tag> by their face tag): the gold "
+            "part abc_00000065 as printed, a clamp body 60.7 x 77.8 x 16.2 mm: a block with a bore of radius "
+            "19.67 mm along z and two prongs above it. The prongs' top faces (" + tops + ", on the plane "
+            "y = 33.84 mm; group prong_tops) carry the load; the bottom face (f33, on the plane y = -43.96 mm; "
+            "group base_bottom) rests on the machine.\n"
+            f"Material: Formlabs Alpha Fast resin, printed on a Form Studio 1 and post-cured 2 min; linear elastic "
+            f"and isotropic, E = {p['E'] / 1e9:g} GPa (datasheet tensile modulus, default post-cure), Poisson's "
+            f"ratio {p['nu']:g} (not on the datasheet: assumed).\n"
+            "Supports: the bottom face f33 (group base_bottom) sits on the lower compression platen: all "
+            "displacement components zero on it.\n"
+            f"Load: the upper compression platen pushes the two prong tops (group prong_tops) down, along -y, "
+            f"with a total force of {p['force']:g} N, spread uniformly over both faces. Everything else is free. "
+            "No gravity.\n"
+            "Report: u_top = the mean y-displacement of the prong tops (group prong_tops), in m (negative: they "
+            "move down).\n"
+            "There is no reference solution: the physical test of this part is the only check."
+        )
+
+    def qois(self) -> list[QoI]:
+        return [QoI(name="u_top", type="mean", field="uy", group="prong_tops"),
+                QoI(name="reaction_y", type="reaction", group="base_bottom", component=1),
+                QoI(name="strain_energy", type="strain_energy")]
+
+    def case(self, mesh_path: str | Path, order: int = 2) -> Case:
+        p = self.params
+        return Case(
+            mesh=str(mesh_path),
+            analysis=Analysis(physics="elasticity", formulation="3d", order=order),
+            materials={"alpha_fast": Material(E=p["E"], nu=p["nu"])},
+            bcs=[BC(type="fixed", group="base_bottom"),
+                 BC(type="force", group="prong_tops", value=[0.0, -p["force"], 0.0])],
+            qois=self.qois(),
+            meta={"problem": self.id, "test": "Instron compression between flat platens"},
+        )
+
+    def references(self) -> list[Reference]:
+        return []          # no ground truth: the loop scores against the physical test (ace.evidence)
+
+
+register(GoldPlatenCompression(id="abc_00000065_compression"))

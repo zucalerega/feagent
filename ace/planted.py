@@ -34,6 +34,7 @@ GOOD_MESH = {
     "cooks_membrane": {"h": 4.0, "order": 2, "refinements": [{"point": [48.0, 52.0], "size": 1.0, "radius": 8.0}]},  # 0.06%
     # the tube wall (2.5 mm) bends: it needs small elements everywhere around the tube, not at a point
     "abc_00000003_pull": {"h": 0.0022, "order": 2, "refinements": []},  # 40187/60000 nodes, -2.3%
+    "abc_00000065_compression": {"h": 0.004, "order": 2, "refinements": []},  # 9506/40000 nodes, ~1.5% from h = 1.6 mm
 }
 
 

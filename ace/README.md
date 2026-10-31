@@ -290,6 +290,46 @@ Two consequences for the lab:
   and still rising with refinement. Marks on the bosses were rejected because they sit next to
   that edge and converge erratically.
 
+### The compression test of the printed C-bracket: `abc_00000065_compression` (no reference)
+
+The gold part `abc_00000065` printed in Formlabs Alpha Fast (2 min post-cure) and crushed between the
+Instron's platens: the bottom face (f33) sits on the lower platen, the upper platen pushes the two prong
+tops (f17, f34). `feacore/problems/physical.py` states it as the bottom held and 1000 N spread over the
+prong tops, E = 2230 MPa (datasheet), ν = 0.35 (assumed). Scored quantity: `u_top`, the mean
+y-displacement of the prong tops.
+- **There is no reference solution.** The test is the only check: every run is scored against it, with or
+  without `--evidence-score`, and the loop refuses to start on a problem that has neither a reference nor
+  test data. In field mode the gain is measured the same way: the automesher's error against the test
+  over the run's. There is no be-the-best bonus: the hidden probe points judge the stated setup's field,
+  not the test.
+- **The data** (`physical_tests/abc_00000065_compression/`): the Bluehill reports had no data export, so
+  `scripts/digitize_bluehill_plot.py` traced the curve in the report's plot image (±0.01 mm, ±15 N; the
+  peak and break, hidden by markers, read 1-3% low). The spec fits the straight part after a toe, up to
+  the peak: 2696 N/mm (±12% at 1 sigma, mostly the material value and the crosshead).
+- **Swarm against single agent, with a second task** (`--split` now also runs on one task):
+
+```bash
+ACE_SCORE=field python -m ace.run_loop --deep --split --memory shared+private --agents 8 \
+    --problems abc_00000065_compression,abc_00000065_bc0 --holdout "" --generations 8 \
+    --evidence physical_tests/abc_00000065_compression --budget-usd 50 --out ace_runs/cbracket_swarm
+ACE_SCORE=field python -m ace.single_loop --problems abc_00000065_compression,abc_00000065_bc0 \
+    --generations 8 --evidence physical_tests/abc_00000065_compression --budget-usd 20 \
+    --out ace_runs/cbracket_single --swarm-dir ace_runs/cbracket_swarm
+python -m ace.compare ace_runs/cbracket_swarm ace_runs/cbracket_single
+```
+
+**Past yield: `scripts/ccx_compression_ramp.py`.** The loop's solver is linear. This script ramps the part
+on feacore's opt-in elastoplastic CalculiX path (J2 plasticity, NLGEOM; from the `nonlinear-setup`
+branch): the prong tops pushed down by a rigid platen, the bottom held. It uses two calibrations of
+the same dogbone (`dogbone1.pdf`, an ASTM D638 Type I, 13 x 3.2 mm, measured by crosshead):
+- **team:** `experiments/material/alpha_fast_dogbone1.json`, strain = crosshead / 115 mm, so the
+  modulus is the apparent 1880 MPa;
+- **corrected:** the datasheet modulus, with the grip slack (the initial slope minus the printed
+  geometry's own compliance) taken out, and the plastic stretch put in the narrow section.
+
+It writes `physical_tests/abc_00000065_compression/ccx_ramp/` (curves, `summary.json`, `compare.png`)
+against the test.
+
 ## Knobs that matter (`ace/config.py`)
 
 - `MODELS`: one line per role. The Reflector is the step most worth a strong model.
