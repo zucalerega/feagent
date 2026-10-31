@@ -760,6 +760,8 @@ class CcxResult(Result):
         return elq, xi
 
     def evaluate(self, qoi: QoI) -> float:
+        if qoi.type == "point_difference":   # backend-independent, see Result.evaluate_qoi
+            return Result.evaluate_qoi(self, qoi)
         t = qoi.type
         if t == "point":
             return float(self.probe(qoi.field, [qoi.point])[0])

@@ -795,7 +795,7 @@ class SkfemResult(Result):
         out = {}
         for q in self.case.qois:
             try:
-                out[q.name] = float(self.evaluate(q))
+                out[q.name] = float(self.evaluate_qoi(q))
             except (CaseError, ValueError) as e:
                 out[q.name] = float("nan")
                 msg = f"qoi {q.name!r} could not be evaluated: {e}"
@@ -808,6 +808,8 @@ class SkfemResult(Result):
         return {"info": asdict(self.info), "qois": qois, "meta": self.case.meta}
 
     def evaluate(self, qoi: QoI) -> float:
+        if qoi.type == "point_difference":   # backend-independent, see Result.evaluate_qoi
+            return Result.evaluate_qoi(self, qoi)
         md = self.model
         t = qoi.type
         if t == "point":
