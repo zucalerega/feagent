@@ -1,0 +1,55 @@
+# MCP tool descriptions for the `feagent` server (src/feagent/mcp_server.py reads this file at
+# start-up; $FEAGENT_CONTEXT_DIR points the server at another copy). Improver-editable: change the
+# wording freely, but the keys must be exactly the registered tool names. Units are mm, N, MPa.
+
+automesh: |
+  START HERE. Auto-mesh a CAD part (.step/.stp/.iges/.brep) with a zero-config spec derived from a
+  geometry analysis, then run every quality gate. Writes an editable `<part dir>/<stem>_mesh/mesh.yaml`
+  plus out/report.json and out/REPORT.md, and returns the spec path, status (pass/fail) and the gate
+  table (status, id, value, threshold, message, hint). cfd=true meshes the part's interior as the
+  fluid (internal flow); for external flow edit the spec's domain: {type: external, flow_axis: ...}.
+  The auto spec has NO groups and NO bcs: next, call inspect_geometry, name the boundary-condition
+  faces as groups by geometric query, add a bcs: section, then check_mesh.
+
+inspect_geometry: |
+  Geometry digest of a CAD file, or of the domain a mesh.yaml builds (for cfd external: the box
+  minus the body, so `at: xmin` there is the tunnel inlet). Returns bbox and units, FEATURES (holes,
+  bosses, fillets with radius/axis/position and face tags), PLANAR FACES grouped by outward normal,
+  HAZARDS (thin walls, small faces, short edges, slivers, small fillets, each with the spec fix to
+  apply) and a FACES table (tag, kind, area, center, normal/axis, radius, concave, neighbours).
+  Face tags are valid for this file only: use them to understand the part, never write them into a
+  spec (use find_faces queries). size = reference element size for hazards; detail = "summary"
+  (token-bounded) or "full" (every face and edge).
+
+find_faces: |
+  Select faces by geometric query and confirm the count before using the query as a spec group.
+  query is a JSON object; all keys are AND-ed: kind ("plane"|"cylinder"|"cone"|"sphere"|"torus"|"revolution"|
+  "bspline", or a list), normal [x,y,z] (planes, tol_deg default 5), axis [x,y,z] (cylinders/cones),
+  radius (+radius_tol), radius_min/radius_max, area_min/area_max, concave (bool), at
+  ("xmin"|"xmax"|"ymin"|"ymax"|"zmin"|"zmax": face lies on that bounding-box extreme), box
+  [[x0,y0,z0],[x1,y1,z1]] (face centre inside), near [x,y,z] (+within distance), feature ("hole"|"round"|
+  "boss"|"fillet"), adjacent_to {query}, not {query}, any [queries], all [queries], largest n,
+  smallest n. Always pass expect (the number of faces you mean): a mismatch returns an error that
+  explains, key by key, which faces nearly matched and why. Returns "N face(s) matched: [tags]" and
+  one line per face. Copy the confirmed query and expect into the spec's groups.
+
+render_view: |
+  Render a PNG and return it with a caption. view="faces" (CAD file or mesh.yaml): the part with
+  face tags labelled; highlight = face tags and/or query = a find_faces query to colour the selected
+  faces -- use it to visually confirm a group before trusting it. view="groups" / view="quality"
+  (mesh.yaml or mesh.msh, after mesh/check): the mesh's surface groups, or per-element SICN with
+  the 10 worst elements marked.
+
+mesh: |
+  Mesh a mesh.yaml (gmsh, in a child process) WITHOUT the quality gates: fast iteration on sizes,
+  groups and refinement. Returns tet/node counts, the mesher gates (spec, geometry, groups,
+  mesh_generated) and any errors. scale multiplies every size (e.g. 2.0 = quick coarse preview).
+  Records the spec as "unchecked": you cannot finish until check_mesh passes on it.
+
+check_mesh: |
+  The definitive check of a mesh.yaml: mesh + every quality gate (inverted, sicn, gamma,
+  volume_fidelity, area_fidelity, connectivity, thin_walls; cfd also non_ortho, skewness) +
+  renders. Writes out/report.json (read by the evaluator and the solver owner) and returns
+  REPORT.md: gate table first (each failing gate's hint names the spec key to change), then mesh
+  and quality numbers, the declared bcs, export files and renders. Fix failing gates by editing
+  the spec and re-running check_mesh; only a passing check (or a stated waiver) lets you finish.

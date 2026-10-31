@@ -260,11 +260,9 @@ def _cmd_waive(a: argparse.Namespace) -> int:
 
 
 def _cmd_hook_stop(a: argparse.Namespace) -> int:
-    try:
-        from .hook import main as hook_main
-    except ImportError:
-        sys.stderr.write("feagent.hook is not installed; not blocking\n")
-        return EXIT_OK
+    """Claude Code Stop hook: exit 2 (reason on stderr) while a tracked spec is not passing."""
+    from .hook import main as hook_main
+
     return hook_main()
 
 
