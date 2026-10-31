@@ -12,6 +12,8 @@ dist/
 /work/
 *.msh
 !benchmarks/**/*.msh
+# gold-benchmark reference meshes: large, listed with sha256 in benchmarks/gold/index.json
+benchmarks/gold/_meshes/
 *.vtu
 *.frd
 *.sta
