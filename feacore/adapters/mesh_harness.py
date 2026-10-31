@@ -95,10 +95,11 @@ def case_from_spec(spec_path: str | Path, order: int | None = None, mesh: str | 
     from feagent.spec import load_spec
 
     spec = load_spec(spec_path)
-    if spec.fea is None:
-        raise ValueError(f"{spec_path}: no solve.fea section")
+    fea = getattr(spec, "bcs_fea", None) or getattr(spec, "fea", None)  # bcs: (new) / solve: (old)
+    if fea is None:
+        raise ValueError(f"{spec_path}: no bcs.fea section")
     out = spec.out_dir()
-    case = case_from_mesh_harness(out, order=order or spec.order, fea=asdict(spec.fea),
+    case = case_from_mesh_harness(out, order=order or spec.order, fea=asdict(fea),
                                   mesh=mesh or out / "mesh.msh")
     case.meta["spec_path"] = str(Path(spec_path).resolve())
     return case
