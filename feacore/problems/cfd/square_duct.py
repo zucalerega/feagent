@@ -173,7 +173,8 @@ class SquareDuct3D(FlowProblem):
                       _SRC + f"; developed G s^2 / (mu U) = {d['G'] * p['s'] ** 2 / (p['mu'] * p['U']):.4f}",
                       tolerance=0.02),
             Reference("flow_rate_outlet", p["U"] * p["s"] ** 2, "analytical",
-                      "mass conservation: Q = U s^2", tolerance=0.01),
+                      _SRC + "; mass conservation: Q = U s^2 (the uniform inflow leaves through the outlet)",
+                      tolerance=0.01),
         ]
 
 
