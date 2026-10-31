@@ -32,6 +32,11 @@ STEEL = Material(E=210e9, nu=0.3)
 GOLD_TOL = {"strain_energy": 0.01, "displacement": 0.02, "stress": 0.03, "reaction": 0.02}
 
 
+def _fmt(v, spec: str) -> str:
+    """Format a number that may be None (e.g. no observed order when values converge exactly)."""
+    return "-" if v is None else format(v, spec)
+
+
 def qois_for(bcset: BCSet) -> list[tuple[QoI, str]]:
     """(QoI, family) pairs: global energy, displacements, stresses, and support reactions when
     the load is shared between supports (a single support's reaction equals the load exactly)."""
@@ -97,7 +102,8 @@ def certify(bcset: BCSet, runs: list[dict]) -> tuple[list[Reference], dict]:
             refs.append(Reference(q.name, float(value), "converged_numerical",
                                   source=f"feacore goldgen: {len(runs)} refined tet10 meshes, GCI (Celik 2008)",
                                   tolerance=max(tol, 2 * g["gci_fine"]),
-                                  notes=f"{kind}; p = {g['p']:.2f} (theory {p_th:g}); GCI_fine = {g['gci_fine']:.2%}"))
+                                  notes=f"{kind}; p = {_fmt(g.get('p'), '.2f')} (theory {p_th:g}); "
+                                        f"GCI_fine = {_fmt(g.get('gci_fine'), '.2%')}"))
             entry["gold"] = True
         else:
             entry["gold"] = False
