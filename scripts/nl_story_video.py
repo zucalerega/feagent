@@ -6,6 +6,9 @@ strain PEEQ, fixed camera and colour range, scripts/nl_video.py) next to its for
 curve filling in over the real Instron curve (black).
 
 Cases (all: part abc_00000065_compression, J2 resin, NLGEOM):
+  first    the teammates' first nonlinear simulation (scripts/ccx_compression_ramp.py, run team_slide): the
+           problem's reference mesh at h = 2 mm, base fixed, frictionless platen to 3 mm, 30 adaptive
+           increments, crosshead = part shortening; re-solved here with its increments by `first`
   before   what we started with: frictionless platens, automesher mesh, no seating / load-train correction
            (crosshead = part shortening); solved here by `before`
   stage2   learned test conditions (the frozen spec of ace.nonlinear) on the automesher mesh (baselines/auto)
@@ -14,8 +17,10 @@ Cases (all: part abc_00000065_compression, J2 resin, NLGEOM):
            generation, see best_scoring)
 
     python scripts/nl_story_video.py before                    # solve the 'before' case (needs ccx)
+    python scripts/nl_story_video.py first                     # solve the 'first' case (needs ccx)
     python scripts/nl_story_video.py videos --run ~/feagent/ace_runs/nl_ft [--mag 1]
-                       # before_after.mp4, four_stages.mp4, before_only.mp4, after_only.mp4, key frames, videos.html
+                       # before_after.mp4, four_stages.mp4, before_only.mp4, after_only.mp4, three_way.mp4,
+                       # first_vs_after.mp4, key frames, videos.html
 
 Outputs go to talk_plots/act3_real_data/videos/ (and videos.html next to it).
 """
@@ -41,6 +46,11 @@ BEFORE_DIR = OUT / "before_run"            # run_curve directory of the 'before'
 AUTO_MESH = nv.BASE / "auto" / "mesh.msh"   # the automesher mesh, shared by 'before' and 'stage2'
 BEFORE_U_MAX_MM = 2.6                      # part shortening = crosshead travel: past the last checkpoint (2.5)
 BEFORE_INCREMENTS = 26                     # 0.1 mm steps
+FIRST_DIR = OUT / "first_run"              # run_curve directory of the 'first' case (series/, mesh only on the box)
+# the committed team_slide run (summary.json: 41,186 nodes) was meshed at h = 2 mm, not the script's default 3 mm
+# (16,405 nodes); its other settings are the ramp script's defaults
+FIRST_H_MM = 2.0                           # element size of the problem's reference mesh
+FIRST_U_MAX_MM, FIRST_INCREMENTS = 3.0, 30  # platen travel and increments
 
 X_END = 2.55          # the animation drives the crosshead from 0 to here (mm); the test peaks at 2.51 mm
 X_LIM = 2.75          # x axis limit of the graphs
@@ -48,10 +58,12 @@ LIVE_FROM = 0.3       # the live error is shown from this crosshead travel on (n
 KEY_MID_MM = 2.0      # the "middle" key frame: well past where the before curve crosses the test (~1.3 mm)
 RAMP_S, HOLD_START_S, HOLD_END_S = 7.0, 0.5, 2.5
 
-COLORS = {"before": "#c0392b", "stage2": "#d9822b", "stage3": "#7b5ea7", "after": "#1f6fb5"}
-LABELS = {"before": "what we started with", "stage2": "learned test conditions, default mesh",
+COLORS = {"first": "#b8860b", "before": "#c0392b", "stage2": "#d9822b", "stage3": "#7b5ea7", "after": "#1f6fb5"}
+LABELS = {"first": "first nonlinear simulation",
+          "before": "what we started with", "stage2": "learned test conditions, default mesh",
           "stage3": "learned conditions, pre-trained mesh", "after": "trained on the real test: most accurate mesh"}
 BEFORE_SETUP = "frictionless platens, no seating correction"   # stated next to every 'before' label
+FIRST_SETUP = "teammates' setup: frictionless platens"         # stated next to every 'first' label
 
 
 # --------------------------------------------------------------------------- the 'before' case
@@ -108,6 +120,68 @@ def solve_before(threads: int = 4) -> dict:
     return out
 
 
+# --------------------------------------------------------------------------- the 'first' case
+
+@contextlib.contextmanager
+def first_setup():
+    """Within this block ace.nonlinear.run_curve solves the teammates' first nonlinear simulation exactly as
+    scripts/ccx_compression_ramp.py set it up (run team_slide: its ramp_case with the team material and the
+    frictionless platen), ramped to FIRST_U_MAX_MM, with no crosshead correction (crosshead = part
+    shortening, as the teammates compared it). ace/nonlinear.py itself is not changed; the patch is undone after."""
+    from ace import nonlinear as nl
+    from feacore.case import QoI
+    import ccx_compression_ramp as ramp
+    s = copy.deepcopy(nl.spec())
+    s.update(u_part_max_mm=FIRST_U_MAX_MM, increments=FIRST_INCREMENTS, delta_mm=0.0, compliance_mm_per_N=0.0)
+    orig_spec, orig_build = nl.spec, nl.build_case
+
+    def build(problem, mesh, adaptive=False):
+        # ramp_case is adaptive already (as the team run): run_curve's first, fixed-increment try is the same run
+        case = ramp.ramp_case(Path(mesh["path"]), ramp.team_material(), "slide", FIRST_U_MAX_MM, FIRST_INCREMENTS)
+        # run_curve reads the platen force as the reactions of f17 and f34 (together the group prong_tops);
+        # the problem's other QoIs are not needed (and the strain energy one could stop write_series)
+        case.qois = [QoI(name=f"Ry_{g}", type="reaction", group=g, component=1) for g in ("f17", "f34")]
+        return case
+
+    nl.measured()                    # cache the test data with the real spec first
+    nl.spec, nl.build_case = (lambda: s), build
+    try:
+        yield
+    finally:
+        nl.spec, nl.build_case = orig_spec, orig_build
+
+
+def solve_first(threads: int = 8) -> dict:
+    from ace import nonlinear as nl
+    from feacore.problems.registry import get
+    FIRST_DIR.mkdir(parents=True, exist_ok=True)
+    mesh = FIRST_DIR / f"mesh_h{FIRST_H_MM:g}.msh"        # the problem's reference mesh, as the ramp script
+    if not mesh.exists():
+        get(nv.PID).mesh(mesh, FIRST_H_MM / 1000.0, geom_order=2)
+    with first_setup():
+        out = nl.run_curve(nv.PID, {"path": str(mesh), "order": 2}, FIRST_DIR, threads=threads)
+    if not out["ok"]:
+        raise SystemExit(f"the 'first' run failed: {out['error']}")
+    print(f"first: {out['nodes']} nodes, mean error {out['mean_rel_err']:.2%}, converged {out['converged']}, "
+          f"reached {out['u_cross_mm'][-1]} mm, {out['wall_s']} s")
+    return out
+
+
+def check_first() -> dict:
+    """The re-run against the committed curve of the teammates' run (curve_team_slide.csv): force difference
+    over the shared travel range, relative to the committed force (from 0.1 mm on, where it is not ~0)."""
+    import ccx_compression_ramp as ramp
+    s = json.loads((FIRST_DIR / "summary.json").read_text())
+    u0, F0 = np.loadtxt(ramp.OUT_DIR / "curve_team_slide.csv", delimiter=",", skiprows=2, usecols=(0, 1)).T
+    u, F = np.asarray(s["u_part_mm"]), np.asarray(s["force_N"])
+    k = (u0 >= 0.1) & (u0 <= min(u[-1], u0[-1]))
+    rel = np.abs(np.interp(u0[k], u, F) - F0[k]) / F0[k]
+    out = {"points": int(k.sum()), "max_rel_diff": float(rel.max()), "mean_rel_diff": float(rel.mean()),
+           "F_max_N": float(F.max()), "F_max_committed_N": float(F0.max())}
+    print("first vs curve_team_slide.csv:", json.dumps(out))
+    return out
+
+
 # --------------------------------------------------------------------------- picking the cases
 
 def best_scoring(run_dir: Path) -> dict:
@@ -160,12 +234,14 @@ def load_cases(run_dir: Path, pick: str = "accurate") -> tuple[dict[str, Case], 
     nl = rec["checks"]["nonlinear"]
     checkout = run_dir.resolve().parents[1]                  # series_dir is relative to the run's checkout
     after_dir = (checkout / nl["series_dir"]).parent
-    cases = {"before": Case("before", nv.Series(BEFORE_DIR, LABELS["before"])),
+    cases = {"first": Case("first", nv.Series(FIRST_DIR, LABELS["first"])),
+             "before": Case("before", nv.Series(BEFORE_DIR, LABELS["before"])),
              "stage2": Case("stage2", nv.Series(nv.BASE / "auto", LABELS["stage2"])),
              "stage3": Case("stage3", nv.Series(nv.BASE / "swarm_bc0", LABELS["stage3"])),
              "after": Case("after", nv.Series(after_dir, LABELS["after"], summary=nl))}
     cases["after"].sub = f"generation {rec['generation']}, {cases['after'].nodes:,} nodes"
     cases["before"].sub = f"{BEFORE_SETUP}, default mesh, {cases['before'].nodes:,} nodes"
+    cases["first"].sub = f"{FIRST_SETUP}, {cases['first'].nodes:,}-node mesh"
     pick = {"run_id": rec["run_id"], "generation": rec["generation"], "agent": rec["_agent"],
             "base_score": rec["checks"]["base_score"], "score": rec["checks"]["score"],
             "mean_rel_err": nl["mean_rel_err"], "nodes": nl["nodes"], "dir": str(after_dir)}
@@ -196,7 +272,8 @@ class Graph:
         self.ck = np.array(meas["checkpoints_mm"])
         self.items = []
         for c in cases:
-            line, = ax.plot([], [], color=c.color, lw=3.0, label=f"simulation: {c.label}", zorder=4)
+            label = c.label if "simulation" in c.label else f"simulation: {c.label}"
+            line, = ax.plot([], [], color=c.color, lw=3.0, label=label, zorder=4)
             head, = ax.plot([], [], "o", color=c.color, ms=10, zorder=7)
             self.items.append((c, line, head))
         self.legend = ax.legend(fontsize=font - 2, frameon=False, loc=legend_loc)
@@ -284,22 +361,35 @@ def part_panel(fig, rect, c: Case, zoom: float):
 # --------------------------------------------------------------------------- the four videos
 
 def video_before_after(cases: dict[str, Case], mag: float, zoom: float) -> dict:
+    return video_pair(cases, "before_after", ("before", "after"), ("before post-training", "after post-training"),
+                      "Post-training on the real test: simulation vs experiment",
+                      lambda head, c: f"{head}: {pct(c.err)} off the real test", mag, zoom)
+
+
+def video_first_vs_after(cases: dict[str, Case], mag: float, zoom: float) -> dict:
+    """The teammates' first nonlinear simulation (many nodes, far off) vs after post-training (few, close)."""
+    return video_pair(cases, "first_vs_after", ("first", "after"), ("first nonlinear simulation", "after post-training"),
+                      "Our first nonlinear simulation vs after post-training",
+                      lambda head, c: f"{c.nodes:,} nodes, {pct(c.err)} off the real test", mag, zoom)
+
+
+def video_pair(cases: dict[str, Case], name: str, keys, heads, title: str, end_text, mag: float, zoom: float) -> dict:
+    """Two columns, each a case (keys) under its heading (heads): the part, a live comparison line and its own
+    graph. end_text(head, case) is the line held at the end."""
     from ace.nonlinear import measured
     meas = measured()
-    pair = [cases["before"], cases["after"]]
+    pair = [cases[k] for k in keys]
     fmax = fmax_of(pair, meas)
     fig = nv.figure()
-    fig.text(0.012, 0.955, "Post-training on the real test: simulation vs experiment", fontsize=28, weight="bold",
-             va="center")
+    fig.text(0.012, 0.955, title, fontsize=28, weight="bold", va="center")
     subtitle(fig, mag)
     nv.colorbar(fig, [0.80, 0.948, 0.18, 0.014], nv.peeq_scale(None))
-    heads = ("before post-training", "after post-training")
     panels, graphs, live = [], [], []
     for j, c in enumerate(pair):
         x0 = j * 0.5
         fig.text(x0 + 0.25, 0.85, heads[j], fontsize=26, weight="bold", color=c.color, ha="center", va="center")
-        fig.text(x0 + 0.25, 0.81, f"{c.label}  ({c.sub})", fontsize=14, color="#555555", ha="center",
-                 va="center")
+        sub = c.sub if c.label == heads[j] else f"{c.label}  ({c.sub})"      # the heading already names it
+        fig.text(x0 + 0.25, 0.81, sub, fontsize=14, color="#555555", ha="center", va="center")
         panels.append(part_panel(fig, [x0 + 0.01, 0.37, 0.48, 0.42], c, zoom))
         live.append(fig.text(x0 + 0.25, 0.345, "", fontsize=18, weight="bold", color=c.color, ha="center",
                              va="center"))
@@ -309,8 +399,45 @@ def video_before_after(cases: dict[str, Case], mag: float, zoom: float) -> dict:
 
     def texts(x, phase):
         for j, (c, t) in enumerate(zip(pair, live)):
-            t.set_text(f"{heads[j]}: {pct(c.err)} off the real test" if phase == "end" else live_text(c, x, meas))
-    return run_video("before_after", fig, panels, graphs, texts, mag)
+            t.set_text(end_text(heads[j], c) if phase == "end" else live_text(c, x, meas))
+    return run_video(name, fig, panels, graphs, texts, mag)
+
+
+def video_three_way(cases: dict[str, Case], mag: float, zoom: float) -> dict:
+    """Three columns: first nonlinear simulation | before | after post-training, each with its part, a live
+    comparison and its own graph over the test (one shared graph would stack the first two curves, which
+    both level off near 3 kN)."""
+    from ace.nonlinear import measured
+    meas = measured()
+    trio = [cases[k] for k in ("first", "before", "after")]
+    heads = ("first nonlinear simulation", "before post-training", "after post-training")
+    subs = (trio[0].sub, f"{BEFORE_SETUP}, default mesh, {trio[1].nodes:,} nodes",
+            f"learned test conditions, most accurate mesh, {trio[2].nodes:,} nodes")
+    fmax = fmax_of(trio, meas)
+    fig = nv.figure()
+    fig.text(0.012, 0.955, "Three simulations of the real compression test", fontsize=28, weight="bold",
+             va="center")
+    subtitle(fig, mag)
+    nv.colorbar(fig, [0.80, 0.948, 0.18, 0.014], nv.peeq_scale(None))
+    panels, graphs, live = [], [], []
+    w = 1 / 3
+    for j, c in enumerate(trio):
+        x0 = j * w
+        fig.text(x0 + w / 2, 0.855, heads[j], fontsize=22, weight="bold", color=c.color, ha="center", va="center")
+        fig.text(x0 + w / 2, 0.815, subs[j], fontsize=12, color="#555555", ha="center", va="center")
+        panels.append(part_panel(fig, [x0 + 0.005, 0.42, w - 0.01, 0.38], c, zoom))
+        live.append(fig.text(x0 + w / 2, 0.375, "", fontsize=15, weight="bold", color=c.color, ha="center",
+                             va="center", linespacing=1.3))
+        graphs.append(Graph(fig, [x0 + 0.05, 0.07, w - 0.07, 0.24], [c], fmax, meas, font=11))
+    from matplotlib.lines import Line2D
+    for xd in (w, 2 * w):                                                       # dividers between the columns
+        fig.add_artist(Line2D([xd, xd], [0.04, 0.88], color="#cccccc", lw=1))
+
+    def texts(x, phase):
+        for c, t in zip(trio, live):
+            t.set_text(f"{c.nodes:,} nodes\n{pct(c.err)} off the real test" if phase == "end"
+                       else live_text(c, x, meas, two_lines=True))
+    return run_video("three_way", fig, panels, graphs, texts, mag)
 
 
 def video_four_stages(cases: dict[str, Case], mag: float, zoom: float) -> dict:
@@ -369,7 +496,7 @@ def video_single(c: Case, name: str, head: str, mag: float, zoom: float, fmax: f
 # --------------------------------------------------------------------------- page
 
 def write_page(cases: dict[str, Case], pick: dict, info: dict, mag: float):
-    b, s2, s3, a = (cases[k] for k in ("before", "stage2", "stage3", "after"))
+    f, b, s2, s3, a = (cases[k] for k in ("first", "before", "stage2", "stage3", "after"))
     scale = "Deformation at true scale" if mag == 1 else f"Deformation magnified x {mag:g} (same for every case)"
     captions = {
         "before_after": (f"Before post-training the simulation is {pct(b.err)} off the real test; "
@@ -388,6 +515,16 @@ def write_page(cases: dict[str, Case], pick: dict, info: dict, mag: float):
         "after_only": (f"After post-training: {pct(a.err)} off the real test.",
                        f"Learned test conditions + the fine-tuning run's most accurate mesh ({a.sub}, agent "
                        f"{pick['agent']}). {scale}."),
+        "three_way": (f"First nonlinear simulation {pct(f.err)} off the real test, before post-training "
+                      f"{pct(b.err)}, after post-training {pct(a.err)}.",
+                      f"First: the teammates' setup (frictionless platens, fixed base, {f.nodes:,}-node mesh). "
+                      f"Before: frictionless platens, default mesh ({b.nodes:,} nodes). After: learned test conditions "
+                      f"+ most accurate mesh ({a.nodes:,} nodes). {scale}."),
+        "first_vs_after": (f"{f.nodes:,} nodes, {pct(f.err)} off vs {a.nodes:,} nodes, {pct(a.err)} off: "
+                           f"the post-trained setup is far closer with a fifth of the nodes.",
+                           f"First: the teammates' first nonlinear simulation (frictionless platens, no seating or "
+                           f"machine compliance). After: learned test conditions + most accurate mesh ({a.sub}). "
+                           f"{scale}."),
     }
     blocks = []
     for name, (l1, l2) in captions.items():
@@ -444,7 +581,9 @@ def make_videos(run_dir: Path, mag: float, only: list[str] | None, pick_by: str 
             "before_only": lambda: video_single(cases["before"], "before_only", "Before post-training: our first simulation",
                                                 mag, 1.5, fmax),
             "after_only": lambda: video_single(cases["after"], "after_only", "After post-training on the real test: most accurate mesh",
-                                               mag, 1.5, fmax)}
+                                               mag, 1.5, fmax),
+            "three_way": lambda: video_three_way(cases, mag, zoom=1.35),
+            "first_vs_after": lambda: video_first_vs_after(cases, mag, zoom=1.3)}   # 1.45 clips the base
     info_file = OUT / "videos.json"
     info = json.loads(info_file.read_text()) if info_file.exists() else {}
     for name, job in jobs.items():
@@ -463,15 +602,21 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("before", help="solve the 'before' case (needs ccx)")
     b.add_argument("--threads", type=int, default=4)
+    f = sub.add_parser("first", help="solve the 'first' case (needs ccx) and check it against the committed curve")
+    f.add_argument("--threads", type=int, default=8)
     v = sub.add_parser("videos", help="all videos, key frames and videos.html")
     v.add_argument("--run", type=Path, required=True, help="fine-tuning run dir (the 'after' mesh)")
     v.add_argument("--mag", type=float, default=1.0, help="deformation magnification, the same for every case")
-    v.add_argument("--only", nargs="*", help="just these videos (before_after four_stages before_only after_only)")
+    v.add_argument("--only", nargs="*", help="just these videos (before_after four_stages before_only after_only three_way "
+                                           "first_vs_after)")
     v.add_argument("--pick", choices=sorted(PICKS), default="accurate",
                    help="the 'after' mesh: most accurate (default, the user's choice) or best base score")
     a = ap.parse_args()
     if a.cmd == "before":
         solve_before(a.threads)
+    elif a.cmd == "first":
+        solve_first(a.threads)
+        check_first()
     else:
         make_videos(a.run, a.mag, a.only, a.pick)
 
