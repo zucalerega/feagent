@@ -198,4 +198,95 @@ separates at 0.021 grip travel after 46 increments in 8 blocks (52 s). Peak forc
 force after the cut 3e-15. 20 cells failed and 21 were removed as hinges / fragments, all within
 x = 1.78–2.05 (notch at x = 2).
 
+## Tension-only erosion, platen options, buckling imperfection (crush of abc_00000065)
+
+Why: a 3D-printed abc_00000065 shaft clamp (Formlabs Alpha Fast) was crushed between flat steel plates. The
+arm tips buckled and were crushed, and one arm broke clean off at its neck, the 8.1 mm ring wall between bore
+and outer surface at about the bore's mid-height. Every simulation with the default model instead separated
+both arm tips just under the platen.
+
+Options (defaults unchanged; `feacore/solver/_ccx_failure.py`, `experiments/physical/crush.py`):
+
+* `failure.criterion`:
+  * `"peeq"` (default): PEEQ >= limit in any stress state.
+  * `"peeq_tension"`: erosion at the *tensile* PEEQ, the PEEQ a cell gains while its triaxiality
+    sigma_m / sigma_vm > `triaxiality_min` (0), summed over the output increments. Cell stress is the mean of
+    the nodal Cauchy stress at its corner nodes. Cells also fail at a total PEEQ >= `compression_factor` x
+    limit (default 5; `null` = never).
+  * `"principal"`: cell sigma_1 >= `stress_limit` (the dogbone UTS in crush.py).
+
+  The damage index (PEEQ / limit, tensile PEEQ / limit, or sigma_1 / stress_limit) orders the release. It also
+  drives the near-failure step bounds and the block length, so for `peeq_tension` the 0.02 mm bounds start at
+  half the *tensile* failure PEEQ. The `.vtu` cells get `triaxiality`, `s1_cell`, `damage` and `PEEQ_tension`.
+  * Assumption: Alpha Fast's compressive strength is not on the TDS. A brittle resin breaks in tension, and a
+    crushed zone pressed by a platen keeps carrying load. In practice CalculiX does not converge when it removes
+    cells crushed to PEEQ ~0.2 (every removal try diverged), so the runs below use `--compression-factor 0`
+    (no compressive erosion).
+* `crush.py --platen`:
+  * `bonded` (default): every top / bottom node fully held.
+  * `sliding_top`: top nodes constrained along the axis only.
+  * `sliding`: both platens frictionless. Two bottom nodes take the rigid-body modes: the one nearest the
+    face centroid holds x and z, and the one farthest along x near the mid-plane in z holds z. Their coordinates
+    are in `run.json`.
+  * `friction --mu 0.3`: a rigid C3D8 platen slab (`*RIGID BODY`, its REF node driven) in penalty
+    surface-to-surface contact with the top faces and `*FRICTION`, with a bonded base. Penalty 20 E/h normal and
+    10 E/h stick; `--contact` overrides them. The force is the base reaction (`failure.force_groups`). Works
+    through the restart blocks (tested), but see the results.
+* `experiments/physical/imperfection.py`: CalculiX `*BUCKLE` with the platen BCs and 1 kN on the top. The mesh
+  nodes are moved by the first mode, scaled to `--amp-mm`. Mid-edge nodes take the mean of their corners' moves,
+  so interior C3D10 edges stay straight.
+* Mesh `harness_neck` (`experiments/mesh_systems/harness_neck/`): harness_expert plus refinement of the ring
+  wall found from the digest. It has ~4 quadratic tets across the neck, against 2.3-2.4 for the other systems.
+
+Tests (`tests/test_solver_ccx_nonlinear.py`):
+
+* `test_failure_criteria_damage_index`: the damage index on synthetic stress states.
+* `test_failure_tension_criterion_spares_compression`: a bar compressed past the failure PEEQ is eroded by
+  `peeq` but not by `peeq_tension` (closed-form hardening force), and the pulled bar is eroded.
+* `test_crush_platen_options`: `sliding` gives the free uniaxial force E eps A and lateral strain nu eps;
+  `bonded` holds the top.
+* `test_crush_friction_platen_brackets`: friction mu 10 gives the bonded force and mu 0 the `sliding_top`
+  force, within 3 % (penalty compliance at strain 1e-3).
+
+Results on abc_00000065 (Alpha Fast dogbone material; the run table is in `experiments/physical/CRUSH_RUNS.md`,
+"Neck study"):
+
+* **Why the tips failed first.** The arm-tip load sits ~5 mm inboard of the ring wall's centre line, so the wall
+  bends: outer fibre in tension, bore side in compression. Linear elastic at 1.7-1.8 kN: the neck's outer fibre
+  sees sigma_1 9-10 MPa, while the 1.5 mm nut-pocket walls at the tips see -88 MPa (bonded) to -106 MPa
+  (frictionless) in compression. With yield at 12 MPa, the tips reach PEEQ 0.043 at 0.94 mm / 2.8 kN, in
+  compression. The PEEQ criterion ignores the stress state and erodes them, and the part separates at the tips.
+  This happens in every mesh system, including the neck-refined `harness_neck`, so the mesh is not the cause.
+* **Tension-only erosion** (`peeq_tension`, no compressive erosion): the tips crush (the nut pockets collapse)
+  but keep carrying load. The force rises to ~5.7-5.9 kN, and the crack starts in the **neck's outer fibre at
+  +5-10 degrees, y = +3-4 mm (height fraction 0.61)**. That is the photo's break, at the bore's mid-height. The
+  crack then runs through the neck at almost fixed platen travel, so the snap is unstable. The leading tensile
+  sites are the same in every run: neck outer fibre (bending), tip inner face at the bolt hole (only if the
+  tips can slide), and nut-pocket walls (mixed shear, triaxiality ~0.05).
+* **Platens.** A frictionless top lets the arm tips slide inward, 6.5 mm at 2.7 mm of travel. The arms fold
+  (sway buckling): with frictionless tips the first `*BUCKLE` mode, one arm swaying inward, is at 2.07 kN, the
+  second at 2.42 kN. The force caps at ~3.0 kN, and the crack starts on the tip's *inner* face at the bolt hole
+  (hf 0.90), not at the neck.
+  * The bonded run without erosion needs a lateral / normal force ratio per arm of 0.06 (elastic), rising to
+    0.17 at 5 mm. Dry steel on resin (mu 0.2-0.4) can supply that, so the tips stick and **bonded is the
+    Coulomb-friction answer for mu >= ~0.18**. Frictionless is a lower bound that the test does not reach.
+  * With stuck tips the first buckling mode is local, at the tip face, at 13.4 kN. Under load the thin
+    nut-pocket walls buckle and crush, which is the "tips buckled" of the test.
+  * The friction contact option works on small models. On the 58k-node part, CalculiX's contact chatters:
+    ~16k contact elements change status every iteration, there are ~4 increments in 4 min with a 10x softer
+    penalty, and node-to-surface diverges. It was not used for the study; mu stays an uncertainty bracketed by
+    the two limits.
+* **Imperfection.** A buckling-mode imperfection of 0.1 mm (sliding mode 1: about 1 % of the 10.8 mm arm and
+  1.2 % of the 8.1 mm neck) on the neck mesh makes the neck the first failure, with no tip cell before it. It
+  also breaks the symmetry, so one neck cracks ahead of the other. Without it (harness_auto, bonded,
+  tension-only), one shear-loaded nut-pocket cell fails first at 4.53 mm and both necks follow within 0.1 mm.
+* **Snap load.** The press was force-controlled, so the real break is dynamic at the peak force. The runs are
+  displacement-controlled to follow the crack, and their **peak force is the predicted snap load: 5.7 kN** on
+  the neck mesh with the imperfection (5.9 kN on harness_auto). The PEEQ-everywhere model gives 3.2 kN (tips),
+  and frictionless platens with tension-only erosion give 3.0 kN (tips).
+* Limits: no self-contact (crushed pockets and crack faces can interpenetrate). Only one tensile data point is
+  used (failure PEEQ 0.043 at triaxiality 1/3), with no triaxiality dependence above 0. With no compressive
+  erosion, the bending hinge left after the tensile crack keeps carrying load, so the post-peak tail is long.
+  The photo shows the break; the measured force was not recorded.
+
 <!-- RESULTS -->

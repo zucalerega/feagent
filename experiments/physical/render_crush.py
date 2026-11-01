@@ -276,6 +276,13 @@ def render(run: Path, out: Path, label: str, fps: int, min_s: float, hold_s: flo
     axis = AX[meta.get("axis") or {"abc_00000003": "z", "abc_00000065": "y"}.get(part, "z")]
     mat = json.loads((REPO / "experiments" / "material" / "alpha_fast_dogbone1.json").read_text())
     uts, peeq = float(mat["uts_eng"]), float(mat["failure_peeq"])
+    crit = (meta.get("failure") or {}).get("criterion") or "peeq"
+    rule = {"peeq": f"a cell breaks at PEEQ {peeq:g}",
+            "peeq_tension": f"a cell breaks at a tensile PEEQ of {peeq:g} (no break in compression)",
+            "principal": f"a cell breaks at a max principal stress of {uts:g} MPa"}.get(crit, crit)
+    platen = {"bonded": "bonded platens", "sliding": "frictionless platens", "sliding_top": "frictionless top platen",
+              "friction": "friction platen (mu {})".format((meta.get("platen_contact") or {}).get("mu", "?"))
+              }.get(meta.get("platen") or "bonded", "bonded platens")
     files = [r[4] for r in rows]
     pts, _, _, _, g0 = load(files[0])
     # increment 0 = unloaded state (the CSV starts at the first converged increment)
@@ -361,8 +368,8 @@ def render(run: Path, out: Path, label: str, fps: int, min_s: float, hold_s: flo
                         color="white")
             pl.add_text(f"platen travel {tr:6.3f} mm    force {fo:8.0f} N (peak {force[peak_i]:.0f} N at "
                         f"{travel[peak_i]:.3f} mm)    broken elements {n_broken}" + (f", detached {n_frag}" if n_frag else "")
-                        + f"    [{phase}]\nmaterial: {MATERIAL_CAPTION}\nJ2 plasticity from the test curve, a cell breaks at "
-                        f"PEEQ {peeq:g}; NLGEOM; bonded platens, displacement control; true scale; "
+                        + f"    [{phase}]\nmaterial: {MATERIAL_CAPTION}\nJ2 plasticity from the test curve, {rule}; "
+                        f"NLGEOM; {platen}, displacement control; true scale; "
                         f"red = broken (drawn through the part), grey = detached" + (f"\nheld ending: the upper piece and its platen are lifted "
                         f"{lf * lift_mm:.1f} mm to show the crack (not simulated)" if lf > 0 else ""),
                         font_size=10, position=(8, 4), color="white")

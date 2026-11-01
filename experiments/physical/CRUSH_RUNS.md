@@ -144,3 +144,55 @@ These four slow-release runs were stopped at 21:40 and are kept as they are:
 - Laptop `harness_hex/abc_00000065/run-20261031-2053-s0`, which reached 1 increment.
 
 Their queue state is in `queue/superseded-slow-release/`. The Spark clone now runs `origin/nonlinear-setup` (24987c2).
+
+## Neck study: making abc_00000065 break where the printed part broke (2026-11-01)
+
+The printed clamp (Alpha Fast, flat steel plates, press) lost one arm at the **neck**: the 8.1 mm ring wall
+between bore and outer surface, at about the bore's mid-height. The other arm's tip was crushed. Every run
+above separates both arm **tips** under the platen (hf 0.89, the 1.5 mm nut-pocket walls, in compression).
+The variants below run on abc_00000065 with the same step policy and adaptive release. Options and the
+method are in `docs/solver_ccx_nonlinear.md` ("Tension-only erosion, platen options, buckling imperfection").
+Run dirs are under `runs/nonlinear/neck_study/` (laptop) and `~/feagent-runs/nonlinear/neck_study/` (Spark).
+
+Labels: **M** = harness_neck mesh, **P** = frictionless platens (`--platen sliding`), **T** = tension-only
+erosion (`--failure peeq_tension --compression-factor 0`), **I** = 0.1 mm buckling-mode imperfection
+(`imperfection.py --platen sliding`, mode 1 at 2.07 kN). "hf" = height fraction of the failed cells' centroid
+(0 = base, 1 = platen). The neck is the ring wall between bore (r 19.7 mm) and outer arc (r 27.8 mm); +8 deg is
+y = +4 mm, above the bore centre. The photo's break is at about hf 0.45-0.6.
+
+| variant | mesh (nodes) | platen | erosion | first failure: where (hf), travel, force | crack path | peak force (= predicted snap load) | travel at peak | travel at separation / end |
+|---|---|---|---|---|---|---|---|---|
+| baseline (earlier) | harness_auto (33,824) | bonded | PEEQ, any state | R tip, nut-pocket wall, compression (0.89), 0.94 mm | both tips (149 + 138 cells) | 3234 N | 1.16 mm | separated at 1.47 mm |
+| harness_expert (earlier) | harness_expert (39,608) | bonded | PEEQ | R tip (0.89), 0.94 mm | both tips | 3260 N | 1.20 mm | separated at 1.40 mm |
+| M | harness_neck (58,020) | bonded | PEEQ | R tip (0.89), 0.94 mm | both tips | @@M_PEAK@@ | @@M_TP@@ | @@M_SEP@@ |
+| PT | harness_auto | frictionless | T | R tip inner face at the bolt hole, arm folding (0.90), 3.30 mm, 2.93 kN; tips slid 8 mm inward | at 50 % of peak (6.0 mm): tips 188 cells, R neck 75, L neck 5 | 2966 N | 2.55 mm | stopped at 9.26 mm, 6 % of peak (no separation: compressed hinges) |
+| T | harness_auto | bonded | T | 1 nut-pocket cell (mixed shear, triaxiality ~0.05) (0.92) at 4.53 mm, then **both necks' outer fibre** within 0.1 mm: R at +8 deg (hf 0.62), L at -41 deg, bore side (hf 0.37) | at 50 % of peak (6.1 mm): L neck 107, R neck 101, bore bottom 33, tips 17 | 5916 N | 4.74 mm | stopped at 11.6 mm, 10 % of peak (no separation) |
+| **MTI** (best match) | harness_neck + I (58,020) | bonded | T | **L neck outer fibre, +8 deg, y = +4.1 mm (hf 0.62)**, 4.49 mm, 5.74 kN; no tip cell before it | @@MTI_PATH@@ | **5745 N** | 4.53 mm | @@MTI_SEP@@ |
+| MPTI | harness_neck + I | frictionless | T | none by 1.67 mm (stopped: P superseded, see below) | | 2795 N (still rising) | | stopped at 1.67 mm |
+| MFTI | harness_neck + I | friction mu 0.3 (contact) | T | contact chatter, ~4 increments in 4 min (stopped) | | | | |
+
+Run dirs:
+
+- Laptop: `runs/nonlinear/neck_study/harness_auto/abc_00000065/run-20261101-{PT2,PT3,T2,T3}`. Each X3 continues
+  its X2 with the damage-based step bounds; the X2 runs are the same model.
+- Laptop: `runs/nonlinear/neck_study/harness_neck/abc_00000065/run-20261031-M` is a copy from the Spark, with
+  the mesh and restart paths rewritten. `run-20261101-M-r` continues it.
+- Spark `~/feagent-runs/nonlinear/neck_study/`:
+  - `harness_neck_imp/abc_00000065/run-20261101-0036-MTI`, continued (8 threads) by `-MTI-r8`.
+  - `run-20261031-2350-MPTI` and `-MPTI-r`.
+  - `run-20261101-0008-MFTI` and the contact-tuning runs in `ctune/`.
+  - `arm_ratio_auto_bonded.json`.
+- `superseded/`: PT, T, Tc0, PTc0 and MPTI. These ran before tensile PEEQ was accumulated per increment, so
+  crushed cells that turned slightly tensile counted their compressive PEEQ.
+
+Meshes: `harness_neck` nonlinear (sha256 123511d697acf449), and the same mesh moved by the sliding mode 1
+(`imperfection.json` next to it; max move 0.1 mm at the left tip, both tips inward by 0.07-0.09 mm).
+
+Other checks:
+
+- Bonded tips, J2 + NLGEOM, no erosion (`arm_ratio`): the lateral / normal force per arm tip is 0.061 at
+  0.1 mm, 0.08 at 1 mm, 0.12 at 3 mm and 0.17 at 5 mm. With mu 0.2-0.4 the tips stick, so bonded is the
+  friction-consistent platen.
+- Linear *BUCKLE (harness_neck), 1 kN reference:
+  - Frictionless tips: 2.07, 2.42, 4.54, 5.37 kN. Mode 1 is one arm swaying inward.
+  - Stuck tips: 13.4, 17.0 kN. Mode 1 is local, at the tip face / nut-pocket walls.
