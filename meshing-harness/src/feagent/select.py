@@ -191,8 +191,13 @@ def _c_concave(m, f, q, key, relax):
     return f.concave is q[key], f"concave is {f.concave}, wanted {q[key]}", _MISS
 
 
+# OpenCASCADE enlarges bounding boxes by its tolerance (1e-7 model units per side), so two bboxes
+# of the same plane differ by ~2e-7 whatever the part size: metre-scale parts need this floor.
+OCC_BBOX_SLACK = 1e-6
+
+
 def _c_at(m, f, q, key, relax):
-    tol = (1e-6 * m.diag + 1e-9) * relax
+    tol = (max(1e-6 * m.diag, OCC_BBOX_SLACK) + 1e-9) * relax
     d = extreme_gap(f.bbox, m.bbox, q[key])  # face lies on the extreme plane
     return _within(d, tol, f"{q[key]} gap {d:.4g}")
 

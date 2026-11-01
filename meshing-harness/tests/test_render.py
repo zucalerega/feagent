@@ -86,3 +86,15 @@ def test_max_labels_includes_highlight(model, tmp_path):
 def test_groups_caption_counts(mesh, tmp_path):
     r = render_groups(mesh, tmp_path / "gc.png")
     assert "fixed (1 face, 1 tris)" in r.caption and "load (1 face, 1 tris)" in r.caption
+
+
+def test_quality_markers_only_where_element_is_visible(monkeypatch):
+    import feagent.render as R
+    pts = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [2, 2, 2], [3, 2, 2], [2, 3, 2],
+                    [2, 2, 3]], float)
+    md = MeshData(points=pts, tets=np.array([[0, 1, 2, 3], [4, 5, 6, 7]]), tet_tags=np.array([1, 1]),
+                  tet_volume=np.array([1 / 6, 1 / 6]), tris={}, tri_face={},
+                  volume_groups={"body": [1]}, order=1)
+    kept = R._kept_by_clip(md, np.array([0, 1]), 2, 1.5)  # clip z: keeps z < 1.5
+    assert kept.tolist() == [True, False]
+    assert R._kept_by_clip(md, np.array([], int), 0, 0.0).size == 0

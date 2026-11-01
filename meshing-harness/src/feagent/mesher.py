@@ -15,19 +15,20 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import gmsh
 import numpy as np
 import yaml
 
+from .budget import fit_size
 from .check import mesh_summary
 from .errors import CadLoadError, FeagentError, QueryError, SpecError
 from .gates import failed, passed, skipped
 from .geometry import analyze, analyze_current_model
 from .gmsh_session import gmsh_messages, gmsh_session, load_cad
-from .gmsh_util import entity_tags, pinned_options
+from .gmsh_util import distance_field, entity_tags, pinned_options
 from .select import explain_miss, select_faces
 from .spec import DomainSpec, GroupSpec, MeshSpec, load_spec
 from .types import Gate, GeometryModel, GroupResult, MeshResult
@@ -46,6 +47,7 @@ RefineTarget = tuple[list[int], float, float]  # (face tags, size at the faces, 
 # gmsh overshoots a Threshold field's SizeMin by ~15-20 % on thin walls (t/2 gave 1.65 elements
 # across instead of 2), so thin-wall targets ask for this fraction of t/layers.
 THIN_WALL_SIZE_FACTOR = 0.8
+AUTO_MAX_DOFS = 1_000_000  # automesh element budget (size.max_dofs); a gold L2 mesh is ~125k
 THIN_WALL_DISTANCE = 2.0  # thin-wall refinement reaches this many thicknesses from the faces
 
 
@@ -159,7 +161,8 @@ def auto_spec(geometry: str | Path, analysis: str = "fea",
     # cfd meshes are linear: 24 elements per 2*pi keeps curved walls within the 1 % volume gate
     # (tee: 1.24 % at 12, 0.66 % at 24); fea is quadratic and fine at 12.
     size = {"global": h, "min": float(f"{h / 20.0:.2g}"), "curvature": 12 if fea else 24,
-            "thin_wall_layers": 2}
+            "thin_wall_layers": 2,
+            "max_dofs": AUTO_MAX_DOFS}
     d: dict = {"name": geo.stem, "geometry": str(geo), "analysis": analysis, "groups": {},
                "size": size, "element": {"order": 2 if fea else 1, "optimize": "netgen"},
                "export": ["msh", "inp"] if fea else ["msh", "msh22", "su2"]}
@@ -338,9 +341,21 @@ def _stage_geometry(run: _Run) -> bool:
     return True
 
 
+def _fit_budget(run: _Run) -> None:
+    """Relax size controls to the spec's element budget (size.max_dofs); a size study at another
+    scale is deliberate, so only scale 1 is fitted."""
+    if run.scale != 1.0:
+        return
+    size, notes = fit_size(run.spec, run.model)
+    if notes:
+        run.spec = replace(run.spec, size=size)
+        run.warnings += notes
+
+
 def _stage_groups(run: _Run) -> bool:
     try:
         run.faces = resolve_groups(run.spec, run.model)
+        _fit_budget(run)
         run.refine = _refine_targets(run)
     except FeagentError as e:
         return _fail(run, "groups", e.message, e.hint)
@@ -401,8 +416,7 @@ def _apply_options(run: _Run) -> None:
 
 def _threshold(tags: list[int], size: float, dist: float, size_max: float) -> int:
     f = gmsh.model.mesh.field
-    d = f.add("Distance")
-    f.setNumbers(d, "SurfacesList", tags)
+    d = distance_field(tags, size)
     t = f.add("Threshold")
     f.setNumber(t, "InField", d)
     for key, v in (("SizeMin", size), ("SizeMax", size_max), ("DistMin", 0.0), ("DistMax", dist)):

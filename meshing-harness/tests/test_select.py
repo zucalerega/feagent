@@ -131,3 +131,17 @@ def test_face_lookup_is_cached_and_not_serialized(model):
     assert GeometryModel.from_dict(model.to_dict()) == model  # the cache does not affect eq
     model.faces.append(dataclasses.replace(model.faces[0], tag=8))
     assert model.face(8).tag == 8  # rebuilt when the faces list changes
+
+
+@pytest.mark.parametrize("d", [100.0, 0.1])
+def test_at_tolerates_cad_bbox_slack(d):
+    """OCC bboxes carry ~2e-7 of slack: `at` must match on a 0.1 m part, and only the right face."""
+    e = 2e-7
+    bot = _plane(1, (0, 0, -1), ((0, 0, -e), (d, d, e)), (d / 2, d / 2, 0), [2])
+    side = _plane(2, (-1, 0, 0), ((-e, 0, 0), (e, d, d)), (0, d / 2, d / 2), [1])
+    m = GeometryModel(source="t", units="mm", bbox=((0, 0, 0), (d, d, d)), diag=3 ** .5 * d,
+                      ref_size=d / 40, volumes=[], faces=[bot, side], edges=[], features=[],
+                      hazards=[])
+    assert select_faces(m, {"at": "zmin"}) == [1]
+    assert select_faces(m, {"at": "xmin"}) == [2]
+    assert select_faces(m, {"at": "zmax"}) == []

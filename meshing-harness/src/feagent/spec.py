@@ -37,6 +37,7 @@ class SizeSpec:
     min: float = 0.0
     curvature: int = 12
     thin_wall_layers: int = 2
+    max_dofs: int = 0  # element budget (0 = off); automesh sets it, see budget.py
 
 
 @dataclass
@@ -253,7 +254,7 @@ _DOMAIN: dict[str, _Validator] = {
     "upstream": _positive, "downstream": _positive, "lateral": _positive,
 }
 _SIZE: dict[str, _Validator] = {"global": _positive, "min": _nonneg, "curvature": _count,
-                                "thin_wall_layers": _count}
+                                "thin_wall_layers": _count, "max_dofs": _count}
 _ELEMENT: dict[str, _Validator] = {"order": _element_order,
                                    "optimize": partial(_choice, options=_OPTIMIZE)}
 _ALGORITHM: dict[str, _Validator] = {"mesh2d": partial(_int, minimum=1),
