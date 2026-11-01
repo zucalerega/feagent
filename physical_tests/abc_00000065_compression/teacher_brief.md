@@ -37,6 +37,9 @@ the measured curve. Numbers marked (*) are recomputed by `scripts/nl_baselines.p
 
 Mesh calls (h, size, radius, point, box) are in METRES (uniform 4 mm = h 0.004; x 12-31 mm = box x 0.012..0.031); this brief and the nonlinear hotspots (xyz_mm) give mm.
 
+- CalculiX rejects quadratic cells whose midside nodes sit far off the straight edge midpoint (coarse cells
+  on the curved bore and fillets); the scorer straightens only those edges and reports how many
+  (straightened_edges). Each straightened edge facets the curved surface a little and stiffens the mesh.
 - Every mesh sits ABOVE the test at every checkpoint, and refining moves the curve down toward it:
   error vs the test = (mostly) the mesh's discretization error. A coarse mesh is too stiff and too
   strong because it under-resolves the plastic zones.
@@ -44,7 +47,7 @@ Mesh calls (h, size, radius, point, box) are in METRES (uniform 4 mm = h 0.004; 
 
   | mesh | nodes | error |
   |---|---|---|
-  | gmsh default sizes (the automesher baseline) | 2937 | 16.6 % |
+  | gmsh default sizes (the automesher baseline) | 2937 | 7.8 % |
   | the swarm's best bc0 mesh (refined for a one-sided load on f7) | 6430 | 4.6 % |
   | uniform 4 mm | 9506 | 2.0 % |
   | uniform 2.5 mm | 24194 | 1.2 % |
@@ -64,5 +67,5 @@ Mesh calls (h, size, radius, point, box) are in METRES (uniform 4 mm = h 0.004; 
 
 Error = mean |F_sim - F_test| / F_test over the five checkpoints (crosshead travel). Score as in
 field mode against the automesher: g = e_auto / e, A = (g/2)^2 below 2 and g/2 above, divided by
-the DOF ratio dofs / dofs_auto. A 2 % mesh at 6.4k nodes scores about 1.9; uniform 4 mm about 1.3;
-the swarm's bc0 mesh about 0.8.
+the DOF ratio dofs / dofs_auto. The automesher scores 0.25; a 2 % mesh at 6.4k nodes about 0.9; uniform
+4 mm about 0.6; the swarm's bc0 mesh about 0.34.

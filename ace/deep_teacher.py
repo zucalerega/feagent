@@ -507,7 +507,7 @@ def nonlinear_text(nl: dict | None) -> str:
         return f"nonlinear check FAILED: {nl.get('error')}"
     pct = lambda x: "-" if x is None else f"{100 * x:.2f}%"      # noqa: E731
     L = [f"nonlinear ramp: {nl.get('nodes')} nodes, {nl.get('dofs')} DOFs, {_fmt(nl.get('wall_s'))} s"
-         + ("; midside nodes straightened to let CalculiX accept the mesh" if nl.get("straightened") else ""),
+         + ("; " + str(nl.get("straightened_edges", "")) + " midside nodes CalculiX rejected were straightened" if nl.get("straightened") else ""),
          f"mean error vs the test {pct(nl.get('mean_rel_err'))}; peak PEEQ {_fmt(nl.get('peeq_max'))}",
          "checkpoint (crosshead mm) | test N | sim N | error (sim - test) / test"]
     for u, fm, fs, e in zip(nl.get("checkpoints_mm") or [], nl.get("force_meas_N") or [],
