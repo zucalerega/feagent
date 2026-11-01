@@ -32,6 +32,14 @@ GOOD_MESH = {
     "nafems_le11_axisym": {"h": 0.1, "order": 2, "refinements": [{"point": [1.0, 0.0], "size": 0.025, "radius": 0.2}]},  # 0.3%
     "nafems_le11_3d": {"h": 0.2, "order": 2, "refinements": [{"point": [0.0, 1.0, 0.0], "size": 0.05, "radius": 0.4}]},  # 0.8%
     "cooks_membrane": {"h": 4.0, "order": 2, "refinements": [{"point": [48.0, 52.0], "size": 1.0, "radius": 8.0}]},  # 0.06%
+    # flow (linear finite volumes; nodes / cap, error with the reference setup, OpenFOAM v1912)
+    "poiseuille_channel": {"h": 0.0008, "quads": True, "refinements": []},                 # 1027/1200 nodes, 0.63%
+    "lid_driven_cavity_re100": {"h": 0.025, "quads": True, "refinements": []},             # 1919/2500 nodes, 0.66%
+    "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1883/2500 nodes, 0.43%
+    "cylinder_channel_dfg_2d1": {"h": 0.015, "quads": True,                               # 5440/12000 nodes, 0.37%
+                                 "refinements": [{"group": "cylinder", "size": 0.002, "radius": 0.1}]},
+    "pipe_poiseuille_3d": {"h": 0.001, "refinements": []},                                 # 4642/6000 nodes, 1.3% (tets)
+    "square_duct_3d": {"h": 0.0014, "refinements": []},                                    # 4259/6000 nodes, 0.8% (tets)
     # the tube wall (2.5 mm) bends: it needs small elements everywhere around the tube, not at a point
     "abc_00000003_pull": {"h": 0.0022, "order": 2, "refinements": []},  # 40187/60000 nodes, -2.3%
     "abc_00000065_compression": {"h": 0.004, "order": 2, "refinements": []},  # 9506/40000 nodes, ~1.5% from h = 1.6 mm

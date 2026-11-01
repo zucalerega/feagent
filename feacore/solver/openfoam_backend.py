@@ -4,7 +4,10 @@ Physics "flow", formulations "2d" (one extruded cell layer of ``analysis.thickne
 front and back) and "3d". Solver: ``simpleFoam`` with SIMPLEC (``consistent yes``), laminar by
 default or a RANS model (``analysis.options["turbulence"]``, e.g. ``"kOmegaSST"``). Convection:
 ``analysis.order`` 1 = ``bounded Gauss upwind``, 2 = ``bounded Gauss linearUpwind grad(U)``;
-everything else second order (Gauss linear, corrected). Dictionaries follow the shipped
+everything else second order (Gauss linear, corrected). In 3D (``skew_correction``) the gradients
+are ``pointCellsLeastSquares`` (grad(p) stays Gauss linear) and the momentum-interpolation flux is
+``skewCorrected linear``: with the plain schemes a tet mesh converges to a solution whose pressure
+gradient is 12-15 % high (docs/solver_openfoam.md). Dictionaries follow the shipped
 ``simpleFoam/pitzDaily`` tutorial and the ``inflowOutflow`` template; they are written with
 ``foamlib``. The mesh goes through ``gmshToFoam``; forces come from OpenFOAM's ``forces``
 function object (pressure + viscous), cell centres, volumes and gradients from
@@ -18,8 +21,8 @@ Options (``analysis.options`` or keywords): ``turbulence`` ("laminar"), ``max_it
 ``residual_tol`` (1e-8: initial residuals of p and U, as ``residualControl``), ``relaxation_U``
 (0.9), ``relaxation_p`` (none: SIMPLEC), ``n_non_orth_correctors`` (0), ``timeout`` (s),
 ``case_dir`` (run there instead of a temp dir and keep it), ``keep_case`` (keep the temp dir),
-``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size). See
-docs/solver_openfoam.md.
+``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size), ``skew_correction``
+("auto": on in 3D, off in 2D; or true / false). See docs/solver_openfoam.md.
 """
 
 from __future__ import annotations
@@ -43,9 +46,10 @@ from feacore.solver.base import Result, SolveInfo
 
 KNOWN_OPTIONS = ("turbulence", "max_iterations", "residual_tol", "relaxation_U", "relaxation_p",
                  "n_non_orth_correctors", "timeout", "case_dir", "keep_case", "turbulence_intensity",
-                 "turbulence_length")
+                 "turbulence_length", "skew_correction")
 DEFAULTS = {"turbulence": "laminar", "max_iterations": 5000, "residual_tol": 1e-8, "relaxation_U": 0.9,
-            "relaxation_p": None, "n_non_orth_correctors": 0, "timeout": None, "turbulence_intensity": 0.05}
+            "relaxation_p": None, "n_non_orth_correctors": 0, "timeout": None, "turbulence_intensity": 0.05,
+            "skew_correction": "auto"}
 RAS_MODELS = ("kOmegaSST", "kOmega", "kEpsilon", "realizableKE", "RNGkEpsilon", "SpalartAllmaras")
 PATCH_TYPE = {"velocity_inlet": "patch", "pressure_outlet": "patch", "wall": "wall", "slip": "patch",
               "symmetry": "symmetry"}
@@ -212,6 +216,7 @@ def solve(case: Case, **options) -> "OpenFOAMResult":
         raise CaseError(f"analysis.options.turbulence must be 'laminar' or one of {RAS_MODELS}")
     if turbulence not in ("laminar", "kOmegaSST", "kOmega"):
         raise CaseError(f"turbulence model {turbulence!r} is not wired up yet (use laminar or kOmegaSST)")
+    opts["skew_correction"] = _skew_correction(opts["skew_correction"], case.dim)
     tol = float(opts["residual_tol"])
     max_it = int(opts["max_iterations"])
     mesh_path = case.mesh_path()
@@ -274,7 +279,11 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
     turb = _turbulence_inlet(case, fm, opts, nu) if turbulent else None
     closed = not any(b.type == "pressure_outlet" for b in case.bcs)
     ref = {"pRefCell": 0, "pRefValue": 0.0} if closed else None
-    fio.write_schemes(cdir, int(a.order), turbulent)
+    skew = opts["skew_correction"]
+    if skew:
+        warnings.append("info: skew-consistent schemes (skew_correction): pointCellsLeastSquares gradients "
+                        "(grad(p) Gauss linear), skewCorrected linear flux(HbyA)")
+    fio.write_schemes(cdir, int(a.order), turbulent, skew)
     fio.write_solution(cdir, tol, turbulent, ref, float(opts["relaxation_U"]),
                        None if opts.get("relaxation_p") is None else float(opts["relaxation_p"]),
                        int(opts["n_non_orth_correctors"]))
@@ -346,6 +355,17 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
                     f"final initial residuals {_fmt(st['residuals'])}")
     res.info = info
     return res
+
+
+def _skew_correction(value, dim: int) -> bool:
+    """Option ``skew_correction``: "auto" (on in 3D), or a bool. 3D tet meshes need it: with the plain
+    schemes their solution converges to a wrong one (pressure gradient 12-15 % high in a pipe or a
+    channel). 2D triangle meshes are accurate without it, so 2D keeps the validated plain schemes."""
+    if value == "auto" or value is None:
+        return dim == 3
+    if isinstance(value, bool):
+        return value
+    raise CaseError(f"analysis.options.skew_correction must be 'auto', true or false (got {value!r})")
 
 
 def _fmt(r: dict) -> str:

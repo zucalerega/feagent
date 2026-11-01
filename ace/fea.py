@@ -1,5 +1,11 @@
 """Plain-Python FEA plumbing behind the agent's tools: geometry summary, meshing, solving.
 
+Two physics: linear elasticity (skfem backend) and steady incompressible flow (physics "flow",
+openfoam backend). For flow the cells are always linear finite volumes (2D: counter-clockwise in the
+xy-plane, optionally quads); the agent's "order" choice is the convection scheme instead
+(upwind = 1, linearUpwind = 2), and the solver controls (laminar, iteration cap, residual target)
+come from the problem, not the agent.
+
 No LLM here. gmsh is process-global, so call these from one thread per process
 (run_loop runs each agent run in its own process).
 """
@@ -19,7 +25,11 @@ from feacore.case import BC, Analysis, Case, CaseError, Load, Material
 from feacore.geometry.gmsh_tools import distance_threshold_field, ensure_domain_group, gmsh_session
 from feacore.problems import registry
 from feacore.problems.base import Problem
+from feacore.problems.cfd._common import orient_ccw_2d
 from feacore.solver import solve
+
+
+CONVECTION = {"upwind": 1, "linearUpwind": 2}       # flow: scheme name -> analysis.order
 
 
 def get_problem(problem_id: str) -> Problem:
@@ -72,6 +82,10 @@ class AliasedProblem:
         return c
 
 
+def is_flow(problem: Problem) -> bool:
+    return problem.physics == "flow"
+
+
 def official_qoi(problem: Problem, qoi_name: str):
     return next(q for q in problem.qois() if q.name == qoi_name)
 
@@ -122,10 +136,11 @@ def _size_floor(problem: Problem, bbox: list[float]) -> float:
 
 
 def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
-              refinements: list[dict] | None = None) -> dict:
+              refinements: list[dict] | None = None, quads: bool = False) -> dict:
     """Mesh the problem's geometry.
 
-    h: global element size. order: 1 (linear) or 2 (quadratic, curved).
+    h: global element size. order: 1 (linear) or 2 (quadratic, curved); flow meshes are always
+    linear. quads (2D flow only): recombine the triangles into quad-dominant cells.
     refinements: [{"group": name | "edge": curve tag | "point": [x, y(, z)], "size": s, "radius": r}]
       element size s at the group, CAD curve or point, growing linearly to h at distance r;
       or {"box": [xmin, ymin, zmin, xmax, ymax, zmax], "size": s}: size s inside the box.
@@ -135,6 +150,11 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
     """
     if order not in (1, 2):
         return {"ok": False, "error": "order must be 1 or 2"}
+    flow = is_flow(problem)
+    if flow:
+        order = 1                           # finite volumes: straight-sided cells
+    if quads and not (flow and problem.dim == 2):
+        return {"ok": False, "error": "quads is only available for 2D flow meshes"}
     # gmsh's default surface mesher sometimes leaves flat tets between boundary curves of a CAD
     # part (all four nodes on CAD edges, so no optimizer can move them); MeshAdapt surfaces avoid
     # that on the gold parts. Both can fail on a curved face much smaller than h ("overlapping
@@ -146,7 +166,8 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
     path = Path(path)
     errors, best = [], None
     for i, mesher in enumerate(MESHERS):
-        res = _mesh_once(problem, path.with_suffix(f".try{i}.msh"), h, order, refinements or [], mesher)
+        res = _mesh_once(problem, path.with_suffix(f".try{i}.msh"), h, order, refinements or [], mesher,
+                         quads)
         if not res["ok"]:
             if not res.pop("retry", False):
                 return res               # a bad request: every mesher would refuse it
@@ -166,9 +187,10 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
 
 
 def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: list[dict],
-               mesher: tuple[int, int]) -> dict:
+               mesher: tuple[int, int], quads: bool = False) -> dict:
     """make_mesh with one mesher (gmsh surface algorithm, curvature sizing). A gmsh failure comes
     back with "retry": True."""
+    flow = is_flow(problem)
     with gmsh_session(problem.id):
         problem.build_geometry()
         ensure_domain_group(problem.dim)
@@ -235,6 +257,8 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
         gmsh.option.setNumber("Mesh.MeshSizeMax", h)
         for opt in ("MeshSizeFromPoints", "MeshSizeExtendFromBoundary"):   # curvature: see MESHERS
             gmsh.option.setNumber(f"Mesh.{opt}", 0)
+        if quads:
+            gmsh.option.setNumber("Mesh.RecombineAll", 1)
 
         alg, curv = mesher
         gmsh.option.setNumber("Mesh.Algorithm", alg)
@@ -243,6 +267,8 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
             gmsh.model.mesh.generate(problem.dim)
         except Exception as e:  # noqa: BLE001  gmsh raises plain Exception
             return {"ok": False, "error": f"gmsh failed: {e}", "retry": True}
+        if flow and problem.dim == 2:
+            orient_ccw_2d()                 # the openfoam backend extrudes +z: cells must be counter-clockwise
         q = _qualities(problem.dim)
         if not len(q):
             return {"ok": False, "error": "gmsh failed: no elements generated", "retry": True}
@@ -284,6 +310,7 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
         "nodes": n_nodes,
         "elements": len(q),
         "order": order,
+        **({"quads": bool(quads)} if flow else {}),
         "min_quality": round(float(q.min()), 4),
         # minSICN of the straight-sided cells: 1 = regular, near 0 = flat
         "quality": {k: round(float(f(q)), 4) for k, f in
@@ -320,7 +347,10 @@ MIDSIDE = {2: [(0, 1, 3), (1, 2, 4), (2, 0, 5)],
 
 
 def _qualities(dim: int) -> np.ndarray:
-    tags, _ = gmsh.model.mesh.getElementsByType(LINEAR_TYPE[dim])
+    """minSICN of every cell of dimension dim: all element types, so 2D flow meshes recombined into
+    quads (quads + some triangles) count too."""
+    _, tags, _ = gmsh.model.mesh.getElements(dim)
+    tags = np.concatenate([np.asarray(t, dtype=np.int64) for t in tags]) if len(tags) else np.zeros(0)
     return np.asarray(gmsh.model.mesh.getElementQualities(tags, "minSICN")) if len(tags) else np.zeros(0)
 
 
@@ -332,15 +362,15 @@ def _size_by_group(dim: int) -> dict:
     pos = np.zeros(int(ntags.max()) + 1, dtype=np.int64)
     pos[ntags] = np.arange(len(ntags))
     X = np.asarray(X).reshape(-1, 3)
-    _, conn = gmsh.model.mesh.getElementsByType(LINEAR_TYPE[dim])
-    T = pos[np.asarray(conn, dtype=np.int64).reshape(-1, dim + 1)]
+    # every cell's edges (once per cell, as for simplices before), for any cell type: 2D flow meshes
+    # recombined into quads must not count the quads' diagonals
+    E = pos[np.concatenate([np.asarray(gmsh.model.mesh.getElementEdgeNodes(t, -1, True), dtype=np.int64)
+                            for t in gmsh.model.mesh.getElementTypes(dim)]).reshape(-1, 2)]
     total, count = np.zeros(len(ntags)), np.zeros(len(ntags))
-    for i in range(dim + 1):
-        for j in range(i + 1, dim + 1):
-            length = np.linalg.norm(X[T[:, i]] - X[T[:, j]], axis=1)
-            for k in (T[:, i], T[:, j]):
-                total += np.bincount(k, length, len(ntags))
-                count += np.bincount(k, None, len(ntags))
+    length = np.linalg.norm(X[E[:, 0]] - X[E[:, 1]], axis=1)
+    for k in (E[:, 0], E[:, 1]):
+        total += np.bincount(k, length, len(ntags))
+        count += np.bincount(k, None, len(ntags))
     node_h = total / np.maximum(count, 1)
     out = {}
     for d, t in gmsh.model.getPhysicalGroups():
@@ -397,6 +427,8 @@ def _jacobian_check(path: Path, dim: int) -> dict:
 def build_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> Case:
     """Agent's setup dict -> feacore Case. The mesh, FE order and the scored QoI are ours."""
     bc_keys = {"type", "group", "point", "components", "value"}
+    if is_flow(problem):
+        return _build_flow_case(problem, mesh, setup, qoi_name, bc_keys)
     mat = setup.get("material") or {}
     return Case(
         mesh=mesh["path"],
@@ -411,6 +443,24 @@ def build_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str) -> Case
     )
 
 
+def _build_flow_case(problem: Problem, mesh: dict, setup: dict, qoi_name: str, bc_keys: set) -> Case:
+    """Flow setup: {formulation, thickness, fluid: {rho, mu}, convection, bcs}. The solver controls
+    (laminar, iteration cap, residual target) are the problem's: the agent does not tune the solver."""
+    fluid = setup.get("fluid") or {}
+    conv = setup.get("convection", "linearUpwind")
+    if conv not in CONVECTION:
+        raise CaseError(f"convection must be one of {sorted(CONVECTION)}, got {conv!r}")
+    options = problem.options() if hasattr(problem, "options") else {"turbulence": "laminar"}
+    return Case(
+        mesh=mesh["path"],
+        analysis=Analysis(physics="flow", formulation=setup.get("formulation", ""), order=CONVECTION[conv],
+                          thickness=float(setup.get("thickness", 1.0)), options=dict(options)),
+        materials={"fluid": Material(rho=float(fluid.get("rho", 0.0)), mu=float(fluid.get("mu", 0.0)))},
+        bcs=[BC(**{k: v for k, v in bc.items() if k in bc_keys}) for bc in setup.get("bcs", [])],
+        qois=[official_qoi(problem, qoi_name)],
+    )
+
+
 def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_result=None,
               keep_result: bool = False) -> dict:
     """Solve with the fixed solver and evaluate the scored QoI ourselves. `on_result`, if
@@ -418,7 +468,7 @@ def run_solve(problem: Problem, mesh: dict, setup: dict, qoi_name: str, on_resul
     `keep_result` the Result is also returned under "_result" (in memory only: not JSON)."""
     try:
         case = build_case(problem, mesh, setup, qoi_name)
-        result = solve(case, backend="skfem")
+        result = solve(case, backend="openfoam" if is_flow(problem) else "skfem")
         value = float(result.evaluate_all()[qoi_name])
     except (CaseError, TypeError, ValueError, KeyError) as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}

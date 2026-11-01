@@ -161,6 +161,141 @@ FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui
 - If the store can't be written (permissions, full disk), the loop only prints a warning and
   carries on; its own results don't change. Code: `ace/ui_bridge.py`.
 
+## The CFD suite (steady laminar flow)
+
+The same loop also trains agents on flow problems. Select them with `--suite cfd`, or name the
+problems directly:
+
+```bash
+python -m ace.run_loop --suite cfd --mock                  # free, needs OpenFOAM (see below)
+python -m ace.run_loop --suite cfd                         # real agents
+python -m ace.run_loop --suite cfd3d                       # real agents, 3D (slower solves)
+```
+
+| suite | split | problem | scored QoI | node cap | what makes it hard |
+|---|---|---|---|---|---|
+| `cfd` | train | `poiseuille_channel` | `dp_AB` (exact, 1 %) | 1200 | easy: the scheme choice matters more than the mesh |
+| `cfd` | train | `lid_driven_cavity_re100` | `u_vcl_min` (Ghia 1982, 3 %) | 2500 | closed cavity, lid-corner singularities |
+| `cfd` | train | `taylor_couette_2d` | `u_theta_mid` (exact, 1 %) | 2500 | curved walls, moving-wall expression BC, closed domain |
+| `cfd` | held out | `cylinder_channel_dfg_2d1` | `drag` (Schaefer & Turek 1996, 1 %) | 12000 | external flow: refine at the cylinder, not everywhere |
+| `cfd3d` | train | `pipe_poiseuille_3d` | `dp_AB` (exact, 2 %) | 6000 | 3D tets; the faceted wall loses area at O(h^2) |
+| `cfd3d` | train | `square_duct_3d` | `dp_AB` (exact developed, 2 %) | 6000 | uniform inflow develops first; 3D tets |
+
+`taylor_couette_2d` and `square_duct_3d` are new in this branch. Both are checked against the fixed
+solver in `docs/benchmarks_cfd.md`. The suites can be mixed with `--problems` / `--holdout`.
+
+Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mesh for each, and
+`tests/test_diagnosis.py` checks that it passes every oracle. For example, the cylinder drag is
+0.37 % off at 5440 nodes with refinement at the cylinder. With lighter refinement (3277 nodes) it
+was 1.71 % off (measured before the wall-distance fix in the force evaluation) and fails the 1 %
+tolerance, so local refinement is what the agents have to learn.
+The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with
+linearUpwind meets the tolerance (`calibration.json`: Poiseuille 0.08 %, Taylor-Couette 0.36 %,
+cavity 1.33 %, 3D pipe 1.50 %, 3D duct 0.84 %), so the score rewards the cheapest accurate setup.
+Upwind is far worse: 3.6 % against 0.08 % on Poiseuille, and 6.2 % and 6.7 % on the pipe and the duct.
+
+**3D flow (`cfd3d`).** The agent's mesh tool makes unstructured tets in 3D. With OpenFOAM's plain
+schemes, those converged to an axial pressure gradient 12-19 % high at any mesh size, so 3D was left
+out at first. Next to a wall, linear interpolation between cell centres misses the face values in
+the same direction everywhere, and that biased the viscous flux.
+
+The backend now uses skew-consistent schemes in 3D: `pointCellsLeastSquares` gradients and a
+skew-corrected momentum-interpolation flux. Wall forces now use the wall-normal distance; before,
+the force read 10 % low, which made the old results look like a force imbalance. Details are in
+`docs/solver_openfoam.md`, "3D meshes".
+
+| case | mesh | dp_AB before → after |
+|---|---|---|
+| `pipe_poiseuille_3d` | uniform tets, 4.6k nodes | +15.3 % → +1.3 % |
+| `pipe_poiseuille_3d` | tets split into hexes | +20 % → +0.7 % |
+| `square_duct_3d` | uniform tets, 4.3k / 10k nodes | +11.7 % → −0.8 % / +0.0 % |
+
+A uniform tet mesh below the 6000-node cap meets the 2 % tolerance (`planted.GOOD_MESH`), so the
+score is again about the cheapest accurate mesh. For the pipe that means fewer nodes away from the
+wall; for the duct, coarser cells in the developed flow.
+
+- **What is still weak in 3D:** point *velocities* at a smooth maximum (`u_centreline`, `u_axis`)
+  read 2-5 % low on coarse tets. The probe's vertex fit flattens the peak; the solution itself is
+  within 1 %. That is why both 3D tasks score `dp_AB`.
+- **Cost:** a 3D solve takes 5-30 s and up to about 250 MB per 70k tets. The refinement-study oracle
+  refines 3D flow meshes by 1.5 rather than 2, so its fine level stays near 3.4x the agent's nodes.
+
+What changes for flow (it is chosen from the problem's physics, so the two suites can be mixed):
+
+- **Tools** (`TOOLS_FLOW` in `agent.py`):
+  - `mesh` has no element order: cells are straight-sided finite volumes, and `quads=true` asks
+    for quad-dominant 2D cells.
+  - `solve` takes a fluid (`rho`, `mu`), a `convection` scheme (`upwind` or `linearUpwind`) and
+    the flow BC types (`velocity_inlet`, `pressure_outlet`, `wall`, `slip`, `symmetry`). Values
+    may be expressions in x, y, z.
+  - The solver controls (laminar, iteration cap, residual target) come from the problem, not
+    the agent.
+- **Score**: unchanged. DOFs are cells × unknowns. The uniform-mesh baseline compares the two
+  convection schemes, where elasticity compares the two element orders.
+- **Oracles**: feacore's diagnostics run the elasticity solver, so equilibrium, singularity,
+  sanity bounds and symmetry are reported as unavailable for flow.
+  - These still run: spec compliance, gaming, the known answer, and the refinement study of the
+    agent's own setup (three OpenFOAM solves).
+  - The refinement estimate is pessimistic on independently remeshed unstructured meshes.
+- **Diagnoser interventions** (`counterfactual.py`):
+  - inlets and outlets count as loads, and walls, slip and symmetry as supports;
+  - `convert_units` also takes `mu` or `rho`;
+  - `set_convection` switches the scheme.
+
+OpenFOAM is required: ESI line, v1912 or newer, as on the Brev box. On a Mac, run
+`bash scripts/openfoam_docker.sh` once. It runs OpenFOAM v1912 in a Docker container and writes
+shims. Then:
+
+```bash
+export FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp
+```
+
+A two-generation mock run on the three 2D problems takes about 16 s that way. The solver tests in
+`tests/test_ace_cfd.py` skip without OpenFOAM.
+
+### Running the CFD suites with the Claude API (real credits)
+
+On a Brev box (Ubuntu, after `bash scripts/setup_gpu_box.sh` or `bootstrap.sh`):
+
+```bash
+bash scripts/setup_ace_cfd.sh            # OpenFOAM (apt), the ace + cfd extras, pre-flight solves
+export ANTHROPIC_API_KEY=...             # never commit it
+.venv/bin/python -m ace.preflight --suite cfd --ping     # one real call (~$0.01): key, model, tool schemas
+
+# a small first run to measure the cost per run on this suite
+.venv/bin/python -m ace.run_loop --suite cfd --generations 1 --agents 2 --budget-usd 3 --out ace_runs/cfd_probe
+
+# the experiment (defaults: 6 persistent agents, 4 generations, shared + private memory)
+tmux new -s ace
+.venv/bin/python -m ace.run_loop --suite cfd --budget-usd 40 --out ace_runs/cfd_$(date +%m%d)
+.venv/bin/python -m ace.run_loop --suite cfd3d --budget-usd 25 --out ace_runs/cfd3d_$(date +%m%d)
+```
+
+- **Pre-flight** (`ace/preflight.py`) solves every task's `planted.GOOD_MESH` with the reference
+  setup and checks it is within tolerance and under the cap. It needs no API key unless `--ping`.
+  `run_loop` itself also stops before spending anything if a flow task cannot find OpenFOAM or
+  foamlib.
+- **Budget:** `--budget-usd` defaults to $10, which stops the CFD suite after about one generation.
+  The loop checks it before each agent run, so the last generation can overshoot by
+  `--concurrency` runs.
+  - Rough estimate, not yet measured on these suites: $0.2-0.4 per agent run with the Sonnet
+    generator. A `cfd` generation (6 agents x 4 tasks) is then about $5-10, and `cfd3d`
+    (6 x 2) about half that.
+  - The probe run's `Spend by role` line and `cost.jsonl` give the real figure; verify `PRICES` in
+    `config.py` first.
+- **Modes that work for flow:** the default point scoring (leave `ACE_SCORE` unset), `--teacher rerun`
+  (the default), `--memory shared|shared+private`, `--split`, `--peers`, `--personas`.
+- **Modes that don't:** `--deep` (and `--pre-teach`, which needs it), `--teacher inspect|both` and
+  `ACE_SCORE=field` score the elastic stress field, and `--statement requirements` writes elasticity
+  setups. `run_loop` refuses them for flow tasks.
+- **Concurrency:** `--concurrency` (default 4) agent runs solve in parallel, and as many scoring
+  workers start on finished runs while the others still work. 2D solves are light. A 3D solve and
+  its refinement study can take 0.3-0.5 GB each, so keep `--concurrency` at most (RAM in GB) / 4
+  for `cfd3d`.
+- **Watching and stopping:** `.venv/bin/python -m ace.watch ace_runs/<dir>` (port 8765; tunnel it from
+  the Brev box) and `.venv/bin/python -m ace.report ace_runs/<dir>` (see "Watch it evolve").
+  `touch ace_runs/<dir>/STOP` ends the run cleanly before the next generation.
+
 ## Requirements instead of boundary conditions (`--statement requirements`)
 
 By default an agent gets the problem statement, which spells out the supports, loads and analysis

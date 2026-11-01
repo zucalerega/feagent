@@ -1,10 +1,12 @@
-"""The Generator: a minimal tool-use FEA agent.
+"""The Generator: a minimal tool-use FEA / CFD agent.
 
 It sees a problem statement, six tools (inspect_geometry, mesh, solve, view, compare, submit; plus
 nonlinear_check on a task scored by a nonlinear simulation of a physical test, ace/nonlinear.py) and
 a system prompt = BASE_PROMPT + the current playbook. One call to run_agent = one run; it returns a
 JSON-able run record (trace, meshes, solves, submitted solve, cited bullet IDs, token usage) for
-the checks and the Reflector.
+the checks and the Reflector. Flow problems (physics "flow") get BASE_PROMPT_FLOW and TOOLS_FLOW:
+the same four tools, with a finite-volume mesh (no element order; optional quads in 2D) and a flow
+setup (fluid, convection scheme, flow BCs).
 """
 
 from __future__ import annotations
@@ -217,6 +219,108 @@ TOOLS = [
     },
 ]
 
+TOOLS_TEXT_FLOW = """\
+Tools, and how a careful engineer uses them:
+- inspect_geometry: the named groups, each face's type, area, centroid and neighbours, the CAD edges
+  (curve tags) and the smallest features. Read it first: find the inlets, outlets and walls.
+- mesh: a global cell size h plus local refinements at a group, a CAD edge (curve tag), a point or a
+  box. Put the small cells where the velocity changes fast (near walls and corners, around bodies,
+  where the flow develops), not everywhere. In 2D, quads=true gives quad-dominant cells. It reports
+  nodes, cell quality and the mean cell size near each group.
+- solve: the fixed steady laminar flow solver. It returns the solve number and, as for any solve,
+  no reference values. Two solves of the same setup on different meshes that agree closely are your
+  evidence of convergence.
+
+"""
+
+
+def _flow_prompt(base: str) -> str:
+    """BASE_PROMPT for flow: the CFD role line, DOFs per cell, and TOOLS_TEXT_FLOW instead of the
+    elasticity tools section. Fails loudly if BASE_PROMPT changes shape."""
+    head, tools_start, rest = base.partition("Tools, and how a careful engineer uses them:")
+    _, playbook, tail = rest.partition("Playbook:")
+    role = "You set up and run linear-elastic finite-element analyses using tools."
+    dofs = "degrees of\nfreedom, DOFs"
+    assert tools_start and playbook and role in head and dofs in head, "BASE_PROMPT changed: update _flow_prompt"
+    head = head.replace(role, "You set up and run steady incompressible laminar flow (CFD) analyses with a "
+                              "finite-volume solver using tools.")
+    head = head.replace(dofs, "degrees of\nfreedom, DOFs = cells x unknowns per cell")
+    return head + TOOLS_TEXT_FLOW + playbook + tail
+
+
+BASE_PROMPT_FLOW = _flow_prompt(BASE_PROMPT)
+
+BC_HELP_FLOW = (
+    "BC types: velocity_inlet (`value` = velocity vector [u_x, u_y(, u_z)] in m/s, each entry a number or "
+    "an expression in x, y, z such as '0.06*y*(0.01 - y)'; or one number = speed into the domain along "
+    "the normal); pressure_outlet (`value` = static pressure in Pa, number or expression); wall (no slip; "
+    "optional `value` = wall velocity vector for a moving wall, numbers or expressions); slip (no "
+    "penetration, no shear); symmetry. Each BC applies to a named boundary `group`; boundary groups "
+    "without a BC are stationary no-slip walls. A domain without a pressure_outlet is closed: its "
+    "pressure level is arbitrary (only differences are meaningful)."
+)
+
+_BY_NAME = {t["name"]: t for t in TOOLS}
+# Flow tasks have no view / compare: solve_feedback reads elastic stress fields only.
+TOOLS_FLOW = [
+    _BY_NAME["inspect_geometry"],
+    {
+        "name": "mesh",
+        "description": "Mesh the geometry with straight-sided finite-volume cells (triangles / tetrahedra; "
+                       "quad-dominant in 2D with quads=true). Replaces the current mesh. Returns node count and "
+                       "the minimum cell quality (0 = degenerate, 1 = perfect). Node counts change in steps, so "
+                       "tiny changes to h may give the same mesh.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "h": {"type": "number", "description": "global cell size"},
+                "quads": {"type": "boolean", "description": "2D only: recombine triangles into quads (default false)"},
+                "refinements": _BY_NAME["mesh"]["input_schema"]["properties"]["refinements"],
+                "using": USING,
+            },
+            "required": ["h", "using"],
+        },
+    },
+    {
+        "name": "solve",
+        "description": "Solve on the current mesh with the fixed steady laminar flow solver (finite volumes, "
+                       "SIMPLE) and return the scored quantity and the solve number. " + BC_HELP_FLOW,
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "formulation": {"type": "string", "enum": ["2d", "3d"]},
+                "thickness": {"type": "number", "description": "2D: out-of-plane depth (forces and flow rates are per it)"},
+                "fluid": {
+                    "type": "object",
+                    "properties": {"rho": {"type": "number", "description": "density, kg/m^3"},
+                                   "mu": {"type": "number", "description": "dynamic viscosity, Pa s"}},
+                    "required": ["rho", "mu"],
+                },
+                "convection": {"type": "string", "enum": ["upwind", "linearUpwind"],
+                               "description": "convection scheme: upwind (first order, robust) or linearUpwind "
+                                              "(second order, default)"},
+                "bcs": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["velocity_inlet", "pressure_outlet", "wall",
+                                                                "slip", "symmetry"]},
+                            "group": {"type": "string"},
+                            "value": {},
+                        },
+                        "required": ["type", "group"],
+                    },
+                },
+                "using": USING,
+            },
+            "required": ["formulation", "fluid", "bcs", "using"],
+        },
+    },
+    _BY_NAME["submit"],
+]
+
+
 # Only offered on a task scored by the nonlinear simulation of its physical test (tools_for).
 NONLINEAR_TOOL = {
     "name": "nonlinear_check",
@@ -257,12 +361,15 @@ def limits(problem_id: str) -> tuple[int, int]:
 
 
 def tools_for(problem_id: str) -> list[dict]:
-    """The tool specs an agent gets on a task: TOOLS, plus nonlinear_check on a nonlinear task."""
+    """The tool specs an agent gets on a task: TOOLS_FLOW on a flow task, TOOLS plus nonlinear_check
+    on a nonlinear task, else TOOLS."""
+    if fea.is_flow(fea.get_problem(problem_id)):
+        return TOOLS_FLOW
     return TOOLS + [NONLINEAR_TOOL] if is_nonlinear(problem_id) else TOOLS
 
 
-def system_prompt(playbook_text: str) -> str:
-    return BASE_PROMPT + "\n" + (playbook_text or "(the playbook is empty)")
+def system_prompt(playbook_text: str, flow: bool = False) -> str:
+    return (BASE_PROMPT_FLOW if flow else BASE_PROMPT) + "\n" + (playbook_text or "(the playbook is empty)")
 
 
 def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = True) -> str:
@@ -276,7 +383,9 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
         return _nonlinear_task_prompt(problem_id, problem, max_solves, bonus)
     q = fea.official_qoi(problem, task["qoi"])
     where = f" at point {q.point}" if q.point else (f" over group {q.group!r}" if q.group else "")
-    if SCORE == "field":
+    if q.point2:
+        where += f" minus its value at point {q.point2}"
+    if SCORE == "field" and not fea.is_flow(problem):
         from ace.config import AUTO_GAIN_TARGET as G
         from ace.field_error import automesher
         a = automesher(problem_id)
@@ -473,7 +582,7 @@ class Tools:
     def _mesh(self, args: dict) -> tuple[dict, bool]:
         path = self.workdir / f"mesh_{len(self.meshes)}.msh"
         m = fea.make_mesh(self.problem, path, h=args.get("h", 0), order=args.get("order", 1),
-                          refinements=args.get("refinements"))
+                          refinements=args.get("refinements"), quads=bool(args.get("quads", False)))
         # Checkpoint: the request that produced this mesh, so it can be rebuilt or varied later.
         m["request"] = {k: v for k, v in args.items() if k != "using"}
         m["index"] = len(self.meshes)
@@ -530,7 +639,7 @@ class Tools:
         if check:
             out["test_check"] = {"prediction_vs_test": f"{check['rel_err']:+.2%}", "sigma": round(check["sigma"], 2),
                                  "within_test_uncertainty": check["consistent"]}
-        if res is not None:
+        if res is not None and not fea.is_flow(self.problem):   # solve_feedback is elasticity-only
             self.results[n] = res
             try:
                 out["feedback"] = solve_feedback.feedback(self.problem, mesh, setup, res)
@@ -676,8 +785,10 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
     to also record each solve in the feacore run store (None = off)."""
     tools = Tools(problem_id, workdir, ui_bridge.for_run(ui, run_id, generation))
     usage = [] if usage is None else usage
-    trace, stop = tool_loop(llm, system_prompt(playbook_text), task_prompt(problem_id), tools_for(problem_id),
-                            tools.call, lambda: tools.submitted is not None, limits(problem_id)[0], run_id, usage)
+    flow = fea.is_flow(tools.problem)          # flow tasks get the finite-volume prompt and tools
+    trace, stop = tool_loop(llm, system_prompt(playbook_text, flow=flow), task_prompt(problem_id),
+                            tools_for(problem_id), tools.call, lambda: tools.submitted is not None,
+                            limits(problem_id)[0], run_id, usage)
 
     return {
         "problem_id": problem_id,

@@ -11,9 +11,21 @@ and tagged `cfd`. The fixed flow solver is the OpenFOAM backend (`backend="openf
 | `lid_driven_cavity_re100` | lid-driven unit square, Re = 100 | `u_vcl_min`, `u_centre` = u_x on x = 0.5; `v_hcl_max`, `v_hcl_min` = u_y on y = 0.5 [m/s] | Ghia, Ghia & Shin (1982) Tables I and II | see below | published_numerical |
 | `cylinder_channel_dfg_2d1` | Schaefer & Turek (1996) DFG 2D-1: cylinder D = 0.1 in a 2.2 x 0.41 channel, Re = 20 | `drag`, `lift` (force of the fluid on the cylinder) [N/m]; `dp_front_rear` = p(0.15, 0.2) - p(0.25, 0.2) [Pa] | c_D = 5.57953523384, c_L = 0.010618948146, dp = 0.11752016697 | 1 % / 5 % / 1 % | published_numerical |
 | `pipe_poiseuille_3d` | Hagen-Poiseuille flow, 3D pipe R = 5 mm, L = 5 cm, Re = 10 | `dp_AB` on the axis [Pa]; `u_centreline`; `wall_force` [N]; `flow_rate_outlet` [m^3/s] | exact: 8 mu U (x_B - x_A) / R^2; 2 U; 8 pi mu U L; pi R^2 U | 2 % | analytical |
+| `taylor_couette_2d` | circular Couette flow: annulus R1 = 1 cm, R2 = 2 cm, inner wall rotating at 10 rad/s (expression wall velocity), closed, Re = 10 | `u_theta_mid` = u_y at mid-gap on +x [m/s]; `u_mag_inner` = speed at r = 1.25 cm, 135 deg; `dp_gap` = p(r = 1.75 cm) - p(r = 1.25 cm) [Pa] | exact: u_theta = A r + B / r; p = rho (A^2 r^2 / 2 + 2 A B ln r - B^2 / (2 r^2)) | 1 % / 1 % / 2 % | analytical |
+| `square_duct_3d` | developing laminar flow in a square duct s = 1 cm, L = 10 s, UNIFORM inflow, Re = 10 | `u_axis`, `u_offaxis` = u_x at x = 0.75 L on the axis and at y = s/4 [m/s]; `dp_AB` = p(0.5 L) - p(0.9 L) on the axis [Pa]; `flow_rate_outlet` [m^3/s] | exact developed values (series, White eq. 3-48; Shah & London 1978): u_max / U = 2.096256, u(s/4, 0) / U = 1.631416, G s^2 / (mu U) = 28.4542 (f Re = 14.227); U s^2 | 2 % / 2 % / 2 % / 1 % | analytical |
 
 Files: `_common.py` (the `FlowProblem` base class, block-structured mesh builder, citations),
-`poiseuille.py`, `cavity.py`, `cylinder.py`, `pipe.py`. Tests: `tests/test_problems_cfd.py`.
+`poiseuille.py`, `cavity.py`, `cylinder.py`, `pipe.py`, `taylor_couette.py`, `square_duct.py`. Tests: `tests/test_problems_cfd.py`.
+
+The two newest problems were checked with the fixed solver (OpenFOAM v1912) on their structured reference meshes:
+
+- `taylor_couette_2d`: on 10, 20 and 40 cells across the gap, the errors converge at second order.
+  `u_theta_mid` is 1.25 %, 0.31 % and 0.08 % low.
+  `u_mag_inner` is 0.81 %, 0.26 % and 0.06 % low.
+  `dp_gap` is 0.99 %, 0.69 % and 0.17 % low; it is pre-asymptotic on the coarsest mesh.
+- `square_duct_3d`: on 8 and 16 cells across (80 and 160 along), the errors converge at second order.
+  `u_axis` is 6.69 % and 1.78 % low, and `dp_AB` 5.55 % and 1.47 %.
+  The Richardson estimate is within 0.15 % of the exact developed values, so the probes sit in fully developed flow.
 
 ## Conventions
 
@@ -122,7 +134,9 @@ Studies were run with `convergence_study(problem, order=2, backend="openfoam", v
 - Saved studies: `/tmp/cfd_bench/studies/<id>_openfoam_p2[_nested].json`.
 - Runner: `/tmp/cfd_bench/run_study.py`.
 - Backend: OpenFOAM v1912 `simpleFoam`, second-order convection (`bounded Gauss linearUpwind`),
-  `Gauss linear corrected`, SIMPLEC, `residual_tol` 1e-8.
+  `Gauss linear corrected`, SIMPLEC, `residual_tol` 1e-8. 3D adds the skew-consistent schemes
+  (`docs/solver_openfoam.md`, "3D meshes"). Forces take the wall gradient over the wall-normal
+  distance. The pipe and DFG force rows were re-run with both on 2026-10-31.
 - The point values use the backend's continuous (cellPoint-style) probe.
 
 How to read the table:
@@ -142,18 +156,18 @@ How to read the table:
 | `lid_driven_cavity_re100` | both | v_hcl_max | 0.17527 | 0.175387, 0.178686, 0.179348 | 0.179514 | 2.32 | 0.116 | +2.421 | monotone | pass (4 %) |
 | `lid_driven_cavity_re100` | both | v_hcl_min | -0.24533 | -0.247644, -0.252042, -0.253291 | -0.253786 | 1.82 | 0.244 | +3.447 | monotone | pass (5 %) |
 | `lid_driven_cavity_re100` | both | u_centre | -0.20581 | -0.205007, -0.208154, -0.208904 | -0.209139 | 2.07 | 0.140 | +1.617 | monotone | pass (3 %) |
-| `cylinder_channel_dfg_2d1` | remeshed | drag | 0.0111591 | 0.0111245, 0.0111358, 0.0111405 | 0.0111438 | 1.26 | 0.038 | -0.136 | monotone (p_below_theory) | pass |
-| `cylinder_channel_dfg_2d1` | nested | drag | 0.0111591 | 0.0111245, 0.0111399, 0.0111425 | 0.011143 | 2.58 | 0.006 | -0.144 | monotone | pass |
-| `cylinder_channel_dfg_2d1` | remeshed | lift | 2.12379e-05 | 2.09929e-05, 2.1295e-05, 2.13133e-05 | 2.13145e-05 | 4.05 | 0.007 | +0.355 (finest) | monotone (p_above_theory) | pass |
-| `cylinder_channel_dfg_2d1` | nested | lift | 2.12379e-05 | 2.09929e-05, 2.13182e-05, 2.13287e-05 | 2.13291e-05 | 4.95 | 0.002 | +0.428 (finest) | monotone (p_above_theory) | pass |
+| `cylinder_channel_dfg_2d1` | remeshed | drag | 0.0111591 | 0.0111487, 0.0111558, 0.0111586 | 0.0111604 | 1.37 | 0.020 | +0.011 | monotone (p_below_theory) | pass |
+| `cylinder_channel_dfg_2d1` | nested | drag | 0.0111591 | 0.0111487, 0.0111605, 0.0111613 | 0.0111613 | 3.99 | 0.001 | +0.020 (finest) | monotone (p_above_theory) | pass |
+| `cylinder_channel_dfg_2d1` | remeshed | lift | 2.12379e-05 | 2.10488e-05, 2.13376e-05, 2.13498e-05 | 2.13504e-05 | 4.56 | 0.003 | +0.527 (finest) | monotone (p_above_theory) | pass |
+| `cylinder_channel_dfg_2d1` | nested | lift | 2.12379e-05 | 2.10488e-05, 2.13615e-05, 2.13661e-05 | 2.13662e-05 | 6.07 | 0.000 | +0.604 (finest) | monotone (p_above_theory) | pass |
 | `cylinder_channel_dfg_2d1` | remeshed | dp_front_rear | 0.11752 | 0.116144, 0.117112, 0.117373 | 0.11747 | 1.89 | 0.103 | -0.043 | monotone | pass |
 | `cylinder_channel_dfg_2d1` | nested | dp_front_rear | 0.11752 | 0.116144, 0.117111, 0.117374 | 0.117471 | 1.88 | 0.104 | -0.041 | monotone | pass |
-| `pipe_poiseuille_3d` | remeshed | dp_AB | 0.64 | 0.684597, 0.653932, 0.645101 | 0.64159 | 1.82 | 0.680 | +0.248 | monotone | pass |
-| `pipe_poiseuille_3d` | nested | dp_AB | 0.64 | 0.684597, 0.656157, 0.647186 | 0.643124 | 1.69 | 0.785 | +0.488 | monotone | pass |
-| `pipe_poiseuille_3d` | remeshed | u_centreline | 0.02 | 0.0201423, 0.0200519, 0.0200194 | 0.0200015 | 1.50 | 0.112 | +0.007 | monotone (p_below_theory) | pass |
-| `pipe_poiseuille_3d` | nested | u_centreline | 0.02 | 0.0201423, 0.020068, 0.0200373 | 0.020016 | 1.29 | 0.133 | +0.080 | monotone (p_below_theory) | pass |
-| `pipe_poiseuille_3d` | remeshed | wall_force | 0.000125664 | 0.000129074, 0.000127156, 0.000126295 | 0.000125605 | 1.17 | 0.683 | -0.047 | monotone (p_below_theory) | pass |
-| `pipe_poiseuille_3d` | nested | wall_force | 0.000125664 | 0.000129074, 0.000126993, 0.000126372 | 0.000126112 | 1.77 | 0.257 | +0.357 | monotone | pass |
+| `pipe_poiseuille_3d` | remeshed | dp_AB | 0.64 | 0.681132, 0.650552, 0.642675 | 0.639989 | 1.98 | 0.522 | -0.002 | monotone | pass |
+| `pipe_poiseuille_3d` | nested | dp_AB | 0.64 | 0.681132, 0.650649, 0.642732 | 0.640002 | 1.97 | 0.531 | +0.000 | monotone | pass |
+| `pipe_poiseuille_3d` | remeshed | u_centreline | 0.02 | 0.0201322, 0.0200426, 0.0200114 | 0.0199951 | 1.54 | 0.102 | -0.025 | monotone (p_below_theory) | pass |
+| `pipe_poiseuille_3d` | nested | u_centreline | 0.02 | 0.0201322, 0.020043, 0.0200118 | 0.0199953 | 1.54 | 0.103 | -0.023 | monotone (p_below_theory) | pass |
+| `pipe_poiseuille_3d` | remeshed | wall_force | 0.000125664 | 0.000129555, 0.000126769, 0.000125961 | 0.000125637 | 1.81 | 0.321 | -0.021 | monotone | pass |
+| `pipe_poiseuille_3d` | nested | wall_force | 0.000125664 | 0.000129555, 0.000126787, 0.000125971 | 0.000125637 | 1.79 | 0.332 | -0.021 | monotone | pass |
 | `pipe_poiseuille_3d` | remeshed | flow_rate_outlet | 7.85398e-07 | 7.99922e-07, 7.89261e-07, 7.86379e-07 | 7.85329e-07 | 1.91 | 0.167 | -0.009 | monotone | pass |
 | `pipe_poiseuille_3d` | nested | flow_rate_outlet | 7.85398e-07 | 7.99922e-07, 7.8927e-07, 7.86382e-07 | 7.85327e-07 | 1.91 | 0.168 | -0.009 | monotone | pass |
 
@@ -163,7 +177,8 @@ All 32 QoI judgements pass (16 QoIs x 2 sequences). Cavity tolerances are in bra
 Extra 4-level studies:
 - `cylinder_channel_dfg_2d1` nested, up to 189 056 cells (18 min): drag 0.0111245, 0.0111399,
   0.0111425, 0.0111428. That is p = 3.4, extrapolated 0.0111428 (c_D = 5.5714), GCI 3e-6.
-  Lift 2.12844e-5 (+0.22 %) on the finest mesh.
+  Lift 2.12844e-5 (+0.22 %) on the finest mesh. This study used the old force evaluation (wall
+  distance |Cf - C|), which read the drag 0.15 % low; the 3-level rows above use the corrected one.
 - `lid_driven_cavity_re100` remeshed, up to 256 x 256 (9 min): extrapolated u_vcl_min -0.21394,
   v_hcl_max 0.17954, u_centre -0.20914. These agree with the 3-level values to 1e-4.
 
@@ -192,24 +207,27 @@ meshing takes under 1 s.
 - **Cavity:** order 1.8-2.4 and GCI <= 0.25 %. The converged values differ from Ghia's table by
   1.4-3.5 % (see Sources). That is why the tolerances are 3-5 % rather than 1 %. Coarse grids sit
   closer to Ghia: 32 x 32 is within 0.1-0.9 %.
-- **DFG 2D-1:** the coarsest mesh (2954 cells) is already close: drag -0.31 %, lift -1.15 %,
+- **DFG 2D-1:** the coarsest mesh (2954 cells) is already close: drag -0.09 %, lift -0.89 %,
   dp -1.17 %.
-  - **Drag** is within 0.31 % of the reference on every mesh, but it converges to 0.0111428
-    (c_D = 5.5714): 0.146 % low, outside the GCI band.
-  - Ruled out as causes: the outlet (doubling the channel length changes c_D by -0.007 %) and the
-    block layout (an O-grid box 0.24 wide instead of 0.2 moves the limit by about +0.02 %). The
-    schemes are consistent: corrected Laplacian, linearUpwind, SIMPLEC.
-  - The offset is inside the paper's interval [5.57, 5.59] and well inside the 1 % tolerance. Its
-    origin (a consistency detail of the finite-volume wall-stress / force evaluation?) is open.
+  - **Drag** converges to 0.011160-0.011161 (c_D = 5.580): +0.01-0.02 % of the reference.
+  - Before 2026-10-31 it converged to 0.0111428 (c_D = 5.5714), 0.146 % low and outside the GCI
+    band. The force evaluation divided the wall velocity difference by |Cf - C| instead of the
+    wall-normal distance that `fvPatch::delta` and the solver's own wall flux use. The cells at the
+    cylinder are slightly non-orthogonal, so the viscous drag read low at every h.
+  - The outlet (doubling the channel length changes c_D by -0.007 %) and the block layout (an O-grid
+    box 0.24 wide instead of 0.2 moves the limit by about +0.02 %) do not matter.
   - The pressure and viscous parts converge from opposite sides: c_D,p = 3.578 -> 3.602 and
     c_D,visc = 1.985 -> 1.966 on the first two meshes. That is why the remeshed sequence shows
     p = 1.26 and the nested one 2.58.
-  - **Lift** converges fast (p 4-5, flagged `p_above_theory`) to +0.2-0.4 % of the reference. That
-    is well inside its 5 % tolerance and the paper's +-3 % interval.
+  - **Lift** converges fast (p 4.6-6, flagged `p_above_theory`) to +0.5-0.6 % of the reference
+    (+0.4 % with the old wall distance). That is well inside its 5 % tolerance and the paper's +-3 %
+    interval.
   - **dp** at the two cylinder surface points converges at order 1.9 to -0.04 % of the reference.
-- **Pipe (3D):** the flow rate is order 2 and dp is order 1.7-1.8. u_centreline (1.3-1.5) and the
-  wall force (1.2-1.8) converge more slowly on the curved wall.
-  - Finest-mesh errors are <= 1.1 % (dp; the others <= 0.6 %). Extrapolated errors are <= 0.5 %.
+- **Pipe (3D):** dp and the flow rate are order 2 (1.97-1.98 and 1.91) and the wall force 1.8. Before
+  the 3D schemes and the wall-normal force distance, dp was order 1.7-1.8 and the wall force 1.2-1.8.
+  u_centreline (1.5) converges more slowly on the curved wall.
+  - Finest-mesh errors are <= 0.42 % (dp; the others <= 0.24 %). Extrapolated errors are <= 0.03 %.
+  - On the unstructured tets an agent makes, see `docs/solver_openfoam.md`, "3D meshes".
   - The h0 section is a 16-gon, 2.5 % short in area, so the coarse pressure gradient is 7 % high.
   - After the fixed-velocity inlet with zero-gradient pressure, the solution has an odd-even
     pressure wiggle over the first ~3 (long, 5:1) cells. The probes therefore sit at x = L/2 and
