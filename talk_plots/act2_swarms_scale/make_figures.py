@@ -33,7 +33,7 @@ RUNS = ROOT / "ace_runs"
 TASKS = ["abc_00000065_bc0", "abc_00000003_bc7"]          # left panel = the task with room to learn
 TLAB = {"abc_00000065_bc0": "abc_00000065_bc0", "abc_00000003_bc7": "abc_00000003_bc7"}
 COL = {1: "#2a78d6", 2: "#e0882a", 4: "#1e9e6a", 8: "#c23d6e", 16: "#5b3fa0"}
-MARK = {1: "D", 2: "s", 4: "^", 8: "o"}                  # secondary encoding (green/pink are close for deutans)
+MARK = {1: "D", 2: "s", 4: "^", 8: "o", 16: "v"}                 # secondary encoding (green/pink are close for deutans)
 AUTO_COL = "#888888"
 AUTO_SCORE = 0.25
 DIV = {1: "div_s1", 2: "div_s2", 4: "div_s4", 8: "div_s8"}
@@ -346,39 +346,42 @@ by Jaime from `ace_runs/div_s16`, which stays on his laptop). Plotted values: `d
 
 
 # --------------------------------------- fig 3: talk version of fig 2, abc_00000065_bc0 only, extrapolated
-SAT_NOTE = (" The residuals run -, +, +, -, i.e. the data bend below a log curve; a saturating fit"
-            " (c - d n^-alpha, 3 parameters) fits them as well and levels off near 3.2x. The log fit is the optimistic reading.")
+BC0 = "abc_00000065_bc0"
+SIZES = (2, 4, 8, 16)
 
 
-def fig3(vals, stat="mean"):
-    """stat="mean": the fig2 bars (mean over gens 1-7 of the per-gen best); stat="max": the best score any agent
-    reached in any generation."""
-    task = "abc_00000065_bc0"
-    sizes = (2, 4, 8, 16)
-    x = np.log2(sizes)
-    if stat == "max":
-        s16 = json.load(open(S16))["div_s16"][task]["best"]
-        raw = [max(p["best"] for p in DATA[DIV[n]]["tasks"][task]) for n in sizes[:3]] + [max(s16)]
-    else:
-        raw = [vals[("div", task, n)] for n in sizes]
-    y = np.array(raw) / AUTO_SCORE                                             # automesher = 1
-    stem = "fig3_scaling_bc0" + ("_max" if stat == "max" else "")
-    b, a = np.polyfit(x, y, 1)                                                 # y = a + b log2(n)
-    resid = y - (a + b * x)
-    xp = np.array([5.0, 6.0])                                                  # 32 and 64 agents
-    yp = a + b * xp
+def bc0_best_per_gen(n):
+    """Best agent's base score per generation on bc0, divided by the automesher's (automesher = 1)."""
+    if n == 16:
+        return np.array(json.load(open(S16))["div_s16"][BC0]["best"]) / AUTO_SCORE
+    return np.array([p["best"] for p in DATA[DIV[n]]["tasks"][BC0]]) / AUTO_SCORE
+
+
+def fig3(stat):
+    """stat="max": the best score any agent reached in gens 0-7; stat="avg": the fig2 bar (mean over gens 1-7 of the
+    per-generation best). Projection: from the 16-agent bar, y16 + f(n) - f(16), where f = c - d n^-alpha is a
+    saturating fit to the four bars (so it starts at the measured value and flattens)."""
+    from scipy.optimize import curve_fit
+    sat = lambda n, c, d, a: c - d * n ** (-a)
+    y = np.array([bc0_best_per_gen(n).max() if stat == "max" else bc0_best_per_gen(n)[1:].mean() for n in SIZES])
+    (c, d, a), _ = curve_fit(sat, np.array(SIZES, float), y, p0=[3.5, 3, 0.5], bounds=([0, 0, 0.05], [10, 20, 3]))
+    resid = y - sat(np.array(SIZES, float), c, d, a)
+    stem = f"fig3_scaling_bc0_{stat}"
+    xp = np.array([5.0, 6.0])                                                  # log2 of 32 and 64 agents
+    proj = lambda n: y[-1] + sat(n, c, d, a) - sat(16.0, c, d, a)
+    yp = proj(2 ** xp)
     fig, ax = plt.subplots(figsize=(12, 6.75))
     fig.subplots_adjust(left=0.09, right=0.97, top=0.87, bottom=0.13)
     ax.axvspan(4.5, 6.5, color="#f2f2f4", zorder=0, lw=0)
     ax.text(5.5, 4.25, "projected", ha="center", va="top", fontsize=13, color="#666666")
-    for xi, yi, n in zip(x, y, sizes):
+    for xi, yi, n in zip(np.log2(SIZES), y, SIZES):
         ax.bar(xi, yi, width=0.7, color=COL[n], edgecolor="white", lw=0, zorder=2)
-        ax.text(xi, yi / 2, f"{yi:.2f}x", ha="center", va="center", fontsize=17, color="white", fontweight="bold")
-    xf = np.linspace(1, 6, 100)
-    ax.plot(xf, a + b * xf, color="#333333", ls="--", lw=2, zorder=3)
+        ax.text(xi, yi - 0.15, f"{yi:.2f}x", ha="center", va="top", fontsize=17, color="white", fontweight="bold")
+    xf = np.linspace(4, 6, 100)
+    ax.plot(xf, proj(2 ** xf), color="#333333", ls="--", lw=2, zorder=3)
     ax.plot(xp, yp, ls="none", marker="o", ms=11, mfc="white", mec="#333333", mew=2, zorder=4)
     for xi, yi in zip(xp, yp):
-        ax.text(xi, yi + 0.12, f"~{yi:.1f}x", ha="center", va="bottom", fontsize=14, color="#333333")
+        ax.text(xi, yi + 0.12, f"~{yi:.2f}x", ha="center", va="bottom", fontsize=15, color="#333333")
     ax.axhline(1, color=AUTO_COL, ls="--", lw=1.8, zorder=1)
     ax.text(4.6, 1.03, "automesher = 1", color="#666666", fontsize=13, va="bottom", ha="left")
     ax.set_xticks(range(1, 7))
@@ -394,24 +397,88 @@ def fig3(vals, stat="mean"):
     md = f"""
 # {stem}: 16 > 8 > 4 > 2, extrapolated
 
-**Caption.** Talk version of fig2 for {task} only, afternoon setup (diversity on), scores divided by the
+**Caption.** Talk version of fig2 for {BC0} only, afternoon setup (diversity on), scores divided by the
 automesher's 0.25 so that the automesher is 1. Bars: {what}.
-Dashed: least-squares fit y = {a:.3f} + {b:.3f} log2(n) to the four measured bars, extended to 32 and 64 agents
-(projected {yp[0]:.2f}x and {yp[1]:.2f}x; no swarm of that size was run).
+Dashed: projection from the 16-agent bar, y16 + f(n) - f(16), with f = c - d n^-alpha (c = {c:.2f}, d = {d:.2f},
+alpha = {a:.2f}) a least-squares saturating fit to the four bars: 32 agents {yp[0]:.2f}x, 64 agents {yp[1]:.2f}x
+(no swarm of that size was run).
 
 **Key numbers.** 2 / 4 / 8 / 16 agents: {' / '.join(f'{v:.2f}x' for v in y)} the automesher.
-Fit residuals: {' / '.join(f'{r:+.2f}' for r in resid)}.
+Fit residuals: {' / '.join(f'{r:+.2f}' for r in resid)} (the projection is anchored on the measured 16-agent value).
 
-**Data.** As fig2 (16 agents from `results/diversity_s16_2026-11-01/scores.json`). Plotted values: `data.json` -> `fig3`.
+**Data.** As fig2 (16 agents from `results/diversity_s16_2026-11-01/scores.json`). Plotted values: `data.json` -> `{stem}`.
 
 **Caveats.**
-- The extrapolation is a fit to 4 points, one run each (noise 0.03-0.1 in score, 0.1-0.4 on this axis).
-- Measured gain per doubling: +{y[1]-y[0]:.2f}, +{y[2]-y[1]:.2f}, +{y[3]-y[2]:.2f}.{SAT_NOTE if stat == "mean" else ""}
+- A 3-parameter fit to 4 points, one run each (noise 0.03-0.1 in score, 0.1-0.4 on this axis); the plateau c is
+  not pinned down by the data.
 - The 16-agent run's references were rebuilt (see fig2), and team size n means n/2 agents per task, so a bigger
   team also takes the best of more meshes.
 """
-    DATA[stem] = {"sizes": list(sizes), "rel_to_auto": [float(v) for v in y], "fit_a": float(a), "fit_b": float(b),
-                    "projected": {"32": float(yp[0]), "64": float(yp[1])}}
+    DATA[stem] = {"sizes": list(SIZES), "rel_to_auto": [float(v) for v in y],
+                  "fit": {"c": float(c), "d": float(d), "alpha": float(a)},
+                  "projected": {"32": float(yp[0]), "64": float(yp[1])}}
+    save(fig, stem, md)
+
+
+# ------------------------------------------- fig 7: bc0 training curves per team size, extended in generations
+NOTE7 = {"max": "- 2 agents (1 per task): the running max is flat at 2.40x from gen 2; 8 agents: flat at 3.01x from gen 5.",
+         "avg": "- 2 agents (1 per task) stall: their per-generation best falls to 1.32x in gen 4, so their projection points down.\n"
+                "- The 4-agent projection ends above the 8-agent one, from the 4-agent run's jump in gens 6-7."}
+
+
+def fig7(stat):
+    """stat="max": best score so far (running max of the per-generation best; ends on the fig3 max bars);
+    stat="avg": the best agent of each generation (its gens 1-7 mean is the fig3 avg bar).
+    Projection: from the gen-7 value along a fit y = a + b (g + 1)^-1/2 to gens 0-7 (a curve that flattens), to gen 15.
+    The exponent 1/2 is a choice: a free shared exponent runs to ~0, i.e. 8 generations do not pin down a plateau."""
+    G, GP = np.arange(8), np.arange(16)
+    stem = f"fig7_training_bc0_{stat}"
+    fig, ax = plt.subplots(figsize=(12, 6.75))
+    fig.subplots_adjust(left=0.09, right=0.84, top=0.87, bottom=0.13)
+    ax.axvspan(7.5, 15.5, color="#f2f2f4", zorder=0, lw=0)
+    ax.text(11.5, 3.75, "projected", ha="center", va="top", fontsize=13, color="#666666")
+    labels, out = [], {}
+    for n in SIZES:
+        y = bc0_best_per_gen(n)
+        if stat == "max":
+            y = np.maximum.accumulate(y)
+        b, a = np.polyfit((G + 1) ** -0.5, y, 1)
+        gf = np.linspace(7, 15, 60)
+        fit = y[-1] + b * ((gf + 1) ** -0.5 - 8 ** -0.5)          # from the gen-7 value, flattening
+        ax.plot(gf, fit, color=COL[n], ls="--", lw=2.2, zorder=2)
+        ax.plot(G, y, color=COL[n], lw=2.8, marker=MARK[n], ms=8, zorder=3 + n / 100)
+        labels.append((15, fit[-1], f"{n} agents", COL[n]))
+        out[n] = {"measured": [float(v) for v in y], "fit_a": float(a), "fit_b": float(b), "gen15": float(fit[-1])}
+    end_labels(ax, labels, 0.15)
+    ax.axhline(1, color=AUTO_COL, ls="--", lw=1.8, zorder=1)
+    ax.text(0.1, 1.03, "automesher = 1", color="#666666", fontsize=13, va="bottom", ha="left")
+    ax.set_xlim(-0.5, 15.5)
+    ax.set_ylim(0.9, 3.8)
+    ax.set_xticks(range(0, 16, 2))
+    ax.set_xlabel("generation")
+    ax.set_ylabel("score relative to the automesher")
+    ax.grid(axis="x", visible=False)
+    fig.text(0.015, 0.975, "Swarms keep improving with training", ha="left", va="top", fontsize=21, fontweight="bold")
+    what = ("the best score reached so far (running max of the best agent per generation); gen 7 equals the fig3 max bar"
+            if stat == "max" else "the best agent of each generation; its gens 1-7 mean equals the fig3 avg bar")
+    rows = "\n".join(f"| {n} | {' / '.join(f'{v:.2f}' for v in out[n]['measured'])} | {out[n]['gen15']:.2f} |"
+                     for n in SIZES)
+    md = f"""
+# {stem}: training curves on {BC0}, extended to gen 15
+
+**Caption.** Afternoon setup, automesher = 1. Solid: {what}. Dashed: continues from each team's gen-7 value along a fit
+y = a + b (g + 1)^-1/2 to its gens 0-7, a curve that flattens, out to gen 15 (no run went past gen 7).
+
+| agents | gens 0-7 | projected gen 15 |
+|---|---|---|
+{rows}
+
+**Caveats.**
+- One run per team size; the projection is a 2-parameter fit to 8 points, and its exponent 1/2 is chosen, not
+  fitted: with a free exponent shared by the four teams the fit runs to ~0 (no plateau visible in 8 generations).
+{NOTE7[stat]}
+"""
+    DATA[stem] = out
     save(fig, stem, md)
 
 
@@ -624,8 +691,9 @@ if __name__ == "__main__":
     fig1(False)
     fig1(True)
     order_ok, vals2 = fig2()
-    fig3(vals2)
-    fig3(vals2, "max")
+    for stat in ("max", "avg"):
+        fig3(stat)
+        fig7(stat)
     fig4()
     fig5()
     fig6()
