@@ -2,7 +2,7 @@
 """Act 3: where and when the part is predicted to crack, against the real test's first crack.
 
 A criterion-based crack ONSET prediction (no fracture model, no crack growth) on the CalculiX ramps of the story
-cases of scripts/nl_story_video.py (before / stage2 / stage3 / after). Per increment of each case's series:
+cases of scripts/nl_story_video.py (first / before / stage2 / stage3 / after). Per increment of each case's series:
 max nodal PEEQ and max principal stress s1; the first crosshead travel (interpolated within the step) at which
   (a) PEEQ >= failure_peeq    (plastic strain at break of the resin's dogbone test)
   (b) s1   >= uts_eng         (the dogbone's tensile strength)
@@ -11,7 +11,8 @@ ROBUST_R_MM: one spiky node at a sharp corner does not count). The real first cr
 first load drop of the Instron curve.
 
     python scripts/nl_break.py analyze --run ~/feagent/ace_runs/nl_ft    # break.json, table (md/png/pdf)
-    python scripts/nl_break.py videos  --run ~/feagent/ace_runs/nl_ft    # before_after_break.mp4, after_break.mp4
+    python scripts/nl_break.py videos  --run ~/feagent/ace_runs/nl_ft    # before_after_break.mp4, after_break.mp4,
+                                                     # three_way_break.mp4, first_vs_after_break.mp4 (--only NAME ...)
     python scripts/nl_break.py still   --run ~/feagent/ace_runs/nl_ft    # after_crack_closeup.png/.pdf
     python scripts/nl_break.py page                                      # index.html
     python scripts/nl_break.py all     --run ~/feagent/ace_runs/nl_ft
@@ -41,7 +42,7 @@ ROBUST_K, ROBUST_R_MM = 3, 3.0      # robust value: reached by >= 3 nodes within
 FACE_TOL_MM = 2.0                   # faces within 2 mm of a site (as ace.nonlinear._hotspots)
 CRACK = "#d62728"                   # predicted crack marker
 REPORT_PEAK = (2.56, 4800.0)        # the machine report's peak (mm, N); the digitized curve peaks a bit earlier
-ORDER = ("before", "stage2", "stage3", "after")
+ORDER = ("first", "before", "stage2", "stage3", "after")
 CRIT = {"peeq": "PEEQ >= failure_peeq", "s1": "s1 >= UTS"}
 # what the bare face tags are (CAD faces of abc_00000065; teammates' notes in cload_compression.json)
 # (checked against the faces' extents: f8 is the right prong's outer side at x = 23.7 mm, where the hex nut pocket
@@ -343,7 +344,7 @@ def table(res: dict):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import textwrap
-    fig, ax = plt.subplots(figsize=(17, 4.6))
+    fig, ax = plt.subplots(figsize=(17, 5.4))
     ax.set_axis_off()
     head = ["case"] + [textwrap.fill(h, 16) for _, h in cols] + ["site matches the real\ncrack (observed)?"]
     body = [[textwrap.fill(r[0], 34)] + [textwrap.fill(x, 19) for x in r[1:-1]] + [textwrap.fill(r[-1], 30)]
@@ -449,7 +450,8 @@ class Marks:
                                   bbox=box("black"))
         b, gb = ax.get_position(), graph.ax.get_position()
         self.one_line = gb.x0 > b.x1 - 0.01          # graph beside the part (single video): status above it
-        kw = dict(fontsize=15, weight="bold", ha="left", va="top", zorder=12, linespacing=1.3)
+        self.narrow = b.width < 0.4                   # three columns: smaller status in three lines beside the part
+        kw = dict(fontsize=12 if self.narrow else 15, weight="bold", ha="left", va="top", zorder=12, linespacing=1.3)
         if self.one_line:
             self.status = fig.text(gb.x0 + gb.width / 2, gb.y1 + 0.03, "", fontsize=16, weight="bold",
                                    color=CRACK, ha="center", va="bottom", zorder=12)
@@ -476,6 +478,16 @@ class Marks:
         pts, _, _ = self.c.at(x, self.mag)
         return project(self.view, pts[j])
 
+    def _keep_inside(self, ann):
+        """Shift a ring's label left when its box would run past the right edge of the part panel (three
+        columns: it would cross the divider)."""
+        fig = self.ax.figure
+        r = fig.canvas.get_renderer()
+        ann.set_position((26, 26))
+        over = ann.get_window_extent(r).x1 + 8 - self.ax.get_window_extent(r).x1       # + 8 px: the box's pad
+        if over > 0:
+            ann.set_position((26 - over * 72 / fig.dpi, 26))
+
     def update(self, x: float, phase: str):
         d, p, real = self.d, self.p, self.real
         on = x >= self.x_on - 1e-9
@@ -490,6 +502,7 @@ class Marks:
             self.x.set_data(([col], [row]) if d["predicted"] else ([], []))
             self.label.xy = (col, row)
             self.label.set_text(self.lab if vis else f"{self.lab}\n(on the hidden side)")
+            self._keep_inside(self.label)
         else:
             self.x.set_data([], [])
         self.ring.set_visible(red_ring)
@@ -500,6 +513,7 @@ class Marks:
             self.pring.set_alpha(1.0 if vis else 0.45)
             self.plabel.xy = (col, row)
             self.plabel.set_text("potential crack" if vis else "potential crack\n(on the hidden side)")
+            self._keep_inside(self.plabel)
         self.pring.set_visible(amber_ring)
         self.plabel.set_visible(amber_ring)
         if oon:
@@ -518,20 +532,21 @@ class Marks:
             self.gpl.xy = (p["travel_mm"], p["force_N"])
             self.gpl.set_visible(pon)
         # status text
+        sep = "\n" if self.narrow else " "
         if d["predicted"]:
             early = real["travel_mm"] - d["travel_mm"]
             when = f"{early:.2f} mm before the real crack" if early > 0.02 else "at the real crack"
             t = (f"predicted crack at {d['travel_mm']:.2f} mm, {d['force_N']:,.0f} N" if self.one_line else
-                 f"predicted crack\nat {d['travel_mm']:.2f} mm, {d['force_N']:,.0f} N")
+                 f"predicted crack\nat {d['travel_mm']:.2f} mm,{sep}{d['force_N']:,.0f} N")
             if SHOW_REAL:
                 t += f" ({when})" if self.one_line else f"\n({early:.2f} mm early)"
         else:
             t = (f"no break predicted (up to {d['end_travel_mm']:.2f} mm)" if self.one_line else
-                 f"no break predicted\n(up to {d['end_travel_mm']:.2f} mm)")
+                 f"no break{sep}predicted\n(up to {d['end_travel_mm']:.2f} mm)")
         self.status.set_text(t if on else "")
         if p["predicted"]:
             pt = (f"potential crack (85 % of strength)\nat {p['travel_mm']:.2f} mm, {p['force_N']:,.0f} N" if self.one_line
-                  else f"potential crack\nat {p['travel_mm']:.2f} mm, {p['force_N']:,.0f} N")
+                  else f"potential crack\nat {p['travel_mm']:.2f} mm,{sep}{p['force_N']:,.0f} N")
             self.pstatus.set_text(pt if pon else "")
         if self.one_line:
             ot = ("same spot as the real crack\n(observed: lower inner bore)" if self.match else
@@ -577,9 +592,10 @@ def footnote(fig, res: dict, single: bool):
         fig.text(0.995, 0.43, textwrap.fill(f"{txt}  {POT_NOTE}  {OBS_NOTE}", 38), ha="right", va="bottom", **g)
 
 
-def videos(run_dir: Path, mag: float = 1.0) -> dict:
-    """before_after_break.mp4 and after_break.mp4: nl_story_video's before_after / after_only videos with the
-    crack markers, written to OUT (its own outputs are not touched)."""
+def videos(run_dir: Path, mag: float = 1.0, only: list[str] | None = None) -> dict:
+    """before_after_break.mp4, after_break.mp4, three_way_break.mp4 and first_vs_after_break.mp4: nl_story_video's
+    before_after / after_only / three_way / first_vs_after videos with the crack markers, written to OUT (its own
+    outputs are not touched). only: just these (names without '_break' or with it)."""
     res = json.loads((OUT / "break.json").read_text())
     cases, _ = load(run_dir)
     real, uts = res["real_crack"], res["material"]["uts_MPa"]
@@ -604,11 +620,18 @@ def videos(run_dir: Path, mag: float = 1.0) -> dict:
     sv.run_video, sv.OUT = wrapped, OUT
     try:
         fmax = sv.fmax_of(list(cases.values()), sv.cases_meas())
-        info = {"before_after_break": sv.video_before_after(cases, mag, zoom=1.45),
-                "after_break": sv.video_single(cases["after"], "after_break", AFTER_HEAD, mag, 1.5, fmax)}
+        jobs = {"before_after_break": lambda: sv.video_before_after(cases, mag, zoom=1.45),
+                "after_break": lambda: sv.video_single(cases["after"], "after_break", AFTER_HEAD, mag, 1.5, fmax),
+                "three_way_break": lambda: sv.video_three_way(cases, mag, zoom=1.35),         # zooms as nl_story_video
+                "first_vs_after_break": lambda: sv.video_first_vs_after(cases, mag, zoom=1.3)}
+        f = OUT / "videos.json"
+        info = json.loads(f.read_text()) if f.exists() else {}
+        for name, job in jobs.items():
+            if not only or name in only or name.removesuffix("_break") in only:
+                info[name] = job()
     finally:
         sv.run_video, sv.OUT = orig_run, orig_out
-    (OUT / "videos.json").write_text(json.dumps(info, indent=1))
+    f.write_text(json.dumps(info, indent=1))
     return info
 
 
@@ -850,6 +873,14 @@ apply; and PEEQ at a sharp corner keeps growing as the mesh is refined.</li>
 {vid("after_break", "The most accurate mesh: it follows the test to 2 % and stays below the full strength everywhere; it "
      "reaches the potential-crack tier at the lower inner bore just as the real part cracks there. <small>" + potnote
      + "</small>")}
+<h2>First simulation, before and after post-training</h2>
+{vid("three_way_break", "Red ring and X: where and when the largest tension reaches the resin's strength (predicted crack); "
+     "amber ring: where it first reaches 85 % of it (potential crack).<br>The teammates' first nonlinear simulation | "
+     "before | after post-training, true scale; part colour: plastic strain PEEQ.")}
+<h2>First simulation vs after post-training</h2>
+{vid("first_vs_after_break", "Red ring and X: where and when the largest tension reaches the resin's strength (predicted "
+     "crack); amber ring: where it first reaches 85 % of it (potential crack).<br>The teammates' first nonlinear "
+     "simulation (frictionless platens) vs after post-training, true scale; part colour: plastic strain PEEQ.")}
 <h2>Close-up at the real first crack (after post-training)</h2>
 <img src="after_crack_closeup.png" alt="after post-training, largest tension at the real first crack: the lower inner bore (real crack site) and the nut pocket">
 <p class="cap">Largest tension s1 at {real["travel_mm"]:.2f} mm. A: the most stressed point,
@@ -898,12 +929,13 @@ def main():
     ap.add_argument("cmd", choices=["analyze", "videos", "still", "page", "all"])
     ap.add_argument("--run", type=Path, default=Path.home() / "feagent" / "ace_runs" / "nl_ft")
     ap.add_argument("--mag", type=float, default=1.0)
+    ap.add_argument("--only", nargs="*", help="videos: just these (before_after after three_way first_vs_after)")
     a = ap.parse_args()
     run = a.run.expanduser()
     if a.cmd in ("analyze", "all"):
         analyze(run)
     if a.cmd in ("videos", "all"):
-        videos(run, a.mag)
+        videos(run, a.mag, a.only)
     if a.cmd in ("still", "all"):
         still(run)
     if a.cmd in ("page", "all"):
