@@ -277,13 +277,17 @@ Results on abc_00000065 (Alpha Fast dogbone material; the run table is in `exper
     penalty, and node-to-surface diverges. It was not used for the study; mu stays an uncertainty bracketed by
     the two limits.
 * **Imperfection.** A buckling-mode imperfection of 0.1 mm (sliding mode 1: about 1 % of the 10.8 mm arm and
-  1.2 % of the 8.1 mm neck) on the neck mesh makes the neck the first failure, with no tip cell before it. It
+  1.2 % of the 8.1 mm neck) on the neck mesh makes the neck the first failure: 3 of the 4 cells of the first
+  failed increment, at 4.49 mm, are in the neck. It
   also breaks the symmetry, so one neck cracks ahead of the other. Without it (harness_auto, bonded,
   tension-only), one shear-loaded nut-pocket cell fails first at 4.53 mm and both necks follow within 0.1 mm.
 * **Snap load.** The press was force-controlled, so the real break is dynamic at the peak force. The runs are
   displacement-controlled to follow the crack, and their **peak force is the predicted snap load: 5.7 kN** on
   the neck mesh with the imperfection (5.9 kN on harness_auto). The PEEQ-everywhere model gives 3.2 kN (tips),
   and frictionless platens with tension-only erosion give 3.0 kN (tips).
+* After the snap: the tensile crack crosses the outer half of both necks at a fixed travel. The bore-side half
+  is in compression (triaxiality -0.5, crushed to PEEQ 0.2-0.3) and acts as a hinge, which tension-only erosion
+  never breaks. That run was continued with `--compression-factor 5` so the hinge can go.
 * Limits: no self-contact (crushed pockets and crack faces can interpenetrate). Only one tensile data point is
   used (failure PEEQ 0.043 at triaxiality 1/3), with no triaxiality dependence above 0. With no compressive
   erosion, the bending hinge left after the tensile crack keeps carrying load, so the post-peak tail is long.
