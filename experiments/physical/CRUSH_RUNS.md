@@ -309,11 +309,15 @@ at all. The 58k neck-refined mesh (1.6 mm at the neck) gives 5745 N, -1.4 % agai
 
 Videos are in the scratchpad of the session that ran the study, under `study/videos/crush_n40k/`; not committed.
 
-- Per system, `<system>_abc_00000065_crush.mp4`: the original 3-panel look, 16 s.
+- Per system, `<system>_abc_00000065_crush.mp4`: the original 3-panel look, 25-35 s (one frame per increment,
+  at least 16 s).
 - Per system, `<system>_abc_00000065_crush_rtx.mp4`: Omniverse RTX, rendered on the Spark in `feagent-crush`
-  (24 GB cap), one at a time, about 29 s.
+  (24 GB cap), one at a time, 25-35 s, 11-16 min each. Copies stay on the Spark in
+  `~/feagent-viz/videos/n40k/`. Their caption bar is assemble_crush.py's fixed text, which still says "a cell
+  breaks at PEEQ 0.043"; the erosion rule is the tension-only one above.
 - Per system, `closeup/<system>_neck_closeup.mp4`: the neck crack forming, 8 s (`neck_closeup.py`).
-- `all_systems_abc_00000065_crush{,_rtx}.mp4`: 3x2 grids of the six study systems (`crush_grid.sh`).
+- `all_systems_abc_00000065_crush{,_rtx}.mp4`: 3x2 grids of the six study systems, 36 s
+  (`crush_grid.sh ... 36`; shorter tiles hold their last frame).
 - `neck_closeups_7_systems.mp4`: the 7 close-ups in a row, each after a title card.
 - harness_neck is its own (7th) video, not in the grids.
 
