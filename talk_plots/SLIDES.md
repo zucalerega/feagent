@@ -5,6 +5,8 @@ and in each figure's `.md`.
 
 ## Act 1: agentic meshing works, and training works
 
+**KEY ACT 1 EXAMPLE (chosen by the user):** `equal_budget/fig_cook_equal_stress.png` (solved von Mises stress, Cook's membrane, equal DOF budget): automesher refined to 734 DOFs, 3.63 % error | early agent 898 DOFs, 2.90 % | trained agent (deep1 g10 a7) 710 DOFs, 1.07 % | true solution. The trained agent wins on both accuracy and DOFs: 3.4x more accurate than the automesher at the same budget. Companion slide: `equal_budget/fig_cook_same_budget.png` (error maps, "Same budget, 3.4x more accurate").
+
 1. (title / setup, no figure): A swarm of LLM agents meshes FE problems; a fixed solver scores each mesh against the gmsh automesher, and a teacher plus reflections update a shared playbook every generation.
 2. `act1_agentic_works/fig4_mesh_before_after.png`: Same part, same solver: after training, the agent grades the mesh into the corners (5.09% -> 1.07% error).
 3. `act1_agentic_works/fig1_learning_curves.png`: Training works: on Cook's membrane the mean agent climbs 0.318 -> 1.095 over 10 generations, 4.4x the automesher's score.
@@ -24,14 +26,18 @@ and in each figure's `.md`.
 
 ## Act 3: the harness learns from real lab data
 
+Say "before post-training" / "after post-training" (the solvers and the swarm were already capable) and "X % off
+the real test"; do not mention the scoring checkpoints.
+
 14. `act3_real_data/fig1_measured_curve.png`: We 3D-printed the part and crushed it on an Instron: seating, a linear climb, yielding to 4.8 kN, then cracking.
-15. `act3_real_data/fig2_raw_solver_vs_test.png`: The raw simulation misses reality: frictionless platens give out at 3.0 kN, against 4.74 kN measured at 2.5 mm.
+15. `act3_real_data/fig2_raw_solver_vs_test.png`: Before post-training, the simulation is 33% off the real test: it tops out at 3.3 kN, the part held 4.7 kN.
 16. `act3_real_data/fig6_platen_renders.png`: Why: without platen friction the prongs splay; with sticking platens the part carries the load.
-17. `act3_real_data/fig3_setup_ladder.png`: Learning the setup from the experiment cuts the error from 33% to 2.0% on the same mesh; a fine mesh then reaches 1.1%.
-18. `act3_real_data/fig4_error_vs_nodes.png`: With the setup frozen, the mesh is what's left: the automesher is 16.6% off the real test, and a swarm mesh is already at 4.5%.
-19. `act3_real_data/fig5_curves_vs_test.png`: The automesher's mesh is too stiff, 14-19% above the test at every checkpoint.
-20. `act3_real_data/fig7_finetune_progress_STUB.png`: PENDING: fine-tuning the swarm against the real test (replace with `fig7_finetune_progress.png` once the run exists).
+17. `act3_real_data/fig3_setup_ladder.png`: 33% -> 7.8% with the learned test conditions on the default mesh -> 4.6% with the pre-trained swarm mesh -> 2.0% with the post-trained mesh.
+18. `act3_real_data/fig7_post_training_progress.png`: Post-training on the real test: the best agent goes from 2.7x to 3.6x the automesher's score, the average agent from 2.3x to 3.5x, mostly by reaching about 2% with fewer nodes.
+19. `act3_real_data/fig4_error_vs_nodes.png`: Every post-training mesh vs the references: the most accurate is 2.0% off at 8,753 nodes, the best-scoring 2.3% at 5,612; the automesher is 7.8% off.
+20. `act3_real_data/fig5_curves_vs_test.png`: The post-trained mesh tracks the real curve (2.0% off); the automesher's mesh runs 6-11% too stiff.
+21. `act3_real_data/videos.html` and `act3_real_data/break/index.html` (most accurate post-trained mesh): the real part cracked at the lower inner bore, where the after-post-training simulation's tension peaks (43 MPa, 85% of the dogbone strength); the before simulation predicted a prong-top crack 1.6 kN early.
 
 ## Close
 
-21. (no figure, or reuse fig1 of each act side by side): Agents learn to mesh, swarms learn better and scale with compute, and the loop can be closed on real experiments, which is what matters in the end.
+22. (no figure, or reuse fig1 of each act side by side): Agents learn to mesh, swarms learn better and scale with compute, and the loop can be closed on real experiments, which is what matters in the end.

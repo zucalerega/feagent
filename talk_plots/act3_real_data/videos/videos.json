@@ -1,0 +1,107 @@
+{
+ "before_after": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_after.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.695576,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_after_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_after_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_after_end.png"
+  }
+ },
+ "four_stages": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/four_stages.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.791931,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/four_stages_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/four_stages_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/four_stages_end.png"
+  }
+ },
+ "before_only": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_only.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.562947,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_only_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_only_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/before_only_end.png"
+  }
+ },
+ "after_only": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/after_only.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.607529,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/after_only_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/after_only_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/after_only_end.png"
+  }
+ },
+ "cases": {
+  "before": {
+   "nodes": 2937,
+   "mean_rel_err": 0.3265400339731066,
+   "rel_err": [
+    0.83746,
+    0.18559,
+    0.07951,
+    0.22543,
+    0.30471
+   ],
+   "label": "what we started with"
+  },
+  "stage2": {
+   "nodes": 2937,
+   "mean_rel_err": 0.07837501521326243,
+   "rel_err": [
+    0.05893,
+    0.10507,
+    0.0717,
+    0.06987,
+    0.08631
+   ],
+   "label": "learned test conditions, default mesh"
+  },
+  "stage3": {
+   "nodes": 6430,
+   "mean_rel_err": 0.04572804086809645,
+   "rel_err": [
+    0.03274,
+    0.07507,
+    0.03936,
+    0.03445,
+    0.04702
+   ],
+   "label": "learned conditions, pre-trained mesh"
+  },
+  "after": {
+   "nodes": 8753,
+   "mean_rel_err": 0.019675626497517737,
+   "rel_err": [
+    0.01222,
+    0.05199,
+    0.01462,
+    0.00569,
+    0.01386
+   ],
+   "label": "trained on the real test: most accurate mesh"
+  }
+ },
+ "after_pick": {
+  "run_id": "g1-abc_00000065_compression-a2",
+  "generation": 1,
+  "agent": "a2",
+  "base_score": 0.6682917360691787,
+  "score": 0.6682917360691787,
+  "mean_rel_err": 0.019675626497517737,
+  "nodes": 8753,
+  "dir": "/home/ubuntu/feagent/ace_runs/nl_ft/gen1/work/abc_00000065_compression-a2/nonlinear"
+ },
+ "magnification": 1.0
+}

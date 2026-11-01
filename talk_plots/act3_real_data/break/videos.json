@@ -1,0 +1,24 @@
+{
+ "before_after_break": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.920516,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break_end.png"
+  }
+ },
+ "after_break": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.73133,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break_end.png"
+  }
+ }
+}

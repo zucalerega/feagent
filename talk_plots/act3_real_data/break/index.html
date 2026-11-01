@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Predicted Crack Onset</title>
+<style>
+:root { --bg: #ffffff; --fg: #1d1f23; --muted: #5b6270; --line: #e3e6ea; --red: #c62828; --amber: #b86200; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16181c; --fg: #e9ebee; --muted: #a2a9b4;
+  --line: #2c3036; --red: #ff6b6b; --amber: #ffb04a; } }
+:root[data-theme="dark"] { --bg: #16181c; --fg: #e9ebee; --muted: #a2a9b4; --line: #2c3036; --red: #ff6b6b; --amber: #ffb04a; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; margin: 0 auto;
+       max-width: 1200px; padding: 24px 16px 64px; }
+h1 { font-size: 28px; margin: 0 0 4px; } h2 { font-size: 20px; margin: 40px 0 8px; }
+.lead, .meta, .cap { color: var(--muted); } .meta { font-size: 13px; } .cap small, .fine { font-size: 13px; }
+video, img { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.tw { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+small { color: var(--muted); } td.hit { color: var(--red); font-weight: 600; }
+td.pot { color: var(--amber); font-weight: 600; } tr.real { font-weight: 600; }
+ul { padding-left: 20px; }
+</style></head><body>
+<h1>Where and when does the part crack?</h1>
+<p class="lead">Part abc_00000065 crushed in an Instron. Real first crack: the first load drop, at the peak,
+4,755 N at 2.51 mm crosshead, at the <b>lower inner bore</b> (observed by the team on the
+broken part). The simulation has no fracture model, so this is a crack-<em>onset</em> criterion checked on each CalculiX
+increment: the largest tension s1 reaching the resin's strength (50.5 MPa: predicted crack) or
+85% of it (42.9 MPa: potential crack), or the plastic strain PEEQ reaching the dogbone's strain at break
+(0.043).</p>
+<h2>Answer</h2>
+<ul>
+<li><b>After post-training (most accurate mesh): no break predicted</b> by the full-strength criterion up to
+2.78 mm, but a <b>potential crack at 2.51 mm, 4,814 N</b>
+(real crack: 2.51 mm, 4,755 N), on the lower inner bore
+(f5): <b>the place where the part actually cracked</b>. There the tension is
+43 MPa at the real crack, 85% of the
+strength.</li>
+<li><b>Before post-training: crack predicted at 1.76 mm, 3,162 N</b>
+(potential crack already at 1.50 mm), 0.75 mm and
+1,593 N before the real crack, and <b>in the wrong place</b>: on the upper inner
+edge of a prong (f13 / f16 (flat side, prong inner side)), where the frictionless platens let the prong tops slide
+inward (about 6 mm each by the end) and bend the prongs. The real crack is at the lower inner bore.</li>
+<li>The strain criterion fires far too early in every case (1.0-1.6 mm raw), always at the nut-pocket corners
+(f8 with f38/f39 or f41/f42). There the resin is squeezed from all sides (after: s1 = -53 MPa,
+s3 = -113 MPa when PEEQ passes 0.043), so a tensile break strain does not
+apply; and PEEQ at a sharp corner keeps growing as the mesh is refined.</li>
+</ul>
+<h2>Before vs after post-training</h2>
+<section><video src="before_after_break.mp4" controls loop muted autoplay playsinline></video><p class="cap">Red ring and X: where and when the largest tension reaches the resin's strength (predicted crack). Amber ring: where it first reaches 85 % of it (potential crack). Black ring: where the real part cracked first (observed: lower inner bore). Black diamond on the graphs: the real first crack (test peak). Part colour: plastic strain PEEQ, as in the original video. <small>Potential crack: tension at 85% of the resin's dogbone strength (42.9 MPa; a margin for print defects and layer lines; the threshold was chosen after seeing this test). The real crack site (lower inner bore, face f5) is the team's observation of the broken part; there is no photo in the repo, and which side and the exact point were not recorded: the black ring is drawn at the simulation's most stressed bore point, so the match is a region match, not a point match.</small></p><p class="meta">before_after_break.mp4 &middot; 10.0 s &middot; 0.9 MB</p></section>
+<h2>After post-training</h2>
+<section><video src="after_break.mp4" controls loop muted autoplay playsinline></video><p class="cap">The most accurate mesh: it follows the test to 2 % and stays below the full strength everywhere; it reaches the potential-crack tier at the lower inner bore just as the real part cracks there. <small>Potential crack: tension at 85% of the resin's dogbone strength (42.9 MPa; a margin for print defects and layer lines; the threshold was chosen after seeing this test).</small></p><p class="meta">after_break.mp4 &middot; 10.0 s &middot; 0.7 MB</p></section>
+<h2>Close-up at the real first crack (after post-training)</h2>
+<img src="after_crack_closeup.png" alt="after post-training, largest tension at the real first crack: the lower inner bore (real crack site) and the nut pocket">
+<p class="cap">Largest tension s1 at 2.51 mm. A: the most stressed point,
+43.0 MPa on f5 (inner bore): where the printed part cracked
+first (observed). B: the most stressed point near the nut-pocket corners, 33.2 MPa (no crack
+observed there). For comparison with a photo of the broken part. PDF:
+<a href="after_crack_closeup.pdf">after_crack_closeup.pdf</a>. <small>The real crack site (lower inner bore, face f5) is the team's observation of the broken part; there is no photo in the repo, and which side and the exact point were not recorded: the black ring is drawn at the simulation's most stressed bore point, so the match is a region match, not a point match.</small></p>
+<h2>Predicted vs real, all cases</h2>
+<div class="tw"><table><tr><th>case</th><th>PEEQ &ge; 0.043, raw</th><th>PEEQ, robust</th><th>predicted crack: s1 &ge; 50.5 MPa, raw</th><th>s1 &ge; 100 %, robust</th><th>potential crack: s1 &ge; 42.9 MPa (85 %), raw</th><th>s1 &ge; 85 %, robust</th>
+<th>site matches the real crack (observed: lower inner bore)?</th></tr><tr><th>before<br><small>what we started with, 2,937 nodes, 33 % off</small></th><td class="pot">0.98 mm, 2,535 N<br><small>nut pocket: f41 / f42</small></td><td class="pot">1.05 mm, 2,633 N<br><small>nut pocket: f42</small></td><td class="hit">1.76 mm, 3,162 N<br><small>prong inner side: f13 / f16</small></td><td class="hit">1.86 mm, 3,193 N<br><small>prong inner side: f14</small></td><td class="pot">1.50 mm, 3,045 N<br><small>prong inner side: f13 / f16</small></td><td class="pot">1.63 mm, 3,108 N<br><small>prong inner side: f14</small></td><td>85 %: no (prong inner side); 100 %: no (prong inner side)</td></tr><tr><th>stage2<br><small>learned test conditions, default mesh, 2,937 nodes, 7.8 % off</small></th><td class="pot">1.57 mm, 3,689 N<br><small>nut pocket: f41 / f42</small></td><td class="pot">1.81 mm, 4,145 N<br><small>nut pocket: f42</small></td><td>none by 2.79 mm<br><small>at the real crack: 42 MPa, outer side: f6 / f12</small></td><td>none by 2.79 mm<br><small>at the real crack: 31.3 MPa, prong hole: f36 / f55</small></td><td class="pot">2.56 mm, 5,226 N<br><small>outer side: f6 / f12</small></td><td>none by 2.79 mm<br><small>at the real crack: 31.3 MPa, prong hole: f36 / f55</small></td><td>85 %: no (outer side); 100 %: no (outer side, most stressed)</td></tr><tr><th>stage3<br><small>learned conditions, pre-trained mesh, 6,430 nodes, 4.6 % off</small></th><td class="pot">1.22 mm, 2,837 N<br><small>nut-pocket corner: f8 / f12 / f38 / f39</small></td><td class="pot">1.37 mm, 3,181 N<br><small>nut-pocket corner: f8 / f12 / f38 / f39</small></td><td class="hit">2.58 mm, 5,045 N<br><small>nut-pocket corner: f8 / f13 / f41 / f42</small></td><td>none by 2.79 mm<br><small>at the real crack: 41.3 MPa, lower inner bore: f5</small></td><td class="pot">2.18 mm, 4,570 N<br><small>nut-pocket corner: f8 / f13 / f41 / f42</small></td><td class="pot">2.62 mm, 5,085 N<br><small>lower inner bore: f5</small></td><td>85 %: no (nut-pocket corner); 100 %: no (nut-pocket corner)</td></tr><tr><th>after<br><small>trained on the real test: most accurate mesh, 8,753 nodes, 2.0 % off</small></th><td class="pot">1.16 mm, 2,659 N<br><small>nut pocket: f12 / f38 / f39</small></td><td class="pot">1.31 mm, 2,969 N<br><small>nut pocket: f13 / f41 / f42</small></td><td>none by 2.78 mm<br><small>at the real crack: 43 MPa, lower inner bore: f5</small></td><td>none by 2.78 mm<br><small>at the real crack: 40.8 MPa, lower inner bore: f5</small></td><td class="pot">2.51 mm, 4,814 N<br><small>lower inner bore: f5</small></td><td class="pot">2.65 mm, 4,950 N<br><small>lower inner bore: f5</small></td><td>85 %: yes (lower inner bore); 100 %: yes (lower inner bore, most stressed)</td></tr><tr class="real"><th>real test</th><td colspan="6">first load drop at the peak: 4,755 N at 2.51 mm (machine report: 4.80 kN at 2.56 mm)</td><td>lower inner bore, f5 (observed)</td></tr></table></div>
+<p class="cap">Travel uses each case's own crosshead mapping (before: crosshead = part shortening). Raw: the single highest
+node; robust: reached by at least 3 nodes within 3 mm (about twice the node spacing, so a single
+spiky node does not count). Red: a break is predicted; amber: a potential crack. A site matches when it lies on the bore
+(f5) below its centre. <small>Potential crack: tension at 85% of the resin's dogbone strength (42.9 MPa; a margin for print defects and layer lines; the threshold was chosen after seeing this test).</small>
+Also as <a href="break_table.png">PNG</a>, <a href="break_table.pdf">PDF</a>, <a href="break_table.md">Markdown</a>;
+data in <a href="break.json">break.json</a>.</p>
+<h2>How much the mesh moves it</h2>
+<div class="tw"><table><tr><th>mesh (learned conditions)</th><th>nodes</th><th>force error</th>
+<th>PEEQ &ge; 0.043, raw</th><th>PEEQ, robust</th><th>predicted crack: s1 &ge; 50.5 MPa, raw</th><th>s1 &ge; 100 %, robust</th><th>potential crack (85 %), raw</th></tr><tr><th>automesher (gmsh defaults)</th><td>2,937</td><td>7.8 %</td><td>1.57 mm <small>[0.134]</small></td><td>1.81 mm <small>[0.097]</small></td><td>none <small>[42]</small></td><td>none <small>[31.3]</small></td><td>2.56 mm <small>(outer side)</small></td></tr><tr><th>pre-trained swarm mesh</th><td>6,430</td><td>4.6 %</td><td>1.22 mm <small>[0.226]</small></td><td>1.37 mm <small>[0.18]</small></td><td>2.58 mm <small>[49.4]</small></td><td>none <small>[41.3]</small></td><td>2.18 mm <small>(nut-pocket corner)</small></td></tr><tr><th>uniform 4 mm</th><td>9,506</td><td>2.0 %</td><td>1.11 mm <small>[0.306]</small></td><td>1.48 mm <small>[0.165]</small></td><td>none <small>[42.4]</small></td><td>none <small>[40.9]</small></td><td>2.54 mm <small>(lower inner bore)</small></td></tr><tr><th>uniform 2.5 mm</th><td>24,194</td><td>1.2 %</td><td>1.24 mm <small>[0.226]</small></td><td>1.39 mm <small>[0.18]</small></td><td>none <small>[41.9]</small></td><td>none <small>[40.5]</small></td><td>2.58 mm <small>(lower inner bore)</small></td></tr><tr><th>uniform 2 mm</th><td>41,186</td><td>1.1 %</td><td>1.11 mm <small>[0.271]</small></td><td>1.25 mm <small>[0.241]</small></td><td>2.71 mm <small>[45.8]</small></td><td>none <small>[40.2]</small></td><td>2.38 mm <small>(nut-pocket corner)</small></td></tr></table></div>
+<p class="cap">Onset travel by each criterion; in brackets the value at the real crack travel (PEEQ, or s1 in MPa).
+At the real crack every mesh puts the largest tension at 42-49 MPa (83-98 % of the strength); only the pre-trained swarm
+mesh (2.58 mm) and the uniform 2 mm mesh (2.71 mm) cross it, just after the real crack. Where the 85 % tier is first
+reached moves with the mesh: the lower inner bore on the post-trained, 4 mm and 2.5 mm meshes, a nut-pocket corner on the
+swarm and 2 mm meshes, the outer side on the coarse default mesh.</p>
+<h2>Caveats</h2>
+<ul>
+<li>Onset only: a criterion read off a continuum simulation; no crack, no crack growth, no load drop is modelled.</li>
+<li>The 85% tier was chosen after seeing this test, so its timing match is not an independent prediction.</li>
+<li>One dogbone gives both thresholds; its strain is from the crosshead (includes grip compliance), and the 50.5 MPa
+is an engineering stress while s1 is a true (Cauchy) stress: the true strength is a few % higher, which would push
+the stress-criterion onset later still.</li>
+<li>Nodal s1 and PEEQ are recovered from integration points; at sharp re-entrant corners both depend on the mesh
+(PEEQ strongly), which is why the robust values and the mesh table are given.</li>
+<li>The real crack site (lower inner bore, face f5) is the team's observation of the broken part; there is no photo in the repo, and which side and the exact point were not recorded: the black ring is drawn at the simulation's most stressed bore point, so the match is a region match, not a point match.</li>
+<li>The printed part may break earlier than the bulk resin (layer lines, voids, the sharp pocket corners); the test
+cracked at 4,755 N where the best simulation is at 85% of the
+strength, which is within that kind of scatter.</li>
+</ul>
+</body></html>

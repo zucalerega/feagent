@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Act 3 Videos</title>
+<style>
+:root { --bg: #ffffff; --fg: #1d1f23; --muted: #5b6270; --line: #e3e6ea; }
+@media (prefers-color-scheme: dark) { :root { --bg: #16181c; --fg: #e9ebee; --muted: #a2a9b4; --line: #2c3036; } }
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; margin: 0 auto;
+       max-width: 1200px; padding: 24px 16px 64px; }
+h1 { font-size: 28px; margin: 0 0 4px; } h2 { font-size: 20px; margin: 40px 0 8px; text-transform: capitalize; }
+.lead, .meta { color: var(--muted); } .meta { font-size: 13px; }
+video { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.keys img { width: 100%; border: 1px solid var(--line); border-radius: 4px; }
+figure { margin: 0; } figcaption { font-size: 13px; color: var(--muted); text-align: center; }
+@media (max-width: 640px) { .keys { grid-template-columns: 1fr; } }
+</style></head><body>
+<h1>Act 3: simulation vs the real compression test</h1>
+<p class="lead">Part abc_00000065 compressed in an Instron; force vs crosshead travel. Error = mean relative force
+error at the 5 checkpoints (0.5 to 2.5 mm). Colour on the part: plastic strain PEEQ, same range in every video.</p>
+
+<section>
+  <h2>before after</h2>
+  <video src="videos/before_after.mp4" controls loop muted autoplay playsinline></video>
+  <p class="cap">Before post-training the simulation is 33 % off the real test; after post-training it is 2.0 % off.<br>Before: frictionless platens, default mesh (2,937 nodes), no seating. After: learned test conditions + the fine-tuning run's most accurate mesh (generation 1, 8,753 nodes, agent a2). Deformation at true scale.</p>
+  <div class="keys"><figure><img src="videos/before_after_start.png" alt="before_after start" loading="lazy"><figcaption>start</figcaption></figure><figure><img src="videos/before_after_middle.png" alt="before_after middle" loading="lazy"><figcaption>middle</figcaption></figure><figure><img src="videos/before_after_end.png" alt="before_after end" loading="lazy"><figcaption>end</figcaption></figure></div>
+  <p class="meta">videos/before_after.mp4 &middot; 10.0 s &middot; 0.7 MB</p>
+</section>
+<section>
+  <h2>four stages</h2>
+  <video src="videos/four_stages.mp4" controls loop muted autoplay playsinline></video>
+  <p class="cap">Error vs the real test: 33 % &rarr; 7.8 % &rarr; 4.6 % &rarr; 2.0 %.<br>Learned test conditions do most of the work; the meshes (2,937 / 6,430 / 8,753 nodes) take it the rest of the way. Deformation at true scale.</p>
+  <div class="keys"><figure><img src="videos/four_stages_start.png" alt="four_stages start" loading="lazy"><figcaption>start</figcaption></figure><figure><img src="videos/four_stages_middle.png" alt="four_stages middle" loading="lazy"><figcaption>middle</figcaption></figure><figure><img src="videos/four_stages_end.png" alt="four_stages end" loading="lazy"><figcaption>end</figcaption></figure></div>
+  <p class="meta">videos/four_stages.mp4 &middot; 10.0 s &middot; 0.8 MB</p>
+</section>
+<section>
+  <h2>before only</h2>
+  <video src="videos/before_only.mp4" controls loop muted autoplay playsinline></video>
+  <p class="cap">What we started with: 33 % off the real test.<br>Frictionless platens, default mesh (2,937 nodes), no seating or machine compliance; it levels off near 3,298 N while the test reaches 4,755 N. Deformation at true scale.</p>
+  <div class="keys"><figure><img src="videos/before_only_start.png" alt="before_only start" loading="lazy"><figcaption>start</figcaption></figure><figure><img src="videos/before_only_middle.png" alt="before_only middle" loading="lazy"><figcaption>middle</figcaption></figure><figure><img src="videos/before_only_end.png" alt="before_only end" loading="lazy"><figcaption>end</figcaption></figure></div>
+  <p class="meta">videos/before_only.mp4 &middot; 10.0 s &middot; 0.6 MB</p>
+</section>
+<section>
+  <h2>after only</h2>
+  <video src="videos/after_only.mp4" controls loop muted autoplay playsinline></video>
+  <p class="cap">After post-training: 2.0 % off the real test.<br>Learned test conditions + the fine-tuning run's most accurate mesh (generation 1, 8,753 nodes, agent a2). Deformation at true scale.</p>
+  <div class="keys"><figure><img src="videos/after_only_start.png" alt="after_only start" loading="lazy"><figcaption>start</figcaption></figure><figure><img src="videos/after_only_middle.png" alt="after_only middle" loading="lazy"><figcaption>middle</figcaption></figure><figure><img src="videos/after_only_end.png" alt="after_only end" loading="lazy"><figcaption>end</figcaption></figure></div>
+  <p class="meta">videos/after_only.mp4 &middot; 10.0 s &middot; 0.6 MB</p>
+</section>
+</body></html>

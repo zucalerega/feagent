@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
-"""Act 3 of the talk: the harness learns from real lab data (abc_00000065 crushed on an Instron).
+"""Act 3 of the talk: post-training the swarm on real lab data (abc_00000065 crushed on an Instron).
 
-Regenerates every figure of talk_plots/act3_real_data/ (PNG 200 dpi + PDF) and act3_data.json, the exact
-numbers plotted. Read-only on its inputs; no solver and no API calls.
+Regenerates every figure of talk_plots/act3_real_data/ (PNG 200 dpi + PDF + .md caption), act3_data.json (every
+plotted number) and act3_errors.csv. Read-only on its inputs; no solver and no API calls.
 
     .venv/bin/python talk_plots/act3_real_data/make_figures.py
 
-Inputs (all already computed, CalculiX J2 + NLGEOM on fe-ref-1):
-  physical_tests/abc_00000065_compression/cload_compression.csv   measured curve (the frozen scoring's test file)
+Inputs (all local, CalculiX J2 + NLGEOM):
+  physical_tests/abc_00000065_compression/cload_compression.csv   measured curve
   physical_tests/abc_00000065_compression/nonlinear_spec.json     frozen setup: checkpoints, delta, compliance
-  <scratchpad>/nl_bc/<variant>/curve.csv     BC variants on a uniform 4 mm P2 mesh (u_mm = part travel, F_N)
-  <scratchpad>/nl_mesh/<mesh>/curve.csv      sticking setup on 5 meshes (u_mm = part travel, F_N)
-  <scratchpad>/nl_mesh/nodes.txt             node counts of those meshes
-  physical_tests/abc_00000065_compression/ccx_ramp/render_team_{slide,stick}.png   teammates' PEEQ renders
+  talk_plots/act3_real_data/videos/before_run/{summary.json,curve.csv}
+        "before post-training": frictionless platens, automesher mesh, no seating gap or compliance
+  results/real_data_finetune/baselines/baselines.json and <auto|swarm_bc0|h4|h25|h20>/curve.csv
+        learned test conditions (sticking platens + seating gap + compliance) on the reference meshes
+  ace_runs/nl_ft/gen*/runs/*.json (+ gen*/work/<pid>-a<k>/nonlinear/curve.csv)
+        the post-training run: 10 generations x 4 agents on the real test
+  physical_tests/abc_00000065_compression/ccx_ramp/render_team_{slide,stick}.png   teammates' renders
 
-Error definition (= ace.nonlinear.run_curve): u_cross = u_part + delta + c * F with (0, 0) prepended; e = mean
-over the checkpoints of |F_sim(u_k) - F_meas(u_k)| / F_meas(u_k), F_meas on the test's loading branch up to
-its force maximum; a checkpoint the curve never reaches counts 100 %.
+Error ("X % off the real test", = ace.nonlinear.run_curve): mean |F_sim - F_test| / F_test over the spec's
+checkpoints on the test's loading branch. The checkpoints are not drawn in any figure (talk choice).
 """
 from __future__ import annotations
 
 import csv
 import json
 import shutil
+import textwrap
 from pathlib import Path
 
 import numpy as np
@@ -30,30 +33,28 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.patches import Rectangle  # noqa: E402
+from matplotlib.colors import ListedColormap, BoundaryNorm, LinearSegmentedColormap  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-SCRATCH = Path("/private/tmp/claude-501/-Users-aryan-Documents-Aryan-CS-scienceclawhack/"
-               "29d391ed-69f3-4559-b365-a260e486ee85/scratchpad")
-PT = ROOT / "physical_tests" / "abc_00000065_compression"
+PID = "abc_00000065_compression"
+PT = ROOT / "physical_tests" / PID
 TEST_CSV = PT / "cload_compression.csv"
 SPEC = PT / "nonlinear_spec.json"
-BC_DIR, MESH_DIR = SCRATCH / "nl_bc", SCRATCH / "nl_mesh"
+BEFORE = HERE / "videos" / "before_run"
+BASE = ROOT / "results" / "real_data_finetune" / "baselines"
+RUN = ROOT / "ace_runs" / "nl_ft"
 
 # fixed talk colours
-C_AUTO, C_TEST, C_UNIF, C_SWARM = "#888888", "#000000", "#6b6b6b", "#c23d6e"   # swarm bc0 mesh = div_s8 (8 agents)
-AGENT_COLOURS = {1: "#2a78d6", 2: "#e0882a", 4: "#1e9e6a", 8: "#c23d6e"}
-C_SLIDE, C_STICK, C_OTHER = "#7a5195", "#1f8a8a", "#b8b8b8"
+C_AUTO, C_TEST, C_UNIF, C_SWARM = "#888888", "#000000", "#6b6b6b", "#c23d6e"
+C_BEFORE, C_STICK = "#7a5195", "#1f8a8a"
+GEN_CMAP = LinearSegmentedColormap.from_list("gen", ["#f2b8cc", "#c23d6e", "#5a1230"])
 
-MESH_LABEL = {"auto": "gmsh default (automesher)", "swarm": "swarm's best bc0 mesh", "h4": "uniform 4 mm",
-              "h25": "uniform 2.5 mm", "h20": "uniform 2 mm"}
-BC_LABEL = {"baseline": "frictionless platens", "bonded": "sticking platens",
-            "tilt_f17": "frictionless, prong f17 at half travel", "tilt_f34": "frictionless, prong f34 at half travel",
-            "one_face": "frictionless, only prong f17 pushed", "elastic": "frictionless, elastic (no plasticity)"}
+BASE_LABEL = {"auto": "automesher (gmsh default)", "swarm_bc0": "pre-trained swarm mesh",
+              "h4": "uniform 4 mm", "h25": "uniform 2.5 mm", "h20": "uniform 2 mm"}
 
 
-# --------------------------------------------------------------------------- style
+# --------------------------------------------------------------------------- style and output
 
 def style():
     plt.rcParams.update({
@@ -66,7 +67,6 @@ def style():
 
 
 def titled(fig, title: str, subtitle: str):
-    import textwrap
     sub = textwrap.fill(subtitle, 104)
     fig.suptitle(title, x=0.04, y=0.975, ha="left", fontsize=19, fontweight="bold")
     fig.text(0.04, 0.915, sub, ha="left", va="top", fontsize=14, color="#555555")
@@ -74,11 +74,16 @@ def titled(fig, title: str, subtitle: str):
     fig.subplots_adjust(left=0.08, right=0.97, top=top, bottom=0.11)
 
 
-def save(fig, stem: str):
+def save(fig, stem: str, title: str, md: str):
     fig.savefig(HERE / f"{stem}.png", dpi=200)
     fig.savefig(HERE / f"{stem}.pdf")
     plt.close(fig)
-    print("wrote", stem)
+    (HERE / f"{stem}.md").write_text(f'# {stem}: "{title}"\n\n{md.strip()}\n')
+    print("wrote", stem, "|", title)
+
+
+def pct(e: float, nd: int = 1) -> str:
+    return f"{e * 100:.{nd}f} %"
 
 
 # --------------------------------------------------------------------------- data
@@ -100,119 +105,100 @@ def loading_branch(u, F):
     return u[: p + 1][o], F[: p + 1][o]
 
 
-def read_curve(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    c = np.loadtxt(path, delimiter=",", skiprows=1)
-    return c[:, 0], c[:, 1]
+def read_cross_curve(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """(u_cross mm, F N) from a curve.csv with columns u_part_mm, u_cross_mm, force_N."""
+    rows = list(csv.DictReader(path.read_text().splitlines()))
+    return np.array([float(r["u_cross_mm"]) for r in rows]), np.array([float(r["force_N"]) for r in rows])
 
 
-def mapped(u_part, F, delta, c):
-    return np.concatenate([[0.0], u_part[1:] + delta + c * F[1:]])
-
-
-def errors(u_part, F, delta, c, ck, Fm):
-    """(mean rel. error, per-checkpoint rel. errors, simulated forces) as ace.nonlinear.run_curve."""
-    uc = mapped(u_part, F, delta, c)
-    Fs = np.interp(ck, uc, F)
-    rel = np.where(ck <= uc[-1], np.abs(Fs - Fm) / Fm, 1.0)
+def curve_error(u, F, ck, Fm):
+    """(mean rel. error, per-checkpoint errors, simulated forces) of a crosshead curve, as ace.nonlinear."""
+    Fs = np.interp(ck, u, F)
+    rel = np.where(ck <= u[-1], np.abs(Fs - Fm) / Fm, 1.0)
     return float(rel.mean()), rel, Fs
 
 
-def fit(u_part, F, ck, Fm, start=(0.233, 2.9e-5), compliance=True):
-    from scipy.optimize import minimize
-    if compliance:
-        f = lambda x: errors(u_part, F, x[0], x[1] * 1e-5, ck, Fm)[0]
-        r = minimize(f, [start[0], start[1] * 1e5], method="Nelder-Mead",
-                     options={"xatol": 1e-5, "fatol": 1e-7, "maxiter": 4000})
-        return float(r.x[0]), float(r.x[1]) * 1e-5, float(r.fun)
-    ds = np.arange(0.0, 0.8, 0.0005)
-    es = [errors(u_part, F, d, 0.0, ck, Fm)[0] for d in ds]
-    i = int(np.argmin(es))
-    return float(ds[i]), 0.0, float(es[i])
+def case(label, nodes, u, F, ck, Fm, recorded, src, **extra):
+    e, rel, Fs = curve_error(u, F, ck, Fm)
+    assert abs(e - recorded) < 2e-4, (label, e, recorded)      # recomputed from the curve = the recorded value
+    return {"label": label, "nodes": int(nodes), "mean_rel_err": recorded, "rel_err": rel.round(5).tolist(),
+            "force_sim_N": Fs.round(1).tolist(), "u_cross_mm": u.round(5).tolist(), "F_N": F.round(2).tolist(),
+            "file": src, **extra}
+
+
+def load_runs(ck, Fm) -> list[dict]:
+    runs = []
+    for f in sorted(RUN.glob("gen*/runs/*.json")):
+        rec = json.loads(f.read_text())
+        if rec.get("problem_id") != PID:
+            continue
+        c = rec["checks"]
+        nl = c.get("nonlinear") or {}
+        agent = rec["run_id"].rsplit("-", 1)[1]
+        r = {"run_id": rec["run_id"], "generation": int(rec["generation"]), "agent": agent,
+             "ok": bool(c.get("valid") and nl.get("ok")), "base_score": c.get("base_score"),
+             "mean_rel_err": nl.get("mean_rel_err"), "nodes": nl.get("nodes"), "dofs": nl.get("dofs"),
+             "file": str(f.relative_to(ROOT))}
+        cv = f.parent.parent / "work" / f"{PID}-{agent}" / "nonlinear" / "curve.csv"
+        r["curve_csv"] = str(cv.relative_to(ROOT)) if cv.is_file() else None
+        runs.append(r)
+    return runs
 
 
 def compute() -> dict:
     spec = json.loads(SPEC.read_text())
     ck = np.array(spec["checkpoints_mm"], float)
-    delta, c = spec["delta_mm"], spec["compliance_mm_per_N"]
     u, F = read_test()
     ub, Fb = loading_branch(u, F)
     Fm = np.interp(ck, ub, Fb)
 
-    # measured-curve features
     lin = (Fb >= 1050) & (Fb <= 1800)
     toe = (ub >= 0.1) & (ub <= 0.45)
     p = int(np.argmax(F))
     test = {"checkpoints_mm": ck.tolist(), "force_meas_N": Fm.round(2).tolist(),
             "peak_N": float(F[p]), "peak_mm": float(u[p]), "break_mm": float(u[-1]),
+            "F_at_2p5mm_N": float(np.interp(2.5, ub, Fb)),
             "slope_linear_N_per_mm": float(np.polyfit(ub[lin], Fb[lin], 1)[0]), "linear_band_N": [1050, 1800],
             "slope_toe_N_per_mm": float(np.polyfit(ub[toe], Fb[toe], 1)[0]), "toe_band_mm": [0.1, 0.45],
-            "F_at_0p5mm_N": float(np.interp(0.5, ub, Fb)),
             "n_points": int(len(u)), "file": str(TEST_CSV.relative_to(ROOT))}
-    # second digitization (scratchpad), for the caveat only
-    w = np.loadtxt(SCRATCH / "wf/cload_compression_curve.csv", delimiter=",", skiprows=1)
-    test["alt_digitization"] = {"file": str(SCRATCH / "wf/cload_compression_curve.csv"),
-                                "peak_N": float(w[:, 1].max()), "peak_mm": float(w[w[:, 1].argmax(), 0])}
 
-    # BC variants, raw crosshead = part travel (no seating, no compliance)
-    bc = {}
-    for v in BC_LABEL:
-        up, Fv = read_curve(BC_DIR / v / "curve.csv")
-        e, rel, Fs = errors(up, Fv, 0.0, 0.0, ck, Fm)
-        bc[v] = {"label": BC_LABEL[v], "u_mm": up.tolist(), "F_N": Fv.tolist(), "mean_rel_err": e,
-                 "rel_err": rel.round(5).tolist(), "F_at_end_N": float(Fv[-1]), "u_end_mm": float(up[-1]),
-                 "file": str(BC_DIR / v / "curve.csv")}
+    bs = json.loads((BEFORE / "summary.json").read_text())
+    before = case("before post-training", bs["nodes"], *read_cross_curve(BEFORE / "curve.csv"), ck, Fm,
+                  bs["mean_rel_err"], str((BEFORE / "curve.csv").relative_to(ROOT)), dofs=bs["dofs"])
 
-    # meshes, sticking setup
-    nodes = {l.split()[0]: int(l.split()[2]) for l in (MESH_DIR / "nodes.txt").read_text().splitlines() if l.strip()}
-    curves = {m: read_curve(MESH_DIR / m / "curve.csv") for m in MESH_LABEL}
-    d_fit, c_fit, e_fit = fit(*curves["h20"], ck, Fm)
-    d_seat, _, _ = fit(*curves["h20"], ck, Fm, compliance=False)
-    meshes = {}
-    for m, (up, Fv) in curves.items():
-        e, rel, Fs = errors(up, Fv, delta, c, ck, Fm)
-        meshes[m] = {"label": MESH_LABEL[m], "nodes": nodes[m], "mean_rel_err": e, "rel_err": rel.round(5).tolist(),
-                     "force_sim_N": Fs.round(1).tolist(), "u_part_mm": up.tolist(), "F_N": Fv.tolist(),
-                     "u_cross_mm": mapped(up, Fv, delta, c).round(5).tolist(),
-                     "mean_rel_err_own_fit": errors(up, Fv, d_fit, c_fit, ck, Fm)[0],
-                     "file": str(MESH_DIR / m / "curve.csv")}
-    # bc0 4 mm "bonded" and mesh h4 are the same solve (same mesh + setup): check
-    same = np.allclose(read_curve(BC_DIR / "bonded/curve.csv")[1], curves["h4"][1])
+    bj = json.loads((BASE / "baselines.json").read_text())["baselines"]
+    base = {k: case(BASE_LABEL[k], v["nodes"], *read_cross_curve(BASE / k / "curve.csv"), ck, Fm,
+                    v["mean_rel_err"], str((BASE / k / "curve.csv").relative_to(ROOT)), dofs=v["dofs"],
+                    base_score=v["score"])
+            for k, v in bj.items() if k in BASE_LABEL}
 
-    # setup-refinement ladder: everything on the 4 mm mesh, then the 2 mm mesh; seating/compliance fitted on 2 mm
-    h4, h20 = curves["h4"], curves["h20"]
-    fr = read_curve(BC_DIR / "baseline/curve.csv")
-    ladder = [
-        ("frictionless platens\n(raw solver)", errors(*fr, 0, 0, ck, Fm)[0], "4 mm"),
-        ("+ seating gap\n(\u03b4 = %.2f mm)" % d_seat, errors(*fr, d_seat, 0, ck, Fm)[0], "4 mm"),
-        ("+ sticking platens", errors(*h4, d_seat, 0, ck, Fm)[0], "4 mm"),
-        ("+ load-train\ncompliance (frozen)", errors(*h4, delta, c, ck, Fm)[0], "4 mm"),
-        ("+ fine mesh\n(2 mm, 41k nodes)", errors(*h20, delta, c, ck, Fm)[0], "2 mm"),
-    ]
-    other_orders = {"sticking_without_seating_4mm": errors(*h4, 0, 0, ck, Fm)[0],
-                    "frictionless_seating_own_fit": fit(*fr, ck, Fm, compliance=False)[2],
-                    "frictionless_frozen_mapping": errors(*fr, delta, c, ck, Fm)[0]}
-    ladder_h20 = {"sticking": errors(*h20, 0, 0, ck, Fm)[0], "sticking+seating": errors(*h20, d_seat, 0, ck, Fm)[0],
-                  "sticking+seating+compliance": errors(*h20, delta, c, ck, Fm)[0]}
-    # can the mapping rescue frictionless platens? fit delta, c on the frictionless curve itself
-    fr_best = fit(*fr, ck, Fm, start=(0.0, 1e-6))
+    runs = load_runs(ck, Fm)
+    ok = [r for r in runs if r["ok"]]
+    gens = []
+    for g in sorted({r["generation"] for r in runs}):
+        rs = [r for r in ok if r["generation"] == g]
+        bsc = max(rs, key=lambda r: r["base_score"])
+        acc = min(rs, key=lambda r: r["mean_rel_err"])
+        gens.append({"generation": g, "n_runs": sum(r["generation"] == g for r in runs), "n_ok": len(rs),
+                     "best_base_score": bsc["base_score"], "best_score_run": bsc["run_id"],
+                     "mean_base_score": float(np.mean([r["base_score"] for r in rs])),
+                     "best_err": acc["mean_rel_err"], "best_err_run": acc["run_id"], "best_err_nodes": acc["nodes"]})
+    most_acc = min(ok, key=lambda r: (r["mean_rel_err"], r["nodes"]))
+    best_score = max(ok, key=lambda r: r["base_score"])
+    lean = min((r for r in ok if r["nodes"] < 6000), key=lambda r: r["mean_rel_err"])
+    picks = {}
+    for name, r in (("most_accurate", most_acc), ("best_scoring", best_score), ("best_lean", lean)):
+        uc, Fc = read_cross_curve(ROOT / r["curve_csv"])
+        picks[name] = case(f"post-trained ({name.replace('_', ' ')}, {r['run_id']})", r["nodes"], uc, Fc, ck, Fm,
+                           r["mean_rel_err"], r["curve_csv"], run_id=r["run_id"], base_score=r["base_score"],
+                           same_mesh_runs=[q["run_id"] for q in ok if q["nodes"] == r["nodes"]
+                                           and abs(q["mean_rel_err"] - r["mean_rel_err"]) < 1e-6])
 
-    # cross-check against the committed baselines (other workflow's results, read only)
-    committed = {}
-    bj = ROOT / "results/real_data_finetune/baselines/baselines.json"
-    if bj.exists():
-        b = json.loads(bj.read_text())["baselines"]
-        committed = {k: {"nodes": v["nodes"], "dofs": v["dofs"], "mean_rel_err": v["mean_rel_err"]} for k, v in b.items()}
-
-    return {"spec": {"file": str(SPEC.relative_to(ROOT)), "delta_mm": delta, "compliance_mm_per_N": c,
-                     "checkpoints_mm": ck.tolist(), "reference_errors": spec.get("reference_errors")},
-            "refit_on_h20": {"delta_mm": d_fit, "compliance_mm_per_N": c_fit, "mean_rel_err": e_fit,
-                             "seating_only_delta_mm": d_seat},
-            "test": test, "bc_variants": bc, "meshes": meshes, "bonded_equals_h4": bool(same),
-            "ladder": [{"step": s, "mean_rel_err": e, "mesh": m} for s, e, m in ladder],
-            "ladder_on_2mm_mesh": ladder_h20, "ladder_other_orders": other_orders,
-            "frictionless_best_mapping": {"delta_mm": fr_best[0], "compliance_mm_per_N": fr_best[1],
-                                          "mean_rel_err": fr_best[2]},
-            "committed_baselines": committed}
+    return {"spec": {"file": str(SPEC.relative_to(ROOT)), "delta_mm": spec["delta_mm"],
+                     "compliance_mm_per_N": spec["compliance_mm_per_N"], "checkpoints_mm": ck.tolist()},
+            "auto_score": bj["auto"]["score"], "test": test, "before": before, "baselines": base,
+            "post_training": {"run_dir": str(RUN.relative_to(ROOT)), "generations": gens, "picks": picks,
+                              "runs": runs}}
 
 
 # --------------------------------------------------------------------------- figures
@@ -231,182 +217,263 @@ def fig1_test(D):
     ax.annotate(f"linear: {t['slope_linear_N_per_mm']/1e3:.2f} kN/mm", (1.2, 2.67), (1.6, 1.75), **kw)
     ax.annotate("softening: the resin yields", (2.05, 4.22), (0.25, 4.95), **kw)
     ax.plot(t["peak_mm"], t["peak_N"] / 1e3, "o", color=C_TEST, ms=9)
-    ax.annotate(f"peak {t['peak_N']/1e3:.2f} kN at {t['peak_mm']:.2f} mm", (t["peak_mm"], t["peak_N"] / 1e3),
-                (3.1, 5.45), **kw)
+    ax.annotate(f"peak {t['peak_N']/1e3:.2f} kN at {t['peak_mm']:.2f} mm: first crack",
+                (t["peak_mm"], t["peak_N"] / 1e3), (3.1, 5.45), **kw)
     ax.annotate("cracking: saw-tooth load drops", (5.4, 3.2), (5.2, 4.55), **kw)
     ax.annotate(f"break at {t['break_mm']:.2f} mm", (t["break_mm"], 1.7), (6.6, 0.9), **kw)
-    ax.text(0.08, 5.6, "scored region (loading branch)", fontsize=13, color="#555555")
-    titled(fig, "Real test: seating, linear climb, yielding to 4.8 kN, then cracking",
-           "3D-printed abc_00000065 (Formlabs Alpha Fast resin) crushed between Instron platens; "
-           "force vs crosshead travel, digitized from the machine's PDF report")
-    save(fig, "fig1_measured_curve")
+    ax.text(0.08, 5.6, "compared with the simulation", fontsize=14, color="#555555")
+    title = "Real test: seating, linear climb, yielding to 4.8 kN, then cracking"
+    titled(fig, title, "3D-printed abc_00000065 (Formlabs Alpha Fast resin) crushed between Instron platens; "
+                       "force vs crosshead travel, digitized from the machine's PDF report")
+    md = f"""
+**Caption.** The 3D-printed abc_00000065 C-bracket (Formlabs Alpha Fast) crushed between Instron platens: a soft
+seating toe, a straight climb, softening as the resin yields, a peak (the first crack), then saw-tooth load drops
+to the break. The shaded loading branch, up to the peak, is what every simulation is compared with.
+
+**Key numbers** (computed in make_figures.py from the test CSV):
+- peak {t['peak_N']:.0f} N at {t['peak_mm']:.3f} mm crosshead travel in this digitization (the machine report says
+  4.80 kN at 2.56 mm)
+- toe slope {t['slope_toe_N_per_mm']/1e3:.2f} kN/mm (fit over 0.10-0.45 mm); linear slope
+  {t['slope_linear_N_per_mm']/1e3:.2f} kN/mm (fit over 1050-1800 N)
+- force at 2.5 mm: {t['F_at_2p5mm_N']:.0f} N; last point (break) at {t['break_mm']:.2f} mm; {t['n_points']} digitized points
+
+**Data.** {t['file']} (the frozen spec's test file); test notes cload_compression.json next to it.
+
+**Caveats.**
+- The curve is digitized from the plot in the machine's PDF report (about +-0.01 mm, +-15 N), not raw data. A
+  second digitization put the peak about 1 % higher (4798 N at 2.556 mm); the error uses this file.
+- Displacement is crosshead travel (no extensometer): it includes seating and the load train's deflection.
+- "Seating, one prong first?" for the toe is an interpretation from the test notes, not a measurement.
+"""
+    save(fig, "fig1_measured_curve", title, md)
 
 
-def fig2_bc(D):
-    t, bc = D["test"], D["bc_variants"]
+def fig2_before(D):
+    t, b = D["test"], D["before"]
     ub, Fb = loading_branch(*read_test())
     fig, ax = plt.subplots()
-    ax.plot(ub, Fb / 1e3, color=C_TEST, lw=3.4, zorder=5)
-    ax.text(2.0, 3.8, f"measured: {np.interp(2.5, ub, Fb)/1e3:.1f} kN", fontsize=14, fontweight="bold")
-    style_of = {"baseline": dict(color=C_SLIDE, lw=3.2), "bonded": dict(color=C_STICK, lw=3.2),
-                "tilt_f17": dict(color=C_OTHER, lw=2, ls="--"), "tilt_f34": dict(color=C_OTHER, lw=2, ls=":"),
-                "one_face": dict(color=C_OTHER, lw=2, ls="-."), "elastic": dict(color="#9db4d6", lw=2)}
-    # direct labels at the right end; y positions (kN) set by hand to avoid overlaps
-    label_y = {"bonded": 5.42, "elastic": 4.98, "baseline": 3.12, "tilt_f17": 2.62, "one_face": 1.47}
-    names = {"bonded": "sticking platens", "elastic": "elastic, no yield",
-             "baseline": "frictionless platens", "tilt_f17": "one prong at half travel*",
-             "one_face": "one prong only"}
-    for v in ["tilt_f17", "tilt_f34", "one_face", "elastic", "bonded", "baseline"]:
-        r = bc[v]
-        ax.plot(r["u_mm"], np.array(r["F_N"]) / 1e3, **style_of[v], zorder=4 if v in ("baseline", "bonded") else 3)
-        if v in label_y:
-            col = style_of[v]["color"] if v in ("baseline", "bonded") else "#666666"
-            ax.text(2.62, label_y[v], f"{names[v]}: {np.interp(2.5, r['u_mm'], r['F_N'])/1e3:.1f} kN, "
-                                      f"{r['mean_rel_err']*100:.0f} % off", fontsize=13.5, va="center", color=col,
-                    fontweight="bold" if v in ("baseline", "bonded") else "normal")
-    for x in t["checkpoints_mm"]:
-        ax.axvline(x, color="#cccccc", lw=0.8, ls=":", zorder=0)
-    ax.plot(t["checkpoints_mm"], np.array(t["force_meas_N"]) / 1e3, "o", color=C_TEST, ms=8, zorder=6)
-    ax.set_xlim(0, 4.6), ax.set_ylim(0, 5.8)
+    ax.plot(ub, Fb / 1e3, color=C_TEST, lw=3.6, zorder=5)
+    ax.plot(b["u_cross_mm"], np.array(b["F_N"]) / 1e3, color=C_BEFORE, lw=3.4, zorder=4)
+    Fb25 = float(np.interp(2.5, b["u_cross_mm"], b["F_N"]))
+    ax.text(2.58, t["F_at_2p5mm_N"] / 1e3, f"real test: {t['F_at_2p5mm_N']/1e3:.1f} kN", fontsize=15,
+            fontweight="bold", va="center")
+    ax.text(2.66, Fb25 / 1e3, f"before post-training: {Fb25/1e3:.1f} kN\n{pct(b['mean_rel_err'], 0)} off the "
+                              "real test", fontsize=15, color=C_BEFORE, fontweight="bold", va="center")
+    ax.annotate("", (2.5, Fb25 / 1e3 + 0.08), (2.5, t["F_at_2p5mm_N"] / 1e3 - 0.08),
+                arrowprops=dict(arrowstyle="<->", color="#777777", lw=1.4))
+    ax.set_xlim(0, 4.3), ax.set_ylim(0, 5.6)
     ax.set_xticks([0, 0.5, 1, 1.5, 2, 2.5])
-    ax.set_xlabel("travel (mm): crosshead for the test, platen for the simulation")
+    ax.set_xlabel("crosshead travel (mm)")
     ax.set_ylabel("force (kN)")
-    a, b2 = np.array(bc["tilt_f17"]["F_N"][1:]), np.array(bc["tilt_f34"]["F_N"][1:])
-    dmax = float(np.max(np.abs(a / b2 - 1)))
-    ax.text(2.62, 0.25, "light lines: frictionless variants\nkN = force at 2.5 mm; % = mean error at the 5 dots\n"
-                        f"* f17 or f34 at half travel: curves differ by \u2264 {dmax*100:.1f} %", fontsize=12,
-            color="#666666")
-    b = bc["baseline"]
-    titled(fig, f"The raw solver misses reality: frictionless platens give out at {b['F_at_end_N']/1e3:.1f} kN",
-           "CalculiX J2 plasticity + large deformation (NLGEOM), uniform 4 mm P2 mesh, dogbone material; "
-           "no seating gap or machine compliance yet")
-    save(fig, "fig2_raw_solver_vs_test")
+    title = f"Before post-training, the simulation is {pct(b['mean_rel_err'], 0)} off the real test"
+    titled(fig, title, f"frictionless platens, automesher mesh ({b['nodes']:,} nodes), no seating gap or "
+                       "machine compliance; CalculiX J2 plasticity + large deformation, dogbone material")
+    over = np.array(b["force_sim_N"]) / np.array(t["force_meas_N"]) - 1
+    md = f"""
+**Caption.** The out-of-the-box nonlinear simulation, before post-training: frictionless platens on gmsh's default
+mesh, crosshead travel = platen travel. It starts too stiff (no seating gap) and then gives out: the prongs splay
+and the force levels off at {b['F_N'][-1]/1e3:.1f} kN, where the real part carried {t['F_at_2p5mm_N']/1e3:.1f} kN
+at 2.5 mm. Mean error: **{pct(b['mean_rel_err'])} off the real test**.
+
+**Key numbers.** {b['nodes']:,} nodes ({b['dofs']:,} DOFs). Force vs test at 0.5 / 1.0 / 1.5 / 2.0 / 2.5 mm:
+{' / '.join(f'{x:.0f}' for x in b['force_sim_N'])} N vs {' / '.join(f'{x:.0f}' for x in t['force_meas_N'])} N
+({' / '.join(f'{x*100:+.0f}' for x in over)} %).
+
+**Data.** {b['file']} and summary.json next to it (CalculiX J2 + NLGEOM, the frozen ramp with frictionless
+platens; error recomputed from the curve = the recorded {b['mean_rel_err']:.4f}).
+
+**Caveats.** "Before post-training" means before the swarm was post-trained on this test: the solver and the
+swarm were already capable. This run also lacks the test conditions learned from the experiment (sticking
+platens, seating gap, load-train compliance); fig3 separates the two steps.
+"""
+    save(fig, "fig2_raw_solver_vs_test", title, md)
 
 
 def fig3_ladder(D):
-    L = D["ladder"]
+    B, P = D["baselines"], D["post_training"]["picks"]["most_accurate"]
+    steps = [("before\npost-training", D["before"], C_BEFORE),
+             ("+ learned test\nconditions\n(default mesh)", B["auto"], C_AUTO),
+             ("+ pre-trained\nswarm mesh", B["swarm_bc0"], "#e09ab4"),
+             ("+ post-trained\nswarm mesh", P, C_SWARM)]
     fig, ax = plt.subplots()
-    x = np.arange(len(L))
-    e = np.array([s["mean_rel_err"] * 100 for s in L])
-    cols = [C_SLIDE, "#a58fbd", "#4ba3a3", C_STICK, "#0f5c5c"]
-    ax.bar(x, e, width=0.62, color=cols, zorder=3)
-    for xi, ei in zip(x, e):
-        ax.text(xi, ei + 0.6, f"{ei:.1f} %", ha="center", va="bottom", fontsize=17, fontweight="bold")
-    ax.set_xticks(x, [s["step"] for s in L], fontsize=14)
-    ax.set_ylabel("mean error vs the test (%)")
-    ax.set_ylim(0, max(e) * 1.18)
-    ax.axvline(3.5, color="#999999", lw=1, ls="--")
-    ax.text(1.5, max(e) * 1.1, "setup learned from the experiment (same 4 mm mesh)", ha="center",
-            fontsize=14, color="#555555")
-    ax.text(4, max(e) * 1.1, "mesh", ha="center", fontsize=14, color="#555555")
-    ax.grid(axis="x", visible=False)
-    titled(fig, f"Learning the setup: error {e[0]:.0f} % → {e[-2]:.1f} %; a fine mesh: {e[-1]:.1f} %",
-           "mean |F_sim - F_test| / F_test at 0.5, 1.0, 1.5, 2.0, 2.5 mm crosshead travel; CalculiX J2 + NLGEOM; "
-           "seating gap and compliance fitted once on the 2 mm mesh, then frozen")
-    save(fig, "fig3_setup_ladder")
-
-
-def draw_error_vs_nodes(ax, D, target=True, extra=None):
-    """Figure 4's axes: reference meshes, the model-error floor, the target box; `extra` = list of
-    {"nodes", "mean_rel_err", "label"} (fine-tuned points, drawn as filled swarm diamonds)."""
-    M = D["meshes"]
-    floor = M["h20"]["mean_rel_err"] * 100
-    uni = [M[k] for k in ("h4", "h25", "h20")]
-    ax.axhspan(0, floor, color="#ececec", zorder=0)
-    ax.text(78000, floor / 2, f"finest mesh ({floor:.1f} %): roughly the model-error floor", va="center",
-            ha="right", fontsize=13, color="#555555")
-    if target:
-        ax.add_patch(Rectangle((2000, floor), 8000 - 2000, 2.0 - floor, fill=True, facecolor="#c23d6e14",
-                               edgecolor=C_SWARM, lw=2, ls="--", zorder=1))
-        ax.text(2120, 2.3, "TARGET: fine-tuned swarm\n≤ 2 % at ≤ 8k nodes\n"
-                           "(to be filled by the run)", fontsize=13, color=C_SWARM, va="bottom",
+    x = np.arange(len(steps))
+    e = np.array([s[1]["mean_rel_err"] * 100 for s in steps])
+    ax.bar(x, e, width=0.6, color=[s[2] for s in steps], zorder=3)
+    for xi, ei, s in zip(x, e, steps):
+        ax.text(xi, ei + 0.5, f"{ei:.1f} %" if ei < 10 else f"{ei:.0f} %", ha="center", va="bottom", fontsize=18,
                 fontweight="bold")
+        ax.text(xi, -1.0, f"{s[1]['nodes']:,} nodes", ha="center", va="top", fontsize=14, color="#555555")
+    ax.set_xticks(x, [s[0] for s in steps], fontsize=15)
+    ax.tick_params(axis="x", pad=26, length=0)
+    ax.set_ylabel("off the real test (%)")
+    ax.set_ylim(0, max(e) * 1.15)
+    ax.grid(axis="x", visible=False)
+    title = f"From {e[0]:.0f} % to {e[-1]:.1f} % off the real test: test conditions, then post-training"
+    titled(fig, title, "same solver and material throughout; learned test conditions = sticking platens, seating "
+                       "gap and load-train compliance, frozen; then only the mesh changes")
+    fig.subplots_adjust(bottom=0.2)
+    md = f"""
+**Caption.** Each step on top of the previous one. Before post-training the simulation is {e[0]:.0f} % off the
+real test. Learning the test conditions from the experiment (sticking platens, a seating gap, load-train
+compliance; then frozen) brings gmsh's default mesh to {e[1]:.1f} %. The swarm's pre-trained mesh (trained on a
+different load case) gets {e[2]:.1f} %, and the mesh from post-training on the real test {e[3]:.1f} %.
+
+| step | mesh | nodes | off the real test |
+|---|---|---|---|
+| before post-training (frictionless platens, no seating/compliance) | automesher | {steps[0][1]['nodes']:,} | {e[0]:.2f} % |
+| + learned test conditions | automesher (curved P2) | {steps[1][1]['nodes']:,} | {e[1]:.2f} % |
+| + pre-trained swarm mesh | swarm bc0 mesh | {steps[2][1]['nodes']:,} | {e[2]:.2f} % |
+| + post-trained swarm mesh (most accurate, {P['run_id']}) | post-trained | {P['nodes']:,} | {e[3]:.2f} % |
+
+**Data.** {D['before']['file']}; results/real_data_finetune/baselines/baselines.json (auto, swarm_bc0);
+{P['file']}. Every error is recomputed from its curve and matches the recorded value.
+
+**Caveats.**
+- The automesher's 7.8 % uses its curved P2 mesh with only the midside nodes CalculiX rejects straightened. An
+  earlier, higher automesher figure straightened every midside node (facetting the curved faces) and was wrong.
+- The seating gap and compliance were fitted once on the finest uniform mesh against this same test, so the last
+  steps are calibrated on the specimen they are scored against; there is one specimen.
+- The last bar is the most accurate post-trained mesh, which uses more nodes than the others; the best-scoring
+  one is {pct(D['post_training']['picks']['best_scoring']['mean_rel_err'])} off at
+  {D['post_training']['picks']['best_scoring']['nodes']:,} nodes (fig4).
+- Uniform 4 mm (9,506 nodes) is {pct(D['baselines']['h4']['mean_rel_err'])} off: about as accurate as the most
+  accurate post-trained mesh with 8 % more nodes.
+"""
+    save(fig, "fig3_setup_ladder", title, md)
+
+
+def fig4_error_vs_nodes(D):
+    B, PT_ = D["baselines"], D["post_training"]
+    ok = [r for r in PT_["runs"] if r["ok"]]
+    ng = len(PT_["generations"])
+    fig, ax = plt.subplots()
+    cmap = ListedColormap(GEN_CMAP(np.linspace(0, 1, ng)))
+    norm = BoundaryNorm(np.arange(-0.5, ng), ng)
+    sc = ax.scatter([r["nodes"] for r in ok], [r["mean_rel_err"] * 100 for r in ok],
+                    c=[r["generation"] for r in ok], cmap=cmap, norm=norm, s=70, edgecolor="white", lw=0.6,
+                    zorder=4)
+    cb = fig.colorbar(sc, ax=ax, ticks=range(ng), pad=0.015, fraction=0.03)
+    cb.set_label("post-training generation", fontsize=14)
+    cb.ax.tick_params(labelsize=14)
+    uni = [B[k] for k in ("h4", "h25", "h20")]
     ax.plot([m["nodes"] for m in uni], [m["mean_rel_err"] * 100 for m in uni], "-o", color=C_UNIF, lw=2, ms=9,
             zorder=3)
-    for i, m in enumerate(uni):
-        off, ha = [((12, 4), "left"), ((0, 46), "center"), ((0, 12), "center")][i]
-        ax.annotate(f"{m['label']}\n{m['nodes']:,} nodes: {m['mean_rel_err']*100:.1f} %",
-                    (m["nodes"], m["mean_rel_err"] * 100), textcoords="offset points", xytext=off, ha=ha,
-                    va="bottom", fontsize=13, color=C_UNIF)
-    a, s = M["auto"], M["swarm"]
-    ax.plot(a["nodes"], a["mean_rel_err"] * 100, "s", color=C_AUTO, ms=12, zorder=4)
-    ax.annotate(f"gmsh default (automesher)\n{a['nodes']:,} nodes: {a['mean_rel_err']*100:.1f} %",
-                (a["nodes"], a["mean_rel_err"] * 100), textcoords="offset points", xytext=(14, -6), fontsize=13,
-                va="center", color="#444444")
-    ax.plot(s["nodes"], s["mean_rel_err"] * 100, "D", mfc="white", mec=C_SWARM, mew=2.5, ms=12, zorder=4)
-    ax.annotate(f"swarm's best bc0 mesh, before fine-tuning\n(trained on a different load case)\n"
-                f"{s['nodes']:,} nodes: {s['mean_rel_err']*100:.1f} %", (s["nodes"], s["mean_rel_err"] * 100),
-                textcoords="offset points", xytext=(14, 8), fontsize=13, color=C_SWARM, va="bottom")
-    for p in extra or []:
-        ax.plot(p["nodes"], p["mean_rel_err"] * 100, "D", color=C_SWARM, ms=11, zorder=5)
-        ax.annotate(p["label"], (p["nodes"], p["mean_rel_err"] * 100), textcoords="offset points", xytext=(8, -14),
-                    fontsize=12, color=C_SWARM)
+    for m, off, ha in zip(uni, [(10, 10), (0, 12), (0, 12)], ["left", "center", "center"]):
+        ax.annotate(f"{m['label']}\n{m['nodes']:,}: {pct(m['mean_rel_err'])}", (m["nodes"], m["mean_rel_err"] * 100),
+                    textcoords="offset points", xytext=off, ha=ha, va="bottom", fontsize=14, color=C_UNIF)
+    a, s = B["auto"], B["swarm_bc0"]
+    ax.plot(a["nodes"], a["mean_rel_err"] * 100, "s", color=C_AUTO, ms=13, zorder=4)
+    ax.annotate(f"automesher\n{a['nodes']:,} nodes: {pct(a['mean_rel_err'])}", (a["nodes"], a["mean_rel_err"] * 100),
+                textcoords="offset points", xytext=(14, 0), fontsize=14, va="center", color="#444444")
+    ax.plot(s["nodes"], s["mean_rel_err"] * 100, "D", mfc="white", mec=C_SWARM, mew=2.5, ms=13, zorder=4)
+    ax.annotate(f"pre-trained swarm mesh\n{s['nodes']:,} nodes: {pct(s['mean_rel_err'])}",
+                (s["nodes"], s["mean_rel_err"] * 100), textcoords="offset points", xytext=(14, 4), fontsize=14,
+                color=C_SWARM, va="bottom")
+    ma, bs = PT_["picks"]["most_accurate"], PT_["picks"]["best_scoring"]
+    for p, txt, off, ha in ((ma, "most accurate", (6, -40), "left"), (bs, "best-scoring", (-10, -40), "right")):
+        ax.plot(p["nodes"], p["mean_rel_err"] * 100, "o", mfc="none", mec="black", mew=1.8, ms=15, zorder=5)
+        ax.annotate(f"{txt}\n{p['nodes']:,} nodes: {pct(p['mean_rel_err'])}", (p["nodes"], p["mean_rel_err"] * 100),
+                    textcoords="offset points", xytext=off, ha=ha, va="top", fontsize=14, fontweight="bold",
+                    color=C_SWARM, arrowprops=dict(arrowstyle="-", color="#777777", lw=1))
     ax.set_xscale("log")
-    xs = [p["nodes"] for p in extra or []]
-    ax.set_xlim(min([2000] + [x / 1.2 for x in xs]), max([80000] + [x * 1.5 for x in xs]))
-    ymax = max(18.0, max([a["mean_rel_err"] * 100] + [p["mean_rel_err"] * 100 for p in extra or []]) * 1.1)
-    ax.set_ylim(0, ymax)
+    ax.set_xlim(2000, 60000)
+    ax.set_ylim(0, 9)
     ax.xaxis.set_major_locator(matplotlib.ticker.FixedLocator([2000, 5000, 10000, 20000, 50000]))
     ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.set_xlabel("mesh nodes (log scale)")
-    ax.set_ylabel("mean error vs the real test (%)")
+    ax.set_ylabel("off the real test (%)")
+    title = (f"Post-trained meshes: {ma['mean_rel_err']*100:.1f}-{bs['mean_rel_err']*100:.1f} % off the real "
+             f"test, automesher {pct(a['mean_rel_err'])}")
+    titled(fig, title, f"dots: all {len(ok)} post-training runs (10 generations x 4 agents), coloured by "
+                       "generation; same learned test conditions for every mesh; all P2")
+    fig.subplots_adjust(right=0.94)
+    last = [r for r in ok if r["generation"] == ng - 1]
+    lean = PT_["picks"]["best_lean"]
+    rows = "\n".join(f"| {r['label']} | {r['nodes']:,} | {pct(r['mean_rel_err'], 2)} |"
+                     for r in (a, s, B["h4"], B["h25"], B["h20"]))
+    md = f"""
+**Caption.** With the learned test conditions frozen, the mesh decides how far the simulation is off the real
+test. gmsh's default mesh is {pct(a['mean_rel_err'])} off and the swarm's pre-trained mesh
+{pct(s['mean_rel_err'])}. Post-training on the real test moves the swarm's meshes to about 2 %: the most accurate
+is {pct(ma['mean_rel_err'], 2)} off at {ma['nodes']:,} nodes ({ma['run_id']}; the same mesh in
+{', '.join(ma['same_mesh_runs'])}), and the best-scoring {pct(bs['mean_rel_err'], 2)} at {bs['nodes']:,} nodes
+({bs['run_id']}). The last generation's four meshes are all
+{min(r['mean_rel_err'] for r in last)*100:.1f}-{max(r['mean_rel_err'] for r in last)*100:.1f} % off at {min(r['nodes'] for r in last):,}-{max(r['nodes'] for r in last):,} nodes.
 
+| reference mesh | nodes | off the real test |
+|---|---|---|
+{rows}
+| post-trained, most accurate ({ma['run_id']}) | {ma['nodes']:,} | {pct(ma['mean_rel_err'], 2)} |
+| post-trained, best lean (< 6k nodes, {lean['run_id']}) | {lean['nodes']:,} | {pct(lean['mean_rel_err'], 2)} |
+| post-trained, best-scoring ({bs['run_id']}) | {bs['nodes']:,} | {pct(bs['mean_rel_err'], 2)} |
 
-def fig4_error_vs_nodes(D):
-    fig, ax = plt.subplots()
-    draw_error_vs_nodes(ax, D)
-    a = D["meshes"]["auto"]
-    titled(fig, f"With the learned setup, the automesher is {a['mean_rel_err']*100:.0f} % off the real test",
-           "frozen setup (sticking platens + seating gap + compliance); mean error at the 5 checkpoints vs the "
-           "Instron curve; one CalculiX J2 + NLGEOM ramp per mesh, all P2")
-    save(fig, "fig4_error_vs_nodes")
+The most accurate post-trained mesh is {a['mean_rel_err']/ma['mean_rel_err']:.1f}x more accurate than the
+automesher; the best-scoring one {a['mean_rel_err']/bs['mean_rel_err']:.1f}x at {bs['nodes']/a['nodes']:.1f}x its nodes.
 
+**Data.** {PT_['run_dir']}/gen*/runs/*.json (checks.nonlinear: mean_rel_err, nodes);
+results/real_data_finetune/baselines/baselines.json and */curve.csv.
 
-def draw_curves(ax, D, extra=None, xmax=2.75):
-    """Figure 5's axes; `extra` = list of {"u_cross_mm", "F_N", "label"} drawn in the swarm colour."""
-    t, M = D["test"], D["meshes"]
-    ub, Fb = loading_branch(*read_test())
-    ax.plot(ub, Fb / 1e3, color=C_TEST, lw=3.6, zorder=5)
-    ax.text(1.62, 3.0, "measured", fontsize=15, fontweight="bold")
-    for x in t["checkpoints_mm"]:
-        ax.axvline(x, color="#cccccc", lw=0.8, ls=":", zorder=0)
-    ax.plot(t["checkpoints_mm"], np.array(t["force_meas_N"]) / 1e3, "o", color=C_TEST, ms=8, zorder=6)
-    curves = [(f"gmsh default (automesher), {M['auto']['nodes']:,} nodes: {M['auto']['mean_rel_err']*100:.1f} %",
-               M["auto"], dict(color=C_AUTO, lw=3, ls="--"), "#555555"),
-              (f"swarm's best bc0 mesh, {M['swarm']['nodes']:,} nodes: {M['swarm']['mean_rel_err']*100:.1f} %",
-               M["swarm"], dict(color=C_SWARM, lw=3), C_SWARM),
-              (f"uniform 2 mm, {M['h20']['nodes']:,} nodes: {M['h20']['mean_rel_err']*100:.1f} %",
-               M["h20"], dict(color=C_UNIF, lw=1.8, alpha=0.8), "#555555")]
-    curves += [(e["label"], e, dict(color=C_SWARM, lw=3, ls="-."), C_SWARM) for e in extra or []]
-    ends = []
-    for lab, r, kw, tc in curves:
-        uc, F = np.array(r["u_cross_mm"]), np.array(r["F_N"]) / 1e3
-        keep = uc <= xmax
-        uc_end = min(xmax, uc[-1])
-        F_end = float(np.interp(uc_end, uc, F))
-        ax.plot(np.append(uc[keep], uc_end), np.append(F[keep], F_end), **kw, zorder=4)
-        ends.append([F_end, lab, tc])
-    ends.sort(key=lambda z: -z[0])                     # labels top to bottom, pushed apart by >= 0.3 kN
-    for i in range(1, len(ends)):
-        ends[i][0] = min(ends[i][0], ends[i - 1][0] - 0.3)
-    for y, lab, tc in ends:
-        ax.text(xmax + 0.04, y, lab, fontsize=13, va="center", color=tc)
-    ax.set_xlim(0, xmax + 2.1), ax.set_ylim(0, 6.2)
-    ax.set_xticks([0, 0.5, 1, 1.5, 2, 2.5])
-    ax.set_xlabel("crosshead travel (mm)")
-    ax.set_ylabel("force (kN)")
+**Caveats.**
+- Uniform 4 mm ({B['h4']['nodes']:,} nodes, {pct(B['h4']['mean_rel_err'], 2)}) is as accurate as the most accurate
+  post-trained mesh with 8 % more nodes. The lean post-trained meshes are slightly less accurate (2.2-2.3 %) with
+  37-41 % fewer nodes (5.6-6.0k vs 9.5k): the gain over uniform refinement is in nodes, not accuracy. The finer
+  uniform meshes are more accurate (1.1-1.2 %) at 2.8-4.7x the nodes of the most accurate post-trained mesh.
+- Below about 1 % the remaining difference is model error (material, conditions), not mesh error; the seating gap
+  and compliance were fitted on this specimen.
+- Several agents resubmitted the same mesh, so some dots overlap.
+"""
+    save(fig, "fig4_error_vs_nodes", title, md)
 
 
 def fig5_curves(D):
+    t, a, p = D["test"], D["baselines"]["auto"], D["post_training"]["picks"]["most_accurate"]
+    ub, Fb = loading_branch(*read_test())
+    xmax = 2.75
     fig, ax = plt.subplots()
-    draw_curves(ax, D)
-    a = D["meshes"]["auto"]
-    over = np.array(a["force_sim_N"]) / np.array(D["test"]["force_meas_N"]) - 1
-    titled(fig, f"The automesher's mesh is too stiff: {over.min()*100:.0f}-{over.max()*100:.0f} % above the "
-                f"real test", "frozen setup, same solver and physics, only the mesh differs; dots = the 5 scoring "
-                "checkpoints; this gap is what fine-tuning on the test must close")
-    save(fig, "fig5_curves_vs_test")
+    ax.plot(ub, Fb / 1e3, color=C_TEST, lw=3.8, zorder=5)
+    ends = []
+    for r, kw, lab, tc in ((a, dict(color=C_AUTO, lw=3.2, ls="--"),
+                            f"automesher, {a['nodes']:,} nodes:\n{pct(a['mean_rel_err'])} off", "#555555"),
+                           (p, dict(color=C_SWARM, lw=3.4),
+                            f"post-trained, {p['nodes']:,} nodes:\n{pct(p['mean_rel_err'])} off", C_SWARM)):
+        uc, F = np.array(r["u_cross_mm"]), np.array(r["F_N"]) / 1e3
+        keep = uc <= xmax
+        Fe = float(np.interp(xmax, uc, F))
+        ax.plot(np.append(uc[keep], xmax), np.append(F[keep], Fe), **kw, zorder=4)
+        ends.append((Fe, lab, tc))
+    ax.text(xmax + 0.06, ends[0][0] + 0.15, ends[0][1], fontsize=15, va="center", color=ends[0][2])
+    ax.text(xmax + 0.06, ends[1][0] - 0.45, ends[1][1], fontsize=15, va="center", color=ends[1][2],
+            fontweight="bold")
+    ax.text(1.75, 3.1, "real test", fontsize=16, fontweight="bold")
+    ax.set_xlim(0, xmax + 1.5), ax.set_ylim(0, 6.0)
+    ax.set_xticks([0, 0.5, 1, 1.5, 2, 2.5])
+    ax.set_xlabel("crosshead travel (mm)")
+    ax.set_ylabel("force (kN)")
+    title = (f"Post-trained mesh tracks the real test: {pct(p['mean_rel_err'])} off, automesher "
+             f"{pct(a['mean_rel_err'])}")
+    titled(fig, title, "same learned test conditions, solver and material; only the mesh differs. Post-trained: "
+                       "the run's most accurate mesh")
+    over_a = np.array(a["force_sim_N"]) / np.array(t["force_meas_N"]) - 1
+    over_p = np.array(p["force_sim_N"]) / np.array(t["force_meas_N"]) - 1
+    md = f"""
+**Caption.** Same conditions, only the mesh differs. gmsh's default mesh is too stiff: its curve runs
+{over_a.min()*100:.0f}-{over_a.max()*100:.0f} % above the real test ({pct(a['mean_rel_err'])} off on average). The
+most accurate mesh from post-training ({p['run_id']}, {p['nodes']:,} nodes) follows the measured curve,
+{pct(p['mean_rel_err'])} off.
+
+**Key numbers** (force at 0.5 / 1.0 / 1.5 / 2.0 / 2.5 mm crosshead):
+- real test: {' / '.join(f'{x:.0f}' for x in t['force_meas_N'])} N
+- automesher: {' / '.join(f'{x:.0f}' for x in a['force_sim_N'])} N ({' / '.join(f'{x*100:+.1f}' for x in over_a)} %)
+- post-trained: {' / '.join(f'{x:.0f}' for x in p['force_sim_N'])} N ({' / '.join(f'{x*100:+.1f}' for x in over_p)} %)
+
+**Data.** {a['file']}; {p['file']}.
+
+**Caveats.** The largest remaining gap is at 1.0 mm ({over_p[1]*100:+.1f} %), inside the seating toe, which the
+simple seating-gap model only approximates; every mesh shares it (uniform 2 mm: +3.9 %). This mesh is the one used
+for the Act 3 crack and video pages.
+"""
+    save(fig, "fig5_curves_vs_test", title, md)
 
 
 def fig6_renders(D):
@@ -418,7 +485,7 @@ def fig6_renders(D):
     fig, axs = plt.subplots(2, 1)
     sl, st = summ["team_slide"], summ["team_stick"]
     rows = [("team_slide", f"frictionless platens: prongs splay, force tops out at {sl['F_max_N']/1e3:.2f} kN",
-             C_SLIDE),
+             C_BEFORE),
             ("team_stick", f"sticking platens: still rising, {st['F_at_test_peak_travel_N']/1e3:.2f} kN at the "
                            "test's peak travel", C_STICK)]
     for ax, (n, lab, col) in zip(axs, rows):
@@ -426,27 +493,121 @@ def fig6_renders(D):
         ax.imshow(im)
         ax.set_axis_off()
         ax.set_title(lab, fontsize=15, color=col, loc="left", pad=4, fontweight="bold")
-    titled(fig, "Platen friction carries the strength: without it the prongs splay",
-           "left: equivalent plastic strain (0-0.10); right: largest principal stress (MPa); deformed at true "
-           "scale; CalculiX J2 + NLGEOM, 41k-node P2 mesh, dogbone material (teammates' renders, ccx_ramp/)")
+    title = "Platen friction carries the strength: without it the prongs splay"
+    titled(fig, title, "left: equivalent plastic strain (0-0.10); right: largest principal stress (MPa); deformed "
+                       "at true scale; CalculiX J2 + NLGEOM, 41k-node P2 mesh, dogbone material (teammates' renders)")
     fig.subplots_adjust(left=0.02, right=0.98, top=0.78, bottom=0.01, hspace=0.14)
-    save(fig, "fig6_platen_renders")
+    md = f"""
+**Caption.** The teammates' CalculiX renders on a 41k-node mesh: with frictionless platens the prongs splay and
+yield at the nut pockets, and the force tops out at {sl['F_max_N']/1e3:.2f} kN; with sticking platens the part
+keeps carrying load ({st['F_at_test_peak_travel_N']/1e3:.2f} kN at the test's peak travel). This is why the
+learned test conditions use sticking platens.
+
+**Key numbers** (physical_tests/abc_00000065_compression/ccx_ramp/summary.json, dogbone material): team_slide
+F_max {sl['F_max_N']:.0f} N; team_stick F at the test's peak travel {st['F_at_test_peak_travel_N']:.0f} N, F_max
+{st['F_max_N']:.0f} N at {st['u_at_F_max_mm']:.1f} mm.
+
+**Data.** physical_tests/abc_00000065_compression/ccx_ramp/render_team_slide.png and render_team_stick.png
+(copied here unchanged; the figure crops their middle rows), summary.json.
+
+**Caveats.**
+- These are the teammates' ramps (scripts/ccx_compression_ramp.py), not the frozen setup: the base is held, there
+  is no seating/compliance mapping, and the travel is platen travel.
+- The panel subtitles inside the images are the renderer's own labels (small at slide size).
+"""
+    save(fig, "fig6_platen_renders", title, md)
+
+
+def fig7_progress(D):
+    G, B = D["post_training"]["generations"], D["baselines"]
+    s0 = D["auto_score"]
+    x = [g["generation"] for g in G]
+    best = np.array([g["best_base_score"] for g in G]) / s0
+    mean = np.array([g["mean_base_score"] for g in G]) / s0
+    err = np.array([g["best_err"] for g in G]) * 100
+    fig, (a1, a2) = plt.subplots(1, 2, gridspec_kw={"wspace": 0.42})
+    a1.plot(x, best, "-o", color=C_SWARM, lw=3, ms=9, zorder=4)
+    a1.plot(x, mean, "--s", color="#e09ab4", lw=2.5, ms=7, zorder=3)
+    a1.text(2.6, 3.2, "best agent", ha="right", va="bottom", fontsize=14, color=C_SWARM, fontweight="bold")
+    a1.text(4.2, 2.95, "average agent", ha="left", va="top", fontsize=14, color="#c2638a")
+    refs = [(B["h4"]["base_score"] / s0, "uniform 4 mm", C_UNIF, ":"),
+            (B["swarm_bc0"]["base_score"] / s0, "pre-trained swarm mesh", C_SWARM, ":"),
+            (1.0, "automesher", C_AUTO, "--")]
+    for y, lab, col, ls in refs:
+        a1.axhline(y, color=col, ls=ls, lw=1.8, zorder=2)
+        a1.text(9.3, y + 0.05, f"{lab} {y:.2f}x", fontsize=14, color=col, va="bottom", ha="right")
+    a1.set_ylim(0, 4.0)
+    a1.set_ylabel("score, x the automesher")
+    a1.set_title("score: accuracy and node cost", fontsize=15, loc="left")
+    a2.plot(x, err, "-o", color=C_SWARM, lw=3, ms=9, zorder=4)
+    for xi, ei, g in zip(x, err, G):
+        a2.text(xi, ei + (0.2 if xi % 2 == 0 else 0.75), f"{g['best_err_nodes']/1e3:.1f}k", ha="center", va="bottom", fontsize=14,
+                color="#555555")
+    refs2 = [(B["auto"]["mean_rel_err"] * 100, "automesher", C_AUTO, "--"),
+             (B["swarm_bc0"]["mean_rel_err"] * 100, "pre-trained swarm mesh", C_SWARM, ":"),
+             (B["h4"]["mean_rel_err"] * 100, "uniform 4 mm", C_UNIF, ":")]
+    for y, lab, col, ls in refs2:
+        a2.axhline(y, color=col, ls=ls, lw=1.8, zorder=2)
+        below = lab == "uniform 4 mm"
+        a2.text(9.3, y - 0.12 if below else y + 0.1, f"{lab} {y:.1f} %", fontsize=14, color=col,
+                va="top" if below else "bottom", ha="right")
+    a2.set_ylim(0, 9)
+    a2.set_ylabel("off the real test (%)")
+    a2.set_title("most accurate mesh (label: nodes)", fontsize=15, loc="left")
+    for ax in (a1, a2):
+        ax.set_xticks(x)
+        ax.set_xlim(-0.4, x[-1] + 0.4)
+        ax.set_xlabel("post-training generation")
+    title = (f"Post-training: best score {best[0]:.1f}x → {best.max():.1f}x the automesher, average "
+             f"{mean[0]:.1f}x → {mean[-1]:.1f}x")
+    titled(fig, title, "4 agents per generation post-trained on the real test, learned test conditions frozen; "
+                       "score = accuracy gain over the automesher, discounted by node cost (automesher = 1x)")
+    fig.subplots_adjust(left=0.07, right=0.98, bottom=0.12, top=0.76)
+    tab = "\n".join(f"| {g['generation']} | {g['best_base_score']:.3f} ({g['best_base_score']/s0:.2f}x, "
+                    f"{g['best_score_run'].replace(PID + '-', '')}) | {g['mean_base_score']:.3f} "
+                    f"({g['mean_base_score']/s0:.2f}x) | {g['best_err']*100:.2f} % at {g['best_err_nodes']:,} |"
+                    for g in G)
+    md = f"""
+**Caption.** Post-training the swarm on the real test, 10 generations of 4 agents. Left: the best agent's score
+rises from {best[0]:.2f}x to {best.max():.2f}x the automesher (peak in generation {int(np.argmax(best))}) and the
+average agent's from {mean[0]:.2f}x to {mean[-1]:.2f}x: every agent, not just the best, ends well above the
+uniform 4 mm mesh ({B['h4']['base_score']/s0:.2f}x) and the pre-trained swarm mesh
+({B['swarm_bc0']['base_score']/s0:.2f}x). Right: the most accurate mesh is already at {err[0]:.2f} % in
+generation 0; later generations keep the error near 2.2-2.6 % while cutting the nodes from 8.8k to about 6k,
+which is what the score rewards.
+
+**Score** (checks.base_score, field-mode formula against the automesher's run of the same frozen ramp): g =
+e_auto / e, accuracy = (g/2)^2 below g = 2 and g/2 above, score = accuracy x automesher DOFs / own DOFs. The
+automesher scores {s0:.2f} (= 1x here).
+
+| gen | best base score | mean base score | most accurate mesh |
+|---|---|---|---|
+{tab}
+
+**Data.** {D['post_training']['run_dir']}/gen*/runs/*.json (checks.base_score, checks.nonlinear.mean_rel_err and
+nodes); references from results/real_data_finetune/baselines/baselines.json (score, mean_rel_err).
+
+**Caveats.**
+- One run, no repeats. The gain is mostly in node cost: the error of the most accurate mesh does not fall after
+  generation 0-1 (1.97 %), it stays near 2.2-2.6 % with about 30 % fewer nodes.
+- Generations 0 and 1 contain the same 8,753-node mesh (g0 a2, g1 a1, g1 a2).
+"""
+    save(fig, "fig7_post_training_progress", title, md)
 
 
 # --------------------------------------------------------------------------- outputs
 
 def write_tables(D):
-    slim = json.loads(json.dumps(D))
-    (HERE / "act3_data.json").write_text(json.dumps(slim, indent=1))
+    (HERE / "act3_data.json").write_text(json.dumps(D, indent=1))
     with open(HERE / "act3_errors.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["figure", "case", "nodes", "mean_rel_err", "err_0.5", "err_1.0", "err_1.5", "err_2.0", "err_2.5"])
-        for v, r in D["bc_variants"].items():
-            w.writerow(["fig2", v, "", f"{r['mean_rel_err']:.5f}", *r["rel_err"]])
-        for s in D["ladder"]:
-            w.writerow(["fig3", s["step"].replace("\n", " "), "", f"{s['mean_rel_err']:.5f}"])
-        for m, r in D["meshes"].items():
-            w.writerow(["fig4/fig5", m, r["nodes"], f"{r['mean_rel_err']:.5f}", *r["rel_err"]])
+        w.writerow(["case", "run_id", "generation", "nodes", "base_score", "mean_rel_err"])
+        w.writerow(["before post-training", "", "", D["before"]["nodes"], "", f"{D['before']['mean_rel_err']:.5f}"])
+        for k, r in D["baselines"].items():
+            w.writerow([k, "", "", r["nodes"], f"{r['base_score']:.4f}", f"{r['mean_rel_err']:.5f}"])
+        for r in D["post_training"]["runs"]:
+            w.writerow(["post-training", r["run_id"], r["generation"], r["nodes"], f"{r['base_score']:.4f}",
+                        f"{r['mean_rel_err']:.5f}"])
 
 
 def main():
@@ -454,24 +615,16 @@ def main():
     D = compute()
     write_tables(D)
     fig1_test(D)
-    fig2_bc(D)
+    fig2_before(D)
     fig3_ladder(D)
     fig4_error_vs_nodes(D)
     fig5_curves(D)
     fig6_renders(D)
-    import sys
-    sys.path.insert(0, str(HERE))
-    import plot_finetune_run as pf       # the marked slot for the (not yet run) fine-tuning
-    pf.fig_progress(D, [], HERE, stem="fig7_finetune_progress_STUB")
-    print("wrote fig7_finetune_progress_STUB")
-    print(json.dumps({k: D[k] for k in ("refit_on_h20", "frictionless_best_mapping", "ladder_on_2mm_mesh",
-                                        "ladder_other_orders", "bonded_equals_h4")}, indent=1))
-    print("ladder", [(s["step"].replace("\n", " "), round(s["mean_rel_err"] * 100, 2)) for s in D["ladder"]])
-    print("bc", {k: round(v["mean_rel_err"] * 100, 2) for k, v in D["bc_variants"].items()})
-    print("mesh", {k: (v["nodes"], round(v["mean_rel_err"] * 100, 2), round(v["mean_rel_err_own_fit"] * 100, 2))
-                   for k, v in D["meshes"].items()})
-    print("committed", D["committed_baselines"])
-    print("test", {k: v for k, v in D["test"].items()})
+    fig7_progress(D)
+    for g in D["post_training"]["generations"]:
+        print({k: (round(v, 4) if isinstance(v, float) else v) for k, v in g.items()})
+    for k, p in D["post_training"]["picks"].items():
+        print(k, p["run_id"], p["nodes"], round(p["mean_rel_err"] * 100, 2), round(p["base_score"], 3))
 
 
 if __name__ == "__main__":
