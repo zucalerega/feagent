@@ -155,17 +155,17 @@ class BackwardFacingStep2D(FlowProblem):
 
         p = self.params
         k = refinement_factor(p["h0"], h)
-        s, Lin = p["s"], p["L_in"]
+        s = p["s"]
         X1 = self.x_split * s
         ny = count(round(s / p["h0"]), k)
         b = self._blocks
         done = set()
         for (pa, pb), tag in b.lines.items():
-            (xa, ya, _), (xb, yb, _) = b.coords[pa], b.coords[pb]
+            xa, xb = b.coords[pa][0], b.coords[pb][0]
             if abs(xa - xb) < 1e-12:                                   # vertical: s tall
                 done.add(set_edge(tag, ny))
                 continue
-            lo, hi = min(xa, xb), max(xa, xb)
+            hi = max(xa, xb)
             forward = tag if xb > xa else -tag                          # oriented +x
             if hi <= 1e-12:                                             # inlet channel: finer at x = 0
                 done.add(set_edge(-forward, count(self.n_in0, k), self.ratio_in))
@@ -177,7 +177,6 @@ class BackwardFacingStep2D(FlowProblem):
         if missing:
             raise RuntimeError(f"{self.id}: edges without a transfinite count: {missing}")
         transfinite_all(2)
-        del Lin
 
     def study_sizes(self, order: int = 2) -> list[float]:
         h0 = self.params["h0"]

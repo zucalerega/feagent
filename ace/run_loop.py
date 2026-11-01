@@ -141,7 +141,6 @@ def _score_worker(run: dict, report_dir: str | None = None) -> tuple:
         orc = stages.run_oracles(run, tol)
         report = None
         if report_dir is not None:                        # --deep only
-            from ace import fea
             if fea.is_flow(fea.get_problem(run["problem_id"])):
                 from ace.flow_report import build_flow_report   # velocity error map (ace.flow_field)
                 report = build_flow_report(run, Path(report_dir))
@@ -670,7 +669,6 @@ def load_init(export: Path, names: list[str]) -> dict:
 
 
 def _is_flow_task(problem_id: str) -> bool:
-    from ace import fea
     try:
         return fea.is_flow(fea.get_problem(problem_id))
     except KeyError:
