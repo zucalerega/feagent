@@ -48,7 +48,8 @@ def _snapshot(case, p: SupersonicBluntWedge2D, cdir: Path, fm, poly, mesh, tdir:
 def average(case, p: SupersonicBluntWedge2D, cdir: Path, n_ft: int, work: Path) -> dict:
     """Continue the kept case ``cdir`` by ``n_ft`` flow times, one at a time, and evaluate the QoIs after
     each: their time mean (the reference over a limit cycle) and band (min, max). Also returns the
-    last snapshot result (for the standoff)."""
+    last snapshot result (for the standoff). Every sample is appended to <cdir>_samples.jsonl as it is
+    taken, so a run that is killed resumes with the samples it has and takes only the rest."""
     fe = require_openfoam()
     fm = convert(case.mesh_path(), 2, 1.0, work / "_avg.msh")
     poly = fio.read_poly(cdir)
@@ -58,8 +59,12 @@ def average(case, p: SupersonicBluntWedge2D, cdir: Path, n_ft: int, work: Path) 
     speed = float(np.linalg.norm(p.u_inf))
     t_ref = float(np.ptp(mesh.C @ e)) / speed                 # as the backend defines one flow time
     opts = {**fc.DEFAULTS, **(case.analysis.options or {})}
-    samples, res = [], None
-    for _ in range(n_ft):
+    log = Path(str(cdir) + "_samples.jsonl")
+    samples = [json.loads(line) for line in log.read_text().splitlines() if line.strip()] if log.exists() else []
+    res = None
+    if samples:
+        print(f"  {len(samples)} samples already in {log}", flush=True)
+    for _ in range(max(0, n_ft - len(samples))):
         t0 = float(fc._times(cdir)[-1].name)
         fc._write_control(cdir, t0 + t_ref, 1e-9, t_ref, float(opts["max_co"]))
         code, _, tail, reason = fc._run_solver(fe, cdir, None)
@@ -70,6 +75,10 @@ def average(case, p: SupersonicBluntWedge2D, cdir: Path, n_ft: int, work: Path) 
             shutil.rmtree(old)
         res = _snapshot(case, p, cdir, fm, poly, mesh, times[-1])
         samples.append(res.evaluate_all())
+        with open(log, "a") as f:
+            f.write(json.dumps(samples[-1]) + "\n")
+    if res is None:                          # every sample was taken before: the latest state for the standoff
+        res = _snapshot(case, p, cdir, fm, poly, mesh, fc._times(cdir)[-1])
     names = list(samples[0])
     return {"flow_times": n_ft, "mean": {n: float(np.mean([s[n] for s in samples])) for n in names},
             "min": {n: float(min(s[n] for s in samples)) for n in names},
