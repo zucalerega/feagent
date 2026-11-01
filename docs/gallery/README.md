@@ -4,6 +4,12 @@ Stills and figures from the multi-system mesh study on the two physical-test par
 clamp), the CalculiX crush-to-snap runs, the clamp neck-break study and the wingbox twin. Videos are not in git;
 every still here is a frame of one. Numbers: `experiments/mesh_systems/RESULTS.md`, `experiments/physical/CRUSH_RUNS.md`.
 
+## Video: abc_00000065 crushed on six mesh systems (Omniverse RTX)
+
+![crush grid](videos/all_systems_abc_00000065_crush_rtx.gif)
+
+[MP4](videos/all_systems_abc_00000065_crush_rtx.mp4) (16 s).
+
 ## Multi-agent results
 
 - `fig_ma1_swarm_vs_single`: the team's ACE swarm runs (main): mean of each round's best mesh vs team size, against one agent given the same solves, turns and time. One run per configuration; on the tube the single agent ties from round 3.
