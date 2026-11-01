@@ -177,12 +177,16 @@ python -m ace.run_loop --suite cfd3d                       # real agents, 3D (sl
 | `cfd` | train | `poiseuille_channel` | `dp_AB` (exact, 1 %) | 1200 | easy: the scheme choice matters more than the mesh |
 | `cfd` | train | `lid_driven_cavity_re100` | `u_vcl_min` (Ghia 1982, 3 %) | 2500 | closed cavity, lid-corner singularities |
 | `cfd` | train | `taylor_couette_2d` | `u_theta_mid` (exact, 1 %) | 2500 | curved walls, moving-wall expression BC, closed domain |
+| `cfd` | train | `backward_facing_step_2d` | `u_bubble` (fixed solver, mesh-converged, 3 %) | 12000 | separation at a sharp corner: refine the corner and the bubble behind it |
 | `cfd` | held out | `cylinder_channel_dfg_2d1` | `drag` (Schaefer & Turek 1996, 1 %) | 12000 | external flow: refine at the cylinder, not everywhere |
 | `cfd3d` | train | `pipe_poiseuille_3d` | `dp_AB` (exact, 2 %) | 6000 | 3D tets; the faceted wall loses area at O(h^2) |
 | `cfd3d` | train | `square_duct_3d` | `dp_AB` (exact developed, 2 %) | 6000 | uniform inflow develops first; 3D tets |
 
-`taylor_couette_2d` and `square_duct_3d` are new in this branch. Both are checked against the fixed
-solver in `docs/benchmarks_cfd.md`. The suites can be mixed with `--problems` / `--holdout`.
+`taylor_couette_2d`, `square_duct_3d` and `backward_facing_step_2d` are new in this branch. The first
+two are checked against the fixed solver in `docs/benchmarks_cfd.md`.
+`backward_facing_step_2d` has no published value for its configuration. Its references are the fixed
+solver's own mesh-converged values (a structured study to h0 / 8, `docs/benchmarks_cfd.md`,
+"Backward-facing step"). The suites can be mixed with `--problems` / `--holdout`.
 
 Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mesh for each, and
 `tests/test_diagnosis.py` checks that it passes every oracle. For example, the cylinder drag is
@@ -190,10 +194,22 @@ Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mes
 0.34 % off at 3229 nodes with a boundary layer on the cylinder and the walls. With lighter refinement (3277 nodes, no boundary layer)
 it was 1.71 % off (measured before the wall-distance fix in the force evaluation) and fails the 1 %
 tolerance, so local refinement is what the agents have to learn.
-The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with
-linearUpwind meets the tolerance (`calibration.json`: Poiseuille 0.08 %, Taylor-Couette 0.36 %,
-cavity 1.33 %, 3D pipe 1.50 %, 3D duct 0.84 %), so the score rewards the cheapest accurate setup.
-Upwind is far worse: 3.6 % against 0.08 % on Poiseuille, and 6.2 % and 6.7 % on the pipe and the duct.
+The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with linearUpwind
+(`calibration.json`, meshed on the CAD) mostly meets the tolerance:
+
+| task | uniform at the cap |
+|---|---|
+| Poiseuille | 0.20 % |
+| Taylor-Couette | 0.50 % |
+| cavity | 1.29 % (upwind 1.18 %) |
+| DFG cylinder | 0.71 % |
+| backward step | 2.83 %, at the size floor (10.9k nodes, below its cap) |
+| 3D duct | 0.55 % |
+| 3D pipe | 2.08 %, just over its 2 % tolerance |
+
+So the score mostly rewards the cheapest accurate setup. On the pipe, swept hexahedra reach the
+tolerance with a fifth of the nodes. Upwind is far worse: 3.8 % on Poiseuille, 8.1 % on the step,
+8.4 % and 7.2 % on the pipe and the duct.
 
 **3D flow (`cfd3d`).** The agent's mesh tool makes unstructured tets in 3D. With OpenFOAM's plain
 schemes, those converged to an axial pressure gradient 12-19 % high at any mesh size, so 3D was left

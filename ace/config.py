@@ -92,12 +92,17 @@ TASKS = {
     # 4.3k nodes (docs/solver_openfoam.md, "3D meshes").
     "pipe_poiseuille_3d": {"qoi": "dp_AB", "node_cap": 6000},             # 3D pipe, exact (curved, faceted wall)
     "square_duct_3d": {"qoi": "dp_AB", "node_cap": 6000},                 # 3D duct, developing flow, exact developed
+    # 2D backward-facing step (feacore/problems/cfd/backward_step.py): u_x inside the recirculation bubble,
+    # against the fixed solver's own mesh-converged value. The flow separates at the step's sharp corner:
+    # a uniform mesh at the size floor (10.9k nodes) is ~3 % off, refining the corner and the bubble
+    # gets under 2 % with half the nodes (ace/README.md, "The CFD suite").
+    "backward_facing_step_2d": {"qoi": "u_bubble", "node_cap": 12000},
 }
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
 # The CFD suite (run_loop --suite cfd): held out is a new topology, external flow past a cylinder,
 # where the cheapest accurate mesh refines at the body instead of everywhere.
-TRAIN_CFD = ["poiseuille_channel", "lid_driven_cavity_re100", "taylor_couette_2d"]
+TRAIN_CFD = ["poiseuille_channel", "lid_driven_cavity_re100", "taylor_couette_2d", "backward_facing_step_2d"]
 HOLDOUT_CFD = ["cylinder_channel_dfg_2d1"]
 # 3D flow (run_loop --suite cfd3d): each solve takes 5-30 s instead of 1-5 s, so it is its own suite.
 TRAIN_CFD3D = ["pipe_poiseuille_3d", "square_duct_3d"]

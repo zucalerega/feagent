@@ -13,6 +13,7 @@ and tagged `cfd`. The fixed flow solver is the OpenFOAM backend (`backend="openf
 | `pipe_poiseuille_3d` | Hagen-Poiseuille flow, 3D pipe R = 5 mm, L = 5 cm, Re = 10 | `dp_AB` on the axis [Pa]; `u_centreline`; `wall_force` [N]; `flow_rate_outlet` [m^3/s] | exact: 8 mu U (x_B - x_A) / R^2; 2 U; 8 pi mu U L; pi R^2 U | 2 % | analytical |
 | `taylor_couette_2d` | circular Couette flow: annulus R1 = 1 cm, R2 = 2 cm, inner wall rotating at 10 rad/s (expression wall velocity), closed, Re = 10 | `u_theta_mid` = u_y at mid-gap on +x [m/s]; `u_mag_inner` = speed at r = 1.25 cm, 135 deg; `dp_gap` = p(r = 1.75 cm) - p(r = 1.25 cm) [Pa] | exact: u_theta = A r + B / r; p = rho (A^2 r^2 / 2 + 2 A B ln r - B^2 / (2 r^2)) | 1 % / 1 % / 2 % | analytical |
 | `square_duct_3d` | developing laminar flow in a square duct s = 1 cm, L = 10 s, UNIFORM inflow, Re = 10 | `u_axis`, `u_offaxis` = u_x at x = 0.75 L on the axis and at y = s/4 [m/s]; `dp_AB` = p(0.5 L) - p(0.9 L) on the axis [Pa]; `flow_rate_outlet` [m^3/s] | exact developed values (series, White eq. 3-48; Shah & London 1978): u_max / U = 2.096256, u(s/4, 0) / U = 1.631416, G s^2 / (mu U) = 28.4542 (f Re = 14.227); U s^2 | 2 % / 2 % / 2 % / 1 % | analytical |
+| `backward_facing_step_2d` | laminar flow over a backward-facing step, expansion ratio 2 (step s = 1 cm, inlet channel 4 s, outlet 30 s), parabolic inflow, Re = 200 on the inlet hydraulic diameter 2 s | `u_bubble` = u_x at (2 s, 0.25 s) in the recirculation bubble; `v_shear` = u_y at (2 s, s); `floor_force` (x-force of the fluid on the floor y = 0) [N/m] | the fixed solver's own mesh-converged values (structured study, Richardson): -1.62691e-3 m/s, -8.92529e-4 m/s, 3.10536e-4 N/m | 3 % / 2 % / 2 % | converged_numerical |
 
 Files: `_common.py` (the `FlowProblem` base class, block-structured mesh builder, citations),
 `poiseuille.py`, `cavity.py`, `cylinder.py`, `pipe.py`, `taylor_couette.py`, `square_duct.py`. Tests: `tests/test_problems_cfd.py`.
@@ -124,6 +125,34 @@ dp in [0.1172, 0.1176]; these intervals are quoted from memory.
   - Forces and dp are pressure differences, so the pressure level does not matter either.
 - **Lift tolerance.** Lift is about 0.2 % of the drag and needs a well-resolved boundary layer and wake.
   Its tolerance is 5 %, against the paper's interval of +-3 %.
+
+## Backward-facing step (`backward_facing_step_2d`, a solver reference)
+
+No published value fits this configuration exactly (Armaly et al. 1983 measured reattachment lengths
+for expansion ratio 1.94, not for this geometry), so the references are the fixed solver's own
+mesh-converged values. They come from the structured reference mesh: five transfinite quad blocks, graded in x
+towards the step (ratio 4 over the inlet channel, the first 10 s and the rest), s / h0 = 12 cells
+per step height in y.
+
+| level | cells | SIMPLE iterations | solve s | u_bubble | v_shear | floor_force |
+|---|---|---|---|---|---|---|
+| h0 | 3120 | 226 | 2.2 | -1.55695e-3 | -9.39472e-4 | 3.14507e-4 |
+| h0 / 2 | 12480 | 517 | 12 | -1.59666e-3 | -9.06798e-4 | 3.11927e-4 |
+| h0 / 4 | 49920 | 1498 | 165 | -1.61383e-3 | -8.96866e-4 | 3.11023e-4 |
+| extrapolated | | | | **-1.62691e-3** | **-8.92529e-4** | **3.10536e-4** |
+| observed order, GCI (fine) | | | | 1.21, 1.0 % | 1.72, 0.6 % | 1.51, 0.2 % |
+
+- All three converge monotonically. They converge below second order because the shear layer leaves a
+  singular corner; `u_bubble` is the slowest, hence its 3 % tolerance.
+- A pressure difference across the step region (p(-L_in / 2, 1.5 s) - p(L_out / 2, s)) oscillated by
+  0.5 % over the three levels, so it is not a QoI.
+- **What the task asks of an agent** (`u_bubble`, cap 12000 nodes):
+  - Uniform meshes are limited by the size floor (diagonal / 400 = 0.85 mm, about s / 12). At the
+    floor they reach +2.8 % at 10.9k nodes (triangles); at s / 10 they are +4.3 %.
+  - Refining the step corner (0.3 mm, radius 2 cm) and the bubble region (a 0.6 mm box over
+    -0.5 cm < x < 6 cm) with quads gives -1.6 % at 5310 nodes: `planted.GOOD_MESH`.
+  - `v_shear` is harder: -3.0 % at 7108 nodes with a 0.5 mm box. It sits in the shear layer and is
+    small, so its relative error is large.
 
 ## Validation (fixed solver `openfoam`)
 

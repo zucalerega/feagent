@@ -51,6 +51,9 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
       boundary-layer cells by design.
   - Oracles: spec compliance, gaming, known answer, and a refinement study on the openfoam backend.
   - Two new exact benchmarks: `taylor_couette_2d` (rotating cylinder) and `square_duct_3d` (developing duct flow).
+  - `backward_facing_step_2d` (2D, Re 200, separation at a sharp corner): a `cfd` train task scored on
+    `u_bubble`, with the fixed solver's own mesh-converged references (structured study; no published
+    value fits). Local refinement at the corner and over the bubble beats uniform meshes at half the nodes.
   - Suites: `cfd` (2D) and `cfd3d` (`pipe_poiseuille_3d`, `square_duct_3d`, scored on `dp_AB`).
     3D became usable once the backend's 3D tet bias was fixed (FEA core, CFD bullet); swept hex
     meshes reach the tolerance with about 1/5 of the cells tets need.

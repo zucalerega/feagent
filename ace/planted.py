@@ -42,6 +42,10 @@ GOOD_MESH = {
                                  "refinements": [{"group": "cylinder", "size": 0.004, "radius": 0.12}],
                                  "boundary_layer": {"groups": ["cylinder", "walls"], "first": 0.001, "ratio": 1.3,
                                                     "layers": 4}},
+    # the step's corner and the bubble behind it refined (uniform at the floor: ~3 % off at 10.9k nodes)
+    "backward_facing_step_2d": {"h": 0.0025, "quads": True,                              # 5310/12000 nodes, 1.6%
+                                "refinements": [{"point": [0.0, 0.01], "size": 0.0003, "radius": 0.02},
+                                                {"box": [-0.005, 0.0, -1.0, 0.06, 0.02, 1.0], "size": 0.0006}]},
     # swept hexahedra (tets need ~5x the cells: uniform tets at h = 1 mm are 2.4 % off at 4078 nodes)
     "pipe_poiseuille_3d": {"h": 0.001, "quads": True, "refinements": [],                  # 1309/6000 nodes, 0.32%
                            "sweep": {"source": "inlet", "layers": 10}},
