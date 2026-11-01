@@ -219,3 +219,51 @@ Reading the table:
   both necks at a fixed travel, which is the unstable snap in displacement control. Under force control one arm
   goes first and unloads the part. In the run both necks start in the same increment (4.49 mm: 2 left-neck
   cells, 1 right-neck cell, 1 tip cell), and the right neck's crack grows a little faster.
+
+## Neck recipe on matched node counts (40,000 +- 2 %), every mesh system (2026-11-01)
+
+The user's follow-up: "same mesh count between them but different refinements by different agents".
+`experiments/mesh_systems/match_nodes.py` rebuilds each system's p65 nonlinear mesh with its own build.py and
+refinement logic, and tunes only its size knob to a target node count (the count the solver sees, so equal
+DOFs). The tries are in `match.json`. New dirs: `MESHSYS_OUT/<system>/p65_nonlinear_n40k`; the old meshes are
+untouched. No neck-recipe run had been started on the unmatched study meshes, so none is superseded.
+`neck_tip_sizes.py` gives the median / min corner-edge length of the cells in the neck wall (ring between bore
+and outer arc, -15 < y < 12 mm) and in the tip pocket block (y > 19.5 mm). `neck_montage.py` draws all of them
+(full view and a zoom on the right neck).
+
+| system | knob (value) | nodes | cells | neck median (min) edge, cells across 8.1 mm | tip median (min) edge | gates not passing |
+|---|---|---|---|---|---|---|
+| harness_auto | `--global` 3.05 mm | 40,078 | 22,832 C3D10 | 2.83 (0.81) mm, 2.9 | 1.73 (0.54) mm | thin_walls warn |
+| harness_expert | `--global` 12 mm (its default) | 39,608 | 22,650 C3D10 | 3.19 (0.86) mm, 2.5 | 1.65 (0.53) mm | none |
+| ace_sizing | `--h` 3.5 mm, `--node-cap` 40,800 (its loop settles at h 2.38 mm) | 40,095 | 23,081 C3D10 | 2.88 (1.58) mm, 2.8 | 1.87 (0.77) mm | SICN fail (0.025), thin_walls warn |
+| gold_nested | `--h0-frac` 0.324 (its own fit to 40k) | 39,234 | 23,560 C3D10 | 3.50 (1.27) mm, 2.3 | 1.79 (0.52) mm | SICN fail (0.016), gamma warn |
+| netgen | `--maxh` 2.10 mm | 39,706 | 22,817 C3D10 | 2.78 (1.51) mm, 2.9 | 1.44 (0.47) mm | thin_walls warn |
+| harness_neck | `--neck-size` 3.83 mm | 40,538 | 23,197 C3D10 | 3.13 (0.97) mm, 2.6 | 1.67 (0.56) mm | none |
+| harness_hex (**not matched**) | `--thin-factor` 12.9 (h 4 mm chosen by its own search) | 54,408 (+36 %) | 42,940 C3D8 | 1.08 (0.29) mm, 7.5 | 0.57 (0.10) mm | none (gamma, thin_wall n/a) |
+
+- **harness_hex** has no valid hex mesh near 40k. Its own search keeps the largest base size whose hex split
+  has min scaled Jacobian >= 0.1. That gives >= 47.7k nodes, and those fail SICN; no hex mesh passing every
+  gate is below 54.4k. With `--h` fixed, or a thin factor >= 1.45, it falls back to tets. It runs at the
+  closest gate-passing count and is labelled unmatched. Its edges are not comparable 1:1: a C3D8 has nodes
+  only at the corners, while C3D10 node spacing is half its edge.
+- **harness_neck** at equal cost: harness_expert alone is 39.6k. Any neck refinement finer than ~3.5 mm costs
+  >= 41.1k nodes (the ring and bore faces), so its neck size ends at 3.83 mm, about the expert's own. The 58k
+  MTI run above stays as the reference for a fine neck (1.6 mm).
+- Mode-1 buckling loads of the sliding imperfection: 2.07-2.09 kN on the tet meshes, 2.17 kN on hex.
+
+Recipe, identical for every mesh:
+
+    imperfection.py --platen sliding --amp-mm 0.1          # its own mode 1
+    crush.py --platen bonded --failure peeq_tension --compression-factor 0 --compression-switch 0.5:5
+
+The **switch rule** is built into the driver (`compression_switch`, the same for every mesh): at the first block
+end after the first failed cell where the force is below 50 % of the peak so far, the compression factor
+becomes 5. From then on, cells crushed beyond 5 x 0.043 PEEQ can fail too, so the compressed hinge behind the
+tensile crack can break. Same step policy and adaptive release as before.
+
+Compute: Spark (4 runs x 5 threads): harness_auto, harness_expert, ace_sizing, gold_nested,
+`~/feagent-runs/nonlinear/neck_study/<system>_n40k_imp/abc_00000065/run-20261101-0834-n40k`. Laptop (3 x 4):
+netgen `run-20261101-0935-n40k`, harness_hex and harness_neck `run-20261101-0942-n40k`, under
+`runs/nonlinear/neck_study/<system>_n40k_imp/abc_00000065/`.
+
+@@N40K_RESULTS@@
