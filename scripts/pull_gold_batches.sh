@@ -9,7 +9,7 @@
 set -uo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 NODES=${GOLD_NODES:-"goldgen-l2 goldgen-l2b"}
-REMOTES=${GOLD_REMOTES:-"gold gold2 gold_l3"}   # run folders under ~ on each node (gold2 = second batch, gold_l3 = L1-L3 run)
+REMOTES=${GOLD_REMOTES:-"gold gold2 gold_l3 gold3"}   # run folders under ~ on each node (gold2 = second batch, gold_l3 = L1-L3 rerun, gold3 = new parts L1-L3)
 DEST=${GOLD_DEST:-$HOME/Desktop/gold_benchmarks}
 mkdir -p "$DEST/archives"
 exec 9>"$DEST/.pull.lock"
@@ -23,12 +23,13 @@ for N in $NODES; do
   listing=$(autor run "$N" --timeout 60 -- sh -c "cd ~/$R/batches 2>/dev/null && { sha256sum *.tgz 2>/dev/null; [ -f DONE ] && echo DONE; }")
   [ -n "$listing" ] || continue
   new=0
+  case "$R" in gold|gold2) X=$DEST ;; *) X=$DEST/$R ;; esac   # later runs unpack into their own folder (DEST/<run>/out)
   while read -r sha name; do
     [[ "${name:-}" == *.tgz && ${#sha} -eq 64 ]] || continue
     grep -qx "$name" "$DEST/pulled.txt" 2>/dev/null && continue
     part="$DEST/archives/$name.part"
     if autor cp "$N:~/$R/batches/$name" "$part" >/dev/null && echo "$sha  $part" | sha256sum -c --quiet; then
-      mv "$part" "$DEST/archives/$name" && tar -xzf "$DEST/archives/$name" -C "$DEST" \
+      mv "$part" "$DEST/archives/$name" && mkdir -p "$X" && tar -xzf "$DEST/archives/$name" -C "$X" \
         && echo "$name" >> "$DEST/pulled.txt" && new=$((new + 1))
     else
       echo "$(date -Is) $N: $name failed (will retry)"; rm -f "$part"
@@ -36,7 +37,7 @@ for N in $NODES; do
   done < <(printf '%s\n' "$listing" | grep -v '^DONE$')
   total=$(printf '%s\n' "$listing" | grep -c '\.tgz$')
   have=$(printf '%s\n' "$listing" | awk '/\.tgz$/{print $2}' | grep -cxFf "$DEST/pulled.txt" 2>/dev/null); have=${have:-0}
-  echo "$(date -Is) $N:$R: +$new new, $have/$total archives here, $(ls -d "$DEST"/out/*_bc* 2>/dev/null | wc -l) BC sets on this machine"
+  echo "$(date -Is) $N:$R: +$new new, $have/$total archives here, $(ls -d "$X"/out/*_bc* 2>/dev/null | wc -l) BC sets in $X/out"
   if printf '%s\n' "$listing" | grep -qx DONE && [ "$have" -eq "$total" ]; then
     date -Is > "$DEST/$N.$R.complete"; echo "$(date -Is) $N:$R: run finished and fully copied -> safe to stop"
   fi

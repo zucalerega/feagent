@@ -4,6 +4,7 @@
 #   bash scripts/goldgen_h100.sh [NPARTS=10] [BCS=10] [MESH_WORKERS=12] [SOLVE_WORKERS=3] [CANDIDATES=300] \
 #                                [SHARD=0/1] [GPU_SLOTS=4]   (RENDER=1 also writes the abc_00000003 L2 results page)
 # GOLD_W=~/gold2 CAND_START=1500 runs a fresh batch on ABC files CAND_START..CAND_START+CANDIDATES-1.
+# L1-L3 on new parts: GOLD_W=~/gold3 CAND_START=3000 START_LEVEL=1 MAX_CELLS=1500000 RUN_TIMEOUT=6h GOLDGEN_ATTEMPT_TIMEOUT=900
 # Output: ~/gold/ (out/ benchmarks + solves.jsonl + gpu.jsonl, run.log, L2_results.html, summary.json)
 set -euo pipefail
 NPARTS=${1:-10}; BCS=${2:-10}; MW=${3:-12}; SW=${4:-3}; NCAND=${5:-300}; SHARD=${6:-0/1}; SLOTS=${7:-4}
@@ -33,8 +34,10 @@ CPUS=${GMN_CPU_LIMIT:-8}; CPUS=${CPUS%.*}
 "$PY" -W ignore -m feacore.goldgen screen abc --out parts.jsonl --workers "$CPUS" | tee -a "$W/run.log"
 stamp "screened"
 
-PYTHONUNBUFFERED=1 "$PY" -W ignore -m feacore.goldgen run parts.jsonl abc --out out --parts "$NPARTS" \
-  --bcs "$BCS" --min-bcs 5 --levels 3 --h0-frac 0.237 --mesh-workers "$MW" --solve-workers "$SW" \
+# START_LEVEL=1 MAX_CELLS=1500000 certifies L1-L3 instead of L0-L2; RUN_TIMEOUT (e.g. 6h) bounds the run
+PYTHONUNBUFFERED=1 timeout "${RUN_TIMEOUT:-0}" "$PY" -W ignore -m feacore.goldgen run parts.jsonl abc --out out --parts "$NPARTS" \
+  --bcs "$BCS" --min-bcs 5 --levels 3 --start-level "${START_LEVEL:-0}" --max-cells "${MAX_CELLS:-250000}" \
+  --h0-frac 0.237 --mesh-workers "$MW" --solve-workers "$SW" \
   --shard "$SHARD" --gpu-slots "$SLOTS" --linear-solver cudss 2>&1 | grep -av -E "$NOISE" | tee -a "$W/run.log"
 stamp "goldgen run done"
 
