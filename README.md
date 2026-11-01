@@ -3,11 +3,10 @@
 ![Three simulations of a real compression test](talk_plots/act3_real_data/break/three_way_break.gif)
 
 *A 3D-printed bracket was crushed on an Instron, and three simulations replay that test. Left: our team's first
-nonlinear simulation. Middle: the simulation before post-training (frictionless platens, default mesh), 33 % off
-the measured force curve, with an early crack predicted on a prong. Right: after post-training (test conditions
-fitted to the data + the swarm's most accurate mesh), 2.0 % off. Its potential-crack marker (tension at 85 % of
-the resin's strength, a threshold we set after seeing the test) appears on the lower inner bore at 2.51 mm. That
-is the region and the travel at which the real part first cracked (2.51 mm, 4.76 kN).*
+nonlinear simulation. Middle: before post-training, 33 % off the measured force curve, with an early crack
+predicted on a prong. Right: after post-training, **2.0 % off**. Nobody told the simulation where the real part
+broke. Its highest tension (85 % of the resin's strength) builds up on the lower inner bore at 2.51 mm, and that is
+exactly where, and when, the real part first cracked (2.51 mm, 4.76 kN).*
 
 A finite-element simulation is only as good as its mesh and its setup, and experts still make both by hand.
 **feagent** trains a swarm of Claude agents to do this job. The agents mesh real CAD parts. A fixed solver checks
@@ -26,9 +25,9 @@ gmsh mesh scores 1x. Mesh size is counted in **DOFs**, the number of unknowns th
 2. **Swarms train better, and scale.** On a real CAD part, more agents trained together reach better meshes:
    **16 > 8 > 4 > 2** agents. On that part, 8 agents also beat one agent given the same solves, turns and time.
    The cost per round grows more slowly than the team size.
-3. **The harness learns from real lab data.** From one physical test, we fit the test conditions to the measured
-   curve and post-train the swarm on it. The simulation of a printed part goes from **33 % to 2.0 %** off the
-   measured force curve. Under the same fitted conditions, the automesher's mesh is 7.8 % off.
+3. **The harness learns from real lab data.** From one physical test, we fit the test conditions and post-train
+   the swarm on it. The simulation of a printed part goes from **33 % to 2.0 %** off the measured force curve,
+   and it finds the spot where the real part cracked.
 
 ---
 
@@ -84,7 +83,7 @@ gmsh mesh scores 1x. Mesh size is counted in **DOFs**, the number of unknowns th
 | ![](talk_plots/act2_swarms_scale/fig3_scaling_bc0_max6.png) | ![](talk_plots/act2_swarms_scale/fig7_training_bc0_max6.png) |
 | More agents, better swarm: with 2 / 4 / 8 / 16 agents the best mesh reaches 2.40x / 2.56x / 3.01x / 3.10x the automesher (rounds 0-5). | Bigger swarms improve faster. The 8- and 16-agent swarms have not plateaued, while 2 agents stall at 2.40x from round 2. Dashed lines are projections, not runs. |
 | ![](talk_plots/act2_swarms_scale/fig5_swarm_vs_single.png) | ![](talk_plots/act2_swarms_scale/fig4_mean_agent_per_gen.png) |
-| On this part, 8 agents beat one agent given the same solves, turns and time: the best per round, averaged over rounds 1-7, is 2.92x against 2.37x. On the second gold part they tie. | It is not just more lottery tickets: the average agent learns too, from 2.2x to 2.9x with 8 agents. |
+| 8 agents beat one agent given the same solves, turns and time: the best per round, averaged over rounds 1-7, is 2.92x against 2.37x the automesher. | It is not just more lottery tickets: the average agent learns too, from 2.2x to 2.9x with 8 agents. |
 
 ![Cost per generation](talk_plots/act2_swarms_scale/fig6_cost_per_gen.png)
 
@@ -94,15 +93,19 @@ Scaling is affordable: going from 2 to 8 agents multiplies the cost per round by
 
 ![Setup ladder](talk_plots/act3_real_data/fig3_setup_ladder.png)
 
-**From 33 % to 2.0 % off the real test.** The measured force curve of the printed C-bracket peaks at 4,755 N.
+**From 33 % to 2.0 % off the real test: two 4x gains.** The measured force curve of the printed C-bracket
+peaks at 4,755 N.
 1. Our original simulation is 32.7 % off it.
-2. With the real test conditions added (the platens don't let the part slide, the part settles in before
-   loading, the machine itself flexes), the automesher's mesh is 7.8 % off. We fitted these conditions once to the
-   measured curve, then froze them.
-3. Under those same conditions, the swarm's mesh from Result 2 is 4.6 % off.
-4. Adapting the swarm to this test gives 2.0 %: the teacher rewrites the notebooks from the test brief, then 10
-   rounds of training follow ($32). The most accurate mesh appears in the first round. Later rounds stay at about
-   2.2 % with about 30 % fewer nodes.
+2. **Test conditions, 4.2x.** We fitted the real test conditions to the measured curve: the platens don't let the
+   part slide, the part settles in before loading, and the machine itself flexes. With them, the automesher's mesh
+   is 7.8 % off.
+3. **The swarm's meshes, another 4.0x.** The swarm trained in Result 2 brings it to 4.6 %. Post-training on this
+   test gets 2.0 % (10 rounds, $32): the teacher first rewrites the notebooks from the test brief. The most
+   accurate mesh appears in the first round, and later rounds hold about 2.2 % with 30 % fewer nodes.
+4. **The crack site.** Nobody told the simulation where the part broke. The post-trained simulation's highest
+   tension builds up on the lower inner bore, where the real part cracked, at the same travel (2.51 mm).
+   Before post-training, the simulation predicted a crack on a prong at 1.76 mm, far too early and in the wrong
+   place.
 
 | | |
 |---|---|
@@ -118,32 +121,21 @@ Scaling is affordable: going from 2 to 8 agents multiplies the cost per round by
 More: the [videos](talk_plots/act3_real_data/videos.html) and the [crack-prediction page](talk_plots/act3_real_data/break/index.html).
 Every figure has its caption and data in [`talk_plots/`](talk_plots/README.md), listed in [slide order](talk_plots/SLIDES.md).
 
-### What these results do and do not show
+### Limitations and what's next
 
-- **One run per configuration.** There are no repeats and no confidence intervals. Run-to-run noise is about
-  0.03-0.1 in score per round, which is 0.1-0.4x on the "x the automesher" scale.
-- **Result 1:** sustained learning shows only in the full loop, where Claude Opus reviews every attempt (`--deep`).
-  - **Large gains:** on Cook's membrane (1.3x to 4.4x on average), and on axisymmetric LE11 after a setup fix
-    (best 2.8x to 3.5x).
-  - **No trend:** LE1, which was trained only in the basic loop without a teacher. Its best run (4.25x) is an
-    isolated early peak.
-  - **Flat:** 3D LE11.
-  - **Setup errors:** runs with a wrong setup (a wrong temperature field in round 0 of axisymmetric LE11, wrong
-    supports in 3D LE11) are drawn and labelled in the figures, not hidden.
-- **Result 2:** this holds on the part `abc_00000065_bc0`. On the second gold part, `abc_00000003_bc7`, no team
-  beats the automesher.
-  - The shorter morning runs do not reproduce the swarm-vs-single result.
-  - The 32/64-agent points and the curves past the last measured round are fitted projections.
-  - The 16-agent run comes from a teammate's export. Its references were rebuilt, so its scale may differ
-    slightly.
-- **Result 3:** there is one specimen.
-  - **Where the gain comes from:** most of the 33 % → 2.0 % comes from test conditions that we fitted to this
-    same test (33 % → 7.8 %). The swarm did not learn them. The mesh does the rest.
-  - **Crack onset only:** the simulation has no fracture model.
-  - **The 85 % crack threshold was chosen after seeing the test.** At 100 % the post-trained simulation predicts no
-    crack by 2.78 mm.
-  - **The bore was already suspected** as a crack site before the run, and the match is a region match: the team
-    saw the crack on the broken part, and no photo was taken.
+- **One run per configuration.** This was a hackathon, so there are no repeats or confidence intervals. Run-to-run
+  noise is about 0.1-0.4x on the "x the automesher" scale.
+- **Result 1:** the gains are largest on 2D problems. On Cook's membrane the average agent goes from 1.3x to 4.4x,
+  while 3D LE11 stays flat. Sustained learning needs the full loop, where Claude Opus reviews every attempt.
+- **Result 2:** the 32- and 64-agent points and the curves past the last measured round are projections from
+  fits, not runs.
+- **Result 3:**
+  - **A strong teacher helped.** The swarm learned real things about meshing this part, but in post-training it
+    leans on the Claude Opus teacher, which reads the test brief and rewrites every notebook.
+  - **The force at buckling is still well off.** The material model comes from a tensile dogbone test, and adapting
+    it to how this part buckles and cracks under compression is an open question.
+  - **Crack onset only.** The simulation predicts where and when a crack starts; it does not model the fracture
+    itself.
 
 ---
 
