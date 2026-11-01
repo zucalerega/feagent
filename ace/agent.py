@@ -508,10 +508,13 @@ def _field_scoring_text(problem_id: str, problem, q, where: str, bonus: bool) ->
                       for pt in probe_points(problem_id)["points"][:PROBE_DISCLOSED])
     hidden = PROBE_POINTS - PROBE_DISCLOSED
     if fea.is_flow(problem):
-        from ace.flow_field import has_exact
+        from ace.flow_field import excluded_zones, has_exact
         truth = "the exact solution" if has_exact(problem) else "a very fine reference solution"
+        zones = excluded_zones(problem)
+        skip = (" except within " + " and ".join(f"{r:g} of ({', '.join(f'{v:g}' for v in c)})" for c, r, _ in zones)
+                + f" ({zones[0][2]}, not scored)") if zones else ""
         what = (f"Scored: the whole velocity field, two ways. (1) Field error: the relative L2 error of your velocity "
-                f"field over the entire domain, against {truth}. (2) Point error: the RMS relative error of the "
+                f"field over the entire domain{skip}, against {truth}. (2) Point error: the RMS relative error of the "
                 f"speed |u| at {PROBE_POINTS} check points in the bulk of the flow (away from the walls). "
                 f"{PROBE_DISCLOSED} of them are {shown}; the other {hidden} are hidden. ")
         auto = (f"the mesh tool's uniform triangles / tetrahedra at h = {a.get('h', problem.params.get('h0')):g} with "

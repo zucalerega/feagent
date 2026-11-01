@@ -95,3 +95,13 @@ def test_task_prompt_in_field_mode_scores_the_velocity():
     text = task_prompt(PID)
     assert "whole velocity field" in text and "exact solution" in text and "von Mises" not in text
     assert "uniform triangles / tetrahedra at h = 0.00125" in text
+
+
+def test_singular_lid_corners_are_left_out():
+    """The cavity's lid corners (wall velocity jump) converge slowly for the reference as for a run:
+    a zone of 0.05 L around each is left out of the field integral and the check points."""
+    p = fea.get_problem("lid_driven_cavity_re100")
+    assert [r for _, r, _ in flow_field.excluded_zones(p)] == [0.05, 0.05]
+    pts = np.array([[0.01, 0.99], [0.5, 0.5], [0.99, 0.99], [0.0, 0.0]])
+    assert flow_field._keep(p, pts).tolist() == [False, True, False, True]
+    assert flow_field.excluded_zones(fea.get_problem(PID)) == []

@@ -19,11 +19,28 @@ Refinements in `mesh(...)`: `{group: "f12"}` (a face), `{edge: 37}` (a CAD edge,
 `size` (element size there) and `radius` (distance over which the size grows back to `h`; ignored for
 a box).
 
-Flow problems (the CFD suite, `ace/README.md`) get `inspect_geometry`, `mesh`, `solve` and `submit`
-only (`TOOLS_FLOW`):
-- `view`, `compare` and the solve feedback read stress fields, so flow agents don't get them.
-- `mesh` takes no `order` (linear finite volumes), but has `quads` for 2D.
-- `solve` takes a fluid, a convection scheme and the flow BCs, on the openfoam backend.
+Flow problems (the CFD suite, `ace/README.md`) get the same six tools in their flow versions
+(`TOOLS_FLOW`):
+- `mesh` takes no `order` (linear finite volumes). It has:
+  - `quads` (2D, or a sweep's face: hexahedra);
+  - `boundary_layer` `{groups, first, ratio, layers}`: thin cells along no-slip walls;
+  - `sweep` `{source, layers, ratio}` (3D): a straight duct or pipe as its end face extruded in layers.
+
+  It returns the finite-volume quality (`fv_quality`: non-orthogonality, skewness, aspect ratio, cell
+  volume ratio, and `near_wall`, the first cells' wall distance per boundary group) and the gate
+  `fv_ok` (max non-orthogonality <= 70 deg, max skewness <= 4) instead of the element quality.
+  `ace/flow_mesh.py`.
+- `solve` takes a fluid, a convection scheme and the flow BCs, on the openfoam backend. Its feedback
+  (`ace/flow_feedback.py`) has:
+  - convergence and the mass balance;
+  - the wall forces, the peak speed and the pressure range;
+  - the cell Peclet number and reversed-flow zones;
+  - a reference-free error indicator (velocity jumps between neighbouring cells' reconstructions at
+    faces) with its top 5 hotspots.
+- `view(solve, kind=mesh|speed|pressure|error, view=x|y|z)`: 2D the cells, 3D a section through the
+  middle normal to `view`.
+- `compare(solve_a, solve_b)`: the relative L2 difference of the two velocity fields, the regions
+  where they differ, every quantity's change.
 
 ## How a careful engineer uses them
 

@@ -10,6 +10,9 @@ Checks, in order (exit code 1 if any fails):
 3. every task's planted good mesh (``planted.GOOD_MESH``) meshes under the node cap, and the
    problem's reference setup on it solves to within the task's tolerance. If this fails, every
    agent's solve would fail too, while its API calls are still billed.
+4. with ACE_SCORE=field: every task's field reference, check points and automesher build (they are
+   cached, so the loop then starts at once), and the good mesh's field error is shown against the
+   automesher's (flow tasks: ace.flow_field).
 
 ``--ping`` sends one generator call (``config.MODELS["generator"]``, with the task's real tool list and
 the same thinking / effort / fallback settings as the loop) and asks for a one-word answer. It checks
@@ -51,12 +54,50 @@ def check_tasks(problem_ids: list[str]) -> bool:
                 print(f"{pid:28s} SOLVE FAILED after {dt:.0f} s: {sol['error']}")
                 ok = False
                 continue
-            ref, tol = fea.reference_value(problem, config.TASKS[pid]["qoi"]), tolerance(pid)
+            # the scored QoI against its reference within the reference's own tolerance, in any scoring
+            # mode (field mode's target is checked separately, check_field)
+            qoi = config.TASKS[pid]["qoi"]
+            ref = fea.reference_value(problem, qoi)
+            tol = next((r.tolerance for r in problem.references() if r.qoi == qoi), tolerance(pid))
             err = abs(sol["value"] - ref) / abs(ref)
             good = err <= tol and m["nodes"] <= cap
             ok &= good
             print(f"{pid:28s} {m['nodes']:>6d}/{cap:<5d} {sol['value']:12.6g} {ref:12.6g} {err:8.2%} {tol:5.0%} "
                   f"{dt:5.0f}s{'' if good else '  FAIL'}")
+    return ok
+
+
+def check_field(problem_ids: list[str]) -> bool:
+    """Field mode (ACE_SCORE=field): build each task's field reference, check points and automesher
+    (cached in ace/field_refs/, or ACE_FIELD_REFS), then score the planted good mesh against them.
+    The good mesh should beat the automesher (gain > 1); the reference's own error is shown."""
+    from ace import field_error
+    from ace.config import AUTO_GAIN_TARGET
+    ok = True
+    print(f"\nfield mode: {'task':26s} {'ref. check':>10s} {'auto error':>10s} {'auto DOFs':>9s} {'good error':>10s} "
+          f"{'gain':>6s} {'time':>6s}")
+    with tempfile.TemporaryDirectory(prefix="ace_preflight_field_") as tmp:
+        for pid in problem_ids:
+            req = planted.GOOD_MESH.get(pid)
+            problem = fea.get_problem(pid)
+            t0 = time.perf_counter()
+            try:
+                auto = field_error.automesher(pid)
+                field_error.probe_points(pid)
+                rc = field_error.reference_check(pid)
+                m = fea.mesh_from_request(problem, Path(tmp) / f"{pid}.msh", req) if req else None
+                good = field_error.errors_of_setup(pid, m, reference_setup(problem)) if m and m["ok"] else None
+            except Exception as e:  # noqa: BLE001  any failure here would fail every run's scoring
+                print(f"field mode: {pid:26s} FAILED: {type(e).__name__}: {e}")
+                ok = False
+                continue
+            ref = "exact" if rc.get("exact") else f"{rc.get('coarse_vs_fine', float('nan')):.2%}"
+            gain = auto["error"] / good["error"] if good else None
+            print(f"field mode: {pid:26s} {ref:>10s} {auto['error']:10.2%} {auto['dofs']:9d} "
+                  f"{(good or {}).get('error', float('nan')):10.2%} {gain or float('nan'):6.2f} "
+                  f"{time.perf_counter() - t0:5.0f}s" + ("" if gain is None or gain > 1 else "  (good mesh below the automesher)"))
+    print(f"(gain = automesher error / good mesh error; the target is {AUTO_GAIN_TARGET:g}x; ref. check = the "
+          f"reference's coarser level vs its finer one)")
     return ok
 
 
@@ -108,12 +149,11 @@ def main(argv=None) -> int:
     key = bool(os.environ.get("ANTHROPIC_API_KEY"))
     print(f"ANTHROPIC_API_KEY: {'set' if key else 'NOT SET (needed for a real run; --mock runs without it)'}")
     ok &= key or not args.ping
-    if config.SCORE == "field" and any(fea.is_flow(fea.get_problem(p)) for p in pids):
-        print("ACE_SCORE=field: not defined for flow tasks; unset it")
-        ok = False
     if any(fea.is_flow(fea.get_problem(p)) for p in pids) and not check_flow_backend():
         return 1
     ok &= check_tasks(pids)
+    if config.SCORE == "field":
+        ok &= check_field(pids)
     if args.ping and key:
         ok &= ping(pids[0])
     print("pre-flight " + ("PASSED" if ok else "FAILED"))

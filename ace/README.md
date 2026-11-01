@@ -403,10 +403,19 @@ export ANTHROPIC_API_KEY=...             # never commit it
 tmux new -s ace
 .venv/bin/python -m ace.run_loop --suite cfd --budget-usd 40 --out ace_runs/cfd_$(date +%m%d)
 .venv/bin/python -m ace.run_loop --suite cfd3d --budget-usd 25 --out ace_runs/cfd3d_$(date +%m%d)
+
+# the deep swarm on flow (field scoring: the whole velocity field against the automesher; teacher,
+# self-reflection, organizer). Pre-flight with ACE_SCORE=field builds every field reference first
+# (a few minutes: fine structured solves for the cavity, DFG, step and duct), so the loop starts at once.
+ACE_SCORE=field .venv/bin/python -m ace.preflight --suite cfd
+ACE_SCORE=field .venv/bin/python -m ace.run_loop --suite cfd --deep --split --memory shared+private \
+    --agents 6 --generations 8 --budget-usd 60 --out ace_runs/cfd_deep_$(date +%m%d)
 ```
 
 - **Pre-flight** (`ace/preflight.py`) solves every task's `planted.GOOD_MESH` with the reference
   setup and checks it is within tolerance and under the cap. It needs no API key unless `--ping`.
+  With `ACE_SCORE=field` it also builds each task's field reference, check points and automesher
+  (cached in `ace/field_refs/`) and shows the good mesh's field error against the automesher's.
   `run_loop` itself also stops before spending anything if a flow task cannot find OpenFOAM or
   foamlib.
 - **Budget:** `--budget-usd` defaults to $10, which stops the CFD suite after about one generation.

@@ -13,7 +13,8 @@ use one interface.
   (reference_check).
 * **Quadrature.** The cell centres and volumes of the structured reference mesh at QUAD_LEVEL (the
   midpoint rule). Every run is sampled at the same points, so the comparison does not depend on
-  how a run's own mesh is laid out.
+  how a run's own mesh is laid out. Singular zones are left out (excluded_zones: the cavity's lid
+  corners).
 * **Sampling a run.** The velocity of the nearest cell centre, reconstructed linearly with that
   cell's gradient (cell value + grad u . offset): second order, as the solver's own interpolation.
 * **Check points.** Quadrature points in the bulk of the flow: farther than 20 % of the domain's
@@ -49,6 +50,25 @@ BULK = 0.2                               # check points: at least this x the dom
 SPEED_FLOOR = 0.5                        # check points: speed at least this x the median speed
 AGREE = (1e-3, 3e-3, 1e-2, 3e-2)         # check points: the two reference levels agree to this (first that
                                          # leaves 4 x PROBE_POINTS candidates)
+
+
+def excluded_zones(problem) -> list[tuple[list[float], float, str]]:
+    """Zones left out of the field integral and of the check points: (centre, radius, why). Where the
+    flow is singular (the lid-driven cavity's two lid corners, where the wall velocity jumps), the
+    error converges slowly for the reference as much as for a run, so that zone measures the
+    idealisation, not the mesh (as ace.field_error.EXCLUDE for solids)."""
+    if problem.id == "lid_driven_cavity_re100":
+        L = problem.params["L"]
+        why = "the lid corners, where the wall velocity jumps (singular)"
+        return [([0.0, L], 0.05 * L, why), ([L, L], 0.05 * L, why)]
+    return []
+
+
+def _keep(problem, pts: np.ndarray) -> np.ndarray:
+    keep = np.ones(len(pts), dtype=bool)
+    for c, r, _ in excluded_zones(problem):
+        keep &= np.linalg.norm(pts[:, : len(c)] - np.asarray(c), axis=1) > r
+    return keep
 
 
 def _cache() -> Path:
@@ -154,6 +174,8 @@ def reference(problem_id: str) -> dict:
         p = fea.get_problem(problem_id)
         with tempfile.TemporaryDirectory() as tmp:
             pts, w, bdist = _quadrature(p, Path(tmp))
+            keep = _keep(p, pts)
+            pts, w, bdist = pts[keep], w[keep], bdist[keep]
             if has_exact(p):
                 u, nodes, ndofs, exact = _exact_velocity(p, pts), 0, 0, True
             else:
