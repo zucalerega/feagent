@@ -35,3 +35,5 @@ ace/field_refs_gpu/
 *.dat
 !benchmarks/**/*.dat.ref
 data/
+# talk_plots/cfd: cached flow solves (rebuilt with python talk_plots/cfd/make_figures.py --resolve)
+talk_plots/cfd/_cache/

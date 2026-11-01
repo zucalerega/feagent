@@ -150,6 +150,44 @@ Every figure has its caption and data in [`talk_plots/`](talk_plots/README.md), 
 
 ---
 
+## Flow (CFD)
+
+![Flow past a cylinder at Re = 20](talk_plots/cfd/fig_cylinder_wake.png)
+
+The fixed solver does fluids too. `feacore` has an OpenFOAM backend for steady laminar flow, checked on four
+benchmarks with known answers: a Poiseuille channel and a 3D pipe (exact solutions), the lid-driven cavity
+(Ghia et al. 1982) and the DFG cylinder (Schäfer & Turek 1996). Above is the cylinder at Re = 20: the pressure drop
+across it is 0.12 % off the published reference.
+
+| | |
+|---|---|
+| ![](talk_plots/cfd/fig_cylinder_mesh.png) | ![](talk_plots/cfd/fig_cylinder_vorticity.png) |
+| Close to the cylinder: the block-structured quad mesh and the two eddies of the recirculation bubble. | Vorticity: shear layers leave the cylinder and the walls. At Re = 20 the wake is steady, with no vortex shedding. |
+| ![](talk_plots/cfd/fig_cavity.png) | ![](talk_plots/cfd/fig_cavity_ghia.png) |
+| The lid-driven cavity at Re = 100: one main vortex and two small corner eddies. | Its centreline velocities on Ghia et al.'s classic table: the largest gap is 0.009 m/s, with the lid at 1 m/s. |
+
+### The swarm on supersonic flow: the first generation
+
+A first swarm run on flow is under way: 6 agents on a supersonic suite of sharp wedges at Mach 2 to 5 and a
+blunted wedge at Mach 3 and 10° incidence (inviscid, compressible; work in progress from
+[PR #24](https://github.com/zucalerega/feagent/pull/24)). In generation 0, agent a0 refined around the body and left
+most of the bow shock in coarse cells. Its field error was 11.5 %, against 5.7 % for the automesher, which used 3x
+the DOFs. The teacher's first lesson to the swarm: about 80 % of the squared error is on the bow shock, not on the
+body.
+
+| | |
+|---|---|
+| ![](talk_plots/cfd/fig_supersonic_reference.png) | ![](talk_plots/cfd/fig_supersonic_mesh_g0.png) |
+| The target: a detached bow shock ahead of the nose and a subsonic pocket behind it (dashed: the sonic line). | Agent a0's first mesh (2,077 nodes), with the reference shock drawn over it. |
+| ![](talk_plots/cfd/supersonic_g0/g0-supersonic_blunt_wedge_2d-a0_error.png) | ![](talk_plots/cfd/supersonic_g0/g0-supersonic_blunt_wedge_2d-a0_speed.png) |
+| The error map the teacher reads: the error sits on the shock, with hotspots numbered largest first. | a0's flow next to the reference, on one colour scale: its shock is smeared over the coarse cells. |
+
+The learning loop also runs on the incompressible problems, as the `cfd` (2D) and `cfd3d` suites
+(`python -m ace.run_loop --suite cfd`, [PR #21](https://github.com/zucalerega/feagent/pull/21)). Every figure's
+caption and numbers are in [`talk_plots/cfd/`](talk_plots/cfd/README.md).
+
+---
+
 ## Technical description
 
 ### Repository layout
@@ -219,7 +257,8 @@ trained 8-agent swarm (`--init-from`). `--pre-teach` lets the teacher adapt thei
 - **Solver input:** a case JSON (analysis, materials, BCs, loads, QoIs) plus a gmsh `.msh` with named groups.
   Run it with `python -m feacore.cli case.json --out result.json`.
 - **Backends:** scikit-fem is the solver of record (CPU, with an optional NVIDIA cuDSS direct solve on GPU).
-  CalculiX is an independent cross-check and runs the elastoplastic J2/NLGEOM path.
+  CalculiX is an independent cross-check and runs the elastoplastic J2/NLGEOM path. OpenFOAM solves the flow
+  problems: steady, laminar, with forces and probes computed in numpy (`docs/solver_openfoam.md`).
 - **Verification:**
   - Richardson extrapolation and GCI (Celik et al. 2008);
   - method-of-manufactured-solutions code checks;
@@ -236,6 +275,9 @@ trained 8-agent swarm (`--init-from`). `--pre-teach` lets the teacher adapt thei
   For field scoring, the reference fields are refined adaptively beyond L2 (`ace/gold_reference.py`).
 - **Classical benchmarks:** NAFEMS LE1, LE10 and LE11 (axisymmetric and 3D), Cook's membrane and Lamé. These are
   standard textbook FE test problems.
+- **Flow benchmarks:** a Poiseuille channel and a 3D pipe (exact solutions), the lid-driven cavity at Re = 100
+  (Ghia et al. 1982) and the DFG 2D-1 cylinder (Schäfer & Turek 1996), with their convergence studies in
+  `docs/benchmarks_cfd.md`.
 - **Physical tests:**
   - Instron compression of a printed C-bracket (Formlabs Alpha Fast) and a dogbone test of the same resin.
   - A pull test of a printed gold part is defined as a problem (`abc_00000003_pull`), but its data is not in the
