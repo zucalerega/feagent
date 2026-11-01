@@ -385,7 +385,7 @@ def aggregate(raw, stat):
 
 def projected(n, stat):
     """Measured gens plus a projection to twice as many generations. The underlying per-generation series (best or average agent)
-    is fitted with y = a + b ln(g + 1) on all 8 measured generations (a saturating c - d (g+1)^-alpha fit runs to
+    is fitted with y = a + b ln(g + 1) on all measured generations (a saturating c - d (g+1)^-alpha fit runs to
     alpha -> 0, i.e. this log curve); it is continued from its gen-7 value at that rate, y7 + b ln((g + 1) / 8), and
     the figure's measure is applied to measured + projected values. Returns (curve over gens 0..last_gen, a, b)."""
     raw = measured(n, stat)
@@ -484,7 +484,7 @@ def fig7(stat):
 # {stem}: training curves on {BC0}, extended to gen {2 * m - 1}
 
 **Caption.** Afternoon setup, automesher = 1. Solid: {STATS[stat][1]}; gen {m - 1} is the fig3_scaling_bc0_{stat} bar.
-Dashed: the {STATS[stat][0]} agent's per-generation score is fitted with y = a + b ln(g + 1) on all 8 measured
+Dashed: the {STATS[stat][0]} agent's per-generation score is fitted with y = a + b ln(g + 1) on all {m} measured
 generations used and continued from its last measured value at that rate to gen {2 * m - 1}; the same measure is
 applied to measured + projected values. Measured: gens 0-{m - 1}{f" (the runs went to gen 7; gens {m}-7 are left out of this version)" if m < 8 else " (no run went past gen 7)"}.
 
@@ -496,7 +496,7 @@ applied to measured + projected values. Measured: gens 0-{m - 1}{f" (the runs we
 `results/diversity_s16_2026-11-01/scores.json` (per-generation best and mean exported by Jaime from his run).
 
 **Caveats.**
-- One run per team size; the rate is a 2-parameter fit to 8 points. The log curve is the shape the data prefer (a free
+- One run per team size; the rate is a 2-parameter fit to {m} points. The log curve is the shape the data prefer (a free
   saturating exponent runs to ~0): the 8 generations do not show a plateau yet, which is not evidence that there is none.
 - 2 agents = 1 agent per task, i.e. no swarm; its per-generation score falls to 1.32x in gen 4.
 """

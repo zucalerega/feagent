@@ -521,7 +521,7 @@ def write_page(cases: dict[str, Case], pick: dict, info: dict, mag: float):
                       f"Before: frictionless platens, default mesh ({b.nodes:,} nodes). After: learned test conditions "
                       f"+ most accurate mesh ({a.nodes:,} nodes). {scale}."),
         "first_vs_after": (f"{f.nodes:,} nodes, {pct(f.err)} off vs {a.nodes:,} nodes, {pct(a.err)} off: "
-                           f"the post-trained setup is far closer with a fifth of the nodes.",
+                           f"most of the gain is the learned test conditions; the post-trained mesh adds the rest.",
                            f"First: the teammates' first nonlinear simulation (frictionless platens, no seating or "
                            f"machine compliance). After: learned test conditions + most accurate mesh ({a.sub}). "
                            f"{scale}."),
