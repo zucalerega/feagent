@@ -66,6 +66,9 @@ Options (``failure`` dict; all but criterion / limit optional):
                     of the near-failure bounds. Default off.
   end_fraction      stop at this fraction of the ramp (default 1)
   path_groups       groups that must stay connected (default: the Dirichlet groups)
+  force_groups      groups whose summed reaction is the recorded force (default: the Dirichlet groups with a
+                    nonzero prescribed displacement, else path_groups); e.g. the fixed base when the moving
+                    platen is a rigid contact surface added to the deck (crush.py --platen friction)
   max_blocks        5000
 Solver options: ``checkpoint_dir`` writes checkpoint.json / checkpoint.npz after every block (the
 driver state plus the path of that block's .rout, which is kept until the next block's checkpoint
@@ -324,7 +327,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     paths = fo.get("path_groups") or list(dict.fromkeys(deck.dirichlet_groups))
     moved = np.zeros(model.n_nodes, bool)
     moved[[nd for (nd, _), v in deck.dirichlet.items() if v != 0]] = True
-    driven = [g for g in dict.fromkeys(deck.dirichlet_groups) if moved[model.nodes_of(g)].any()] or paths
+    driven = fo.get("force_groups") or \
+        [g for g in dict.fromkeys(deck.dirichlet_groups) if moved[model.nodes_of(g)].any()] or paths
     model_txt, step = _split_deck(inp)
     wd = Path(options.get("workdir") or Path(os.environ.get("FEACORE_CCX_TMP", "/tmp")) / "ccx" /
               f"fail_{os.getpid()}_{int(time.time())}")

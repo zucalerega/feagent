@@ -116,6 +116,47 @@ def criterion_options(failure: str, compression_factor: float | None, uts_pa: fl
     return out
 
 
+CONTACT = {"slope_per_E_h": 20.0, "stick_slope_per_E_h": 10.0}    # penalty: x E / mean cell size
+
+
+def friction_deck(inp: str, model, k: int, D: float, mu: float, E: float) -> str:
+    """Add a rigid moving platen with Coulomb friction to the deck of a case whose top has no BC: one rigid C3D8
+    slab on the top face (its lower face = the master surface; REF node driven by -D along the axis, the other
+    5 DOFs held), the top group's element faces as the slave surface, penalty contact (surface to surface,
+    linear pressure-overclosure) and *FRICTION mu."""
+    if k != 1:
+        raise SystemExit("--platen friction: only the y load axis (abc_00000065) is implemented")
+    X, nn, ne = model.X, model.n_nodes, model.n_elems
+    el, fc = model.facets_of("top")
+    top = model.nodes_of("top")
+    lo, hi = X.min(axis=0), X.max(axis=0)
+    pad = 0.25 * (hi - lo)
+    y0 = float(X[top, 1].max())
+    th = 0.05 * (hi[1] - lo[1])
+    x0, x1, z0, z1 = lo[0] - pad[0], hi[0] + pad[0], lo[2] - pad[2], hi[2] + pad[2]
+    P = [(x0, y0, z0), (x1, y0, z0), (x1, y0 + th, z0), (x0, y0 + th, z0),
+         (x0, y0, z1), (x1, y0, z1), (x1, y0 + th, z1), (x0, y0 + th, z1)]
+    h = float(np.mean(model.measures()) ** (1.0 / 3.0))
+    ref = nn + 9
+    fmt = lambda v: f"{v:.12g}"   # noqa: E731
+    add = ["*NODE, NSET=PLATN"] + [f"{nn + i + 1}, " + ", ".join(fmt(c) for c in p) for i, p in enumerate(P)]
+    add += ["*NODE, NSET=PREF", f"{ref}, {fmt(0.5 * (x0 + x1))}, {fmt(y0 + 2 * th)}, {fmt(0.5 * (z0 + z1))}"]
+    add += ["*ELEMENT, TYPE=C3D8, ELSET=PLATEN", f"{ne + 1}, " + ", ".join(str(nn + i + 1) for i in range(8))]
+    add += ["*MATERIAL, NAME=PLATENSTEEL", "*ELASTIC", "2.1e11, 0.3", "*SOLID SECTION, ELSET=PLATEN, MATERIAL=PLATENSTEEL",
+            f"*RIGID BODY, NSET=PLATN, REF NODE={ref}", "*SURFACE, NAME=PMASTER", f"{ne + 1}, S3",
+            "*SURFACE, NAME=PSLAVE"] + [f"{e + 1}, S{f + 1}" for e, f in zip(el, fc)]
+    add += ["*SURFACE INTERACTION, NAME=PSI", "*SURFACE BEHAVIOR, PRESSURE-OVERCLOSURE=LINEAR",
+            fmt(CONTACT["slope_per_E_h"] * E / h)]
+    if mu > 0:                                  # ccx refuses a zero friction coefficient: frictionless contact
+        add += ["*FRICTION", f"{fmt(mu)}, {fmt(CONTACT['stick_slope_per_E_h'] * E / h)}"]
+    add += ["*CONTACT PAIR, INTERACTION=PSI, TYPE=SURFACE TO SURFACE", "PSLAVE, PMASTER"]
+    i = inp.index("\n*STEP")
+    model_txt, step = inp[: i + 1], inp[i + 1:]
+    j = step.index("*BOUNDARY\n") + len("*BOUNDARY\n")
+    bc = [f"{ref}, {d}, {d}, {fmt(-D) if d == 2 else 0}" for d in range(1, 7)]
+    return model_txt + "\n".join(add) + "\n" + step[:j] + "\n".join(bc) + "\n" + step[j:]
+
+
 def platen_bcs(model, k: int, D: float, platen: str) -> tuple[list[BC], list[list[float]]]:
     """Dirichlet BCs of the platens (see the module doc) and the rigid-body nodes' coordinates (sliding)."""
     val = [0.0, 0.0, 0.0]
@@ -125,6 +166,8 @@ def platen_bcs(model, k: int, D: float, platen: str) -> tuple[list[BC], list[lis
         BC("displacement", group="top", components=[k], value=[-D])
     if platen in ("bonded", "sliding_top"):
         return [BC("fixed", group="bottom"), top], []
+    if platen == "friction":                    # bonded base; the top is driven by a rigid contact platen
+        return [BC("fixed", group="bottom")], []
     if platen != "sliding":
         raise SystemExit(f"--platen {platen!r}")
     X = model.X
@@ -140,12 +183,19 @@ def platen_bcs(model, k: int, D: float, platen: str) -> tuple[list[BC], list[lis
 
 
 def _platen_of(case: Case) -> str:
+    if case.analysis.options.get("platen_contact"):
+        return "friction"
     top = next(b for b in case.bcs if b.group == "top")
     bot = next(b for b in case.bcs if b.group == "bottom")
     return "bonded" if len(top.components) == 3 else ("sliding_top" if bot.type == "fixed" else "sliding")
 
 
 def _driven_value(case: Case) -> np.ndarray:
+    pc = case.analysis.options.get("platen_contact")
+    if pc:
+        v = np.zeros(3)
+        v[pc["axis"]] = -pc["travel_m"]
+        return v
     for b in case.bcs:
         if b.type == "displacement" and b.group == "top":
             v = np.zeros(3)
@@ -225,8 +275,10 @@ def main():
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--release", choices=sorted(RELEASE), default="adaptive",
                     help="failed-cell release per block: adaptive cap 64 -> x2 / /2 (default) or fixed 8")
-    ap.add_argument("--platen", choices=["bonded", "sliding", "sliding_top"], default="bonded",
-                    help="platen contact: bonded (default), frictionless top, frictionless both")
+    ap.add_argument("--platen", choices=["bonded", "sliding", "sliding_top", "friction"], default="bonded",
+                    help="platen contact: bonded (default), frictionless top, frictionless both, or a rigid top "
+                         "platen in Coulomb-friction contact (--mu; bonded base)")
+    ap.add_argument("--mu", type=float, default=0.3, help="--platen friction: Coulomb friction coefficient")
     ap.add_argument("--failure", choices=["peeq", "peeq_tension", "principal"], default="peeq",
                     help="erosion criterion (default peeq: PEEQ >= failure_peeq in any stress state)")
     ap.add_argument("--compression-factor", type=float, default=None,
@@ -272,6 +324,8 @@ def main():
         if a.compression_factor is not None and crit.get("criterion", "peeq") != "peeq":
             crit["compression_factor"] = a.compression_factor or None
         case.analysis.options["failure"] = failure_options(D, limit, min(1.0, MAX_CRUSH * H / D), a.release, crit)
+        if case.analysis.options.get("platen_contact"):
+            case.analysis.options["failure"]["force_groups"] = ["bottom"]
         ck_dir = parent if (parent / "checkpoint.json").exists() else None
         if ck_dir is not None:
             resume = load_checkpoint(ck_dir)
@@ -289,6 +343,16 @@ def main():
                         "increments": int(round(1.0 / (POLICY_MM["block"] * 1e-3 / D))),
                         "failure": failure_options(D, limit, 1.0, a.release, crit)}),
                     materials={"resin": mat}, bcs=bcs)
+        if a.platen == "friction":
+            case.analysis.options["platen_contact"] = {"mu": a.mu, "travel_m": D, "axis": k, **CONTACT}
+            case.analysis.options["failure"]["force_groups"] = ["bottom"]
+    pc = case.analysis.options.get("platen_contact")
+    if pc:                                      # rigid friction platen: added to every deck the backend builds
+        from feacore.solver import ccx_backend
+        _build = ccx_backend._Deck.build
+        ccx_backend._Deck.build = lambda self: friction_deck(_build(self), self.m, k, pc["travel_m"], pc["mu"],
+                                                             mat.E)
+    fsign = 1.0 if pc else -1.0                 # the base reaction (friction) points up, the top's down
     out.mkdir(parents=True, exist_ok=True)
     case.save(out / "case.json")
     meta = {"system": a.system, "part": a.part, "axis": axis, "mesh": str(mesh_path), "order": order,
@@ -317,7 +381,7 @@ def main():
     t0 = time.time()
 
     def on_inc(rec):
-        row = [rec["step"], rec["lambda"] * D * 1e3, -rec["reaction"][k], rec["n_failed"], rec["n_detached"],
+        row = [rec["step"], rec["lambda"] * D * 1e3, fsign * rec["reaction"][k], rec["n_failed"], rec["n_detached"],
                rec["max_peeq_alive"], rec["iterations"], rec["block"], rec["retry"], int(rec.get("tail", False)),
                rec.get("removed_in_block", 0), rec.get("deferred", 0), rec.get("stuck", 0),
                rec.get("imbalance_rel"), time.time() - t0, rec.get("release_cap")]

@@ -532,16 +532,16 @@ def test_failure_tension_criterion_spares_compression(meshes):
     assert run(1.0, criterion="peeq_tension", compression_factor=None).state.sum() > 0
 
 
-def _platen_box(path, h=0.25):
-    """L x W x W box along y (load axis) with groups bottom (y = 0), top (y = L), body."""
+def _platen_box(path, h=0.25, dims=(W, L, W)):
+    """W x L x W box along y (load axis; or dims) with groups bottom (y = 0), top (y = dims[1]), body."""
     import gmsh
     from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
     with gmsh_session("pbox"):
-        v = gmsh.model.occ.addBox(0, 0, 0, W, L, W)
+        v = gmsh.model.occ.addBox(0, 0, 0, *dims)
         gmsh.model.occ.synchronize()
         add_group(3, [v], "body")
         add_group(2, in_box(2, ymax=0), "bottom")
-        add_group(2, in_box(2, ymin=L), "top")
+        add_group(2, in_box(2, ymin=dims[1]), "top")
         set_uniform_size(h)
         gmsh.model.mesh.generate(3)
         gmsh.model.mesh.setOrder(2)
@@ -586,3 +586,36 @@ def test_crush_platen_options(tmp_path):
     assert abs(out["sliding"][0] / F_free - 1) < 1e-6 and abs(out["sliding"][1] / (NU * 1e-3 * W) - 1) < 1e-6
     assert abs(out["bonded"][1]) < 1e-12 and out["bonded"][0] > 1.01 * F_free
     assert out["sliding"][0] < out["sliding_top"][0] < out["bonded"][0]
+
+
+@needs_ccx
+def test_crush_friction_platen_brackets(tmp_path):
+    """crush.py --platen friction (rigid C3D8 platen, penalty contact, Coulomb friction) on an elastic box:
+    sticking friction (mu 10) gives the bonded force, mu 0 the frictionless (sliding_top) one."""
+    from feacore.solver import ccx_backend
+    from feacore.solver._ccx_mesh import build_model, read_gmsh
+
+    crush = _crush_module()
+    mesh = _platen_box(tmp_path / "squat.msh", h=0.2, dims=(1.0, 0.4, 1.0))
+    m = build_model(read_gmsh(mesh), 3, 2)
+    D = 1e-3 * 0.4
+
+    def force(platen, mu=None):
+        bcs = crush.platen_bcs(m, 1, D, platen)[0]
+        c = Case(mesh=mesh, analysis=Analysis("elasticity", "3d", order=2), materials={"m": Material(E=E, nu=NU)},
+                 bcs=bcs)
+        if mu is None:
+            return -solve(c, backend="ccx").reaction("top", 1)
+        build = ccx_backend._Deck.build
+        try:
+            ccx_backend._Deck.build = lambda self: crush.friction_deck(build(self), self.m, 1, D, mu, E)
+            return solve(c, backend="ccx").reaction("bottom", 1)
+        finally:
+            ccx_backend._Deck.build = build
+
+    fb, fs = force("bonded"), force("sliding_top")
+    assert fb > 1.05 * fs
+    # the penalty (20 E / h normal, 10 E / h stick) is ~2 % compliant at this tiny strain (1e-3); at crush
+    # strains it is < 0.5 %
+    assert abs(force("friction", 10.0) / fb - 1) < 0.03
+    assert abs(force("friction", 0.0) / fs - 1) < 0.03
