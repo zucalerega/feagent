@@ -53,6 +53,10 @@ The user's crushed Alpha Fast clamp next to the simulation (harness_neck + 0.1 m
 |---|---|
 | `n40k_mesh_montage_p65` | `photo_vs_simulation_p65` |
 
+The same recipe on all 7 equal-size meshes (40k nodes each; hex 54k), each shown at half of its peak force. Snap loads 5.79 to 6.00 kN (1.3 % range across the six tet meshes); every mesh cracks through the arm necks, as the printed part did.
+
+![photo_vs_7_matched_meshes_p65.jpg](neck_break/photo_vs_7_matched_meshes_p65.jpg)
+
 ## Crush to snap (CalculiX J2 + NLGEOM + erosion)
 
 A late frame (72 % of the clip) of every crush video: `<system>_<part>_crush` in the original 3-panel look, `_crush_rtx` the Omniverse (Isaac Sim RTX, DGX Spark) render, `all_systems_*` the 3x2 grids, `*_snap_compare` the side-by-side, and the neck-break run.

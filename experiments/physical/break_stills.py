@@ -10,6 +10,8 @@ CPU rendering (llvmpipe); follows continued_from chains (render_crush.series).
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import os
 import sys
 from pathlib import Path
@@ -56,7 +58,12 @@ def on_base(conn, alive, pts):
 
 
 def tile(run: Path, ratio: float, azim: float, elev: float, roll: float):
-    rows, _ = rc.series(run)
+    meta = json.loads((run / "run.json").read_text()) if (run / "run.json").exists() else {}
+    if meta.get("continued_from"):
+        rows, _ = rc.series(run)                    # a chain: every run's increments with a .vtu
+    else:                                           # one run: the CSV (only the chosen .vtu has to be present)
+        rows = [(int(float(r["step"])), float(r["platen_travel_mm"]), float(r["force_N"]), 0,
+                 run / f"result_{int(float(r['step'])):04d}.vtu") for r in csv.DictReader(open(run / "force_displacement.csv"))]
     F = np.array([r[2] for r in rows])
     ip = int(np.argmax(F))
     j = next((i for i in range(ip, len(rows)) if F[i] < ratio * F[ip]), len(rows) - 1)
@@ -113,7 +120,7 @@ def main() -> int:
         M.paste(t, (x, y + cap_h))
         words, line, lines = c.split(" "), "", []
         for w in words:
-            if len(line) + len(w) > 52:
+            if len(line) + len(w) > 46:
                 lines.append(line)
                 line = ""
             line += w + " "
