@@ -41,3 +41,40 @@ the continuation keeps that ramp (the restart needs the same deck) and stops at 
 Resume a run of this runner after an interruption (new run dir, steps continue):
 
     python experiments/physical/crush.py --system <id> --part <part> --resume runs/nonlinear/<...>/<run-id> --out <dir>
+
+## Other mesh systems, started 2026-10-31 20:51 ET (same step policy and stops, from zero, 30 % of height ramp)
+
+Queue: `experiments/physical/crush_queue.py`. Each slot runs its jobs one after another. The queue is a nohup
+foreground process; nothing is installed, so it does not survive a reboot.
+
+- DGX Spark (`<spark-host>`, aarch64, user `dell`):
+  - Code: clone of `nonlinear-setup` in `~/feagent-setup-run`, branch `run-local` = e5aca15, which carries this
+    branch's unpushed commits.
+  - Software: ccx 2.23 from `~/micromamba/envs/ccx` and Python from `~/micromamba/envs/feagent`.
+  - Meshes: copied to `~/feagent-meshes/nonlinear/<system>/<part>/`, with the sha256 of each in `SHA256SUMS`.
+  - Queue: 3 slots x 4 threads. Each run is in a `systemd-run --user --scope -p MemoryMax=12G` and starts only
+    while MemAvailable >= 32 GiB. The ridgeline-isaac container is left alone.
+  - Runs go to `~/feagent-runs/nonlinear/<system>/<part>/<run-id>/`. The queue state is in `~/feagent-runs/queue/`.
+  - The Spark clock is US Central, so its run ids read one hour earlier than ET.
+- Laptop: 1 slot x 4 threads (plus the two baseline runs), MemoryMax 10G. Runs go to
+  `runs/nonlinear/<system>/<part>/<run-id>/`.
+- Copy back: `crush_queue.py sync` runs on the laptop. Every 10 min it rsyncs the Spark's `nonlinear/` (without
+  `ccx_work/`) into `runs/nonlinear/` and the queue state into `runs/queue_<spark-host>/`, and stops after the
+  queue is done.
+
+| system | part | machine | run dir (under runs/nonlinear on its machine) | mesh (nodes / cells, element) | mesh sha256 (16) | start (ET) |
+|---|---|---|---|---|---|---|
+| harness_hex | abc_00000003 | Spark slot 0 | `harness_hex/abc_00000003/run-20261031-1950-s0` | 38 417 / 29 340, C3D8 | 74f454b6a295cc78 | 20:50 |
+| gold_nested | abc_00000003 | Spark slot 1 | `gold_nested/abc_00000003/run-20261031-1951-s1` | 39 841 / 23 774, C3D10 | 89e43fa36b0a6fc5 | 20:51 |
+| gold_nested | abc_00000065 | Spark slot 2 | `gold_nested/abc_00000065/run-20261031-1951-s2` | 39 234 / 23 560, C3D10 | 6e6260157f8df193 | 20:51 |
+| harness_hex | abc_00000065 | laptop | `harness_hex/abc_00000065/run-20261031-2053-s0` | 56 656 / 44 776, C3D8 | 9fe760a86bdcff8f | 20:53 |
+| ace_sizing | abc_00000003 | Spark, queued | | 29 128 / 16 007, C3D10 | 2932c87d2c30c174 | |
+| ace_sizing | abc_00000065 | Spark, queued | | 31 518 / 17 848, C3D10 | 7c77d5736f8bd452 | |
+| netgen | abc_00000003 | Spark, queued | | 28 537 / 15 298, C3D10 | c40bf931866e5996 | |
+| netgen | abc_00000065 | Spark, queued | | 26 395 / 14 751, C3D10 | 10526c8c4a361836 | |
+| harness_expert | abc_00000003 | Spark, queued | | 36 425 / 19 453, C3D10 | 365a751d102164a5 | |
+| harness_expert | abc_00000065 | Spark, queued | | 39 608 / 22 650, C3D10 | 303e92a735e919c7 | |
+
+Mesh sources are the scratch outputs of each system's build. The harness_expert meshes were copied at 20:49 ET,
+from reports dated 20:27 and 20:45. If that agent rebuilds them, the queued runs still use the copied files (check
+the sha256). The queue fills in the queued run dirs and start times in the Spark's `queue/<system>__<part>.json`.
