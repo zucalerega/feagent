@@ -32,8 +32,8 @@ configuration (docs/benchmarks_cfd.md, "Supersonic blunted wedge"):
   it: the same standoff at alpha = 0 and 10 deg (0.698 R), and p_stag at alpha = 0 within 0.04 % of
   the pitot pressure on the two finest meshes.
 * The forces and flank pressures are the fixed solver's own mesh-converged values (structured study
-  on the reference mesh, time-averaged over the scheme's small limit cycle, Richardson extrapolation).
-  CONVERGED holds them once the study's finest level is in.
+  on the reference mesh at 2 h0 .. h0 / 4, time-averaged over the scheme's small limit cycle,
+  Richardson extrapolation where the levels converge monotonically): CONVERGED.
 * The standoff is a validation check, not a QoI: 0.698 R at Mach 3, 7.7 % above Billig's
   cylinder-wedge correlation 0.386 exp(4.67 / M^2), as an independent Euler solver finds; at Mach 6
   the gap is 1.9 %.
@@ -57,11 +57,15 @@ BILLIG = ("F.S. Billig, 'Shock-wave shapes around spherical- and cylindrical-nos
 RAYLEIGH_PITOT = ("Rayleigh pitot formula: NACA Report 1135, 'Equations, tables, and charts for compressible "
                   "flow', Ames Research Staff (1953), eq. 100")
 
-# Mesh-converged values of the fixed solver for the default parameters (docs/benchmarks_cfd.md,
-# "Supersonic blunted wedge"), from the structured study; the forces and flank pressures wait for its
-# finest level (h0 / 4).
-CONVERGED: dict[str, float] = {}
-TOL: dict[str, float] = {}
+# Mesh-converged values of the fixed solver for the default parameters: the structured study at 2 h0 .. h0 / 4
+# (768 .. 49152 cells), every level time-averaged over the scheme's limit cycle (docs/benchmarks_cfd.md,
+# "Supersonic blunted wedge"). normal_force and p_windward converge monotonically (observed order 1.1 on
+# h0 .. h0 / 4): Richardson-extrapolated, conservative GCI 0.4 % and 0.8 %. axial_force moves by < 0.07 % per
+# level without a monotone trend, and p_leeward by 0.36 % at the last step (not yet asymptotic): their h0 / 4
+# values, p_leeward with the wider tolerance.
+CONVERGED: dict[str, float] = {"axial_force": 86346.8, "normal_force": 63009.1, "p_windward": 388822.0,
+                               "p_leeward": 135377.4}
+TOL: dict[str, float] = {"axial_force": 0.02, "normal_force": 0.02, "p_windward": 0.02, "p_leeward": 0.03}
 TOL_STAG = 0.01
 
 

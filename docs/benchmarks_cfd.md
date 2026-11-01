@@ -227,16 +227,31 @@ behind the sonic line.
 | 2 h0 | 768 | 1218839 | 86782.7 | 62421.7 | 389083 | 135063 | 0.6911 | 4e-5 |
 | h0 | 3072 | 1210517 | 86224.9 | 62642.1 | 393727 | 136036 | 0.6986 | 1.2e-3 |
 | h0 / 2 | 12288 | 1202343 | 86282.8 | 62836.9 | 391046 | 135872 | 0.6978 | 9e-4 |
-| h0 / 4 | 49152 | running | | | | | | |
+| h0 / 4 | 49152 | 1206984 | 86346.8 | 62928.3 | 389831 | 135377 | 0.6978 | 5.6e-4 |
+| extrapolated (h0 .. h0 / 4) | | exact: 1206096 | - | **63009.1** | **388822** | - | | |
+| observed order, GCI (fine; conservative) | | | not monotone | 1.09, 0.16 %; 0.39 % | 1.14, 0.32 %; 0.78 % | diverging | | |
+| **reference** (tolerance) | | **1206096** (1 %) | **86346.8** (2 %) | **63009.1** (2 %) | **388822** (2 %) | **135377** (3 %) | | |
 
-- **p_stag:** 0.31 % below the exact value at h0 / 2. The mesh is not aligned with the stagnation
-  streamline at incidence; at alpha = 0 the error is 0.02 %.
-- **axial_force:** settled to 0.07 % between h0 and h0 / 2.
-- **p_windward and p_leeward:** oscillate between levels, by 0.7 % and 0.1 %.
-- **normal_force:** still rises 0.3 % per level.
+The h0 / 4 level was averaged over 20 flow times; the others over 24. The band is the largest relative
+peak-to-peak spread of any QoI over its averaging window.
 
-The mesh-converged references for the forces and flank pressures wait for the h0 / 4 level. Until
-then the problem carries only the exact `p_stag` reference.
+- **p_stag:** +1.06, +0.37, -0.31 and +0.07 % from the exact value. At h0 / 4 the solver is within
+  0.074 % of it. The reference is the exact value.
+- **normal_force and p_windward:** converge monotonically on h0 .. h0 / 4 at observed order 1.1, about
+  first order, as shock capturing does. They take the Richardson-extrapolated values. The coarsest
+  level is pre-asymptotic: with all four, the least-squares fit gives a lower order for
+  `normal_force`.
+  - Most of `normal_force`'s change between levels comes from the leeward half of the nose, where
+    the flow expands around the shoulder and the scheme's limit cycle sits. The windward and leeward
+    flank contributions nearly cancel.
+- **axial_force:** moves by less than 0.07 % per level (86225, 86283, 86347) without a monotone trend.
+  The reference is the h0 / 4 value; the spread of the three finest levels is 0.14 %.
+- **p_leeward:** the least certain. It moved by -0.12 % and then -0.36 % (not yet asymptotic),
+  probably because the leeward flank sits in the expansion from the shoulder and the limit cycle's
+  wave train. The reference is the h0 / 4 value with a 3 % tolerance, against a spread of 0.5 % over
+  the three finest levels.
+- **Standoff:** 0.698 R on the three finest levels, as at alpha = 0. This is the evidence that the
+  nose region is the alpha = 0 flow rotated.
 
 ## Validation (fixed solver `openfoam`)
 

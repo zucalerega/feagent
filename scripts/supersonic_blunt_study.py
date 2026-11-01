@@ -169,7 +169,8 @@ def main(argv=None) -> int:
     print("|---" * (len(names) + 3) + "|")
     for r in rows:
         vals = [r["qois"][n] for n in names[:-1]] + [r.get("standoff_over_R", float("nan"))]
-        print(f"| h0 / {r['k']:g} | {r['cells']} | {r['flow_times']:.0f} | " + " | ".join(f"{v:.6g}" for v in vals) + " |")
+        ft = "-" if r["flow_times"] is None else f"{r['flow_times']:.0f}"        # None: a resumed level
+        print(f"| h0 / {r['k']:g} | {r['cells']} | {ft} | " + " | ".join(f"{v:.6g}" for v in vals) + " |")
     ext = []
     for n in names:
         g = gci[n].get("gci", {}) if isinstance(gci[n], dict) else {}
