@@ -231,3 +231,88 @@ def test_thick_sphere_internal_pressure(meshes):
         assert abs(c_vol / c_ex - 1) < 1e-2, (p, c_vol, c_ex)
         assert q["max_von_mises"] < 1.02 * SY
     assert abs(np.mean(elastic) / pe - 1) < 3e-3          # nodal vM at the bore overshoots ~0.2 %
+
+
+# ----------------------------------------------------------------------------- progressive failure (erosion)
+def _notched(path, h=0.18):
+    """4 x 1 x 0.25 bar with two semicircular edge notches (r = 0.2) at x = 2."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
+    with gmsh_session("notch"):
+        b = gmsh.model.occ.addBox(0, 0, 0, 4.0, 1.0, 0.25)
+        cuts = [(3, gmsh.model.occ.addCylinder(2.0, y, -0.1, 0, 0, 0.45, 0.2)) for y in (0.0, 1.0)]
+        v, _ = gmsh.model.occ.cut([(3, b)], cuts)
+        gmsh.model.occ.synchronize()
+        add_group(3, [t for _, t in v], "body")
+        add_group(2, in_box(2, xmax=0), "left")
+        add_group(2, in_box(2, xmin=4.0), "right")
+        set_uniform_size(h)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.write(str(path))
+    return str(path)
+
+
+def _failure_case(mesh, limit, value, bcs_extra=(), **fo):
+    return Case(mesh=mesh, analysis=Analysis("elasticity", "3d", order=2, options={
+        "nonlinear": True, "nlgeom": True, "increments": 50,
+        "failure": {"criterion": "peeq", "limit": limit, "fine_increments": 400, **fo}}),
+        materials={"m": Material(E=1000.0, nu=0.3, plasticity={"model": "j2_isotropic", "yield_stress": 1.0,
+                                                              "hardening": [[0, 1.0], [1.0, 3.0]]})},
+        bcs=[BC("fixed", group="left"), BC("displacement", group="right", components=[0, 1, 2], value=value),
+             *bcs_extra])
+
+
+def test_failure_option_validated():
+    c = _failure_case("m.msh", 0.05, [0.1, 0, 0])
+    assert c.validate() == []
+    c.analysis.options["failure"] = {"criterion": "damage", "limit": 0.05}
+    assert any("criterion" in e for e in c.validate())
+    c.analysis.options["failure"] = {"criterion": "peeq", "limit": -1}
+    assert any("limit" in e for e in c.validate())
+    c.materials["m"].plasticity = None
+    c.analysis.options["failure"] = {"criterion": "peeq", "limit": 0.05}
+    assert any("plasticity" in e for e in c.validate())
+
+
+@needs_ccx
+def test_failure_restart_blocks_are_path_correct(meshes):
+    """A failure run whose limit is never reached runs the ramp in restart blocks; the bar must give the
+    closed-form hardening answer at every increment (small strain: NLGEOM off)."""
+    eps_max, H = 4.0 * SY / E, 2000.0
+    c = _bar(meshes["box"], BC("displacement", group="right", components=[0], value=eps_max * L), H=H, n=8,
+             failure={"criterion": "peeq", "limit": 10.0})
+    r = solve(c, backend="ccx")
+    assert r.stop_reason == "end of ramp" and r.history[-1]["block"] >= 7 and r.state.sum() == 0
+    for h in r.history:
+        eps = h["lambda"] * eps_max
+        ep = max(eps - SY / E, 0.0) / (1.0 + H / E)
+        sig = E * eps if ep == 0 else SY + H * ep
+        assert abs(h["force"] - sig * W * W) < 2e-5 * SY * W * W, h
+        assert abs(h["max_peeq_alive"] - ep) < 1e-6
+    with pytest.raises(NotImplementedError, match="FORCE|CLOAD"):
+        solve(_bar(meshes["box"], BC("force", group="right", value=[1.0, 0, 0]), failure={"criterion": "peeq",
+                                                                                          "limit": 1.0}),
+              backend="ccx")
+
+
+@needs_ccx
+def test_failure_notched_bar_separates(tmp_path):
+    """Notched bar pulled by bonded grips (NLGEOM): cells fail only at the notch, the bar separates and the
+    force falls to ~0; one .vtu per increment with the failed flag and cell PEEQ."""
+    import meshio
+
+    c = _failure_case(_notched(tmp_path / "notch.msh"), 0.05, [0.4, 0.0, 0.0])
+    r = solve(c, backend="ccx", series_dir=str(tmp_path / "series"))
+    assert r.separated and r.converged, r.stop_reason
+    F = np.array([h["force"] for h in r.history])
+    assert F[-1] < 0.02 * F.max() and F.argmax() < len(F) - 3
+    cen = r.model.X[r.model.conn[:, :4]].mean(axis=1)
+    failed = r.state == 1
+    assert failed.sum() > 10 and np.all(np.abs(cen[failed, 0] - 2.0) < 0.35)
+    assert np.all(np.diff([h["n_failed"] for h in r.history]) >= 0)
+    files = sorted((tmp_path / "series").glob("result_*.vtu"))
+    assert len(files) == len(r.history)
+    m = meshio.read(files[-1])
+    assert set(m.cell_data) >= {"PEEQ", "failed"} and {"displacement", "von_mises"} <= set(m.point_data)
+    assert int(m.cell_data["failed"][0].sum()) == int((r.state != 0).sum())
