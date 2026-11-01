@@ -32,7 +32,7 @@ RUNS = ROOT / "ace_runs"
 
 TASKS = ["abc_00000065_bc0", "abc_00000003_bc7"]          # left panel = the task with room to learn
 TLAB = {"abc_00000065_bc0": "abc_00000065_bc0", "abc_00000003_bc7": "abc_00000003_bc7"}
-COL = {1: "#2a78d6", 2: "#e0882a", 4: "#1e9e6a", 8: "#c23d6e"}
+COL = {1: "#2a78d6", 2: "#e0882a", 4: "#1e9e6a", 8: "#c23d6e", 16: "#5b3fa0"}
 MARK = {1: "D", 2: "s", 4: "^", 8: "o"}                  # secondary encoding (green/pink are close for deutans)
 AUTO_COL = "#888888"
 AUTO_SCORE = 0.25
@@ -42,6 +42,9 @@ ALL_RUNS = list(DIV.values()) + list(SCALE.values()) + ["scale_s1_opus"]
 TOL_FLAT = 0.005          # a generation-to-generation change smaller than this counts as "flat"
 DIV_WINDOW = range(1, 8)  # generations after learning starts; all four afternoon runs have gens 0-7
 SCALE_WINDOW = range(1, 5)  # gens 1-4: the generations every morning swarm (2/4/8) completed
+# 16 agents (afternoon setup, Jaime, 2026-11-01): its run folder stays on his laptop, so fig2 reads the
+# per-generation best/mean he exported from it (same base score, recomputed from the run files there)
+S16 = ROOT / "results" / "diversity_s16_2026-11-01" / "scores.json"
 
 plt.rcParams.update({
     "font.size": 15, "axes.titlesize": 16, "axes.labelsize": 15, "xtick.labelsize": 14,
@@ -266,31 +269,37 @@ def fig2():
     fig, axes = plt.subplots(1, 2, figsize=(12, 6.75), sharey=True)
     fig.subplots_adjust(left=0.08, right=0.98, top=0.79, bottom=0.12, wspace=0.08)
     vals = {}
-    w = 0.26
+    w = 0.2
+    s16 = json.load(open(S16))["div_s16"]
     for ax, task in zip(axes, TASKS):
-        for gi, (study, runs, window, name) in enumerate(
-                [("div", DIV, DIV_WINDOW, "afternoon\n(gens 1-7)"), ("scale", SCALE, SCALE_WINDOW, "morning\n(gens 1-4)")]):
-            for k, n in enumerate((2, 4, 8)):
-                v, cnt = window_mean(DATA[runs[n]]["tasks"][task], "best", window)
+        for gi, (study, runs, window, sizes) in enumerate(
+                [("div", DIV, DIV_WINDOW, (2, 4, 8, 16)), ("scale", SCALE, SCALE_WINDOW, (2, 4, 8))]):
+            for k, n in enumerate(sizes):
+                if n == 16:
+                    v = float(np.mean([b for g, b in enumerate(s16[task]["best"]) if g in window]))
+                else:
+                    v, cnt = window_mean(DATA[runs[n]]["tasks"][task], "best", window)
                 vals[(study, task, n)] = v
-                x = gi + (k - 1) * (w + 0.02)
+                x = gi + 0.18 * (study == "div") + (k - (len(sizes) - 1) / 2) * (w + 0.02)
                 ax.bar(x, v, width=w, color=COL[n], alpha=1.0 if study == "div" else 0.55,
                        hatch=None if study == "div" else "//", edgecolor="white", lw=0)
-                ax.text(x, v + 0.008, f"{v:.3f}", ha="center", va="bottom", fontsize=12.5)
+                ax.text(x, v + 0.008, f"{v:.3f}", ha="center", va="bottom", fontsize=11.5)
                 ax.text(x, 0.012, str(n), ha="center", va="bottom", fontsize=13, color="white", fontweight="bold")
-        ax.set_xticks([0, 1])
+        ax.set_xticks([0.18, 1])
         ax.set_xticklabels(["afternoon\n(diversity on, gens 1-7)", "morning\n(gens 1-4)"])
-        ax.set_xlim(-0.6, 1.6)
+        ax.set_xlim(-0.45, 1.5)
         ax.set_ylim(0, 0.85)
         ax.axhline(AUTO_SCORE, color=AUTO_COL, ls="--", lw=1.8, zorder=1)
         ax.set_title(TLAB[task], loc="left")
         ax.grid(axis="x", visible=False)
     axes[0].set_ylabel("mean over generations of\nthe best agent's base score")
-    handles = [plt.Rectangle((0, 0), 1, 1, color=COL[n]) for n in (2, 4, 8)]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=COL[n]) for n in (2, 4, 8, 16)]
     handles.append(plt.Line2D([], [], color=AUTO_COL, ls="--", lw=1.8))
-    axes[1].legend(handles, ["2 agents", "4 agents", "8 agents", "automesher (0.25)"], loc="upper right", frameon=False)
+    axes[1].legend(handles, ["2 agents", "4 agents", "8 agents", "16 agents", "automesher (0.25)"], loc="upper right",
+                   frameon=False)
     order_ok = {(s, t): vals[(s, t, 8)] > vals[(s, t, 4)] > vals[(s, t, 2)] for s in ("div", "scale") for t in TASKS}
-    takeaway(fig, "More agents, better swarm: 8 > 4 > 2 in all four comparisons" if all(order_ok.values())
+    order16 = {t: vals[("div", t, 16)] > vals[("div", t, 8)] for t in TASKS}
+    takeaway(fig, "More agents, better swarm: 16 > 8 > 4 > 2" if all(order_ok.values()) and all(order16.values())
              else "Team-size ordering is not monotone in every study",
              "Mean over generations (after gen 0) of the best agent's base score; numbers in bars = team size")
     # the morning study's own windows (as in its README), for the cross-check
@@ -299,10 +308,11 @@ def fig2():
         f"| {s} | {TLAB[t]} | {f2(vals[(s, t, 2)])} | {f2(vals[(s, t, 4)])} | {f2(vals[(s, t, 8)])} | "
         f"{'yes' if order_ok[(s, t)] else 'NO'} |" for s in ("div", "scale") for t in TASKS)
     md = f"""
-# fig2_mean_best_by_team_size: 8 > 4 > 2 in all four comparisons
+# fig2_mean_best_by_team_size: 16 > 8 > 4 > 2
 
 **Caption.** For each study and task, the best agent's base score averaged over the generations after gen 0.
-The ordering 8 > 4 > 2 agents holds in {sum(order_ok.values())} of 4 cases.
+The ordering 8 > 4 > 2 agents holds in {sum(order_ok.values())} of 4 cases. The 16-agent swarm (afternoon setup only)
+beats 8 agents on {sum(order16.values())} of 2 tasks: {' and '.join(f"{TLAB[t]} {f2(vals[('div', t, 16)])} vs {f2(vals[('div', t, 8)])}" for t in TASKS)}.
 
 **Key numbers.**
 
@@ -316,10 +326,16 @@ completed. With each morning run's own window (2 agents gens 1-5, 4 and 8 agents
 4 agents {f2(own[4]['abc_00000003_bc7'])} / {f2(own[4]['abc_00000065_bc0'])}, 8 agents {f2(own[8]['abc_00000003_bc7'])} / {f2(own[8]['abc_00000065_bc0'])} (bc7 / 65_bc0);
 the order is the same.
 
-**Data.** {SRC_DIV}; {SRC_SCALE}. Plotted values: `data.json` -> `fig2`.
+**Data.** {SRC_DIV}; {SRC_SCALE}; 16 agents: `results/diversity_s16_2026-11-01/scores.json` (per-generation best, exported
+by Jaime from `ace_runs/div_s16`, which stays on his laptop). Plotted values: `data.json` -> `fig2`.
 
 **Caveats.**
-{COMMON_CAVEATS}- Morning 65_bc0 gaps are small (2 / 4 / 8: {f2(vals[('scale', 'abc_00000065_bc0', 2)])} / {f2(vals[('scale', 'abc_00000065_bc0', 4)])} /
+{COMMON_CAVEATS}- 16 agents: one run, read from its exported per-generation scores rather than the raw run files. Its field
+  references were rebuilt for that run with `ace.gold_reference` (same study meshes, last level 3% under the DOF cap,
+  commit 603f3e7), so its scores may differ slightly in scale from the 2-8 agent runs. There is no morning 16-agent run.
+- The returns diminish: on 65_bc0, 4 -> 8 agents gains {f2(vals[('div', 'abc_00000065_bc0', 8)] - vals[('div', 'abc_00000065_bc0', 4)])}
+  and 8 -> 16 gains {f2(vals[('div', 'abc_00000065_bc0', 16)] - vals[('div', 'abc_00000065_bc0', 8)])}, for $79.54 vs $41.45 of API calls.
+- Morning 65_bc0 gaps are small (2 / 4 / 8: {f2(vals[('scale', 'abc_00000065_bc0', 2)])} / {f2(vals[('scale', 'abc_00000065_bc0', 4)])} /
   {f2(vals[('scale', 'abc_00000065_bc0', 8)])}), well inside the 0.03-0.1 per-generation noise; and the single highest morning
   65_bc0 score was the 2-agent run's 0.717 (gen 4). The morning bc7 order is consistent, the morning 65_bc0 order is weak.
 - On bc7 the bars are all below the automesher's 0.25.

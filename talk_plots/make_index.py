@@ -10,7 +10,7 @@ ACTS = [
      "On the benchmark problems our agents beat the gmsh automesher by a large factor, and they get better "
      "the longer they train."),
     ("act2_swarms_scale", "Act 2: swarms train better, and this scales",
-     "On the hard 3D CAD parts, more agents trained together reach better meshes: 8 > 4 > 2 in every "
+     "On the hard 3D CAD parts, more agents trained together reach better meshes: 16 > 8 > 4 > 2, and 8 > 4 > 2 in every "
      "comparison, and 8 agents beat one budget-matched agent."),
     ("act3_real_data", "Act 3: the harness learns from real lab data",
      "A 3D-printed part crushed on an Instron: before post-training the simulation is 33 % off the real test; "

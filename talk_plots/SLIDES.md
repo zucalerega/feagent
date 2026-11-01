@@ -18,7 +18,7 @@ and in each figure's `.md`.
 ## Act 2: swarms train better and more stably, and this scales
 
 8. `act2_swarms_scale/fig1_best_per_gen.png`: On a real CAD part, the 8-agent swarm's best mesh improves almost every generation (0.651 -> 0.745); 2 agents stall and fall back.
-9. `act2_swarms_scale/fig2_mean_best_by_team_size.png`: More agents, better swarm: 8 > 4 > 2 in all four study-task comparisons.
+9. `act2_swarms_scale/fig2_mean_best_by_team_size.png`: More agents, better swarm: 16 > 8 > 4 > 2 (8 > 4 > 2 in all four study-task comparisons; the 16-agent run, afternoon setup only, beats 8 on both tasks).
 10. `act2_swarms_scale/fig5_swarm_vs_single.png`: 8 agents beat one agent given the whole swarm's budget on 65_bc0 (0.731 vs 0.592) and tie on bc7.
 11. `act2_swarms_scale/fig4_mean_agent_per_gen.png`: Not just more lottery tickets: the average agent learns too (0.55 -> 0.73 with 8 agents).
 12. `act2_swarms_scale/fig6_cost_per_gen.png`: Scaling is affordable: 4x the agents cost 3.3x per generation.
