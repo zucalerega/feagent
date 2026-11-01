@@ -23,12 +23,20 @@ the cut body):
   p_windward    wall pressure on the windward (lower) flank at x = 2 R
   p_leeward     wall pressure on the leeward (upper) flank at x = 2 R
 
-References: no published value fits this configuration, and a detached shock has no closed-form
-solution. The references are the fixed solver's own mesh-converged values (structured study on the
-reference mesh, Richardson extrapolation: docs/benchmarks_cfd.md, "Supersonic blunted wedge"),
-anchored by exact theory where it exists: at alpha = 0 the stagnation pressure is the Rayleigh pitot
-pressure (exact behind the normal part of the shock) and the bow shock standoff is checked against
-Billig's correlation for cylinder-wedges, Delta / R = 0.386 exp(4.67 / M^2).
+References: a detached shock has no closed-form solution, and no published value fits this
+configuration (docs/benchmarks_cfd.md, "Supersonic blunted wedge"):
+* p_stag is exact: the Rayleigh pitot pressure. The flanks start 70 deg (windward) and 90 deg
+  (leeward) from the stagnation point, downstream of the nose's subsonic region (sonic points about
+  45 deg from it), so that region and the bow shock ahead of it are the alpha = 0 flow rotated by
+  alpha: the stagnation streamline crosses the shock where it is normal. The fixed solver confirms
+  it: the same standoff at alpha = 0 and 10 deg (0.698 R), and p_stag at alpha = 0 within 0.04 % of
+  the pitot pressure on the two finest meshes.
+* The forces and flank pressures are the fixed solver's own mesh-converged values (structured study
+  on the reference mesh, time-averaged over the scheme's small limit cycle, Richardson extrapolation).
+  CONVERGED holds them once the study's finest level is in.
+* The standoff is a validation check, not a QoI: 0.698 R at Mach 3, 7.7 % above Billig's
+  cylinder-wedge correlation 0.386 exp(4.67 / M^2), as an independent Euler solver finds; at Mach 6
+  the gap is 1.9 %.
 """
 
 from __future__ import annotations
@@ -50,9 +58,11 @@ RAYLEIGH_PITOT = ("Rayleigh pitot formula: NACA Report 1135, 'Equations, tables,
                   "flow', Ames Research Staff (1953), eq. 100")
 
 # Mesh-converged values of the fixed solver for the default parameters (docs/benchmarks_cfd.md,
-# "Supersonic blunted wedge"); filled in from the structured study.
+# "Supersonic blunted wedge"), from the structured study; the forces and flank pressures wait for its
+# finest level (h0 / 4).
 CONVERGED: dict[str, float] = {}
 TOL: dict[str, float] = {}
+TOL_STAG = 0.01
 
 
 def pitot_ratio(mach: float, gamma: float = 1.4) -> float:
@@ -329,10 +339,23 @@ class SupersonicBluntWedge2D(FlowProblem):
         )
 
     def references(self) -> list[Reference]:
-        return [Reference(q, v, "converged_numerical", _SRC, tolerance=TOL[q],
-                          notes="mesh-converged value of the fixed solver (rhoCentralFoam); docs/benchmarks_cfd.md, "
-                                "'Supersonic blunted wedge'")
-                for q, v in CONVERGED.items()]
+        p = self.params
+        stag = Reference("p_stag", self.pitot(), "analytical", RAYLEIGH_PITOT, tolerance=TOL_STAG,
+                         notes=f"p02 = {pitot_ratio(p['mach'], p['gamma']):.6f} p_inf; exact at incidence too: the "
+                               "nose's subsonic region is the alpha = 0 flow rotated (the flanks start downstream of "
+                               "it); the fixed solver reaches it within 0.04 % at alpha = 0 (docs/benchmarks_cfd.md, "
+                               "'Supersonic blunted wedge')")
+        num = [Reference(q, v, "converged_numerical", _SRC, tolerance=TOL[q],
+                         notes="mesh-converged value of the fixed solver (rhoCentralFoam), time-averaged over the "
+                               "scheme's limit cycle; docs/benchmarks_cfd.md, 'Supersonic blunted wedge'")
+               for q, v in CONVERGED.items() if self._default_flow()]
+        return [stag] + num
+
+    def _default_flow(self) -> bool:
+        """The numerical references hold for the default flow parameters only (p_stag holds for any)."""
+        d = self.default_params
+        return all(self.params[k] == d[k] for k in ("R", "theta", "x_out", "mach", "alpha", "p_inf", "T_inf",
+                                                    "gamma", "gas_constant"))
 
 
 _SRC = ("Mesh-converged value of the fixed solver (OpenFOAM v1912 rhoCentralFoam, Kurganov-Tadmor fluxes, van Leer "

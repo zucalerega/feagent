@@ -1,9 +1,10 @@
 # CFD benchmarks (`feacore/problems/cfd/`)
 
-Incompressible, steady, laminar flow problems with exact or published reference values, so the
-verification layer (Richardson extrapolation / GCI, `feacore/verification/`) runs on CFD as well as
-FEA. Every problem is a `feacore.problems.base.Problem` with physics `"flow"`, registered at import
-and tagged `cfd`. The fixed flow solver is the OpenFOAM backend (`backend="openfoam"`, `simpleFoam`).
+One compressible problem, the supersonic blunted wedge (`feacore/problems/supersonic/`), has its own
+section below. The rest are incompressible, steady, laminar flow problems with exact or published
+reference values, so the verification layer (Richardson extrapolation / GCI, `feacore/verification/`)
+runs on CFD as well as FEA. Every one of those is a `feacore.problems.base.Problem` with physics
+`"flow"`, registered at import and tagged `cfd`. The fixed flow solver is the OpenFOAM backend (`backend="openfoam"`, `simpleFoam`).
 
 | id | analysis | QoIs (agent reports) | reference | tol | kind |
 |---|---|---|---|---|---|
@@ -159,6 +160,83 @@ per step height in y.
     -0.5 cm < x < 6 cm) with quads gives -1.6 % at 5310 nodes: `planted.GOOD_MESH`.
   - `v_shear` is harder: -3.0 % at 7108 nodes with a 0.5 mm box. It sits in the shear layer and is
     small, so its relative error is large.
+
+## Supersonic blunted wedge (`supersonic_blunt_wedge_2d`, compressible)
+
+An asymmetric blunt body in supersonic flow: `feacore/problems/supersonic/blunt_wedge.py`, physics
+`compressible`, solved by the OpenFOAM backend's `rhoCentralFoam` path (`docs/solver_openfoam.md`).
+
+- **Body:** a circular nose of radius R = 5 cm (centre at the origin) with flanks tangent to it at
+  +-10 deg, cut by the outflow plane x = 4 R. It is the 2D counterpart of a sphere-cone.
+- **Flow:** inviscid air (gamma = 1.4, R_gas = 287 J/(kg K)), Mach 3 at 10 deg angle of attack,
+  p_inf = 1 bar, T_inf = 300 K. The windward (lower) flank turns the flow by 20 deg, the leeward one
+  by 0 deg.
+- **Domain:** the inflow boundary is the bow shock shape Billig's correlation gives for a cylinder at
+  Mach 2. It lies outside the Mach 3 shock on both sides at 10 deg and slopes more steeply than the
+  freestream everywhere, so the flow enters through all of it. The outflow is supersonic
+  everywhere, including the windward flank's entropy layer (about Mach 1.4).
+- **QoIs** (forces per metre of depth, gauge pressure p - p_inf):
+  - `p_stag`, the largest wall pressure;
+  - `axial_force` and `normal_force`;
+  - `p_windward` and `p_leeward`, the flank pressures at x = 2 R.
+- **Reference mesh:** four structured blocks (two nose blocks split on the axis, two flank blocks).
+  At h0 there are 24 cells per 100 deg nose arc, 24 per flank and 32 from the body to the inflow
+  boundary, graded 3:1 towards the body and towards the shoulder: 3072 cells.
+- **Study:** `scripts/supersonic_blunt_study.py`. Every level starts from the previous one's
+  solution (mapFields).
+
+**What is exact.** A detached shock has no closed-form solution, but the stagnation pressure does.
+- On the stagnation streamline the flow crosses the normal part of the bow shock and then
+  compresses isentropically to rest, so p_stag is the Rayleigh pitot pressure: p02 / p_inf = 12.0610
+  at Mach 3.
+- This also holds at incidence. The flanks start 70 deg (windward) and 90 deg (leeward) from the
+  stagnation point, downstream of the nose's subsonic region (sonic points about 45 deg from it). So
+  that region, and the shock ahead of it, is the alpha = 0 flow rotated by alpha.
+- The solver agrees: the standoff along the stagnation line is the same at alpha = 0 and 10 deg
+  (table below). `p_stag` is therefore an analytical reference (1 %).
+
+**Validation at alpha = 0** (the symmetric flow; the steady solutions, not time-averaged):
+
+| level | cells | p_stag / pitot | standoff / R |
+|---|---|---|---|
+| 2 h0 | 768 | 0.99872 | 0.6931 |
+| h0 | 3072 | 0.99584 | 0.6965 |
+| h0 / 2 | 12288 | 0.99982 | 0.6977 |
+| h0 / 4 | 49152 | 0.99957 | 0.6982 |
+
+- **Stagnation pressure:** within 0.04 % of the exact value on the two finest meshes.
+- **Standoff:** converges to 0.698 R, 7.7 % above Billig's cylinder-wedge correlation 0.386 exp(4.67 /
+  M^2) = 0.6485 R. Billig's is an empirical fit, and it runs low at low supersonic Mach.
+  - An independent 2D Euler cylinder solver reports 0.697 R at Mach 3, grid-independent.
+  - The same solver puts the gap at 1-2 % at Mach 6-8.
+  - Ours at Mach 6 (h0 / 2): 0.4473 R against Billig's 0.4395 R, 1.9 %.
+
+  The standoff is the distance from the stagnation point (the wall face of largest pressure) to
+  where p crosses the mean of p_inf and the normal-shock pressure, along the line against the
+  freestream.
+
+**At 10 deg incidence the scheme keeps a small limit cycle.** It is a wave train in the shock layer
+behind the sonic line.
+- On h0 over 60 flow times, `p_windward` moves by 0.1 % peak to peak, with a period of about 10
+  flow times. Every other QoI holds to 1.4e-4 or better.
+- Each level's values are therefore time means over 24 flow times (`--average 24`), after its
+  transient. The band column gives the largest relative peak-to-peak spread among the QoIs.
+
+| level | cells | p_stag (Pa) | axial_force (N/m) | normal_force (N/m) | p_windward (Pa) | p_leeward (Pa) | standoff / R | band |
+|---|---|---|---|---|---|---|---|---|
+| 2 h0 | 768 | 1218839 | 86782.7 | 62421.7 | 389083 | 135063 | 0.6911 | 4e-5 |
+| h0 | 3072 | 1210517 | 86224.9 | 62642.1 | 393727 | 136036 | 0.6986 | 1.2e-3 |
+| h0 / 2 | 12288 | 1202343 | 86282.8 | 62836.9 | 391046 | 135872 | 0.6978 | 9e-4 |
+| h0 / 4 | 49152 | running | | | | | | |
+
+- **p_stag:** 0.31 % below the exact value at h0 / 2. The mesh is not aligned with the stagnation
+  streamline at incidence; at alpha = 0 the error is 0.02 %.
+- **axial_force:** settled to 0.07 % between h0 and h0 / 2.
+- **p_windward and p_leeward:** oscillate between levels, by 0.7 % and 0.1 %.
+- **normal_force:** still rises 0.3 % per level.
+
+The mesh-converged references for the forces and flank pressures wait for the h0 / 4 level. Until
+then the problem carries only the exact `p_stag` reference.
 
 ## Validation (fixed solver `openfoam`)
 

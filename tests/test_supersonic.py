@@ -72,6 +72,11 @@ def test_problem_mesh_and_case(tmp_path):
     assert n[1] == 3072 and n[2] == 4 * n[1]
     with pytest.raises(ValueError, match="sized for"):
         SupersonicBluntWedge2D(id="x", alpha=20.0)
+    refs = {r.qoi: r for r in p.references()}
+    assert refs["p_stag"].kind == "analytical" and refs["p_stag"].value == pytest.approx(12.0610 * 1e5, rel=1e-4)
+    assert set(refs) <= {q.name for q in case.qois}
+    # the numerical references belong to the default flow; another Mach number keeps only the exact one
+    assert [r.qoi for r in SupersonicBluntWedge2D(id="m4", mach=4.0).references()] == ["p_stag"]
 
 
 @needs_foam
