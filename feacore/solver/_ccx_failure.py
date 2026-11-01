@@ -356,10 +356,12 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         state[:], removed_at[:] = ck["state"], ck["removed_at"]
         agg_peeq, frozen_U = np.array(ck["agg_peeq"], float), np.array(ck["frozen_U"], float)
         crit_now = {c: fo.get(c) for c in CRIT_KEYS}
+        if "peeq_t" in ck:                      # tensile PEEQ is history: kept when parameters change
+            peeq_t = np.array(ck["peeq_t"], float)
         if "damage" in ck and ck.get("criterion_options") == crit_now:
             damage = np.array(ck["damage"], float)
-            if "peeq_t" in ck:
-                peeq_t = np.array(ck["peeq_t"], float)
+        elif crit == "peeq_tension" and "peeq_t" in ck:
+            damage = damage_index(fo, agg_peeq, peeq_t=peeq_t)
         else:       # criterion changed on resume: no stress at hand; the next block end recomputes it
             damage = damage_index(fo, agg_peeq) if crit == "peeq" else np.zeros(model.n_elems)
         t, k, peak, rate = float(ck["t"]), int(ck["block"]), float(ck["peak"]), float(ck.get("rate", 0.0))
