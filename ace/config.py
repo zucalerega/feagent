@@ -63,16 +63,6 @@ TASKS = {
     "cooks_membrane": {"qoi": "uy_C", "node_cap": 20000},         # tapered panel in shear (classic, not NAFEMS)
     # easy sanity problem (planted-failure tests use it; not in the loop)
     "lame_cylinder_plane_strain": {"qoi": "hoop_bore", "node_cap": 20000},
-    # CFD (physics "flow", steady laminar, openfoam backend), 2D only for now. The caps are safety
-    # limits like the others: a uniform mesh at the cap meets the tolerance (calibration.json), so
-    # the score is about the cheapest accurate mesh. 3D flow tasks (pipe_poiseuille_3d,
-    # square_duct_3d) are left out: on the unstructured tets the agent's mesh tool makes, the
-    # backend's axial pressure gradient is 12-19 % high at 4k-33k nodes (2D triangles and structured
-    # hexes are fine), so no agent could meet a 2 % tolerance (ace/README.md, "The CFD suite").
-    "poiseuille_channel": {"qoi": "dp_AB", "node_cap": 1200},             # 2D channel, exact (easy sanity case)
-    "lid_driven_cavity_re100": {"qoi": "u_vcl_min", "node_cap": 2500},    # 2D closed cavity, Ghia et al. 1982
-    "taylor_couette_2d": {"qoi": "u_theta_mid", "node_cap": 2500},        # 2D annulus, rotating wall, exact
-    "cylinder_channel_dfg_2d1": {"qoi": "drag", "node_cap": 12000},       # 2D external flow, Schaefer & Turek 1996
     # printed gold part abc_00000003 pulled on the Instron (feacore/problems/physical.py); scored on the
     # video-extensometer elongation; physical test data can be fed in with run_loop --evidence
     "abc_00000003_pull": {"qoi": "ext_marks", "node_cap": 60000},
@@ -88,6 +78,20 @@ TASKS = {
     # L1 study mesh (48827 / 37613 nodes). Field scoring needs their adaptive reference (ace.gold_reference).
     "abc_00000003_bc7": {"qoi": "strain_energy", "node_cap": 49000},
     "abc_00000065_bc0": {"qoi": "strain_energy", "node_cap": 38000},
+    # CFD (physics "flow", steady laminar, openfoam backend). The caps are safety limits like the
+    # others: a uniform mesh at the cap meets the tolerance (calibration.json), so the score is about
+    # the cheapest accurate mesh.
+    "poiseuille_channel": {"qoi": "dp_AB", "node_cap": 1200},             # 2D channel, exact (easy sanity case)
+    "lid_driven_cavity_re100": {"qoi": "u_vcl_min", "node_cap": 2500},    # 2D closed cavity, Ghia et al. 1982
+    "taylor_couette_2d": {"qoi": "u_theta_mid", "node_cap": 2500},        # 2D annulus, rotating wall, exact
+    "cylinder_channel_dfg_2d1": {"qoi": "drag", "node_cap": 12000},       # 2D external flow, Schaefer & Turek 1996
+    # 3D flow on the unstructured tets the mesh tool makes, scored on the axial pressure drop in the
+    # developed flow. They need the backend's skew-consistent 3D schemes (feacore skew_correction, on
+    # by default in 3D): with the plain schemes tets gave a pressure gradient 12-15 % high at any size.
+    # Uniform tets now meet the 2 % tolerance below the cap: pipe +1.3 % at 4.6k nodes, duct -0.8 % at
+    # 4.3k nodes (docs/solver_openfoam.md, "3D meshes").
+    "pipe_poiseuille_3d": {"qoi": "dp_AB", "node_cap": 6000},             # 3D pipe, exact (curved, faceted wall)
+    "square_duct_3d": {"qoi": "dp_AB", "node_cap": 6000},                 # 3D duct, developing flow, exact developed
 }
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
@@ -95,7 +99,10 @@ HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never
 # where the cheapest accurate mesh refines at the body instead of everywhere.
 TRAIN_CFD = ["poiseuille_channel", "lid_driven_cavity_re100", "taylor_couette_2d"]
 HOLDOUT_CFD = ["cylinder_channel_dfg_2d1"]
-SUITES = {"fea": (TRAIN, HOLDOUT), "cfd": (TRAIN_CFD, HOLDOUT_CFD)}
+# 3D flow (run_loop --suite cfd3d): each solve takes 5-30 s instead of 1-5 s, so it is its own suite.
+TRAIN_CFD3D = ["pipe_poiseuille_3d", "square_duct_3d"]
+HOLDOUT_CFD3D: list[str] = []
+SUITES = {"fea": (TRAIN, HOLDOUT), "cfd": (TRAIN_CFD, HOLDOUT_CFD), "cfd3d": (TRAIN_CFD3D, HOLDOUT_CFD3D)}
 
 # What the agent is told about a problem (ACE_STATEMENT, set by run_loop --statement; an environment
 # variable so the spawned workers see it too):

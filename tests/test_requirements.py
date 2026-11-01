@@ -11,8 +11,7 @@ from ace import requirements as R
 from ace.checks import reference_setup
 from ace.config import TASKS
 
-# Requirements are written for the elasticity tasks; the flow (CFD) tasks have none yet, and
-# requirements mode refuses them (problems_ready).
+# Requirements are written for elasticity problems only; run_loop refuses flow tasks in requirements mode.
 ELASTIC = [pid for pid in TASKS if not fea.is_flow(fea.get_problem(pid))]
 
 

@@ -36,8 +36,10 @@ GOOD_MESH = {
     "poiseuille_channel": {"h": 0.0008, "quads": True, "refinements": []},                 # 1027/1200 nodes, 0.63%
     "lid_driven_cavity_re100": {"h": 0.025, "quads": True, "refinements": []},             # 1919/2500 nodes, 0.66%
     "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1883/2500 nodes, 0.43%
-    "cylinder_channel_dfg_2d1": {"h": 0.015, "quads": True,                               # 5440/12000 nodes, 0.28%
+    "cylinder_channel_dfg_2d1": {"h": 0.015, "quads": True,                               # 5440/12000 nodes, 0.37%
                                  "refinements": [{"group": "cylinder", "size": 0.002, "radius": 0.1}]},
+    "pipe_poiseuille_3d": {"h": 0.001, "refinements": []},                                 # 4642/6000 nodes, 1.3% (tets)
+    "square_duct_3d": {"h": 0.0014, "refinements": []},                                    # 4259/6000 nodes, 0.8% (tets)
     # the tube wall (2.5 mm) bends: it needs small elements everywhere around the tube, not at a point
     "abc_00000003_pull": {"h": 0.0022, "order": 2, "refinements": []},  # 40187/60000 nodes, -2.3%
     "abc_00000065_compression": {"h": 0.004, "order": 2, "refinements": []},  # 9506/40000 nodes, ~1.5% from h = 1.6 mm

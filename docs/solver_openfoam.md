@@ -17,7 +17,7 @@ or foamlib).
 |---|---|
 | mesh | meshio reads the `.msh` (2.2 / 4.1, ASCII / binary; tri, quad, tet, hex, prism, pyramid; quadratic cells are linearised). 2D: one cell layer of `analysis.thickness` is extruded (z from 0 to the thickness; prisms / hexes) and written as gmsh 2.2 for `gmshToFoam` |
 | patches | one patch per boundary group. Overlapping groups are split into "atoms" (`a__b`), and boundary faces in no group go to `unassigned`. 2D front and back form `frontAndBack` (`empty`). Patch types: `wall`, `patch`, `symmetry`, `empty` |
-| dictionaries | written with `foamlib`, following the shipped `simpleFoam/pitzDaily` tutorial and the `etc/templates/inflowOutflow` template: SIMPLEC (`consistent yes`, U relaxation 0.9), GAMG for p and smoothSolver for U, `Gauss linear` gradients, `Gauss linear corrected` laplacian |
+| dictionaries | written with `foamlib`, following the shipped `simpleFoam/pitzDaily` tutorial and the `etc/templates/inflowOutflow` template: SIMPLEC (`consistent yes`, U relaxation 0.9), GAMG for p and smoothSolver for U, `Gauss linear` gradients, `Gauss linear corrected` laplacian. In 3D (`skew_correction`): `pointCellsLeastSquares` gradients except `grad(p)`, and `flux(HbyA) skewCorrected linear` (see "3D meshes") |
 | convection | `analysis.order` 1 gives `bounded Gauss upwind`; 2 gives `bounded Gauss linearUpwind grad(U)`. Turbulence (when on) uses `limitedLinear 1` or upwind |
 | run | `simpleFoam` runs until `residualControl` (`residual_tol` on the initial residuals of p, U and turbulence) or `max_iterations` |
 | results | the U, p, phi (and nut) fields of the last time are read with foamlib. Cell centres and volumes, gradients and forces are computed in numpy with OpenFOAM's own formulas (see "Version notes") |
@@ -65,7 +65,9 @@ It is not validated, and SIMPLE + SST may stall around 1e-5 instead of reaching 
 * `force`: the fluid force on the body through the group (pressure + viscous), one component.
   This is OpenFOAM's `forces` formula: `rho (p - pRef) Sf + Sf . devRhoReff`, with
   `devRhoReff = -rho nuEff dev(twoSymm(grad U))`. The wall gradient takes its normal part from
-  `snGrad`.
+  `snGrad`, over the wall-normal distance of the cell centre `n . (Cf - C)` (OpenFOAM's
+  `fvPatch::delta`, which the solver's own wall flux uses). Before 2026-10-31 feacore divided by
+  `|Cf - C|`, which reads about 10 % low on tet walls and 0.2 % low on the DFG cylinder.
 * `point_difference`: from `probe` (`Result.evaluate_qoi`), e.g. a pressure drop between two probes.
 * Closed domains (no `pressure_outlet`) fix p at cell 0 while solving. The result is shifted to a
   zero volume mean, which is mesh-independent. Forces use the same shift.
@@ -80,7 +82,92 @@ Options (`analysis.options`, or keywords to `solve`): `turbulence` ("laminar"), 
 (5000), `residual_tol` (1e-8), `relaxation_U` (0.9), `relaxation_p` (none: SIMPLEC),
 `n_non_orth_correctors` (0), `timeout` (seconds; the solver writes and stops at the limit),
 `case_dir` (run there and keep it; it must be new or empty, never in the repo), `keep_case`,
-`turbulence_intensity`, `turbulence_length`.
+`turbulence_intensity`, `turbulence_length`, `skew_correction` ("auto": on in 3D, off in 2D; or
+true / false).
+
+## 3D meshes: skew-consistent schemes (`skew_correction`)
+
+With OpenFOAM's plain schemes, 3D flow on unstructured tets converges to a wrong solution. On the
+`pipe_poiseuille_3d` tets an agent makes (h = 1 mm, 22k cells), the axial pressure gradient was
++15.3 % and the wall shear +17 %. A flat-walled 3D channel on tets gave +12.2, +13.7, +14.2 and
++14.1 % at 9k, 24k, 70k and 183k cells, so the error does not shrink with h. Structured hexes
+converge at second order, and 2D triangles are accurate.
+
+**Cause.** A tet with a face on a wall has its centroid at 1/4 of its height above the wall, but
+its faces that contain a wall edge have their centroids at 1/3. Linear interpolation between cell
+centres therefore misses those face values in the same direction all along the wall, so the
+interpolation error is systematic there rather than random. Two terms inherit it:
+
+* `Gauss linear` gradients are built from those face values, so grad(U) is wrong by O(1) in the
+  wall cells. grad(U) feeds the non-orthogonal correction of `laplacian(nuEff,U)` and
+  `div(nuEff*dev2(T(grad(U))))`, so the viscous flux near the wall is off by an amount that does
+  not shrink with h.
+* The momentum-interpolation flux `flux(HbyA)` is interpolated linearly to the same faces, so the
+  near-wall face fluxes come out low.
+
+The discrete solution compensates with a flattened profile: near-wall cells about 13 % fast, the
+axis about 1.4 % slow. The higher wall shear then needs a higher pressure gradient.
+
+**Evidence** (pipe and channel above, OpenFOAM v1912):
+
+* It is not the probes or the kinematic-pressure conversion. A linear fit of the cell pressures
+  gives +15.4 % at every radius, the inlet patch pressure is +15 %, and the solver's own discrete
+  x-momentum balance closes (inlet pressure force = wall flux with the wall-normal distance).
+* It is not convection: Stokes flow (Re 0.1) gives +15.2 %, and upwind +19.6 %.
+* It is not the faceted wall: the flat-walled channel on tets gives +13.7 %, against −1.5 % (second
+  order) on structured hexes at the same h.
+* It is not mesh quality: `checkMesh` passes (non-orthogonality max 62°, mean 21°).
+* It is not specific to tets: the same pipe split into hexes (gmsh `SubdivisionAlgorithm` 2) gave
+  +20 %.
+* 2D triangles are fine (−0.2 % and +0.6 % at H/10 and H/20). gmsh's near-wall triangles alternate
+  up and down, so the interpolation offsets cancel.
+
+Scheme scan on the channel (h = 1 mm, Stokes), error in -dp/dx:
+
+| gradients | `flux(HbyA)` | error |
+|---|---|---|
+| `Gauss linear` (default) | `linear` | +13.2 % |
+| `leastSquares` | `linear` | +14.8 % |
+| `Gauss skewCorrected linear` | `linear` | +6.8 % |
+| `Gauss pointLinear` | `linear` | +3.8 % |
+| `pointCellsLeastSquares` | `linear` | −1.7 % (−1.3 to −1.7 % for any h: still inconsistent) |
+| `Gauss linear` | `skewCorrected linear` | +6.6 % |
+| `pointCellsLeastSquares`, `grad(p)` `Gauss linear` | `skewCorrected linear` | +0.4 % (h = 1.4, 1.0, 0.7 mm: +0.16, +0.38, +0.37 %) |
+
+`skew_correction` (the default in 3D) uses the last row. `pointCellsLeastSquares` is exact for
+linear fields on any mesh. `grad(p)` stays `Gauss linear` because it is conservative (the cell
+pressure forces sum to the boundary pressure force). A least-squares `grad(p)` takes the
+zero-gradient wall pressures at face centres that are shifted along the flow. On the split-tet
+hexes that alone left +13.6 % with an exact velocity field, against +0.7 % with `Gauss linear`.
+Changing the laplacian (`limited`, `uncorrected`, `orthogonal`) or adding non-orthogonal correctors
+does not help.
+
+Results with `skew_correction` (error against the exact values):
+
+| case | mesh | cells | dp_AB before → after | wall force after | other |
+|---|---|---|---|---|---|
+| `pipe_poiseuille_3d` | tets h = 1 mm | 22k | +15.3 → +1.3 % | +1.6 % | flow rate +0.6 % |
+| `pipe_poiseuille_3d` | tets h = 0.7 mm | 59k | → +1.2 % | +1.5 % | |
+| `pipe_poiseuille_3d` | split-tet hexes h = 1.4 mm | 36k | +20.1 → +0.7 % | +1.1 % | |
+| `pipe_poiseuille_3d` | reference hexes h0, h0/2 | 640, 5k | +7.0, +2.2 → +6.4, +1.7 % | +3.1, +0.9 % | |
+| `square_duct_3d` | tets h = 1.4 / 1.0 / 0.8 mm | 18k / 48k / 92k | +11.7 → −0.8 / +0.0 / +0.1 % | | |
+| `square_duct_3d` | reference hexes h0 | 5k | −5.55 → −5.55 % | | identical |
+
+What remains on the pipe is mostly the faceted wall: a 31-gon at h = 1 mm is 0.6 % short in area,
+which is worth about +1.3 % in pressure gradient at a given flow rate. The regression test
+(`test_pipe_3d_tets_pressure_drop`) compares with the exact values for the meshed section.
+
+Costs and limits:
+
+* The point stencils take memory. At 70k tets simpleFoam peaks at 254 MB instead of 100 MB; at 183k
+  tets the peak is 574 MB. On a Mac whose Docker VM has 2 GB shared with other containers, that
+  run was OOM-killed.
+* Point probes at a smooth velocity maximum read low on coarse tets. This is the vertex fit of
+  `probe` flattening the peak, not the solution. On the duct at h = 1 mm, a quadratic fit of the cell
+  values gives u_axis −0.74 %, while the probe reads −2.6 to −4.8 % depending on x. It converges
+  with h (pipe u_centreline −2.4 % at 1 mm, −0.6 % at 0.7 mm). Pressure drops, forces and flow rates
+  are not affected.
+* 2D keeps the plain schemes; `skew_correction: true` also works in 2D.
 
 ## residual_tol and the GCI
 

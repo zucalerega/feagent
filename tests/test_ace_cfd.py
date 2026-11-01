@@ -28,15 +28,18 @@ FOAM = pytest.mark.skipif(not _has_openfoam(), reason="OpenFOAM not found (on a 
 
 
 def test_cfd_suite_lists_registered_flow_tasks():
-    assert set(config.SUITES) == {"fea", "cfd"}
-    assert set(config.TRAIN_CFD + config.HOLDOUT_CFD) <= set(CFD)
-    assert not set(config.TRAIN_CFD) & set(config.HOLDOUT_CFD)
+    assert set(config.SUITES) == {"fea", "cfd", "cfd3d"}
+    for suite in ("cfd", "cfd3d"):
+        train, holdout = config.SUITES[suite]
+        assert set(train + holdout) <= set(CFD)
+        assert not set(train) & set(holdout)
+    assert all(fea.get_problem(p).dim == 3 for p in sum(config.SUITES["cfd3d"], []))
 
 
 @pytest.mark.parametrize("pid", CFD)
 def test_flow_task_plumbing(pid, tmp_path):
     p = fea.get_problem(pid)
-    assert tools_for(p) is TOOLS_FLOW
+    assert tools_for(pid) is TOOLS_FLOW
     s = checks.reference_setup(p)
     assert s["convection"] == "linearUpwind" and checks.reference_setup(p, 1)["convection"] == "upwind"
     m = fea.make_mesh(p, tmp_path / "m.msh", h=p.params["h0"] * 1.5, quads=p.dim == 2)
@@ -51,6 +54,8 @@ def test_flow_prompt_and_tools():
     assert "flow (CFD)" in system_prompt("", flow=True) and "linear-elastic" in system_prompt("")
     names = [t["name"] for t in TOOLS_FLOW]          # view / compare read stress fields: not for flow
     assert names == ["inspect_geometry", "mesh", "solve", "submit"] and set(names) <= {t["name"] for t in TOOLS}
+    flow = system_prompt("", flow=True)
+    assert "von Mises" not in flow and "- view:" not in flow and "- compare:" not in flow
     mesh = TOOLS_FLOW[1]["input_schema"]["properties"]
     assert "order" not in mesh and "quads" in mesh
 
@@ -103,3 +108,35 @@ def test_cfd_loop_end_to_end_mock(tmp_path):
     assert rec["checks"]["solved"] and rec["checks"]["score"] is not None
     assert rec["oracles"]["known_answer"]["status"] in ("pass", "fail")
     assert rec["oracles"]["equilibrium"]["status"] == "unavailable"     # elasticity-only oracle
+
+
+def test_run_loop_refuses_flow_tasks_it_cannot_run(monkeypatch):
+    """Before anything is spent: field scoring and requirements statements are elasticity-only, and
+    flow needs OpenFOAM."""
+    from ace import run_loop
+    from feacore.solver import _foam_env
+
+    run_loop._check_flow_tasks(["cooks_membrane"])                 # no flow task: nothing to check
+    monkeypatch.setattr(config, "SCORE", "field")
+    with pytest.raises(SystemExit, match="ACE_SCORE=field"):
+        run_loop._check_flow_tasks(["poiseuille_channel"])
+    monkeypatch.setattr(config, "SCORE", "point")
+    monkeypatch.setattr(config, "STATEMENT", "requirements")
+    with pytest.raises(SystemExit, match="--statement requirements"):
+        run_loop._check_flow_tasks(["poiseuille_channel"])
+    monkeypatch.setattr(config, "STATEMENT", "bcs")
+
+    def missing():
+        raise _foam_env.FoamNotFound("OpenFOAM not found")
+
+    monkeypatch.setattr(_foam_env, "require_openfoam", missing)
+    with pytest.raises(SystemExit, match="need OpenFOAM"):
+        run_loop._check_flow_tasks(["pipe_poiseuille_3d"])
+
+
+@FOAM
+def test_preflight_solves_the_good_mesh(capsys):
+    from ace import preflight
+
+    assert preflight.main(["--problems", "poiseuille_channel"]) == 0
+    assert "pre-flight PASSED" in capsys.readouterr().out

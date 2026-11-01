@@ -760,10 +760,40 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
 # --------------------------------------------------------------------------- main loop
 
 
+def _check_flow_tasks(problem_ids: list[str]) -> None:
+    """Fail before anything is spent when flow tasks cannot run: they need OpenFOAM + foamlib (or
+    every agent's solve fails while its API calls are still billed), and field scoring and
+    requirements statements are defined for elasticity only."""
+    from ace import fea
+
+    flow = [p for p in problem_ids if fea.is_flow(fea.get_problem(p))]
+    if not flow:
+        return
+    if config.SCORE == "field":
+        raise SystemExit(f"ACE_SCORE=field scores the elastic stress field; it is not defined for the flow tasks "
+                         f"{flow}. Unset ACE_SCORE (point scoring) for the CFD suite.")
+    if config.STATEMENT == "requirements":
+        raise SystemExit(f"--statement requirements is defined for elasticity setups only (ace/requirements.py); "
+                         f"the flow tasks {flow} need --statement bcs.")
+    from feacore.solver._foam_env import FoamNotFound, require_openfoam
+    from feacore.solver._foam_io import FOAMLIB_ERROR
+
+    try:
+        fe = require_openfoam()
+    except FoamNotFound as e:
+        raise SystemExit(f"the flow tasks {flow} need OpenFOAM: {e}. On a Mac: bash scripts/openfoam_docker.sh, then "
+                         f"export FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp "
+                         f"(ace/README.md, 'The CFD suite').") from None
+    if FOAMLIB_ERROR is not None:
+        raise SystemExit(f"the flow tasks {flow} need foamlib (pip install -e '.[cfd]'): {FOAMLIB_ERROR}")
+    print(f"flow tasks {flow}: {fe.describe()}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--suite", choices=sorted(config.SUITES), default="fea",
-                    help="default train / held-out problems: fea (elasticity) or cfd (laminar flow, OpenFOAM)")
+                    help="default train / held-out problems: fea (elasticity), cfd (2D laminar flow, OpenFOAM) "
+                         "or cfd3d (3D laminar flow on tets, OpenFOAM)")
     ap.add_argument("--problems", default=None, help="train problems (reflected on); default: the suite's")
     ap.add_argument("--holdout", default=None, help="held-out problems (evaluated only); default: the suite's")
     ap.add_argument("--runs-per-problem", type=int, default=config.RUNS_PER_PROBLEM)
@@ -825,10 +855,7 @@ def main(argv=None) -> int:
     suite_train, suite_holdout = config.SUITES[args.suite]
     train = [p for p in (args.problems if args.problems is not None else ",".join(suite_train)).split(",") if p]
     holdout = [p for p in (args.holdout if args.holdout is not None else ",".join(suite_holdout)).split(",") if p]
-    flow = [p for p in train + holdout if fea.is_flow(fea.get_problem(p))]
-    if flow and config.SCORE == "field":
-        raise SystemExit(f"field scoring (ACE_SCORE=field, needed by --deep) scores the stress field, so it is for "
-                         f"elasticity only; the flow tasks {flow} use the default point scoring")
+    _check_flow_tasks(train + holdout)
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
     (out / "run_config.json").write_text(json.dumps({"suite": args.suite, "train": train, "holdout": holdout}, indent=1))

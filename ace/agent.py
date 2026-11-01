@@ -219,10 +219,36 @@ TOOLS = [
     },
 ]
 
-BASE_PROMPT_FLOW = BASE_PROMPT.replace(
-    "You set up and run linear-elastic finite-element analyses using tools.",
-    "You set up and run steady incompressible laminar flow (CFD) analyses with a finite-volume solver "
-    "using tools.").replace("degrees of\nfreedom, DOFs", "degrees of\nfreedom, DOFs = cells x unknowns per cell")
+TOOLS_TEXT_FLOW = """\
+Tools, and how a careful engineer uses them:
+- inspect_geometry: the named groups, each face's type, area, centroid and neighbours, the CAD edges
+  (curve tags) and the smallest features. Read it first: find the inlets, outlets and walls.
+- mesh: a global cell size h plus local refinements at a group, a CAD edge (curve tag), a point or a
+  box. Put the small cells where the velocity changes fast (near walls and corners, around bodies,
+  where the flow develops), not everywhere. In 2D, quads=true gives quad-dominant cells. It reports
+  nodes, cell quality and the mean cell size near each group.
+- solve: the fixed steady laminar flow solver. It returns the solve number and, as for any solve,
+  no reference values. Two solves of the same setup on different meshes that agree closely are your
+  evidence of convergence.
+
+"""
+
+
+def _flow_prompt(base: str) -> str:
+    """BASE_PROMPT for flow: the CFD role line, DOFs per cell, and TOOLS_TEXT_FLOW instead of the
+    elasticity tools section. Fails loudly if BASE_PROMPT changes shape."""
+    head, tools_start, rest = base.partition("Tools, and how a careful engineer uses them:")
+    _, playbook, tail = rest.partition("Playbook:")
+    role = "You set up and run linear-elastic finite-element analyses using tools."
+    dofs = "degrees of\nfreedom, DOFs"
+    assert tools_start and playbook and role in head and dofs in head, "BASE_PROMPT changed: update _flow_prompt"
+    head = head.replace(role, "You set up and run steady incompressible laminar flow (CFD) analyses with a "
+                              "finite-volume solver using tools.")
+    head = head.replace(dofs, "degrees of\nfreedom, DOFs = cells x unknowns per cell")
+    return head + TOOLS_TEXT_FLOW + playbook + tail
+
+
+BASE_PROMPT_FLOW = _flow_prompt(BASE_PROMPT)
 
 BC_HELP_FLOW = (
     "BC types: velocity_inlet (`value` = velocity vector [u_x, u_y(, u_z)] in m/s, each entry a number or "
@@ -234,10 +260,10 @@ BC_HELP_FLOW = (
     "pressure level is arbitrary (only differences are meaningful)."
 )
 
-# Flow agents get inspect / mesh / solve / submit: view and compare read stress fields (ace.solve_feedback).
-_TOOL = {t["name"]: t for t in TOOLS}
+_BY_NAME = {t["name"]: t for t in TOOLS}
+# Flow tasks have no view / compare: solve_feedback reads elastic stress fields only.
 TOOLS_FLOW = [
-    _TOOL["inspect_geometry"],
+    _BY_NAME["inspect_geometry"],
     {
         "name": "mesh",
         "description": "Mesh the geometry with straight-sided finite-volume cells (triangles / tetrahedra; "
@@ -249,7 +275,7 @@ TOOLS_FLOW = [
             "properties": {
                 "h": {"type": "number", "description": "global cell size"},
                 "quads": {"type": "boolean", "description": "2D only: recombine triangles into quads (default false)"},
-                "refinements": _TOOL["mesh"]["input_schema"]["properties"]["refinements"],
+                "refinements": _BY_NAME["mesh"]["input_schema"]["properties"]["refinements"],
                 "using": USING,
             },
             "required": ["h", "using"],
@@ -291,8 +317,9 @@ TOOLS_FLOW = [
             "required": ["formulation", "fluid", "bcs", "using"],
         },
     },
-    _TOOL["submit"],
+    _BY_NAME["submit"],
 ]
+
 
 # Only offered on a task scored by the nonlinear simulation of its physical test (tools_for).
 NONLINEAR_TOOL = {
@@ -359,7 +386,7 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
     where = f" at point {q.point}" if q.point else (f" over group {q.group!r}" if q.group else "")
     if q.point2:
         where += f" minus its value at point {q.point2}"
-    if SCORE == "field" and not fea.is_flow(problem):    # field scoring is for solids
+    if SCORE == "field" and not fea.is_flow(problem):
         from ace.config import AUTO_GAIN_TARGET as G
         from ace.field_error import automesher
         a = automesher(problem_id)
@@ -760,7 +787,7 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
     to also record each solve in the feacore run store (None = off)."""
     tools = Tools(problem_id, workdir, ui_bridge.for_run(ui, run_id, generation))
     usage = [] if usage is None else usage
-    flow = fea.is_flow(tools.problem)                 # flow problems get the CFD prompt and tools
+    flow = fea.is_flow(tools.problem)          # flow tasks get the finite-volume prompt and tools
     trace, stop = tool_loop(llm, system_prompt(playbook_text, flow=flow), task_prompt(problem_id),
                             tools_for(problem_id), tools.call, lambda: tools.submitted is not None,
                             limits(problem_id)[0], run_id, usage)

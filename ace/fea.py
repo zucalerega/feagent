@@ -190,6 +190,7 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
                mesher: tuple[int, int], quads: bool = False) -> dict:
     """make_mesh with one mesher (gmsh surface algorithm, curvature sizing). A gmsh failure comes
     back with "retry": True."""
+    flow = is_flow(problem)
     with gmsh_session(problem.id):
         problem.build_geometry()
         ensure_domain_group(problem.dim)
@@ -266,7 +267,7 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
             gmsh.model.mesh.generate(problem.dim)
         except Exception as e:  # noqa: BLE001  gmsh raises plain Exception
             return {"ok": False, "error": f"gmsh failed: {e}", "retry": True}
-        if is_flow(problem) and problem.dim == 2:
+        if flow and problem.dim == 2:
             orient_ccw_2d()                 # the openfoam backend extrudes +z: cells must be counter-clockwise
         q = _qualities(problem.dim)
         if not len(q):
@@ -309,7 +310,7 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
         "nodes": n_nodes,
         "elements": len(q),
         "order": order,
-        **({"quads": bool(quads)} if is_flow(problem) else {}),
+        **({"quads": bool(quads)} if flow else {}),
         "min_quality": round(float(q.min()), 4),
         # minSICN of the straight-sided cells: 1 = regular, near 0 = flat
         "quality": {k: round(float(f(q)), 4) for k, f in
@@ -338,10 +339,6 @@ MESHER_NAMES = {(6, 0): "frontal-delaunay", (1, 0): "meshadapt", (1, 4): "meshad
                 (6, 4): "frontal-delaunay+curvature4", (1, 6): "meshadapt+curvature6",
                 (1, 8): "meshadapt+curvature8"}
 SJ_MIN = 0.05          # curved cells below this min scaled Jacobian are straightened (as feacore.goldgen)
-# The straight cells a mesh of each dimension can hold: 2D flow meshes may be quad-dominant (quads=true).
-CELL_TYPES = {2: (2, 3), 3: (4,)}    # tri3, quad4 / tet4
-CELL_EDGES = {2: ((0, 1), (1, 2), (0, 2)), 3: ((0, 1), (1, 2), (2, 3), (0, 3)),     # by gmsh type
-              4: ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))}
 CURVED_TYPE = {2: 9, 3: 11}          # tri6, tet10
 # (corner a, corner b, midside node) in gmsh's node ordering
 MIDSIDE = {2: [(0, 1, 3), (1, 2, 4), (2, 0, 5)],
@@ -349,8 +346,10 @@ MIDSIDE = {2: [(0, 1, 3), (1, 2, 4), (2, 0, 5)],
 
 
 def _qualities(dim: int) -> np.ndarray:
-    """minSICN of every straight cell (triangles and quads in 2D, tets in 3D)."""
-    tags = [t for typ in CELL_TYPES[dim] for t in gmsh.model.mesh.getElementsByType(typ)[0]]
+    """minSICN of every cell of dimension dim: all element types, so 2D flow meshes recombined into
+    quads (quads + some triangles) count too."""
+    _, tags, _ = gmsh.model.mesh.getElements(dim)
+    tags = np.concatenate([np.asarray(t, dtype=np.int64) for t in tags]) if len(tags) else np.zeros(0)
     return np.asarray(gmsh.model.mesh.getElementQualities(tags, "minSICN")) if len(tags) else np.zeros(0)
 
 
@@ -362,18 +361,15 @@ def _size_by_group(dim: int) -> dict:
     pos = np.zeros(int(ntags.max()) + 1, dtype=np.int64)
     pos[ntags] = np.arange(len(ntags))
     X = np.asarray(X).reshape(-1, 3)
+    # every cell's edges (once per cell, as for simplices before), for any cell type: 2D flow meshes
+    # recombined into quads must not count the quads' diagonals
+    E = pos[np.concatenate([np.asarray(gmsh.model.mesh.getElementEdgeNodes(t, -1, True), dtype=np.int64)
+                            for t in gmsh.model.mesh.getElementTypes(dim)]).reshape(-1, 2)]
     total, count = np.zeros(len(ntags)), np.zeros(len(ntags))
-    for typ in CELL_TYPES[dim]:
-        _, conn = gmsh.model.mesh.getElementsByType(typ)
-        if not len(conn):
-            continue
-        edges = CELL_EDGES[typ]
-        T = pos[np.asarray(conn, dtype=np.int64).reshape(-1, max(max(e) for e in edges) + 1)]
-        for i, j in edges:
-            length = np.linalg.norm(X[T[:, i]] - X[T[:, j]], axis=1)
-            for k in (T[:, i], T[:, j]):
-                total += np.bincount(k, length, len(ntags))
-                count += np.bincount(k, None, len(ntags))
+    length = np.linalg.norm(X[E[:, 0]] - X[E[:, 1]], axis=1)
+    for k in (E[:, 0], E[:, 1]):
+        total += np.bincount(k, length, len(ntags))
+        count += np.bincount(k, None, len(ntags))
     node_h = total / np.maximum(count, 1)
     out = {}
     for d, t in gmsh.model.getPhysicalGroups():

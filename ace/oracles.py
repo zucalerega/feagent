@@ -119,6 +119,9 @@ def mesh_convergence(problem, request: dict | None, setup: dict, qoi: str, targe
     if problem.dim == 3 and (nodes or 0) > STUDY_MAX_NODES_3D:
         return unavailable(f"mesh too large for a 3D refinement study (> {STUDY_MAX_NODES_3D} nodes; the "
                            "finer level would have ~8x more)")
+    # 3D flow: refine by 1.5 instead of 2. A finite-volume solve of the 8x finer tet mesh (~230k
+    # cells at the 6000-node cap) needs about 700 MB and a few minutes; 1.5 gives ~3.4x.
+    ratio = 1.5 if problem.dim == 3 and fea.is_flow(problem) else 2.0
     with tempfile.TemporaryDirectory() as tmp:
         def case_at(s: float):
             refs = [dict(r, size=r["size"] * s) for r in request.get("refinements") or []]
@@ -128,7 +131,7 @@ def mesh_convergence(problem, request: dict | None, setup: dict, qoi: str, targe
                 raise CaseError(m["error"])
             return fea.build_case(problem, m, setup, qoi)
         try:
-            study = refinement_study(case_at)
+            study = refinement_study(case_at, r=ratio)
         except Exception as e:  # noqa: BLE001  any failure of the extra solves: no verdict
             return unavailable(f"refinement study failed: {type(e).__name__}: {e}")
     q = study["qois"][qoi]
