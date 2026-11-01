@@ -8,6 +8,16 @@ predicted on a prong. Right: after post-training, **2.0 % off**. Nobody told the
 broke. Its highest tension (85 % of the resin's strength) builds up on the lower inner bore at 2.51 mm, and that is
 exactly where, and when, the real part first cracked (2.51 mm, 4.76 kN).*
 
+**The real part after the test:**
+
+<p>
+  <img src="talk_plots/act3_real_data/photos/broken_bracket.jpg" height="380" alt="The crushed bracket, one prong broken off at the lower inner bore">
+  <img src="talk_plots/act3_real_data/photos/tested_vs_untested.jpg" height="380" alt="The tested bracket next to an untested print and a dogbone">
+</p>
+
+*Left: the crushed bracket. One prong broke off at the lower inner bore, where the post-trained simulation's
+tension peaked. Right: the tested bracket (left), an untested print (right) and a dogbone of the same resin (front).*
+
 A finite-element simulation is only as good as its mesh and its setup, and experts still make both by hand.
 **feagent** trains a swarm of Claude agents to do this job. The agents mesh real CAD parts. A fixed solver checks
 their work against answers they never see. Every round, they learn from a teacher, from their own mistakes and
@@ -103,7 +113,8 @@ peaks at 4,755 N.
    test gets 2.0 % (10 rounds, $32): the teacher first rewrites the notebooks from the test brief. The most
    accurate mesh appears in the first round, and later rounds hold about 2.2 % with 30 % fewer nodes.
 4. **The crack site.** Nobody told the simulation where the part broke. The post-trained simulation's highest
-   tension builds up on the lower inner bore, where the real part cracked, at the same travel (2.51 mm).
+   tension builds up on the lower inner bore, where the real part cracked (photos at the top), at the same
+   travel (2.51 mm).
    Before post-training, the simulation predicted a crack on a prong at 1.76 mm, far too early and in the wrong
    place.
 
