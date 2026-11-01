@@ -123,3 +123,24 @@ Pace in the crack phase:
 | adaptive, held | 4 | 17 s |
 
 Applied to every run below; the runs above that used the slow schedule are kept as they are.
+
+### Runs with the adaptive release (all systems use it from here on)
+
+| system | part | machine | run dir (under runs/nonlinear on its machine) | start (ET) | note |
+|---|---|---|---|---|---|
+| harness_auto | abc_00000003 | laptop, 8 thr | `abc_00000003/run-20261031-2139a` | 21:39 | `--resume run-20261031-2031c` (step 207, 1.240 mm, 245 failed) |
+| harness_auto | abc_00000065 | laptop, 8 thr | `abc_00000065/run-20261031-2139a` | 21:39 | `--resume run-20261031-2031c` (step 167, 1.470 mm, 218 failed) |
+| harness_hex | abc_00000003 | Spark slot 0 | `harness_hex/abc_00000003/run-20261031-2040-s0` | 21:40 | from zero |
+| gold_nested | abc_00000003 | Spark slot 1 | `gold_nested/abc_00000003/run-20261031-2040-s1` | 21:40 | from zero |
+| gold_nested | abc_00000065 | Spark slot 2 | `gold_nested/abc_00000065/run-20261031-2040-s2` | 21:40 | from zero |
+| harness_hex | abc_00000065 | laptop, 4 thr | `harness_hex/abc_00000065/run-20261031-2141-s0` | 21:41 | from zero |
+| ace_sizing, netgen, harness_expert | both | Spark, queued | | | same queue, same meshes |
+
+These four slow-release runs were stopped at 21:40 and are kept as they are:
+
+- Spark `harness_hex/abc_00000003/run-20261031-1950-s0`, at 1.44 mm.
+- Spark `gold_nested/abc_00000003/run-20261031-1951-s1`, at 0.99 mm.
+- Spark `gold_nested/abc_00000065/run-20261031-1951-s2`, at 1.34 mm.
+- Laptop `harness_hex/abc_00000065/run-20261031-2053-s0`, which reached 1 increment.
+
+Their queue state is in `queue/superseded-slow-release/`. The Spark clone now runs `origin/nonlinear-setup` (24987c2).
