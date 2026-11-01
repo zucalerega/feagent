@@ -315,3 +315,29 @@ def test_group_warnings_for_ids_and_unchecked_multi_matches():
     assert len(w) == 2
     assert "'tagged'" in w[0] and "ids" in w[0]
     assert "'holes'" in w[1] and "groups.holes.expect: 3" in w[1]
+
+
+def test_element_budget_relaxes_thin_walls(tmp_path, parts_dir):
+    def run(name, **size):
+        body = {"analysis": "fea", "element": {"order": 2},
+                "size": {"global": 6.0, "min": 0.3, "thin_wall_layers": 2, **size}}
+        return run_mesh(load_spec(write_spec(tmp_path / name, parts_dir / "thin_cup.step", **body)))
+    free, capped = run("free"), run("capped", max_dofs=150_000)
+    assert free.ok and capped.ok, (free.errors, capped.errors)
+    note = next(w for w in capped.warnings if "element budget" in w)
+    assert "thin_wall_layers 2->1" in note and not any("budget" in w for w in free.warnings)
+    assert capped.n_elements < free.n_elements
+    assert capped.n_nodes * 3 < 1.3 * 150_000  # the estimate held within 30 %
+
+
+def test_budget_estimate_tracks_actual_tets(tmp_path, parts_dir):
+    from feagent.budget import estimate_tets
+    from feagent.geometry import analyze_current_model
+    from feagent.gmsh_session import gmsh_session, load_cad
+    spec = load_spec(bracket_spec(tmp_path, parts_dir, size={"global": 3.0}))
+    res = run_mesh(spec)
+    with gmsh_session():
+        load_cad(spec.geometry)
+        est = estimate_tets(spec, analyze_current_model(ref_size=spec.size.global_), spec.size)
+    assert 0.4 < est / res.n_elements < 2.5, (est, res.n_elements)
+

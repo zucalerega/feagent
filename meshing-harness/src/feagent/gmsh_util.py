@@ -119,3 +119,4 @@ def pinned_options(opts: dict[str, float]) -> Iterator[None]:
     finally:
         for k, v in saved.items():
             gmsh.option.setNumber(k, v)
+

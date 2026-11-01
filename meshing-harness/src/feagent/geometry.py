@@ -416,7 +416,9 @@ def _tessellate(ctx: _Ctx) -> np.ndarray:
     """2D-mesh the model, record per-face triangles and exact interior samples, clear the mesh.
     Returns the node coordinates the per-face triangle rows index into."""
     size = min(ctx.ref_size, ctx.diag / 25.0) if ctx.diag > 0 else ctx.ref_size
-    with _temporary_mesh({**_TESS_OPTIONS, "Mesh.MeshSizeMax": size}):
+    # a floor on the size: curvature sizing on tiny freeform faces otherwise makes gmsh loop on
+    # "intersections in the 1D mesh" for minutes (257-face ABC part)
+    with _temporary_mesh({**_TESS_OPTIONS, "Mesh.MeshSizeMax": size, "Mesh.MeshSizeMin": size / 50}):
         try:
             gmsh.model.mesh.generate(2)
         except Exception as e:  # keep whatever faces did mesh; reported as analysis_incomplete
