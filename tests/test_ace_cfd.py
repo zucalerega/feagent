@@ -52,10 +52,13 @@ def test_flow_task_plumbing(pid, tmp_path):
 
 def test_flow_prompt_and_tools():
     assert "flow (CFD)" in system_prompt("", flow=True) and "linear-elastic" in system_prompt("")
-    names = [t["name"] for t in TOOLS_FLOW]          # view / compare read stress fields: not for flow
-    assert names == ["inspect_geometry", "mesh", "solve", "submit"] and set(names) <= {t["name"] for t in TOOLS}
+    names = [t["name"] for t in TOOLS_FLOW]          # flow's own view / compare (ace.flow_feedback)
+    assert names == [t["name"] for t in TOOLS]
+    assert {t["name"]: t for t in TOOLS_FLOW}["view"]["input_schema"]["properties"]["kind"]["enum"] == \
+        ["mesh", "speed", "pressure", "error"]
     flow = system_prompt("", flow=True)
-    assert "von Mises" not in flow and "- view:" not in flow and "- compare:" not in flow
+    assert "von Mises" not in flow and "stress" not in flow
+    assert "- view:" in flow and "- compare:" in flow and "error indicator" in flow
     mesh = TOOLS_FLOW[1]["input_schema"]["properties"]
     assert "order" not in mesh and "quads" in mesh
 
@@ -111,15 +114,17 @@ def test_cfd_loop_end_to_end_mock(tmp_path):
 
 
 def test_run_loop_refuses_flow_tasks_it_cannot_run(monkeypatch):
-    """Before anything is spent: field scoring and requirements statements are elasticity-only, and
-    flow needs OpenFOAM."""
+    """Before anything is spent: requirements statements and the inspecting teacher are
+    elasticity-only, and flow needs OpenFOAM. Field scoring (ace.flow_field) works on flow."""
     from ace import run_loop
     from feacore.solver import _foam_env
 
-    run_loop._check_flow_tasks(["cooks_membrane"])                 # no flow task: nothing to check
+    run_loop._check_flow_tasks(["cooks_membrane"], "inspect")     # no flow task: nothing to check
     monkeypatch.setattr(config, "SCORE", "field")
-    with pytest.raises(SystemExit, match="ACE_SCORE=field"):
-        run_loop._check_flow_tasks(["poiseuille_channel"])
+    if _has_openfoam():
+        run_loop._check_flow_tasks(["poiseuille_channel"], "rerun")
+    with pytest.raises(SystemExit, match="--teacher inspect"):
+        run_loop._check_flow_tasks(["poiseuille_channel"], "inspect")
     monkeypatch.setattr(config, "SCORE", "point")
     monkeypatch.setattr(config, "STATEMENT", "requirements")
     with pytest.raises(SystemExit, match="--statement requirements"):

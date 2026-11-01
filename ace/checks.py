@@ -231,7 +231,7 @@ def check_run(problem_id: str, run: dict) -> dict:
         "order": mesh["order"],
         "min_quality": mesh["min_quality"],
         "within_cap": mesh["nodes"] <= task["node_cap"],
-        "quality_ok": (mesh["min_quality"] or 0) >= MIN_QUALITY,
+        "quality_ok": quality_ok(mesh),
         "qoi_value": final["result"]["value"],
         "rel_error": rel_err,
         "point_rel_error": point_err,
@@ -240,8 +240,22 @@ def check_run(problem_id: str, run: dict) -> dict:
     })
     gate = None if out["within_cap"] else "over node cap"
     if gate is None and not out["quality_ok"]:
-        gate = f"min element quality < {MIN_QUALITY}"
+        gate = quality_gate_message(mesh)
     return {**out, "failed_gate": gate}
+
+
+def quality_ok(mesh: dict) -> bool:
+    """The mesh quality gate: a flow mesh's finite-volume gate (fv_ok, ace.flow_mesh), else the
+    element quality (min straight-cell minSICN >= MIN_QUALITY)."""
+    if "fv_ok" in mesh:
+        return bool(mesh["fv_ok"])
+    return (mesh.get("min_quality") or 0) >= MIN_QUALITY
+
+
+def quality_gate_message(mesh: dict) -> str:
+    if "fv_ok" in mesh:
+        return f"finite-volume quality gate: {mesh.get('fv_gate') or 'failed'}"
+    return f"min element quality < {MIN_QUALITY}"
 
 
 def _check_nonlinear(problem_id: str, run: dict, problem, final: dict, out: dict) -> dict:
@@ -271,7 +285,7 @@ def _check_nonlinear(problem_id: str, run: dict, problem, final: dict, out: dict
         "order": mesh["order"],
         "min_quality": mesh.get("min_quality"),
         "within_cap": nodes <= task["node_cap"],
-        "quality_ok": (mesh.get("min_quality") or 0) >= MIN_QUALITY,
+        "quality_ok": quality_ok(mesh),
         "qoi_value": final["result"].get("value"),
         "rel_error": nl["mean_rel_err"] if ok else None,
         "point_rel_error": None,
@@ -420,7 +434,8 @@ def _diagonal(problem_id: str) -> float:
 
 
 def _recipe(run: dict, grid: float) -> tuple | None:
-    """(element order, global h, set of refinement targets) of the run's scored mesh, or None.
+    """(element order, global h, set of refinement targets) of the run's scored mesh, or None. On a
+    flow mesh the "order" is its cell kind: (quads, boundary layer, sweep).
     Targets are named groups and edges as they are; boxes and points are rounded to the grid, so
     the same region moved slightly still counts as the same target."""
     from ace.checkpoint import checkpoint
@@ -436,11 +451,15 @@ def _recipe(run: dict, grid: float) -> tuple | None:
                 targets.add((kind, tuple(round(float(x) / grid) for x in v) if kind in ("box", "point") else v))
                 break
     h = float(req.get("h") or cp["mesh"].get("h_used"))
+    if "fv_ok" in cp["mesh"] or req.get("boundary_layer") or req.get("sweep"):
+        # flow: the cell kind plays the element order's part (quads or not, wall layers or not, swept or not)
+        kind = ("flow", bool(req.get("quads")), bool(req.get("boundary_layer")), bool(req.get("sweep")))
+        return kind, h, frozenset(targets)
     return cp["mesh"]["order"], h, frozenset(targets)
 
 
 def _different(a: tuple, b: tuple) -> bool:
-    """Structurally different mesh recipes: another order, h off by a large factor, or mostly
+    """Structurally different mesh recipes: another order (flow: cell kind), h off by a large factor, or mostly
     different refinement targets (Jaccard distance |A Δ B| / |A ∪ B|, 0 for two empty sets)."""
     (oa, ha, ta), (ob, hb, tb) = a, b
     union = ta | tb

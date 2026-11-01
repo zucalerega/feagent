@@ -22,11 +22,14 @@ import numpy as np
 
 from ace.config import MIN_QUALITY
 from feacore.case import BC, Analysis, Case, CaseError, Load, Material
+from feacore.geometry import fv_quality
 from feacore.geometry.gmsh_tools import distance_threshold_field, ensure_domain_group, gmsh_session
 from feacore.problems import registry
 from feacore.problems.base import Problem
 from feacore.problems.cfd._common import orient_ccw_2d
 from feacore.solver import solve
+
+from ace import flow_mesh
 
 
 CONVECTION = {"upwind": 1, "linearUpwind": 2}       # flow: scheme name -> analysis.order
@@ -104,11 +107,25 @@ def _bbox_of(dim_tags) -> list[float]:
     return [round(v, 6) for v in lo + hi]
 
 
+def build_agent_geometry(problem: Problem, sweep: dict | None = None) -> dict | None:
+    """In the current gmsh session: the geometry the agent inspects and meshes, with its named
+    groups. A flow problem's is its CAD (problem.build_cad) with the reference geometry's group
+    names (ace.flow_mesh.build; with `sweep` rebuilt as a swept face), not the block-split geometry
+    its structured reference mesh is made on; returns flow_mesh's info then. Others: the problem's
+    geometry."""
+    if is_flow(problem):
+        info = flow_mesh.build(problem, sweep)
+        ensure_domain_group(problem.dim)
+        return info
+    problem.build_geometry()
+    ensure_domain_group(problem.dim)
+    return None
+
+
 def geometry_summary(problem: Problem) -> dict:
     """Named groups (what BCs and refinements can refer to) with their extents."""
     with gmsh_session(problem.id):
-        problem.build_geometry()
-        ensure_domain_group(problem.dim)
+        build_agent_geometry(problem)
         groups = []
         for dim, ptag in gmsh.model.getPhysicalGroups():
             ents = gmsh.model.getEntitiesForPhysicalGroup(dim, ptag)
@@ -132,20 +149,67 @@ def _size_floor(problem: Problem, bbox: list[float]) -> float:
     return diag / (100.0 if problem.dim == 3 else 400.0)
 
 
+def _local_floor(problem: Problem, bbox: list[float]) -> float:
+    """Smallest local refinement size. Flow domains are long and their bodies small (the DFG
+    cylinder is 1/22 of the channel), so local sizes may go 5x (2D) / 3x (3D) below the global
+    floor there; h itself keeps the global floor, which is what bounds the mesh size."""
+    floor = _size_floor(problem, bbox)
+    if not is_flow(problem):
+        return floor
+    return floor / (3.0 if problem.dim == 3 else 5.0)
+
+
+SWEEP_MAX_NODES = 2e6     # a swept mesh's estimated node count above which the request is refused
+
+# The mesh request keys make_mesh takes; a recorded request (the checkpoint) rebuilds the mesh.
+MESH_KEYS = ("h", "order", "refinements", "quads", "boundary_layer", "sweep")
+
+
+def mesh_from_request(problem: Problem, path: Path, request: dict) -> dict:
+    """make_mesh from a recorded mesh request (the agent's mesh tool arguments)."""
+    return make_mesh(problem, path, **{k: request[k] for k in MESH_KEYS if k in request and request[k] is not None})
+
+
+def scale_request(request: dict, s: float) -> dict:
+    """The request with every length scaled by s (s < 1: finer), for refinement studies. Element
+    sizes scale by s; a boundary layer keeps its thickness (first height x s, growth 1 + s (ratio - 1),
+    layers / s); a sweep gets layers / s."""
+    out = dict(request)
+    out["h"] = request["h"] * s
+    out["refinements"] = [dict(r, size=r["size"] * s) if "size" in r else dict(r)
+                          for r in request.get("refinements") or []]
+    bl = request.get("boundary_layer")
+    if bl:
+        out["boundary_layer"] = dict(bl, first=float(bl["first"]) * s,
+                                     ratio=1.0 + s * (float(bl.get("ratio", 1.2)) - 1.0),
+                                     layers=max(1, int(round(int(bl["layers"]) / s))))
+    sw = request.get("sweep")
+    if sw:
+        out["sweep"] = dict(sw, layers=max(1, int(round(int(sw["layers"]) / s))))
+    return out
+
+
 # --------------------------------------------------------------------------- mesh
 
 
 def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
-              refinements: list[dict] | None = None, quads: bool = False) -> dict:
+              refinements: list[dict] | None = None, quads: bool = False,
+              boundary_layer: dict | None = None, sweep: dict | None = None) -> dict:
     """Mesh the problem's geometry.
 
     h: global element size. order: 1 (linear) or 2 (quadratic, curved); flow meshes are always
-    linear. quads (2D flow only): recombine the triangles into quad-dominant cells.
-    refinements: [{"group": name | "edge": curve tag | "point": [x, y(, z)], "size": s, "radius": r}]
-      element size s at the group, CAD curve or point, growing linearly to h at distance r;
-      or {"box": [xmin, ymin, zmin, xmax, ymax, zmax], "size": s}: size s inside the box.
+    linear. refinements: [{"group": name | "edge": curve tag | "point": [x, y(, z)], "size": s,
+      "radius": r}] element size s at the group, CAD curve or point, growing linearly to h at
+      distance r; or {"box": [xmin, ymin, zmin, xmax, ymax, zmax], "size": s}: size s inside the box.
+    Flow only (ace.flow_mesh):
+      quads: recombine into quad-dominant cells (2D, or the swept face of a sweep: hexahedra);
+      boundary_layer: {"groups": [wall groups], "first": height, "ratio": growth, "layers": n}
+        layers of thin cells along the walls (2D, or on the swept face in 3D);
+      sweep (3D): {"source": group of a planar end face, "layers": n, "ratio": last / first}
+        the domain as that face extruded in n layers (hexahedra / prisms).
     Order 2 meshes are checked with the solver's Jacobian test; curved cells that fold or nearly
-    fold are straightened (`repaired_cells`), so `folded_cells` should be 0.
+    fold are straightened (`repaired_cells`), so `folded_cells` should be 0. Flow meshes are judged
+    by their finite-volume quality (`fv_quality`, feacore.geometry.fv_quality; `fv_ok`).
     Returns stats; `ok` is False with an `error` message on failure.
     """
     if order not in (1, 2):
@@ -153,29 +217,38 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
     flow = is_flow(problem)
     if flow:
         order = 1                           # finite volumes: straight-sided cells
-    if quads and not (flow and problem.dim == 2):
-        return {"ok": False, "error": "quads is only available for 2D flow meshes"}
+    if not flow and (boundary_layer or sweep):
+        return {"ok": False, "error": "boundary_layer and sweep are for flow meshes"}
+    try:
+        sweep = flow_mesh.sweep_spec(sweep) if flow else None
+    except flow_mesh.FlowMeshError as e:
+        return {"ok": False, "error": str(e)}
+    if quads and not (flow and (problem.dim == 2 or sweep)):
+        return {"ok": False, "error": "quads is only available for 2D flow meshes and swept 3D flow meshes"}
+    if boundary_layer and flow and problem.dim == 3 and not sweep:
+        return {"ok": False, "error": "boundary_layer in 3D needs a sweep (the layers are made on the swept face)"}
     # gmsh's default surface mesher sometimes leaves flat tets between boundary curves of a CAD
     # part (all four nodes on CAD edges, so no optimizer can move them); MeshAdapt surfaces avoid
     # that on the gold parts. Both can fail on a curved face much smaller than h ("overlapping
     # facets"); sizing by curvature resolves it at the price of extra elements there, so it is the
     # last resort, and it starts at few elements per 2 pi (8 per 2 pi puts ~7000 nodes on a gold
     # part whatever h is, which would forbid coarse meshes). The first mesh that passes the scoring
-    # quality gate (MIN_QUALITY) is kept, else the best one. Each attempt is a fresh gmsh session
-    # (after a failed generate gmsh fails every later one) writing its own file.
+    # quality gate is kept (MIN_QUALITY; flow: the finite-volume gate), else the best one. Each
+    # attempt is a fresh gmsh session (after a failed generate gmsh fails every later one) writing
+    # its own file.
     path = Path(path)
     errors, best = [], None
     for i, mesher in enumerate(MESHERS):
         res = _mesh_once(problem, path.with_suffix(f".try{i}.msh"), h, order, refinements or [], mesher,
-                         quads)
+                         quads, boundary_layer, sweep)
         if not res["ok"]:
             if not res.pop("retry", False):
                 return res               # a bad request: every mesher would refuse it
             errors.append(res["error"])
             continue
-        if best is None or res["min_quality"] > best["min_quality"]:
+        if best is None or _better(res, best, flow):
             best = res
-        if res["min_quality"] >= MIN_QUALITY:
+        if (res["fv_ok"] if flow else res["min_quality"] >= MIN_QUALITY):
             break
     for f in path.parent.glob(path.stem + ".try*.msh"):
         if best is None or str(f) != best["path"]:
@@ -186,22 +259,62 @@ def make_mesh(problem: Problem, path: Path, h: float, order: int = 1,
     return best | {"path": str(path)}
 
 
+def _better(a: dict, b: dict, flow: bool) -> bool:
+    """Is mesh a better than mesh b by the gate's measure? Flow: passing the finite-volume gate,
+    then the lower max non-orthogonality; else the higher min quality."""
+    if not flow:
+        return a["min_quality"] > b["min_quality"]
+    if a["fv_ok"] != b["fv_ok"]:
+        return a["fv_ok"]
+    na = (a["fv_quality"].get("non_orthogonality") or {}).get("max") or 0.0
+    nb = (b["fv_quality"].get("non_orthogonality") or {}).get("max") or 0.0
+    return na < nb
+
+
 def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: list[dict],
-               mesher: tuple[int, int], quads: bool = False) -> dict:
+               mesher: tuple[int, int], quads: bool = False, boundary_layer: dict | None = None,
+               sweep: dict | None = None) -> dict:
     """make_mesh with one mesher (gmsh surface algorithm, curvature sizing). A gmsh failure comes
     back with "retry": True."""
     flow = is_flow(problem)
     with gmsh_session(problem.id):
-        problem.build_geometry()
-        ensure_domain_group(problem.dim)
+        try:
+            info = build_agent_geometry(problem, sweep)
+        except flow_mesh.FlowMeshError as e:
+            return {"ok": False, "error": str(e)}
         bbox = _bbox_of(gmsh.model.getEntities(problem.dim))
         floor = _size_floor(problem, bbox)
+        local_floor = _local_floor(problem, bbox)
+        sw = (info or {}).get("sweep")
+        if sw:
+            # A sweep meshes its face in 2D: the 2D floors of that face, and a bound on the node count
+            # (face nodes x layers) instead of the 3D floor of the whole, long domain.
+            faces = [(2, t) for t in sw["source_faces"]]
+            fb = _bbox_of(faces)
+            floor = math.dist(fb[:3], fb[3:]) / 200.0
+            local_floor = floor / 5.0
+            area = sum(gmsh.model.occ.getMass(2, t) for _, t in faces)
+            est = area / max(float(h), floor) ** 2 * (sw["layers"] + 1)
+            if est > SWEEP_MAX_NODES:
+                return {"ok": False, "error": f"sweep: about {est:.3g} nodes (face area / h^2 x layers) is over "
+                                              f"the {SWEEP_MAX_NODES:.0g} the mesher allows; use a larger h or "
+                                              f"fewer layers"}
         h = max(float(h), floor)
 
         names = {gmsh.model.getPhysicalName(d, t): (d, t) for d, t in gmsh.model.getPhysicalGroups()}
+        bl_applied = None
+        if flow and boundary_layer:
+            groups = info["groups"]
+            try:
+                bl = flow_mesh.bl_spec(boundary_layer, groups, problem.dim, math.dist(bbox[:3], bbox[3:]))
+                flow_mesh.add_boundary_layer(bl, groups, problem.dim,
+                                             (info.get("sweep") or {}).get("source_faces"))
+            except flow_mesh.FlowMeshError as e:
+                return {"ok": False, "error": str(e)}
+            bl_applied = {k: bl[k] for k in ("groups", "first", "ratio", "layers", "thickness", "last")}
         fields, sizes_used = [], []
         for r in refinements:
-            size = max(float(r.get("size", h)), floor)
+            size = max(float(r.get("size", h)), local_floor)
             sizes_used.append(size)
             radius = float(r.get("radius", 0.0))
             if "box" not in r and radius <= 0:
@@ -258,7 +371,7 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
         for opt in ("MeshSizeFromPoints", "MeshSizeExtendFromBoundary"):   # curvature: see MESHERS
             gmsh.option.setNumber(f"Mesh.{opt}", 0)
         if quads:
-            gmsh.option.setNumber("Mesh.RecombineAll", 1)
+            gmsh.option.setNumber("Mesh.RecombineAll", 1)    # 2D cells / a sweep's face: quads (-> hexahedra)
 
         alg, curv = mesher
         gmsh.option.setNumber("Mesh.Algorithm", alg)
@@ -274,14 +387,21 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
             return {"ok": False, "error": "gmsh failed: no elements generated", "retry": True}
         # Snapping boundary vertices onto curved CAD can leave a few nearly flat tets; gmsh's tet
         # optimizer + vertex relocation repairs those it can (as the gold generator does). Only when
-        # needed, so meshes that are already fine stay exactly as gmsh made them.
-        if problem.dim == 3 and q.min() < REPAIR_TARGET:
+        # needed, so meshes that are already fine stay exactly as gmsh made them. (A swept mesh has
+        # no tets: its layers are exact.)
+        if problem.dim == 3 and q.min() < REPAIR_TARGET and not (flow and sweep):
             for _ in range(3):
                 gmsh.model.mesh.optimize("", niter=3)
                 gmsh.model.mesh.optimize("Relocate3D", niter=3)
                 q = _qualities(problem.dim)
                 if q.min() >= REPAIR_TARGET:
                     break
+        fv = None
+        if flow:                                     # the finite-volume quality (the flow gate)
+            try:
+                fv = fv_quality.from_gmsh(problem.dim)
+            except ValueError as e:                 # e.g. a non-manifold mesh
+                return {"ok": False, "error": f"gmsh failed: {e}", "retry": True}
         # Quality and local sizes are measured on the straight-sided mesh, before curving to order 2.
         size_by_group = _size_by_group(problem.dim)
         path = Path(path)
@@ -304,13 +424,14 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
         else:
             gmsh.write(str(path))
         n_nodes = len(gmsh.model.mesh.getNodes()[0])
+        cells = flow_mesh.count_cell_types(problem.dim) if flow else None
     return {
         "ok": True,
         "path": str(path),
         "nodes": n_nodes,
         "elements": len(q),
         "order": order,
-        **({"quads": bool(quads)} if flow else {}),
+        **(_flow_stats(fv, quads, bl_applied, info, cells) if flow else {}),
         "min_quality": round(float(q.min()), 4),
         # minSICN of the straight-sided cells: 1 = regular, near 0 = flat
         "quality": {k: round(float(f(q)), 4) for k, f in
@@ -327,6 +448,20 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "gmsh": gmsh.__version__,
     }
+
+
+def _flow_stats(fv: dict, quads: bool, bl: dict | None, info: dict | None, cells: dict | None) -> dict:
+    """The flow-only mesh stats: cell types, the finite-volume quality and its gate, and what the
+    boundary layer / sweep made."""
+    ok, why = fv_quality.passes(fv)
+    out = {"quads": bool(quads), "cells": cells, "fv_quality": fv, "fv_ok": ok}
+    if why:
+        out["fv_gate"] = why
+    if bl:
+        out["boundary_layer"] = bl
+    if info and info.get("sweep"):
+        out["sweep"] = {k: v for k, v in info["sweep"].items() if k != "source_faces"}
+    return out
 
 
 REPAIR_TARGET = MIN_QUALITY   # min straight-cell quality (minSICN) the linear repair aims for: the scoring gate

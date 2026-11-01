@@ -5,8 +5,9 @@ nonlinear_check on a task scored by a nonlinear simulation of a physical test, a
 a system prompt = BASE_PROMPT + the current playbook. One call to run_agent = one run; it returns a
 JSON-able run record (trace, meshes, solves, submitted solve, cited bullet IDs, token usage) for
 the checks and the Reflector. Flow problems (physics "flow") get BASE_PROMPT_FLOW and TOOLS_FLOW:
-the same four tools, with a finite-volume mesh (no element order; optional quads in 2D) and a flow
-setup (fluid, convection scheme, flow BCs).
+the same six tools, with a finite-volume mesh (no element order; quads, wall boundary layers, swept
+3D meshes: ace.flow_mesh), a flow setup (fluid, convection scheme, flow BCs) and velocity-based
+feedback, view and compare (ace.flow_feedback).
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import json
 import re
 from pathlib import Path
 
-from ace import config, fea, geometry_info, solve_feedback, ui_bridge
+from ace import config, fea, flow_feedback, geometry_info, solve_feedback, ui_bridge
 from ace.checks import tolerance
 from ace.config import MAX_SOLVES, MAX_TURNS, MIN_QUALITY, SCORE, TASKS
 
@@ -225,11 +226,25 @@ Tools, and how a careful engineer uses them:
   (curve tags) and the smallest features. Read it first: find the inlets, outlets and walls.
 - mesh: a global cell size h plus local refinements at a group, a CAD edge (curve tag), a point or a
   box. Put the small cells where the velocity changes fast (near walls and corners, around bodies,
-  where the flow develops), not everywhere. In 2D, quads=true gives quad-dominant cells. It reports
-  nodes, cell quality and the mean cell size near each group.
-- solve: the fixed steady laminar flow solver. It returns the solve number and, as for any solve,
-  no reference values. Two solves of the same setup on different meshes that agree closely are your
-  evidence of convergence.
+  where the flow develops), not everywhere. quads=true gives quad-dominant cells (2D, or the swept
+  face). boundary_layer adds thin cells along no-slip walls (first-cell height, growth per layer,
+  number of layers), where the velocity gradient is steepest. In 3D, sweep builds a straight duct or
+  pipe as its end face meshed in 2D and extruded through the domain in layers (hexahedra or prisms):
+  far fewer cells than tetrahedra for the same accuracy. It reports nodes, cells, the finite-volume
+  quality (fv_quality: non-orthogonality, skewness, aspect ratio, cell volume ratio, and near_wall:
+  per boundary group the distance from the wall to the first cell centres) with the gate fv_ok, and
+  the mean cell size near each group.
+- solve: the fixed steady laminar flow solver. Besides the solve number, feedback without any
+  reference: every quantity the statement defines, convergence (iterations, residuals), the mass
+  balance of inlets and outlets, the fluid force on each wall group, the peak speed and the pressure
+  range and where they are, the cell Peclet number, reversed-flow (recirculation) zones, and an error
+  indicator (the velocity jump between neighbouring cells' reconstructions at their faces: a global
+  relative value and the 5 hotspots holding most of it, with the nearest group and the local cell
+  size). Use the hotspots to decide the next mesh: refine where the indicator is, coarsen elsewhere.
+- view: a picture of a solve's mesh, speed, pressure or error indicator (3D: a section).
+- compare: how much two solves' velocity fields differ, overall and in the 5 regions that differ most.
+  Two meshes that agree closely are evidence of convergence; regions where they differ need refinement.
+  view and compare do not use up solves.
 
 """
 
@@ -261,21 +276,54 @@ BC_HELP_FLOW = (
 )
 
 _BY_NAME = {t["name"]: t for t in TOOLS}
-# Flow tasks have no view / compare: solve_feedback reads elastic stress fields only.
+# Flow tasks get their own view / compare (ace.flow_feedback: velocity, pressure and its error indicator).
 TOOLS_FLOW = [
     _BY_NAME["inspect_geometry"],
     {
         "name": "mesh",
         "description": "Mesh the geometry with straight-sided finite-volume cells (triangles / tetrahedra; "
-                       "quad-dominant in 2D with quads=true). Replaces the current mesh. Returns node count and "
-                       "the minimum cell quality (0 = degenerate, 1 = perfect). Node counts change in steps, so "
-                       "tiny changes to h may give the same mesh.",
+                       "quad-dominant with quads=true; wall boundary layers; swept hexahedra / prisms in 3D). "
+                       "Replaces the current mesh. Returns node and cell counts, the finite-volume quality "
+                       "(fv_quality: max / mean non-orthogonality in degrees, max skewness, aspect ratio, cell "
+                       "volume ratio across faces, near_wall: per boundary group the distance from the wall to "
+                       "the first cell centres) and fv_ok, the quality gate (max non-orthogonality <= 70 deg, max "
+                       "skewness <= 4). Node counts change in steps, so tiny changes to h may give the same mesh.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "h": {"type": "number", "description": "global cell size"},
-                "quads": {"type": "boolean", "description": "2D only: recombine triangles into quads (default false)"},
+                "quads": {"type": "boolean", "description": "recombine triangles into quads (2D, or the swept face "
+                                                            "of a sweep: hexahedra; default false)"},
                 "refinements": _BY_NAME["mesh"]["input_schema"]["properties"]["refinements"],
+                "boundary_layer": {
+                    "type": "object",
+                    "description": "layers of thin cells along no-slip walls: the first cell is `first` high, each "
+                                   "next layer `ratio` times thicker, `layers` deep (total thickness = first * "
+                                   "(ratio^layers - 1) / (ratio - 1)). 2D; in 3D only with sweep (made on the swept "
+                                   "face, along the walls it meets). Where a wall meets an inlet or outlet the "
+                                   "layers end on it.",
+                    "properties": {
+                        "groups": {"type": "array", "items": {"type": "string"}, "description": "wall groups"},
+                        "first": {"type": "number", "description": "height of the first cell at the wall"},
+                        "ratio": {"type": "number", "description": "growth per layer, 1-3 (default 1.2)"},
+                        "layers": {"type": "integer", "description": "number of layers, 1-40"},
+                    },
+                    "required": ["groups", "first", "layers"],
+                },
+                "sweep": {
+                    "type": "object",
+                    "description": "3D only: mesh a planar end face (e.g. the inlet) in 2D and extrude it through "
+                                   "the domain in `layers` steps (hexahedra with quads=true, else prisms). Only for "
+                                   "a straight duct or pipe of constant cross-section (checked); h, refinements, "
+                                   "quads and boundary_layer then shape that face.",
+                    "properties": {
+                        "source": {"type": "string", "description": "group of the planar end face to sweep"},
+                        "layers": {"type": "integer", "description": "cell layers along the sweep, 1-400"},
+                        "ratio": {"type": "number", "description": "last / first layer length (default 1; > 1 puts "
+                                                                   "the short layers at the source end)"},
+                    },
+                    "required": ["source", "layers"],
+                },
                 "using": USING,
             },
             "required": ["h", "using"],
@@ -284,7 +332,10 @@ TOOLS_FLOW = [
     {
         "name": "solve",
         "description": "Solve on the current mesh with the fixed steady laminar flow solver (finite volumes, "
-                       "SIMPLE) and return the scored quantity and the solve number. " + BC_HELP_FLOW,
+                       "SIMPLE) and return the scored quantity, the solve number and `feedback`: the statement's "
+                       "quantities, convergence, mass balance, wall forces, peak speed and pressure range with "
+                       "locations, cell Peclet number, reversed-flow zones, and an error indicator (global relative "
+                       "value, top 5 hotspots). " + BC_HELP_FLOW,
         "input_schema": {
             "type": "object",
             "properties": {
@@ -317,6 +368,38 @@ TOOLS_FLOW = [
             "required": ["formulation", "fluid", "bcs", "using"],
         },
     },
+    {
+        "name": "view",
+        "description": "Look at a picture (PNG) of a solve: its mesh, speed (with velocity arrows), pressure, or the "
+                       "error indicator (the velocity jump between neighbouring cells' reconstructions at their "
+                       "faces: large where the velocity curves sharply relative to the cell size). 2D: the "
+                       "cells; 3D: a section through the middle of the domain normal to `view`.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "solve": {"type": "integer", "description": "solve number, as returned by solve"},
+                "kind": {"type": "string", "enum": ["mesh", "speed", "pressure", "error"]},
+                "view": {"type": "string", "enum": ["x", "y", "z"], "description": "3D: the section's normal"},
+                "using": USING,
+            },
+            "required": ["solve", "kind", "using"],
+        },
+    },
+    {
+        "name": "compare",
+        "description": "Compare the velocity fields of two solves (e.g. a coarse and a finer mesh): their relative "
+                       "L2 difference over the domain, the 5 regions where they differ most, and every statement "
+                       "quantity's change. Convergence evidence without a reference.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "solve_a": {"type": "integer"},
+                "solve_b": {"type": "integer"},
+                "using": USING,
+            },
+            "required": ["solve_a", "solve_b", "using"],
+        },
+    },
     _BY_NAME["submit"],
 ]
 
@@ -343,6 +426,9 @@ NONLINEAR_TOOL = {
 
 # Checkpoint bookkeeping kept in the run record but not shown to the agent.
 HIDDEN_KEYS = {"path", "request", "index", "sha256", "gmsh", "info"}
+# Flow meshes are judged by their finite-volume quality (fv_quality, fv_ok); the element-shape
+# measures (minSICN) and order-2 curving stats would only mislead: a boundary-layer cell is thin by design.
+FLOW_HIDDEN_MESH_KEYS = {"min_quality", "quality", "repaired_cells", "folded_cells", "min_jacobian_ratio", "order"}
 
 CITATION = re.compile(r"\[using ((?:[ap]\d+-)?[a-z]+-\d{4})\]")
 BULLET_ID = re.compile(r"^(?:[ap]\d+-)?[a-z]+-\d{4}$")       # shared "mesh-0001" / "p1-mesh-0001" (task 1), private "a3-mesh-0001"
@@ -386,42 +472,8 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
     where = f" at point {q.point}" if q.point else (f" over group {q.group!r}" if q.group else "")
     if q.point2:
         where += f" minus its value at point {q.point2}"
-    if SCORE == "field" and not fea.is_flow(problem):
-        from ace.config import AUTO_GAIN_TARGET as G
-        from ace.field_error import automesher
-        a = automesher(problem_id)
-        from ace.config import (BEST_BONUS, DIVERSITY_BONUS, DIVERSITY_H_RATIO, DIVERSITY_MARGIN, PROBE_DISCLOSED,
-                                PROBE_POINTS)
-        from ace.field_error import probe_points
-        shown = "; ".join("(" + ", ".join(f"{v:.4g}" for v in pt[:problem.dim]) + ")"
-                          for pt in probe_points(problem_id)["points"][:PROBE_DISCLOSED])
-        scored = (f"SCORING FOR THIS TASK (replaces 'How you are scored' above). Scored: the whole stress field, "
-                  f"two ways. (1) Field error: the energy-norm error of your stress field over the entire part, "
-                  f"relative to a very fine reference solution (the strain energy of the stress difference, "
-                  f"integrated everywhere). (2) Point error: the RMS relative error of the von Mises stress at "
-                  f"{PROBE_POINTS} check points spread across the part (away from stress singularities). "
-                  f"{PROBE_DISCLOSED} of them are {shown}; the other {PROBE_POINTS - PROBE_DISCLOSED} are hidden. "
-                  f"Your error e = the larger of (1) and (2). The statement's {q.name}{where} is not scored; you "
-                  f"may still use it as a check.\n"
-                  f"You compete against an AUTOMESHER: gmsh with its default sizes and quadratic elements (scored "
-                  f"the same way), which "
-                  f"gets e = {a['error']:.2%} with {a['dofs']} DOFs.\n"
-                  f"TARGET: {G:g}x the automesher's accuracy, i.e. e <= {a['error'] / G:.2%}.\n"
-                  f"SCORE = A / c, where g = {a['error']:.4f} / e (your accuracy gain), c = your DOFs / {a['dofs']}, "
-                  f"A = (g/{G:g})^2 if g < {G:g} (missing the target is penalised quadratically) else g/{G:g} "
-                  f"(beating it keeps paying). Score 1 = {G:g}x the automesher's accuracy at its DOFs; the "
-                  f"automesher itself scores {1 / G ** 2:g}. Extra DOFs pay only if they buy at least proportionally "
-                  f"more accuracy, so put them where the error is.\n")
-        if bonus:
-            scored += (
-                  f"BONUS for being the best: other agents attempt this task too. On each of the "
-                  f"{PROBE_POINTS - PROBE_DISCLOSED} hidden check points, the agent with the smallest stress error "
-                  f"there wins a share of up to +{BEST_BONUS:g} in total. A tie pays nobody, so copying the "
-                  f"leader earns nothing. Trying something that beats the others pays.\n"
-                  f"DIVERSITY BONUS: +{DIVERSITY_BONUS:g} if your mesh recipe is structurally different from every "
-                  f"other agent's on this task in your generation (another element order, global h differing by "
-                  f"more than {DIVERSITY_H_RATIO:g}x, or mostly different refinement targets) and your base score "
-                  f"is at least {DIVERSITY_MARGIN:.0%} of the best one there.\n")
+    if SCORE == "field":
+        scored = _field_scoring_text(problem_id, problem, q, where, bonus)
     else:
         scored = (f"SCORED QUANTITY: {q.name} = {q.type} of {q.field}{where}. Only this quantity is scored; "
                   f"ignore any other quantities the statement asks you to report.\n"
@@ -441,9 +493,70 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
         f"Problem id: {shown_id}\n\n{statement}\n\n"
         f"{scored}"
         f"LIMITS: the mesh you solve on must have at most {task['node_cap']} nodes (a safety limit, not a "
-        f"target), and its minimum element quality (quality.min) must be at least {MIN_QUALITY}. You may call solve "
-        f"at most {max_solves} times."
+        f"target), and {_quality_limit(problem)}. You may call solve at most {max_solves} times."
     )
+
+
+def _field_scoring_text(problem_id: str, problem, q, where: str, bonus: bool) -> str:
+    """The task's SCORING paragraph in field mode: the whole stress field for solids, the whole velocity
+    field for flow (ace.field_error / ace.flow_field), against the automesher, plus the bonuses."""
+    from ace.config import AUTO_GAIN_TARGET as G
+    from ace.config import BEST_BONUS, DIVERSITY_BONUS, DIVERSITY_H_RATIO, DIVERSITY_MARGIN, PROBE_DISCLOSED, PROBE_POINTS
+    from ace.field_error import automesher, probe_points
+    a = automesher(problem_id)
+    shown = "; ".join("(" + ", ".join(f"{v:.4g}" for v in pt[:problem.dim]) + ")"
+                      for pt in probe_points(problem_id)["points"][:PROBE_DISCLOSED])
+    hidden = PROBE_POINTS - PROBE_DISCLOSED
+    if fea.is_flow(problem):
+        from ace.flow_field import has_exact
+        truth = "the exact solution" if has_exact(problem) else "a very fine reference solution"
+        what = (f"Scored: the whole velocity field, two ways. (1) Field error: the relative L2 error of your velocity "
+                f"field over the entire domain, against {truth}. (2) Point error: the RMS relative error of the "
+                f"speed |u| at {PROBE_POINTS} check points in the bulk of the flow (away from the walls). "
+                f"{PROBE_DISCLOSED} of them are {shown}; the other {hidden} are hidden. ")
+        auto = (f"the mesh tool's uniform triangles / tetrahedra at h = {a.get('h', problem.params.get('h0')):g} with "
+                f"linearUpwind")
+        point_err, kind = "speed error", "cell kind (quads, boundary layer, sweep)"
+    else:
+        what = (f"Scored: the whole stress field, two ways. (1) Field error: the energy-norm error of your stress field "
+                f"over the entire part, relative to a very fine reference solution (the strain energy of the stress "
+                f"difference, integrated everywhere). (2) Point error: the RMS relative error of the von Mises stress "
+                f"at {PROBE_POINTS} check points spread across the part (away from stress singularities). "
+                f"{PROBE_DISCLOSED} of them are {shown}; the other {hidden} are hidden. ")
+        auto = "gmsh with its default sizes and quadratic elements"
+        point_err, kind = "stress error", "element order"
+    scored = (f"SCORING FOR THIS TASK (replaces 'How you are scored' above). {what}"
+              f"Your error e = the larger of (1) and (2). The statement's {q.name}{where} is not scored; you "
+              f"may still use it as a check.\n"
+              f"You compete against an AUTOMESHER: {auto} (scored the same way), which "
+              f"gets e = {a['error']:.2%} with {a['dofs']} DOFs.\n"
+              f"TARGET: {G:g}x the automesher's accuracy, i.e. e <= {a['error'] / G:.2%}.\n"
+              f"SCORE = A / c, where g = {a['error']:.4f} / e (your accuracy gain), c = your DOFs / {a['dofs']}, "
+              f"A = (g/{G:g})^2 if g < {G:g} (missing the target is penalised quadratically) else g/{G:g} "
+              f"(beating it keeps paying). Score 1 = {G:g}x the automesher's accuracy at its DOFs; the "
+              f"automesher itself scores {1 / G ** 2:g}. Extra DOFs pay only if they buy at least proportionally "
+              f"more accuracy, so put them where the error is.\n")
+    if bonus:
+        scored += (
+              f"BONUS for being the best: other agents attempt this task too. On each of the "
+              f"{hidden} hidden check points, the agent with the smallest {point_err} "
+              f"there wins a share of up to +{BEST_BONUS:g} in total. A tie pays nobody, so copying the "
+              f"leader earns nothing. Trying something that beats the others pays.\n"
+              f"DIVERSITY BONUS: +{DIVERSITY_BONUS:g} if your mesh recipe is structurally different from every "
+              f"other agent's on this task in your generation (another {kind}, global h differing by "
+              f"more than {DIVERSITY_H_RATIO:g}x, or mostly different refinement targets) and your base score "
+              f"is at least {DIVERSITY_MARGIN:.0%} of the best one there.\n")
+    return scored
+
+
+def _quality_limit(problem) -> str:
+    """The mesh quality gate in the task's LIMITS line: element shape for solids, the finite-volume
+    gate (feacore.geometry.fv_quality) for flow."""
+    if fea.is_flow(problem):
+        from feacore.geometry.fv_quality import NON_ORTHO_MAX, SKEW_MAX
+        return (f"its finite-volume quality must pass the gate (fv_ok: max non-orthogonality at most "
+                f"{NON_ORTHO_MAX:.0f} degrees and max skewness at most {SKEW_MAX:.0f})")
+    return f"its minimum element quality (quality.min) must be at least {MIN_QUALITY}"
 
 
 def _nonlinear_task_prompt(problem_id: str, problem, max_solves: int, bonus: bool) -> str:
@@ -583,12 +696,14 @@ class Tools:
     def _mesh(self, args: dict) -> tuple[dict, bool]:
         path = self.workdir / f"mesh_{len(self.meshes)}.msh"
         m = fea.make_mesh(self.problem, path, h=args.get("h", 0), order=args.get("order", 1),
-                          refinements=args.get("refinements"), quads=bool(args.get("quads", False)))
+                          refinements=args.get("refinements"), quads=bool(args.get("quads", False)),
+                          boundary_layer=args.get("boundary_layer"), sweep=args.get("sweep"))
         # Checkpoint: the request that produced this mesh, so it can be rebuilt or varied later.
         m["request"] = {k: v for k, v in args.items() if k != "using"}
         m["index"] = len(self.meshes)
         self.meshes.append(m)
-        out = {"mesh": len(self.meshes), **{k: v for k, v in m.items() if k not in HIDDEN_KEYS}}   # 1-based number
+        hidden = HIDDEN_KEYS | (FLOW_HIDDEN_MESH_KEYS if fea.is_flow(self.problem) else set())
+        out = {"mesh": len(self.meshes), **{k: v for k, v in m.items() if k not in hidden}}   # 1-based number
         if not m["ok"]:
             return out, True
         cap = self.task["node_cap"]
@@ -596,7 +711,12 @@ class Tools:
         if m.get("repaired_cells"):
             out["message"] = (f"{m['repaired_cells']} curved (order 2) cells were folded or nearly folded and were "
                               f"straightened to keep the mesh valid; this is automatic and fine")
-        if m["min_quality"] < MIN_QUALITY:
+        if "fv_ok" in m:                  # flow: the finite-volume gate instead of the element shape
+            if not m["fv_ok"]:
+                out["warning_quality"] = (f"finite-volume quality gate failed ({m.get('fv_gate')}): a run submitted "
+                                          f"on this mesh is invalid. Smoother size transitions, a thinner or shorter "
+                                          f"boundary layer, or a different h usually fix it")
+        elif m["min_quality"] < MIN_QUALITY:
             # The scoring gate (ace.checks): a solve on this mesh cannot be scored.
             out["warning_quality"] = (f"min element quality {m['min_quality']} is below the gate {MIN_QUALITY}: a run "
                                       f"submitted on this mesh is invalid. Change h or the refinement sizes/radii a "
@@ -612,7 +732,8 @@ class Tools:
             sizes = ", ".join(f"{s * factor:.4g}" for s in m["sizes_used"])
             out["hint"] = (f"over the cap by {m['nodes'] - cap} nodes; try h = {m['h_used'] * factor:.4g}"
                            + (f" and refinement sizes = [{sizes}]" if sizes else "")
-                           + f" (the sizes used, times {factor:.2f})")
+                           + f" (the sizes used, times {factor:.2f})"
+                           + (", or fewer sweep layers" if m.get("sweep") else ""))
         return out, False
 
     def _solve(self, args: dict) -> tuple[dict, bool]:
@@ -642,12 +763,16 @@ class Tools:
                                  "within_test_uncertainty": check["consistent"]}
         if res is not None:
             self.results[n] = res
-            if not fea.is_flow(self.problem):           # the feedback is stress-based (elasticity)
-                try:
-                    out["feedback"] = solve_feedback.feedback(self.problem, mesh, setup, res)
-                except Exception as e:  # noqa: BLE001  the solve itself stands; say why there is no feedback
-                    out["feedback"] = {"error": f"feedback failed: {type(e).__name__}: {e}"}
+            try:   # stress-based for solids (ace.solve_feedback), velocity-based for flow (ace.flow_feedback)
+                out["feedback"] = self._feedback_module().feedback(self.problem, mesh, setup, res)
+            except Exception as e:  # noqa: BLE001  the solve itself stands; say why there is no feedback
+                out["feedback"] = {"error": f"feedback failed: {type(e).__name__}: {e}"}
         return out, not result["ok"]
+
+    def _feedback_module(self):
+        """ace.flow_feedback on a flow task, else ace.solve_feedback: the same feedback / render /
+        compare interface."""
+        return flow_feedback if fea.is_flow(self.problem) else solve_feedback
 
     def _nonlinear_check(self, args: dict) -> tuple[dict, bool]:
         """Mesh number n (1-based, as the mesh tool returns it) through the frozen nonlinear scoring
@@ -691,13 +816,15 @@ class Tools:
         return self.results[n], None
 
     def _view(self, args: dict) -> tuple[dict, bool]:
-        n, kind, view = args.get("solve"), args.get("kind", "stress"), args.get("view", "iso")
+        flow = fea.is_flow(self.problem)
+        n = args.get("solve")
+        kind, view = args.get("kind", "speed" if flow else "stress"), args.get("view", "z" if flow else "iso")
         res, err = self._result_of(n)
         if err:
             return err
         self.n_views += 1
         png = self.workdir / f"view_{self.n_views}_solve{n}_{kind}_{view.replace('-', 'm')}.png"
-        path = solve_feedback.render(self.problem, self.solves[n - 1]["mesh"], res, kind, view, png)
+        path = self._feedback_module().render(self.problem, self.solves[n - 1]["mesh"], res, kind, view, png)
         # tool_loop attaches the PNG at "image" as an image block; the record keeps only the path.
         return {"solve": n, "kind": kind, "view": view, "image": str(path)}, False
 
@@ -709,7 +836,7 @@ class Tools:
         rb, err = self._result_of(b)
         if err:
             return err
-        return {"solve_a": a, "solve_b": b, **solve_feedback.compare(self.problem, ra, rb)}, False
+        return {"solve_a": a, "solve_b": b, **self._feedback_module().compare(self.problem, ra, rb)}, False
 
 
 def tool_result_content(out: dict):

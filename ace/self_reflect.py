@@ -83,7 +83,7 @@ def build_user(report: dict, run: dict, own_notes_text: str) -> list[dict]:
         + f"--- my final results and whole mesh ---\n{_safe_text(report)}\n"
         f"--- the notes I had ---\n{own_notes_text or '(none)'}\n"
         f"--- my steps ---\n{trace_excerpt(run, TRACE_CHARS)}\n")]
-    for kind, path in report_images(report, ("curve", "peeq") if nl else ("mesh", "error", "stress")):
+    for kind, path in report_images(report, ("curve", "peeq") if nl else ("mesh", "error", "stress", "speed")):
         try:
             blocks += [text_block(f"my {kind}"), image_block(path)]
         except OSError:

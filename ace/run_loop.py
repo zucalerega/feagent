@@ -140,9 +140,14 @@ def _score_worker(run: dict, report_dir: str | None = None) -> tuple:
         tol = tolerance(run["problem_id"])
         orc = stages.run_oracles(run, tol)
         report = None
-        if report_dir is not None:
-            from ace.run_report import build_run_report   # --deep only
-            report = build_run_report(run, Path(report_dir))
+        if report_dir is not None:                        # --deep only
+            from ace import fea
+            if fea.is_flow(fea.get_problem(run["problem_id"])):
+                from ace.flow_report import build_flow_report   # velocity error map (ace.flow_field)
+                report = build_flow_report(run, Path(report_dir))
+            else:
+                from ace.run_report import build_run_report
+                report = build_run_report(run, Path(report_dir))
     return checks, orc, stages.stage_report(run, orc, tol), report
 
 
@@ -664,6 +669,14 @@ def load_init(export: Path, names: list[str]) -> dict:
 # --------------------------------------------------------------------------- summary
 
 
+def _is_flow_task(problem_id: str) -> bool:
+    from ace import fea
+    try:
+        return fea.is_flow(fea.get_problem(problem_id))
+    except KeyError:
+        return False
+
+
 def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
     if config.SCORE == "field":
         how = ["score = accuracy x efficiency against the automesher (gmsh default sizes, quadratic): error =",
@@ -675,6 +688,10 @@ def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
         how = ["score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
                "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
                "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
+    if config.SCORE == "field" and any(_is_flow_task(r["problem"]) for r in rows):
+        how += ["flow tasks: error = max(whole-domain relative L2 velocity error, RMS speed error at the check",
+                "points in the bulk of the flow) against the exact solution or a fine reference (ace.flow_field);",
+                "their automesher is the mesh tool's uniform triangles / tetrahedra at the base size h0 (linearUpwind);"]
     if any(is_nonlinear(r["problem"]) for r in rows):
         how += ["nonlinear tasks: error = mean |F_sim - F_test| / F_test over the force curve's checkpoints (a",
                 "frozen nonlinear CalculiX ramp of the run's mesh, ace.nonlinear), scored like field mode against",
@@ -760,18 +777,19 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
 # --------------------------------------------------------------------------- main loop
 
 
-def _check_flow_tasks(problem_ids: list[str]) -> None:
+def _check_flow_tasks(problem_ids: list[str], teacher: str | None = None) -> None:
     """Fail before anything is spent when flow tasks cannot run: they need OpenFOAM + foamlib (or
-    every agent's solve fails while its API calls are still billed), and field scoring and
-    requirements statements are defined for elasticity only."""
+    every agent's solve fails while its API calls are still billed), and requirements statements and
+    the teacher's inspection tools are defined for elasticity only. Field scoring works on flow
+    (ace.flow_field: the velocity field), and so does --deep."""
     from ace import fea
 
     flow = [p for p in problem_ids if fea.is_flow(fea.get_problem(p))]
     if not flow:
         return
-    if config.SCORE == "field":
-        raise SystemExit(f"ACE_SCORE=field scores the elastic stress field; it is not defined for the flow tasks "
-                         f"{flow}. Unset ACE_SCORE (point scoring) for the CFD suite.")
+    if teacher not in (None, "rerun"):
+        raise SystemExit(f"--teacher {teacher} reads the elastic stress field (ace.inspect_tools); the flow tasks "
+                         f"{flow} need --teacher rerun.")
     if config.STATEMENT == "requirements":
         raise SystemExit(f"--statement requirements is defined for elasticity setups only (ace/requirements.py); "
                          f"the flow tasks {flow} need --statement bcs.")
@@ -855,7 +873,7 @@ def main(argv=None) -> int:
     suite_train, suite_holdout = config.SUITES[args.suite]
     train = [p for p in (args.problems if args.problems is not None else ",".join(suite_train)).split(",") if p]
     holdout = [p for p in (args.holdout if args.holdout is not None else ",".join(suite_holdout)).split(",") if p]
-    _check_flow_tasks(train + holdout)
+    _check_flow_tasks(train + holdout, args.teacher)
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
     (out / "run_config.json").write_text(json.dumps({"suite": args.suite, "train": train, "holdout": holdout}, indent=1))

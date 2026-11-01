@@ -40,8 +40,7 @@ def check_tasks(problem_ids: list[str]) -> bool:
                 print(f"{pid:28s} no planted.GOOD_MESH entry: skipped")
                 continue
             t0 = time.perf_counter()
-            m = fea.make_mesh(problem, Path(tmp) / f"{pid}.msh", h=req["h"], order=req.get("order", 1),
-                              refinements=req.get("refinements"), quads=req.get("quads", False))
+            m = fea.mesh_from_request(problem, Path(tmp) / f"{pid}.msh", req)
             if not m["ok"]:
                 print(f"{pid:28s} MESH FAILED: {m['error']}")
                 ok = False

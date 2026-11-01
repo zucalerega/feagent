@@ -177,10 +177,15 @@ def _solve(problem, mesh: dict, setup: dict, qoi: str):
         key = json.dumps([problem.id, sha, mesh.get("order"), setup, qoi], sort_keys=True, default=str)
         if key in _SHARED:
             return _SHARED[key]
-    res = solve(fea.build_case(problem, mesh, setup, qoi), backend="skfem")
+    res = solve(fea.build_case(problem, mesh, setup, qoi), backend="openfoam" if fea.is_flow(problem) else "skfem")
     if key is not None:
         _SHARED[key] = res
     return res
+
+
+def _flow(problem_id: str) -> bool:
+    """Flow tasks have their own field error (ace.flow_field: velocity instead of stress)."""
+    return fea.is_flow(fea.get_problem(problem_id))
 
 
 def _ref_h(problem_id: str, p, level: int) -> float:
@@ -225,7 +230,11 @@ def _needs_uniform_reference(p) -> None:
 
 
 def reference(problem_id: str) -> dict:
-    """Integration points, weights and reference stresses there (cached in ace/field_refs/)."""
+    """Integration points, weights and reference stresses there (cached in ace/field_refs/).
+    Flow: ace.flow_field.reference (reference velocities)."""
+    if _flow(problem_id):
+        from ace import flow_field
+        return flow_field.reference(problem_id)
     CACHE.mkdir(exist_ok=True)
     f = CACHE / f"{problem_id}.npz"
     if not f.exists():
@@ -249,6 +258,9 @@ def automesher(problem_id: str, need_value: bool = False) -> dict:
     import gmsh
     from feacore.geometry.gmsh_tools import ensure_domain_group, gmsh_session
     from ace.config import TASKS
+    if _flow(problem_id):                  # flow: the mesh tool's uniform mesh at h0 (ace.flow_field)
+        from ace import flow_field
+        return flow_field.automesher(problem_id, need_value)
     CACHE.mkdir(exist_ok=True)
     f = CACHE / f"{problem_id}_auto.json"
     # need_value: the scored quantity of this solve too (ace.evidence compares it with a physical
@@ -305,6 +317,9 @@ def _unfold_tet10(sj_min: float = 0.05) -> None:
 def coarse_reference(problem_id: str) -> dict:
     """Stresses of the coarser reference level at the same integration points (cached). Used to
     judge the reference itself (reference_check) and where it can be trusted (probe_points)."""
+    if _flow(problem_id):
+        from ace import flow_field
+        return flow_field.coarse_reference(problem_id)
     CACHE.mkdir(exist_ok=True)
     f = CACHE / f"{problem_id}_coarse.npz"
     if not f.exists():
@@ -323,6 +338,9 @@ def reference_check(problem_id: str) -> dict:
     """The reference's own error, estimated as the field error of the coarser reference solve
     measured against the finer one. On a smooth problem the quadratic-element energy error falls
     like h^2, so the reference's error is about this x (REF_DIVISORS ratio)^-2."""
+    if _flow(problem_id):
+        from ace import flow_field
+        return flow_field.reference_check(problem_id)
     mat = reference_setup(fea.get_problem(problem_id))["material"]
     ref, coarse = reference(problem_id), coarse_reference(problem_id)
     diff = {k: coarse["sigma"][k] - ref["sigma"][k] for k in ref["sigma"]}
@@ -370,6 +388,9 @@ def probe_points(problem_id: str) -> dict:
     farthest-point sampling spreads the points out; the first PROBE_DISCLOSED are told to the agent."""
     import json
     from ace.config import PROBE_POINTS
+    if _flow(problem_id):                  # flow: the speed in the bulk of the flow (ace.flow_field)
+        from ace import flow_field
+        return flow_field.probe_points(problem_id)
     CACHE.mkdir(exist_ok=True)
     # The default 12 points keep their original file name; any other count gets its own file.
     f = CACHE / (f"{problem_id}_points.json" if PROBE_POINTS == 12 else f"{problem_id}_points{PROBE_POINTS}.json")
@@ -400,7 +421,11 @@ def probe_points(problem_id: str) -> dict:
 
 def errors_of_result(problem_id: str, result) -> dict:
     """field: relative energy-norm error of the whole stress field; points: RMS relative error of
-    von Mises stress at the probe points; error: the larger of the two (the scored error)."""
+    von Mises stress at the probe points; error: the larger of the two (the scored error).
+    Flow: the velocity's relative L2 error and the speed at the check points (ace.flow_field)."""
+    if _flow(problem_id):
+        from ace import flow_field
+        return flow_field.errors_of_result(problem_id, result)
     p = fea.get_problem(problem_id)
     mat = reference_setup(p)["material"]
     ref = reference(problem_id)
@@ -481,7 +506,11 @@ def _one(path: str) -> tuple[str, float | None, str | None]:
 def precompute(problem_ids: list[str]) -> None:
     """Build every cached piece for these problems (run it in the background before a run)."""
     import time
-    for pid in problem_ids:
+    flow = [p for p in problem_ids if _flow(p)]
+    if flow:
+        from ace import flow_field
+        flow_field.precompute(flow)
+    for pid in [p for p in problem_ids if p not in flow]:
         for name, fn in (("reference", reference), ("coarse", coarse_reference), ("points", probe_points),
                          ("automesher", automesher)):
             t = time.perf_counter()

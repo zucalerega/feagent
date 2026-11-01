@@ -388,9 +388,9 @@ def main(argv=None) -> int:
 
     tasks = [p for p in args.problems.split(",") if p]
     flow = [t for t in tasks if fea.is_flow(fea.get_problem(t))]
-    if flow:   # field scoring and ace.agent.TOOLS are elasticity only; flow runs in run_loop --suite cfd
-        raise SystemExit(f"ace.single_loop is for elasticity tasks only; run the flow tasks {flow} "
-                         "with python -m ace.run_loop --suite cfd")
+    if flow:   # its one-conversation tool schemas are ace.agent.TOOLS (elasticity); flow runs in run_loop
+        raise SystemExit(f"ace.single_loop is for elasticity tasks only (its tools take an element order and a "
+                         f"material); run the flow tasks {flow} with python -m ace.run_loop --suite cfd")
     solves = args.solves_per_task or config.MAX_SOLVES * max(1, args.swarm_agents // len(tasks))
     turns = args.turns or config.MAX_TURNS * args.swarm_agents
     out = args.out or Path("ace_runs") / ("single-" + time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))

@@ -36,6 +36,16 @@ error among that generation's runs on the task earns a bonus; a tie pays nobody,
 peer's mesh exactly earns no bonus. A run whose mesh recipe differs structurally from every other
 run on the task that generation (another order, h off by more than 1.5x, or mostly different
 refinement targets) and whose base score is at least 90% of the best there earns a diversity bonus.
+Flow (CFD) tasks: steady laminar flow, solved with finite volumes (OpenFOAM). Scoring is the same
+with the velocity in place of the stress: the error is the larger of (a) the relative L2 velocity
+error over the WHOLE domain and (b) the RMS speed error at check points in the bulk of the flow
+(away from walls), against the exact solution or a very fine reference. Their automesher is the mesh
+tool's uniform triangles / tetrahedra at the problem's base size with the second-order convection
+scheme (linearUpwind). Flow meshes have no element order: the controls are h, local refinements,
+quads, wall boundary layers (first-cell height, growth per layer, number of layers) and, for a
+straight 3D duct or pipe, a sweep of an end face in layers (hexahedra / prisms, far cheaper than
+tetrahedra). Their gate is finite-volume quality (non-orthogonality <= 70 deg, skewness <= 4), not
+element shape: thin boundary-layer cells are fine. DOFs are cells x unknowns per cell.
 A task scored against a physical test (its statement says so, e.g. abc_00000065_compression) is
 different: the submitted mesh is run through a frozen nonlinear simulation of the test and the error is
 the mean relative force error at the test's checkpoints; the automesher yardstick, the score formula
@@ -84,6 +94,12 @@ TOOLS_BRIEF = """\
 Good practice: inspect the geometry first; refine re-entrant edges and support/load edges; check
 folded_cells is 0 and equilibrium holds; use the hotspots to place the next refinement; compare two
 solves before choosing; submit by this evidence.
+On a flow task (ace/README.md, "The flow mesher"): mesh(h, quads, refinements, boundary_layer, sweep)
+returns the finite-volume quality (fv_quality, gate fv_ok) and per boundary group the first cells'
+wall distance; solve returns convergence, mass balance, wall forces, peak speed and pressure range,
+the cell Peclet number, reversed-flow zones and a reference-free error indicator (velocity jumps at
+faces) with the top 5 hotspots; view(kind=mesh|speed|pressure|error; 3D: a section normal to x|y|z);
+compare reports the velocity difference between two solves and where it is.
 """
 
 # The single-agent baseline (ace/single_loop.py): PROCESS_BRIEF rewritten for ONE agent that works on
@@ -109,6 +125,16 @@ The yardstick is an automesher (gmsh default sizes, quadratic elements). The tar
 automesher's error: below that target the score falls quadratically, above it beating it keeps
 paying. DOFs cost: the score is divided by DOFs relative to the automesher, so extra elements must
 buy at least proportional accuracy. There are no other agents and no bonus: only this score counts.
+Flow (CFD) tasks: steady laminar flow, solved with finite volumes (OpenFOAM). Scoring is the same
+with the velocity in place of the stress: the error is the larger of (a) the relative L2 velocity
+error over the WHOLE domain and (b) the RMS speed error at check points in the bulk of the flow
+(away from walls), against the exact solution or a very fine reference. Their automesher is the mesh
+tool's uniform triangles / tetrahedra at the problem's base size with the second-order convection
+scheme (linearUpwind). Flow meshes have no element order: the controls are h, local refinements,
+quads, wall boundary layers (first-cell height, growth per layer, number of layers) and, for a
+straight 3D duct or pipe, a sweep of an end face in layers (hexahedra / prisms, far cheaper than
+tetrahedra). Their gate is finite-volume quality (non-orthogonality <= 70 deg, skewness <= 4), not
+element shape: thin boundary-layer cells are fine. DOFs are cells x unknowns per cell.
 
 Learning. After each generation a teacher looks at the agent's run on every task: the whole mesh,
 where the error is (error maps and region grids), the setup and the agent's reasoning. It tells the

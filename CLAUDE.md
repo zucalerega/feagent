@@ -41,14 +41,27 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 - `ace-cfd` branch (off `ace-loop`, with `main` merged in): the same ACE loop on steady laminar CFD.
   - Run it with `python -m ace.run_loop --suite cfd`.
   - Flow tools: finite-volume mesh with optional quads; solve with fluid, convection scheme and flow BCs on the openfoam backend.
+  - Flow mesher (`ace/flow_mesh.py`; `ace/README.md`, "The flow mesher"):
+    - agents mesh the plain CAD (`build_cad`), with the reference geometry's group names
+      transferred by geometry, not the block-split reference geometry;
+    - wall `boundary_layer` (2D, or on a swept face) and 3D `sweep` (a straight duct as its end face
+      extruded in layers: hexahedra / prisms);
+    - flow meshes are gated on finite-volume quality (`feacore/geometry/fv_quality.py`, `checkMesh`'s
+      formulas and thresholds: non-orthogonality <= 70 deg, skewness <= 4), not minSICN, which fails
+      boundary-layer cells by design.
   - Oracles: spec compliance, gaming, known answer, and a refinement study on the openfoam backend.
   - Two new exact benchmarks: `taylor_couette_2d` (rotating cylinder) and `square_duct_3d` (developing duct flow).
-  - Suites: `cfd` (2D) and `cfd3d` (`pipe_poiseuille_3d`, `square_duct_3d` on tets, scored on `dp_AB`).
-    3D became usable once the backend's 3D tet bias was fixed (FEA core, CFD bullet).
+  - Suites: `cfd` (2D) and `cfd3d` (`pipe_poiseuille_3d`, `square_duct_3d`, scored on `dp_AB`).
+    3D became usable once the backend's 3D tet bias was fixed (FEA core, CFD bullet); swept hex
+    meshes reach the tolerance with about 1/5 of the cells tets need.
+  - Flow solve feedback, `view` and `compare` (`ace/flow_feedback.py`): convergence, mass balance, wall
+    forces, reversed flow, and a reference-free error indicator (velocity jumps at faces) with hotspots.
+  - Field mode on flow (`ace/flow_field.py`): whole-domain velocity L2 error and the speed at check points,
+    against the exact solution or a fine structured reference; automesher = the mesh tool at h0. With it
+    `--deep` works on flow (`ace/flow_report.py` run reports).
   - Real runs (Claude API): `bash scripts/setup_ace_cfd.sh`, then `python -m ace.preflight --suite cfd --ping`;
-    `ace/README.md`, "Running the CFD suites with the Claude API". `--deep`, `--teacher inspect|both`,
-    `ACE_SCORE=field` and `--statement requirements` are elasticity-only, and `run_loop` refuses them
-    for flow tasks.
+    `ace/README.md`, "Running the CFD suites with the Claude API". `--teacher inspect|both` and
+    `--statement requirements` are elasticity-only, and `run_loop` refuses them for flow tasks.
   - Without a local OpenFOAM: `scripts/openfoam_docker.sh` (OpenFOAM v1912 in Docker, plus shims) and `FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp`.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free

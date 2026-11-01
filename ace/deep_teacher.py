@@ -626,7 +626,7 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
 
     # Images: mesh + error of every run, then stress pictures while the total stays within MAX_IMAGES.
     # Nonlinear task: each run's force curve vs the test and its PEEQ picture instead.
-    first, more = (("curve", "peeq"), ()) if nl else (("mesh", "error"), ("stress",))
+    first, more = (("curve", "peeq"), ()) if nl else (("mesh", "error"), ("stress", "speed"))   # speed: flow
     chosen = [(run["run_id"], k, path) for run, rep in pairs for k, path in report_images(rep, first)]
     for run, rep in pairs:
         for k, path in report_images(rep, more):

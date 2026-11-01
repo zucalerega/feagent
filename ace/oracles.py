@@ -124,9 +124,7 @@ def mesh_convergence(problem, request: dict | None, setup: dict, qoi: str, targe
     ratio = 1.5 if problem.dim == 3 and fea.is_flow(problem) else 2.0
     with tempfile.TemporaryDirectory() as tmp:
         def case_at(s: float):
-            refs = [dict(r, size=r["size"] * s) for r in request.get("refinements") or []]
-            m = fea.make_mesh(problem, Path(tmp) / f"m{s}.msh", h=request["h"] * s,
-                              order=request.get("order", 1), refinements=refs, quads=bool(request.get("quads")))
+            m = fea.mesh_from_request(problem, Path(tmp) / f"m{s}.msh", fea.scale_request(request, s))
             if not m["ok"]:
                 raise CaseError(m["error"])
             return fea.build_case(problem, m, setup, qoi)

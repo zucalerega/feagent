@@ -85,14 +85,19 @@ class MockLLM:
             return tool("inspect_geometry", {}), self._rec(run_id)
         if turn == 1 or (last.get("within_cap") is False):
             if last.get("within_cap") is False:          # over the cap: same element choice, coarser
-                same = {"quads": last.get("quads", False)} if flow else {"order": last["order"]}
+                prev_mesh = next(c.input for c in reversed(calls) if c.name == "mesh")
+                same = ({k: prev_mesh[k] for k in ("quads", "boundary_layer", "sweep") if k in prev_mesh} if flow
+                        else {"order": last["order"]})
                 return tool("mesh", {"h": last["h_used"] * 1.3, **same}), self._rec(run_id)
             h = self._h0(problem_id) * rng.uniform(0.6, 2.0)   # around the problem's own size
             if flow:                                     # finite volumes: no element order
-                return tool("mesh", {"h": h, "quads": problem.dim == 2 and rng.random() < 0.5}), self._rec(run_id)
+                return tool("mesh", {"h": h, **self._flow_mesh_options(problem, h, rng)}), self._rec(run_id)
             order = 2 if knows_p2 else rng.choice([1, 2])
             return tool("mesh", {"h": h, "order": order}), self._rec(run_id)
         if prev == "view":                               # second, finer mesh for a convergence check
+            if flow:                                     # the same flow options (quads, layers, sweep), finer
+                same = {k: v for k, v in first_mesh.items() if k in ("quads", "boundary_layer", "sweep")}
+                return tool("mesh", {"h": first_mesh["h"] * 0.8, **same}), self._rec(run_id)
             return tool("mesh", {"h": first_mesh["h"] * 0.8, "order": first_mesh["order"]}), self._rec(run_id)
         if prev == "compare" and "nonlinear_check" in offered:
             # a nonlinear (test-scored) task: one check of the finer mesh, the latest one (mesh numbers count
@@ -113,12 +118,26 @@ class MockLLM:
                         bc["value"] = [-v for v in bc["value"]]
             return tool("solve", setup), self._rec(run_id)
         if prev == "solve" and last.get("ok"):
-            if flow:                                     # TOOLS_FLOW has no view / compare
-                return tool("submit", {"solve": last["solve"]}), self._rec(run_id)
             if last["solve"] == 1:
-                return tool("view", {"solve": 1, "kind": "stress", "view": "iso"}), self._rec(run_id)
+                view = {"kind": "speed", "view": "z"} if flow else {"kind": "stress", "view": "iso"}
+                return tool("view", {"solve": 1, **view}), self._rec(run_id)
             return tool("compare", {"solve_a": 1, "solve_b": last["solve"]}), self._rec(run_id)
         return _response([NS(type="text", text="Done.")], "end_turn", "generator"), self._rec(run_id)
+
+    @staticmethod
+    def _flow_mesh_options(problem, h: float, rng) -> dict:
+        """A flow mesh's options, varied so mock runs cover the flow mesher: quads, a boundary layer on
+        the no-slip walls, and in 3D a sweep from the inlet (boundary layers there need the sweep)."""
+        walls = sorted({bc["group"] for bc in reference_setup(problem)["bcs"] if bc["type"] == "wall"})
+        out: dict = {}
+        sweep = problem.dim == 3 and rng.random() < 0.5
+        if sweep:
+            out["sweep"] = {"source": "inlet", "layers": rng.choice([6, 10, 14])}
+        if problem.dim == 2 or sweep:
+            out["quads"] = rng.random() < 0.5
+            if walls and rng.random() < 0.4:
+                out["boundary_layer"] = {"groups": walls, "first": h / 8, "ratio": 1.2, "layers": 3}
+        return out
 
     @staticmethod
     def _h0(problem_id: str) -> float:

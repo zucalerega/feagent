@@ -32,14 +32,21 @@ GOOD_MESH = {
     "nafems_le11_axisym": {"h": 0.1, "order": 2, "refinements": [{"point": [1.0, 0.0], "size": 0.025, "radius": 0.2}]},  # 0.3%
     "nafems_le11_3d": {"h": 0.2, "order": 2, "refinements": [{"point": [0.0, 1.0, 0.0], "size": 0.05, "radius": 0.4}]},  # 0.8%
     "cooks_membrane": {"h": 4.0, "order": 2, "refinements": [{"point": [48.0, 52.0], "size": 1.0, "radius": 8.0}]},  # 0.06%
-    # flow (linear finite volumes; nodes / cap, error with the reference setup, OpenFOAM v1912)
-    "poiseuille_channel": {"h": 0.0008, "quads": True, "refinements": []},                 # 1027/1200 nodes, 0.63%
-    "lid_driven_cavity_re100": {"h": 0.025, "quads": True, "refinements": []},             # 1919/2500 nodes, 0.66%
-    "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1883/2500 nodes, 0.43%
-    "cylinder_channel_dfg_2d1": {"h": 0.015, "quads": True,                               # 5440/12000 nodes, 0.37%
-                                 "refinements": [{"group": "cylinder", "size": 0.002, "radius": 0.1}]},
-    "pipe_poiseuille_3d": {"h": 0.001, "refinements": []},                                 # 4642/6000 nodes, 1.3% (tets)
-    "square_duct_3d": {"h": 0.0014, "refinements": []},                                    # 4259/6000 nodes, 0.8% (tets)
+    # flow (linear finite volumes meshed on the CAD, ace.flow_mesh; nodes / cap, error with the
+    # reference setup, linearUpwind, OpenFOAM v1912)
+    "poiseuille_channel": {"h": 0.0008, "quads": True, "refinements": []},                 # 1026/1200 nodes, 0.60%
+    "lid_driven_cavity_re100": {"h": 0.025, "quads": True, "refinements": []},             # 1913/2500 nodes, 0.19%
+    "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1849/2500 nodes, 0.64%
+    # a boundary layer at the cylinder: 0.48 % at 3155 nodes (refinement alone: 0.25 % at 5605 nodes)
+    "cylinder_channel_dfg_2d1": {"h": 0.025, "quads": True,                               # 3155/12000 nodes, 0.48%
+                                 "refinements": [{"group": "cylinder", "size": 0.004, "radius": 0.12}],
+                                 "boundary_layer": {"groups": ["cylinder", "walls"], "first": 0.001, "ratio": 1.3,
+                                                    "layers": 4}},
+    # swept hexahedra (tets need ~5x the cells: uniform tets at h = 1 mm are 2.4 % off at 4078 nodes)
+    "pipe_poiseuille_3d": {"h": 0.001, "quads": True, "refinements": [],                  # 1309/6000 nodes, 0.32%
+                           "sweep": {"source": "inlet", "layers": 10}},
+    "square_duct_3d": {"h": 0.0007, "quads": True, "refinements": [],                     # 3168/6000 nodes, 1.25%
+                       "sweep": {"source": "inlet", "layers": 10, "ratio": 6}},
     # the tube wall (2.5 mm) bends: it needs small elements everywhere around the tube, not at a point
     "abc_00000003_pull": {"h": 0.0022, "order": 2, "refinements": []},  # 40187/60000 nodes, -2.3%
     "abc_00000065_compression": {"h": 0.004, "order": 2, "refinements": []},  # 9506/40000 nodes, ~1.5% from h = 1.6 mm
@@ -103,7 +110,7 @@ def make_run(name: str, workdir: Path) -> dict:
     problem = fea.get_problem(pid)
     req = copy.deepcopy(req or GOOD_MESH[pid])
     workdir = Path(workdir)
-    m = fea.make_mesh(problem, workdir / "mesh_0.msh", h=req["h"], order=req["order"], refinements=req["refinements"])
+    m = fea.mesh_from_request(problem, workdir / "mesh_0.msh", req)
     m.update(request=req, index=0)
     setup = transform(reference_setup(problem))
     res = fea.run_solve(problem, m, setup, TASKS[pid]["qoi"])

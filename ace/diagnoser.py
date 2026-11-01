@@ -161,7 +161,9 @@ if SCORE == "field":   # field mode: the score is against the automesher (ace.co
         "efficiency = automesher DOFs / run DOFs; score = A x efficiency (1 = 2x the automesher's accuracy\n"
         "at its DOFs; invalid runs score 0), plus a bonus of up to 0.25 for having the smallest error\n"
         "on the hidden check points among the runs (a tie pays nobody). Where the mesh puts its elements is\n"
-        "what matters.")
+        "what matters. On a flow task the field error is the relative L2 velocity error over the whole\n"
+        "domain and the check points measure the speed in the bulk of the flow; its automesher is the mesh\n"
+        "tool's uniform triangles / tetrahedra at the base size h0 with linearUpwind (ace.flow_field).")
     assert "automesher" in SYSTEM
 
 
