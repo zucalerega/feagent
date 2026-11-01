@@ -32,9 +32,20 @@ Options (``failure`` dict; all but criterion / limit optional):
                     converge is kept ("stuck") for STUCK_BLOCKS blocks while other candidates go; if no
                     removal converges the block runs without removal.
   stop_force_ratio  0.01
+  stop_force_count  consecutive increments (after the first failure) with force < stop_force_ratio x peak
+                    that stop the run (default 1)
+  tail_force_ratio  once a cell has failed and the force at a block end is below this x peak, the crack is
+                    established ("tail", latched): ccx increments are then bounded by max_increment_tail
+                    (default max_increment) and blocks by 1 / tail_increments (default increments) instead
+                    of the near-failure bounds. Default off.
+  end_fraction      stop at this fraction of the ramp (default 1)
   path_groups       groups that must stay connected (default: the Dirichlet groups)
   max_blocks        5000
-Solver options: ``series_dir`` writes result_NNNN.vtu per converged increment while running,
+Solver options: ``checkpoint_dir`` writes checkpoint.json / checkpoint.npz after every block (the
+driver state plus the path of that block's .rout, which is kept until the next block's checkpoint
+is written); ``resume`` (a checkpoint dir or the dict of ``load_checkpoint``) continues such a run
+from its last block (same case; a new workdir; the old workdir is only read).
+``series_dir`` writes result_NNNN.vtu per converged increment while running,
 ``on_increment(record)`` is called with every increment's record, ``keep_files`` keeps every block's
 .frd / .dat (default: deleted once parsed; a 400k-dof increment is ~50 MB of .frd).
 
@@ -49,7 +60,6 @@ from __future__ import annotations
 import os
 import shutil
 import time
-from itertools import combinations
 from pathlib import Path
 
 import numpy as np
@@ -107,10 +117,10 @@ class _Topology:
     def __init__(self, model, deck, path_groups):
         from scipy.sparse import coo_matrix, csr_matrix
         self.m = model
-        ne, nc = model.n_elems, model.dim + 1
+        ne, nc = model.n_elems, model.n_corners
         corners = model.conn[:, :nc]
-        loc = list(combinations(range(nc), nc - 1))
-        faces = np.sort(np.concatenate([corners[:, list(c)] for c in loc]), axis=1)
+        loc = model.faces_local[:, :model.n_face_corners]       # cell faces (corner nodes)
+        faces = np.sort(np.concatenate([model.conn[:, list(c)] for c in loc]), axis=1)
         owner = np.tile(np.arange(ne), len(loc))
         _, inv = np.unique(faces, axis=0, return_inverse=True)
         f2e = coo_matrix((np.ones(len(owner)), (inv.ravel(), owner))).tocsr()
@@ -186,6 +196,30 @@ def _plan(state, agg_peeq, limit, cap, topo, exclude=()):
     return st, np.concatenate([take, det]).astype(np.int64), joined, int(len(cand) - len(take))
 
 
+CKPT_ARRAYS = ("state", "removed_at", "agg_peeq", "frozen_U")
+
+
+def save_checkpoint(d, ck: dict) -> None:
+    """Driver state after a block (atomic: written to temporaries, then renamed)."""
+    import json
+    d = Path(d)
+    d.mkdir(parents=True, exist_ok=True)
+    np.savez(d / "checkpoint.tmp.npz", **{a: ck[a] for a in CKPT_ARRAYS})
+    meta = {k: v for k, v in ck.items() if k not in CKPT_ARRAYS}
+    (d / "checkpoint.tmp.json").write_text(json.dumps(meta, indent=1, default=float))
+    os.replace(d / "checkpoint.tmp.npz", d / "checkpoint.npz")
+    os.replace(d / "checkpoint.tmp.json", d / "checkpoint.json")
+
+
+def load_checkpoint(d) -> dict:
+    import json
+    d = Path(d)
+    ck = json.loads((d / "checkpoint.json").read_text())
+    with np.load(d / "checkpoint.npz") as z:
+        ck.update({a: z[a] for a in CKPT_ARRAYS})
+    return ck
+
+
 def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     a = case.analysis
     fo = dict(a.options["failure"])
@@ -198,6 +232,11 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     inc_max = float(fo.get("max_increment", 1.0 / n))                 # ccx increment bound (ramp fraction)
     inc_near = float(fo.get("max_increment_near", 1.0 / n_near))
     stop_ratio, max_blocks = float(fo.get("stop_force_ratio", 0.01)), int(fo.get("max_blocks", 5000))
+    stop_count = int(fo.get("stop_force_count", 1))
+    tail_ratio = fo.get("tail_force_ratio")
+    inc_tail = float(fo.get("max_increment_tail", inc_max))
+    n_tail = int(fo.get("tail_increments", n))
+    t_end = min(1.0, float(fo.get("end_fraction", 1.0)))
     paths = fo.get("path_groups") or list(dict.fromkeys(deck.dirichlet_groups))
     moved = np.zeros(model.n_nodes, bool)
     moved[[nd for (nd, _), v in deck.dirichlet.items() if v != 0]] = True
@@ -214,11 +253,26 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     frozen_U = np.zeros((model.n_nodes, 3))
     history, stuck, prev_cap = [], {}, None
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
-    while t < 1.0 - 1e-12 and k < max_blocks:
+    step0, prev_rout, tail, low = 0, None, False, 0
+    ckpt_dir = options.get("checkpoint_dir")
+    resume = options.get("resume")
+    if resume is not None:
+        ck = load_checkpoint(resume) if isinstance(resume, (str, Path)) else resume
+        state[:], removed_at[:] = ck["state"], ck["removed_at"]
+        agg_peeq, frozen_U = np.array(ck["agg_peeq"], float), np.array(ck["frozen_U"], float)
+        t, k, peak, rate = float(ck["t"]), int(ck["block"]), float(ck["peak"]), float(ck.get("rate", 0.0))
+        step0, prev_rout = int(ck["step"]), Path(ck["rout"])
+        tail, low = bool(ck.get("tail", False)), int(ck.get("low", 0))
+        stuck = {int(c): int(u) for c, u in (ck.get("stuck") or {}).items()}
+        if not prev_rout.exists():
+            raise CcxError(f"resume: restart file {prev_rout} is missing")
+    while t < t_end - 1e-12 and k < max_blocks:
         pk = agg_peeq[state == ALIVE].max(initial=0.0)
         near = bool(state.any() or pk >= refine_at * limit)
         hi = 1.0 / (n_near if near else n)
         inc = inc_near if near else inc_max
+        if tail:
+            hi, inc = 1.0 / n_tail, inc_tail
         dt = float(np.clip(peeq_step * limit / rate, 1.0 / n_fine, hi)) if rate > 0 else hi
         run, errors, plan, tried = None, [], None, set()
         for attempt, (cap, scale) in enumerate(_attempts(max_remove)):
@@ -231,12 +285,12 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
                 continue
             tried.add(key)
             ddt = dt if plan[3] == 0 else 0.1 / n_fine     # deferred failures: let the crack run at ~fixed travel
-            t1 = min(1.0, t + ddt)
+            t1 = min(t_end, t + ddt)
             job = f"b{k:04d}" + ("" if attempt == 0 else f"r{attempt}")
             if k > 0:
                 rin = wd / f"{job}.rin"
                 rin.unlink(missing_ok=True)
-                rin.symlink_to(wd / f"{prev_job}.rout")
+                rin.symlink_to(prev_rout.resolve())
             head = model_txt if k == 0 else "*RESTART, READ\n"
             m = max(1, int(np.ceil((t1 - t) / inc - 1e-6)))     # equal increments <= the bound
             d_inc = (t1 - t) / m * scale
@@ -254,7 +308,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             stop = f"no convergence in block {k} (t {t:.6g}): " + "; ".join(errors[:2])
             break
         st, removal, joined, deferred = plan
-        removed_at[removal] = (history[-1]["step"] + 1) if history else 1
+        removed_at[removal] = (history[-1]["step"] if history else step0) + 1
         state[:] = st
         series = [(tt, b) for tt, b in parse_frd_series(run.frd) if "DISP" in b and "STRESS" in b]
         dat = parse_dat_series(run.dat)
@@ -265,12 +319,15 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         res.converged = True
         res.info.warnings = [w for w in res.info.warnings if not w.startswith("nonlinear run stopped")]
         for i, inc in enumerate(res.increments):
-            rec = _record(res, i, inc, k, attempt, state, agg, limit, driven, frozen_U, history)
+            rec = _record(res, i, inc, k, attempt, state, agg, limit, driven, frozen_U,
+                          (history[-1]["step"] if history else step0) + 1)
             rec["removed_in_block"], rec["deferred"] = int(len(removal)), int(deferred)
             rec["stuck"] = int(sum(1 for c, u in stuck.items() if u > k and state[c] == ALIVE))
             if series_dir:
                 _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg)
             peak = max(peak, rec["force"])
+            low = low + 1 if state.any() and rec["force"] < stop_ratio * peak else 0
+            rec["tail"] = tail
             history.append(rec)
             if options.get("on_increment"):
                 options["on_increment"](rec)
@@ -279,21 +336,30 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         if last.peeq_ip is not None:
             agg_peeq = last.peeq_ip.mean(axis=1) if agg == "mean" else last.peeq_ip.max(axis=1)
         rate = max(0.0, (agg_peeq[state == ALIVE].max(initial=0.0) - pk_before) / max(last.time - t, 1e-300))
+        if tail_ratio is not None and state.any() and history[-1]["force"] < float(tail_ratio) * peak:
+            tail = True             # crack established: the tail bounds apply from the next block on
+        old_rout, prev_rout, t, k = prev_rout, wd / f"{job}.rout", float(last.time), k + 1
+        if ckpt_dir:
+            save_checkpoint(ckpt_dir, {
+                "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "tail": tail,
+                "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "rout": str(prev_rout.resolve()),
+                "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U})
         if not options.get("keep_files"):
             for suf in (".frd", ".dat"):
                 (wd / f"{job}{suf}").unlink(missing_ok=True)
-            if k > 0:
-                (wd / f"{prev_job}.rout").unlink(missing_ok=True)
-        prev_job, t, k = job, float(last.time), k + 1
+            if old_rout is not None and old_rout.resolve().parent == wd.resolve():   # never another run's
+                old_rout.unlink(missing_ok=True)
         if not joined:              # this block was solved with the cut applied: its force is the residual
             stop = cut = "separated: no remaining fragment connects " + ", ".join(paths)
-        elif state.any() and history[-1]["force"] < stop_ratio * peak:
-            stop = f"force {history[-1]['force']:.4g} < {stop_ratio:g} x peak {peak:.4g}"
+        elif low >= stop_count:
+            stop = (f"force {history[-1]['force']:.4g} < {stop_ratio:g} x peak {peak:.4g}"
+                    + (f" over {low} increments" if stop_count > 1 else ""))
         if stop:
             break
     if res is None:
         raise CcxError(f"ccx failure run produced no converged increment in {wd}: {stop}")
-    res.history, res.state, res.removed_at, res.stop_reason = history, state, removed_at, stop or "end of ramp"
+    res.history, res.state, res.removed_at = history, state, removed_at
+    res.stop_reason = stop or ("end of ramp" if t_end >= 1.0 else f"end of ramp (end_fraction {t_end:g})")
     res.separated = bool(cut)
     res.converged = not (stop or "").startswith("no convergence")
     res.info.wall_time = time.perf_counter() - t0
@@ -304,7 +370,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     return res
 
 
-def _record(res, i, inc, block, attempt, state, agg, limit, driven, frozen_U, history) -> dict:
+def _record(res, i, inc, block, attempt, state, agg, limit, driven, frozen_U, step) -> dict:
     res.use_increment(i)
     bal = res.balance()
     F = np.sum([bal["reactions"].get(g, [0.0, 0.0, 0.0]) for g in driven], axis=0)
@@ -314,7 +380,7 @@ def _record(res, i, inc, block, attempt, state, agg, limit, driven, frozen_U, hi
     nodes_alive = np.zeros(res.model.n_nodes, bool)
     nodes_alive[res.model.conn[alive].ravel()] = True
     frozen_U[nodes_alive] = inc.U[nodes_alive]
-    return {"step": (history[-1]["step"] + 1) if history else 1, "block": block, "retry": attempt,
+    return {"step": step, "block": block, "retry": attempt,
             "time": inc.time, "lambda": inc.lam, "iterations": inc.iterations,
             "reaction": [float(v) for v in F], "force": float(np.linalg.norm(F)), "driven_groups": driven,
             "n_failed": int((state == FAILED).sum()), "n_detached": int((state == DETACHED).sum()),
@@ -324,7 +390,6 @@ def _record(res, i, inc, block, attempt, state, agg, limit, driven, frozen_U, hi
 
 def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None):
     import meshio
-    from feacore.solver._ccx_nl import _VTK_CELL
 
     m = res.model
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -335,6 +400,6 @@ def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None):
             if inc.peeq_ip is not None else np.zeros(m.n_elems)
     pd = {"displacement": frozen_U.copy(), "von_mises": res.nodal("von_mises")[1], "PEEQ": inc.PEEQ.copy()}
     cd = {"PEEQ": [peeq], "failed": [(state != ALIVE).astype(np.int32)], "state": [state.astype(np.int32)]}
-    meshio.Mesh(m.X.copy(), [(_VTK_CELL[(m.dim, m.order)], m.conn.astype(np.int64))], point_data=pd,
+    meshio.Mesh(m.X.copy(), [(m.cell_type, m.conn.astype(np.int64))], point_data=pd,
                 cell_data=cd, field_data={"lambda": np.array([inc.lam]), "step": np.array([rec["step"]])}
                 ).write(str(path))

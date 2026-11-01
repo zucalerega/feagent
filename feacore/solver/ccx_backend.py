@@ -167,7 +167,9 @@ class _Deck:
         self.axi = a.formulation == "axisymmetric"
         self.plane = a.formulation in ("plane_stress", "plane_strain", "2d")
         self.ncomp = 1 if self.heat else model.dim
-        self.etype = ELEMENT_TYPES[(a.formulation, model.order)]
+        if model.hex and (a.formulation != "3d" or self.heat):
+            raise NotImplementedError("ccx backend: hexahedral meshes (C3D8) are supported for 3D elasticity only")
+        self.etype = "C3D8" if model.hex else ELEMENT_TYPES[(a.formulation, model.order)]
         self.nsets: dict[str, str] = {}       # group -> NSET name
         self.elsets: dict[str, str] = {}      # group -> ELSET name
         self.lines: list[str] = []
@@ -259,8 +261,13 @@ class _Deck:
 
     def cell_quad(self, elems: np.ndarray, degree: int = 6):
         m = self.m
-        xi, w = quadrature(m.dim, degree)
-        N, dN = shape(m.dim, m.order, xi)
+        if m.hex:
+            from feacore.solver._ccx_fem import hex_quadrature, hex_shape
+            xi, w = hex_quadrature(degree)
+            N, dN = hex_shape(xi)
+        else:
+            xi, w = quadrature(m.dim, degree)
+            N, dN = shape(m.dim, m.order, xi)
         nodes = m.conn[elems]
         x, J = map_points(m.X[nodes][..., : m.dim], N, dN)
         detJ = np.abs(np.linalg.det(J))

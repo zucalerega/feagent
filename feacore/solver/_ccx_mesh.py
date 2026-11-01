@@ -15,6 +15,9 @@
 * Faces (CalculiX numbering, used by *DLOAD Pk / *DFLUX Sk / *FILM Fk):
     triangle  : face 1 = 1-2, face 2 = 2-3, face 3 = 3-1
     tetrahedron: face 1 = 1-2-3, face 2 = 1-4-2, face 3 = 2-4-3, face 4 = 3-4-1
+    hexahedron (C3D8, linear only; gmsh / VTK / CalculiX share the node order: 1-4 bottom, 5-8 top):
+                 face 1 = 1-2-3-4, face 2 = 5-8-7-6, face 3 = 1-5-6-2, face 4 = 2-6-7-3,
+                 face 5 = 3-7-8-4, face 6 = 4-8-5-1
 """
 
 from __future__ import annotations
@@ -30,18 +33,23 @@ TET_EDGES = np.array([(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)])
 TRI_FACES = np.array([(0, 1, 3), (1, 2, 4), (2, 0, 5)])           # line3: [a, b, mid]
 TET_FACES = np.array([(0, 1, 2, 4, 5, 6), (0, 3, 1, 7, 8, 4),
                       (1, 3, 2, 8, 9, 5), (2, 3, 0, 9, 7, 6)])     # tri6: [c0, c1, c2, m01, m12, m20]
+HEX_FACES = np.array([(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)])
+# hexahedron -> 6 tetrahedra around the diagonal 0-6 (volume / orientation)
+HEX_TETS = np.array([(0, 1, 2, 6), (0, 2, 3, 6), (0, 3, 7, 6), (0, 7, 4, 6), (0, 4, 5, 6), (0, 5, 1, 6)])
 # permutation that flips the orientation of a cell (keeps CalculiX ordering valid)
 FLIP = {"triangle": [0, 2, 1], "triangle6": [0, 2, 1, 5, 4, 3],
-        "tetra": [0, 2, 1, 3], "tetra10": [0, 2, 1, 3, 6, 5, 4, 7, 9, 8]}
+        "tetra": [0, 2, 1, 3], "tetra10": [0, 2, 1, 3, 6, 5, 4, 7, 9, 8], "hexahedron": [4, 5, 6, 7, 0, 1, 2, 3]}
 
 CELL_DIM = {"vertex": 0, "line": 1, "line3": 1, "triangle": 2, "triangle6": 2, "quad": 2, "quad8": 2,
             "quad9": 2, "tetra": 3, "tetra10": 3, "hexahedron": 3, "hexahedron20": 3,
             "hexahedron27": 3, "wedge": 3, "wedge15": 3, "wedge18": 3, "pyramid": 3,
             "pyramid13": 3, "pyramid14": 3}
-DOMAIN_TYPES = {2: ("triangle", "triangle6"), 3: ("tetra", "tetra10")}
+DOMAIN_TYPES = {2: ("triangle", "triangle6"), 3: ("tetra", "tetra10", "hexahedron")}
 LINEAR_OF = {"triangle6": "triangle", "tetra10": "tetra", "line3": "line",
-             "triangle": "triangle", "tetra": "tetra", "line": "line", "vertex": "vertex"}
-N_CORNERS = {"vertex": 1, "line": 2, "line3": 2, "triangle": 3, "triangle6": 3, "tetra": 4, "tetra10": 4}
+             "triangle": "triangle", "tetra": "tetra", "line": "line", "vertex": "vertex",
+             "hexahedron": "hexahedron", "quad": "quad"}
+N_CORNERS = {"vertex": 1, "line": 2, "line3": 2, "triangle": 3, "triangle6": 3, "tetra": 4, "tetra10": 4,
+             "quad": 4, "hexahedron": 8}
 
 
 class MeshError(ValueError):
@@ -117,7 +125,7 @@ def _encode(keys: np.ndarray, base: int):
 class FEModel:
     X: np.ndarray                  # (nn, 3) node coordinates; model node i -> CalculiX node i + 1
     conn: np.ndarray               # (ne, nen) connectivity in CalculiX order (model node indices)
-    cell_type: str                 # triangle | triangle6 | tetra | tetra10
+    cell_type: str                 # triangle | triangle6 | tetra | tetra10 | hexahedron (meshio names)
     dim: int
     order: int
     elem_groups: dict[str, np.ndarray]     # domain cell group -> element indices
@@ -137,11 +145,21 @@ class FEModel:
         return len(self.conn)
 
     @property
+    def hex(self) -> bool:
+        return self.cell_type == "hexahedron"
+
+    @property
     def n_corners(self) -> int:
-        return self.dim + 1
+        return 8 if self.hex else self.dim + 1
+
+    @property
+    def n_face_corners(self) -> int:
+        return 4 if self.hex else self.dim
 
     @property
     def faces_local(self) -> np.ndarray:
+        if self.hex:
+            return HEX_FACES
         f = TRI_FACES if self.dim == 2 else TET_FACES
         return f if self.order == 2 else f[:, : self.dim]
 
@@ -149,6 +167,8 @@ class FEModel:
         return self.conn[:, : self.n_corners]
 
     def measures(self) -> np.ndarray:
+        if self.hex:
+            return np.abs(_hex_volume(self.X, self.conn))
         return np.abs(_signed_measure(self.X, self.corner_conn(), self.dim))
 
     def group_names(self) -> list[str]:
@@ -175,10 +195,11 @@ class FEModel:
     # ------------------------------------------------------------------ faces
     def _faces(self):
         if self._face_index is None:
-            fl = self.faces_local[:, : self.dim]
-            corners = self.conn[:, fl]                       # (ne, nf, dim)
+            nfc = self.n_face_corners
+            fl = self.faces_local[:, :nfc]
+            corners = self.conn[:, fl]                       # (ne, nf, nfc)
             ne, nf = corners.shape[:2]
-            keys = np.sort(corners.reshape(-1, self.dim), axis=1)
+            keys = np.sort(corners.reshape(-1, nfc), axis=1)
             code = _encode(keys, self.n_nodes + 1)
             order = np.argsort(code, kind="stable")
             self._face_index = {"code": code[order], "elem": (order // nf), "face": (order % nf)}
@@ -313,7 +334,10 @@ def build_model(gm: GmshMesh, dim: int, order: int, axisymmetric: bool = False) 
 
     # dedupe cells (msh2 lists a cell once per physical group) and record group membership
     allc = np.vstack([b[1] for b in blocks])
-    keys = np.sort(allc[:, : dim + 1], axis=1)
+    nc = N_CORNERS[ctype]
+    if ctype == "hexahedron" and order != 1:
+        raise MeshError("hexahedral meshes run as linear C3D8 only: use analysis.order = 1")
+    keys = np.sort(allc[:, :nc], axis=1)
     uniq, first, inv = np.unique(keys, axis=0, return_index=True, return_inverse=True)
     inv = inv.ravel()
     conn = allc[first]
@@ -332,7 +356,7 @@ def build_model(gm: GmshMesh, dim: int, order: int, axisymmetric: bool = False) 
         if span[2] > 1e-9 * max(span.max(), 1e-300):
             raise MeshError("2D meshes must lie in the xy-plane (z = 0)")
     # orientation
-    vol = _signed_measure(pts, conn[:, : dim + 1], dim)
+    vol = _hex_volume(pts, conn) if ctype == "hexahedron" else _signed_measure(pts, conn[:, : dim + 1], dim)
     if np.any(vol == 0):
         raise MeshError(f"{int(np.sum(vol == 0))} degenerate (zero-measure) cells")
     neg = vol < 0
@@ -359,7 +383,8 @@ def build_model(gm: GmshMesh, dim: int, order: int, axisymmetric: bool = False) 
         conn = np.hstack([conn, mids[einv.ravel()].reshape(len(conn), -1)])
         warnings.append("analysis.order = 2 on a linear mesh: midside nodes inserted at straight "
                         "edge midpoints")
-    cell_type = {(2, 1): "triangle", (2, 2): "triangle6", (3, 1): "tetra", (3, 2): "tetra10"}[(dim, order)]
+    cell_type = "hexahedron" if ctype == "hexahedron" else \
+        {(2, 1): "triangle", (2, 2): "triangle6", (3, 1): "tetra", (3, 2): "tetra10"}[(dim, order)]
     if axisymmetric and X[:, 0].min() < -1e-9 * max(np.ptp(X[:, 0]), 1e-300):
         raise MeshError("axisymmetric meshes need x = r >= 0")
     model = FEModel(X=X, conn=conn, cell_type=cell_type, dim=dim, order=order,
@@ -367,3 +392,8 @@ def build_model(gm: GmshMesh, dim: int, order: int, axisymmetric: bool = False) 
                     warnings=warnings)
     model.check_midside()
     return model
+
+
+def _hex_volume(X: np.ndarray, conn: np.ndarray) -> np.ndarray:
+    """Signed volume of 8-node hexahedra (sum of 6 tetrahedra around the 0-6 diagonal; exact for planar faces)."""
+    return sum(_signed_measure(X, conn[:, list(t)], 3) for t in HEX_TETS)

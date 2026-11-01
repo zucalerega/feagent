@@ -149,6 +149,22 @@ runs as a chain of **restart blocks**, one ccx static step each:
   first increment on). `on_increment(record)` streams the records.
   Each block's `.frd` / `.dat` is deleted once parsed (`keep_files` keeps them).
 
+* Step policy options (used by `experiments/physical/crush.py`): `tail_force_ratio` (once a cell has failed and
+  the force at a block end is below this x peak, the crack is established, latched: ccx increments are bounded by
+  `max_increment_tail` and blocks by 1 / `tail_increments` instead of the near-failure bounds), `stop_force_count`
+  (consecutive increments below `stop_force_ratio` x peak that stop the run; default 1) and `end_fraction` (stop at
+  this fraction of the ramp). Every record carries `tail`.
+* Checkpoint / resume: solver option `checkpoint_dir` writes `checkpoint.json` / `checkpoint.npz` after every block
+  (time, block, step, peak, PEEQ growth rate, tail flag, stuck cells, cell state, removal steps, cell PEEQ, frozen
+  displacement, and the path of that block's `.rout`, which is kept until the next checkpoint is written).
+  `resume=<dir or dict>` continues the restart chain in a new workdir: steps continue, and the old workdir is only
+  read. Tested: a run stopped at half the ramp and resumed gives the closed-form answer at every increment of both
+  parts (`test_failure_checkpoint_resume_continues_the_ramp`).
+* Hexahedral meshes: gmsh `hexahedron` cells run as C3D8 (full integration, 8 points) with `analysis.order = 1`,
+  3D elasticity only. Quad facet groups give the node sets, erosion fragments are face-connected through quad
+  faces, and the `.vtu` cells are VTK hexahedra. Tested against the closed-form bar and on a notched all-hex bar
+  (subdivision mesh) that separates at the notch (`test_hex_*`).
+
 Limits:
 
 * No contact: eroded faces and fragments can interpenetrate, and a crushed part does not

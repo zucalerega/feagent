@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -316,3 +317,132 @@ def test_failure_notched_bar_separates(tmp_path):
     m = meshio.read(files[-1])
     assert set(m.cell_data) >= {"PEEQ", "failed"} and {"displacement", "von_mises"} <= set(m.point_data)
     assert int(m.cell_data["failed"][0].sum()) == int((r.state != 0).sum())
+
+
+@needs_ccx
+def test_failure_checkpoint_resume_continues_the_ramp(meshes, tmp_path):
+    """A failure run stopped at half the ramp (end_fraction) and resumed from its checkpoint in a new
+    workdir continues the restart chain: steps continue, the closed-form hardening answer holds at every
+    increment of both parts, and the first run's restart file is left in place."""
+    from feacore.solver._ccx_failure import load_checkpoint
+
+    eps_max, H = 4.0 * SY / E, 2000.0
+
+    def case(**fo):
+        return _bar(meshes["box"], BC("displacement", group="right", components=[0], value=eps_max * L), H=H,
+                    n=8, failure={"criterion": "peeq", "limit": 10.0, **fo})
+
+    r1 = solve(case(end_fraction=0.5), backend="ccx", workdir=str(tmp_path / "w1"),
+               checkpoint_dir=str(tmp_path / "c1"))
+    ck = load_checkpoint(tmp_path / "c1")
+    assert r1.stop_reason.startswith("end of ramp") and abs(ck["t"] - 0.5) < 1e-9
+    assert ck["step"] == r1.history[-1]["step"] and Path(ck["rout"]).exists()
+    r2 = solve(case(), backend="ccx", workdir=str(tmp_path / "w2"), resume=str(tmp_path / "c1"),
+               checkpoint_dir=str(tmp_path / "c2"))
+    assert r2.stop_reason == "end of ramp" and Path(ck["rout"]).exists()
+    assert r2.history[0]["step"] == ck["step"] + 1 and r2.history[0]["block"] == ck["block"]
+    hist = r1.history + r2.history
+    assert [h["step"] for h in hist] == list(range(1, len(hist) + 1)) and abs(hist[-1]["lambda"] - 1.0) < 1e-9
+    for h in hist:
+        eps = h["lambda"] * eps_max
+        ep = max(eps - SY / E, 0.0) / (1.0 + H / E)
+        sig = E * eps if ep == 0 else SY + H * ep
+        assert abs(h["force"] - sig * W * W) < 2e-5 * SY * W * W, h
+
+
+@needs_ccx
+def test_failure_step_policy_tail_and_sustained_stop(tmp_path):
+    """Notched bar with the crush step policy: increments <= max_increment_near from failure onset until the
+    force is below tail_force_ratio x peak, <= max_increment_tail after; tail flag latched; separates."""
+    c = _failure_case(_notched(tmp_path / "notch.msh"), 0.05, [0.4, 0.0, 0.0], max_increment=0.002,
+                      max_increment_near=0.0005, near_increments=500, tail_force_ratio=0.6,
+                      max_increment_tail=0.002, tail_increments=100, stop_force_count=3)
+    r = solve(c, backend="ccx")
+    assert r.separated and r.converged, r.stop_reason
+    lam = np.r_[0.0, [h["lambda"] for h in r.history]]
+    d = np.diff(lam)
+    tail = np.array([h["tail"] for h in r.history])
+    failed = np.array([h["n_failed"] for h in r.history]) > 0
+    assert np.all(d <= 0.002 + 1e-9)
+    pre = failed & ~tail
+    assert pre.any() and np.all(d[pre] <= 0.0005 + 1e-9)
+    assert np.all(np.diff(tail.astype(int)) >= 0)
+    F = np.array([h["force"] for h in r.history])
+    if tail.any():
+        assert F[np.argmax(tail) - 1] < 0.6 * F.max()
+
+
+def _hex_box(path, n=(4, 2, 2)):
+    """All-hex (C3D8) L x W x W box, transfinite + recombined."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box
+    with gmsh_session("hexbox"):
+        v = gmsh.model.occ.addBox(0, 0, 0, L, W, W)
+        gmsh.model.occ.synchronize()
+        add_group(3, [v], "body")
+        for name, kw in (("left", {"xmax": 0}), ("right", {"xmin": L}), ("y0", {"ymax": 0}), ("z0", {"zmax": 0})):
+            add_group(2, in_box(2, **kw), name)
+        for _, c in gmsh.model.getEntities(1):
+            a, b = gmsh.model.getBoundingBox(1, c)[:3], gmsh.model.getBoundingBox(1, c)[3:]
+            k = int(np.argmax(np.subtract(b, a)))
+            gmsh.model.mesh.setTransfiniteCurve(c, n[k] + 1)
+        for _, sf in gmsh.model.getEntities(2):
+            gmsh.model.mesh.setTransfiniteSurface(sf)
+            gmsh.model.mesh.setRecombine(2, sf)
+        gmsh.model.mesh.setTransfiniteVolume(v)
+        gmsh.model.mesh.generate(3)
+        gmsh.write(str(path))
+    return str(path)
+
+
+@needs_ccx
+def test_hex_c3d8_restart_blocks_closed_form(tmp_path):
+    """C3D8 (gmsh hexahedron) through the failure driver: 8 integration points per cell, closed-form
+    hardening force and PEEQ at every increment, hexahedron .vtu."""
+    import meshio
+
+    eps_max, H = 4.0 * SY / E, 2000.0
+    c = _bar(_hex_box(tmp_path / "hex.msh"), BC("displacement", group="right", components=[0], value=eps_max * L),
+             H=H, n=4, failure={"criterion": "peeq", "limit": 10.0})
+    c.analysis.order = 1
+    r = solve(c, backend="ccx", series_dir=str(tmp_path / "s"))
+    assert r.model.cell_type == "hexahedron" and r.deck.etype == "C3D8"
+    assert r.increments[-1].peeq_ip.shape == (r.model.n_elems, 8)
+    for h in r.history:
+        eps = h["lambda"] * eps_max
+        ep = max(eps - SY / E, 0.0) / (1.0 + H / E)
+        sig = E * eps if ep == 0 else SY + H * ep
+        assert abs(h["force"] - sig * W * W) < 2e-5 * SY * W * W, h
+        assert abs(h["max_peeq_alive"] - ep) < 1e-6
+    assert abs(r.info.measure - L * W * W) < 1e-9
+    assert meshio.read(sorted((tmp_path / "s").glob("*.vtu"))[-1]).cells[0].type == "hexahedron"
+
+
+@needs_ccx
+def test_hex_notched_bar_erodes_and_separates(tmp_path):
+    """All-hex notched bar (gmsh subdivision) pulled to separation: erosion and the fragment topology work
+    on quad faces; failed cells only at the notch."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
+    p = tmp_path / "hexnotch.msh"
+    with gmsh_session("notch"):
+        b = gmsh.model.occ.addBox(0, 0, 0, 4.0, 1.0, 0.25)
+        cuts = [(3, gmsh.model.occ.addCylinder(2.0, y, -0.1, 0, 0, 0.45, 0.2)) for y in (0.0, 1.0)]
+        v, _ = gmsh.model.occ.cut([(3, b)], cuts)
+        gmsh.model.occ.synchronize()
+        add_group(3, [t for _, t in v], "body")
+        add_group(2, in_box(2, xmax=0), "left")
+        add_group(2, in_box(2, xmin=4.0), "right")
+        set_uniform_size(0.3)
+        gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 2)
+        gmsh.model.mesh.generate(3)
+        gmsh.write(str(p))
+    c = _failure_case(str(p), 0.05, [0.4, 0.0, 0.0])
+    c.analysis.order = 1
+    r = solve(c, backend="ccx")
+    assert r.model.cell_type == "hexahedron" and r.separated and r.converged, r.stop_reason
+    F = np.array([h["force"] for h in r.history])
+    assert F[-1] < 0.02 * F.max()
+    cen = r.model.X[r.model.conn].mean(axis=1)
+    failed = r.state == 1
+    assert failed.sum() > 10 and np.all(np.abs(cen[failed, 0] - 2.0) < 0.35)
