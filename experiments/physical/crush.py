@@ -229,8 +229,9 @@ def main():
                     help="platen contact: bonded (default), frictionless top, frictionless both")
     ap.add_argument("--failure", choices=["peeq", "peeq_tension", "principal"], default="peeq",
                     help="erosion criterion (default peeq: PEEQ >= failure_peeq in any stress state)")
-    ap.add_argument("--compression-factor", type=float, default=5.0,
-                    help="peeq_tension / principal: cells not in tension erode at this x failure_peeq (0: never)")
+    ap.add_argument("--compression-factor", type=float, default=None,
+                    help="peeq_tension / principal: cells not in tension erode at this x failure_peeq (default 5; "
+                         "0: never); with --resume it overrides the parent's")
     ap.add_argument("--resume", default=None, help="run dir to continue (a new run dir is written)")
     ap.add_argument("--restart-file", default=None, help="parent's last-block .rout (runs without checkpoint)")
     a = ap.parse_args()
@@ -245,7 +246,8 @@ def main():
     if out.exists() and any(out.iterdir()):
         raise SystemExit(f"{out} exists and is not empty: never overwrite a previous run")
     mat, limit, mdoc = _material(a.material)
-    crit = criterion_options(a.failure, a.compression_factor or None, float(mdoc.get("uts_eng", 0.0)) * 1e6)
+    cf = 5.0 if a.compression_factor is None else a.compression_factor
+    crit = criterion_options(a.failure, cf or None, float(mdoc.get("uts_eng", 0.0)) * 1e6)
     parent, resume, parent_rows, parent_summary = None, None, [], {}
     if a.resume:
         parent = Path(a.resume).resolve()
@@ -267,6 +269,8 @@ def main():
     if a.resume:
         D = float(-_driven_value(case)[k])
         crit = {c: case.analysis.options["failure"][c] for c in CRIT_KEYS if c in case.analysis.options["failure"]}
+        if a.compression_factor is not None and crit.get("criterion", "peeq") != "peeq":
+            crit["compression_factor"] = a.compression_factor or None
         case.analysis.options["failure"] = failure_options(D, limit, min(1.0, MAX_CRUSH * H / D), a.release, crit)
         ck_dir = parent if (parent / "checkpoint.json").exists() else None
         if ck_dir is not None:

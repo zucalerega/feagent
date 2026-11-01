@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from crush import AX, PARTS, platen_bcs  # noqa: E402
 from feacore.case import BC, Analysis, Case, Material  # noqa: E402
 
-TET10_EDGES = [(0, 1), (1, 2), (2, 0), (3, 0), (3, 2), (3, 1)]    # gmsh / feacore tet10 mid-edge order
+TET10_EDGES = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)]    # feacore (CalculiX C3D10) mid-edge order
 F_REF = 1000.0
 
 

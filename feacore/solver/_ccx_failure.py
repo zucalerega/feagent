@@ -92,6 +92,7 @@ from feacore.solver._ccx_nl import CcxNonlinearResult
 
 ALIVE, FAILED, DETACHED = 0, 1, 2
 CRITERIA = ("peeq", "peeq_tension", "principal")
+CRIT_KEYS = ("criterion", "compression_factor", "triaxiality_min", "stress_limit")
 STUCK_TRIES, STUCK_BLOCKS = 5, 5    # single-cell alternatives tried; blocks a stuck cell waits
 
 
@@ -337,7 +338,11 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         ck = load_checkpoint(resume) if isinstance(resume, (str, Path)) else resume
         state[:], removed_at[:] = ck["state"], ck["removed_at"]
         agg_peeq, frozen_U = np.array(ck["agg_peeq"], float), np.array(ck["frozen_U"], float)
-        damage = np.array(ck["damage"], float) if "damage" in ck else damage_index(fo, agg_peeq)
+        crit_now = {c: fo.get(c) for c in CRIT_KEYS}
+        if "damage" in ck and ck.get("criterion_options") == crit_now:
+            damage = np.array(ck["damage"], float)
+        else:       # criterion changed on resume: no stress at hand; the next block end recomputes it
+            damage = damage_index(fo, agg_peeq) if crit == "peeq" else np.zeros(model.n_elems)
         t, k, peak, rate = float(ck["t"]), int(ck["block"]), float(ck["peak"]), float(ck.get("rate", 0.0))
         step0, prev_rout = int(ck["step"]), Path(ck["rout"])
         tail, low = bool(ck.get("tail", False)), int(ck.get("low", 0))
@@ -435,7 +440,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
                 "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "tail": tail,
                 "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "release_cap": rel_cap, "rout": str(prev_rout.resolve()),
                 "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U}
-                | ({"damage": damage} if crit != "peeq" else {}))
+                | ({"damage": damage, "criterion_options": {c: fo.get(c) for c in CRIT_KEYS}}
+                   if crit != "peeq" else {}))
         if not options.get("keep_files"):
             for suf in (".frd", ".dat"):
                 (wd / f"{job}{suf}").unlink(missing_ok=True)
