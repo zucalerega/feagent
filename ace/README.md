@@ -80,6 +80,9 @@ ACE_SCORE=field .venv/bin/python -m ace.single_loop --problems cooks_membrane,na
 .venv/bin/python -m ace.compare ace_runs/deep2 ace_runs/single1                     # compare.md, compare.png
 ```
 
+The baseline also runs flow tasks (`ACE_SCORE=field`, the velocity field): the task list must be all
+flow or all solid, because one conversation has one tool list (TOOLS or TOOLS_FLOW).
+
 `run_loop --personas` gives agents a fixed exploration style: the flag alone = every agent,
 `--personas a0,a3,a5` or `--persona-count 3` = only some (default: none). Who has which style is
 written to `<out>/personas.json`.
@@ -447,8 +450,9 @@ ACE_SCORE=field .venv/bin/python -m ace.run_loop --suite cfd --deep --split --me
   - The probe run's `Spend by role` line and `cost.jsonl` give the real figure; verify `PRICES` in
     `config.py` first.
 - **Modes that work for flow:** the default point scoring (leave `ACE_SCORE` unset), field scoring
-  (`ACE_SCORE=field`, the velocity field) and with it `--deep` (and `--pre-teach`), `--teacher rerun`
-  (the default), `--memory shared|shared+private`, `--split`, `--peers`, `--personas`.
+  (`ACE_SCORE=field`, the velocity field) and with it `--deep` (and `--pre-teach`) and the single-agent
+  baseline `ace.single_loop` (all-flow task lists), `--teacher rerun` (the default),
+  `--memory shared|shared+private`, `--split`, `--peers`, `--personas`.
 - **Modes that don't:** `--teacher inspect|both` (its tools read the elastic stress field) and
   `--statement requirements` (written for elasticity setups). `run_loop` refuses them for flow tasks.
 - **Concurrency:** `--concurrency` (default 4) agent runs solve in parallel, and as many scoring

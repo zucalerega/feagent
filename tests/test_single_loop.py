@@ -105,3 +105,33 @@ def test_single_loop_mock(tmp_path):
     assert (out / "compare.png").exists()
     rows = [line for line in (out / "compare.md").read_text().splitlines() if line.startswith("| 0 |") or line.startswith("| 1 |")]
     assert len(rows) == 4
+
+
+def _has_openfoam() -> bool:
+    try:
+        from feacore.solver._foam_env import find_openfoam
+        return find_openfoam() is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def test_single_loop_takes_all_flow_tasks_and_refuses_a_mix(tmp_path):
+    """One conversation has one tool list: flow tasks get TOOLS_FLOW (with the `task` argument), and a
+    mix of flow and solid tasks is refused before anything runs."""
+    import pytest
+
+    from ace import single_loop
+    from ace.agent import TOOLS_FLOW
+
+    specs = single_loop.task_tool_specs(["poiseuille_channel", "taylor_couette_2d"])
+    assert [t["name"] for t in specs] == [t["name"] for t in TOOLS_FLOW]
+    mesh = next(t for t in specs if t["name"] == "mesh")["input_schema"]
+    assert {"boundary_layer", "sweep", "task"} <= set(mesh["properties"]) and mesh["required"][0] == "task"
+    assert single_loop.all_flow(["poiseuille_channel"]) and not single_loop.all_flow(["cooks_membrane"])
+    env = {**os.environ, "ACE_SCORE": "field"}
+    p = subprocess.run([sys.executable, "-m", "ace.single_loop", "--mock", "--problems", "poiseuille_channel,cooks_membrane",
+                        "--generations", "1", "--out", str(tmp_path / "mix")], cwd=REPO, env=env, capture_output=True,
+                       text=True, timeout=300)
+    assert p.returncode != 0 and "all-solid or all-flow" in p.stderr + p.stdout
+    if not _has_openfoam():
+        pytest.skip("OpenFOAM not found: the flow run itself is not tried")

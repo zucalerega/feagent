@@ -139,8 +139,14 @@ per step height in y.
 | h0 | 3120 | 226 | 2.2 | -1.55695e-3 | -9.39472e-4 | 3.14507e-4 |
 | h0 / 2 | 12480 | 517 | 12 | -1.59666e-3 | -9.06798e-4 | 3.11927e-4 |
 | h0 / 4 | 49920 | 1498 | 165 | -1.61383e-3 | -8.96866e-4 | 3.11023e-4 |
-| extrapolated | | | | **-1.62691e-3** | **-8.92529e-4** | **3.10536e-4** |
+| extrapolated (h0 .. h0 / 4) | | | | **-1.62691e-3** | **-8.92529e-4** | **3.10536e-4** |
 | observed order, GCI (fine) | | | | 1.21, 1.0 % | 1.72, 0.6 % | 1.51, 0.2 % |
+| h0 / 8 (check, see below) | 199680 | 4302 (stopped) | 2894 | -1.62150e-3 | -8.93264e-4 | 3.10668e-4 |
+
+- **A fourth level as a check.** h0 / 8 stopped at 4302 SIMPLE iterations, before the 1e-8 residual
+  target. Its values agree with the three-level extrapolation to 0.33 % (`u_bubble`), 0.08 %
+  (`v_shear`) and 0.04 % (`floor_force`). Extrapolating from h0 / 2 .. h0 / 8 instead moves the
+  references by 0.05 %, 0.15 % and 0.03 %. The references stay on the three fully converged levels.
 
 - All three converge monotonically. They converge below second order because the shear layer leaves a
   singular corner; `u_bubble` is the slowest, hence its 3 % tolerance.
