@@ -154,6 +154,20 @@ runs as a chain of **restart blocks**, one ccx static step each:
   `max_increment_tail` and blocks by 1 / `tail_increments` instead of the near-failure bounds), `stop_force_count`
   (consecutive increments below `stop_force_ratio` x peak that stop the run; default 1) and `end_fraction` (stop at
   this fraction of the ramp). Every record carries `tail`.
+* Adaptive release (`adaptive_release: true`; `max_remove` = the cap's upper bound, 64 in the crush runner):
+  * The per-block cap on failed cells removed starts at `max_remove`. It halves through the retry ladder when a
+    block does not converge, down to 1; after that, other single cells are tried and kept "stuck", and the last
+    resort is a block without removal.
+  * After a block that converged at its first try the cap doubles; after a block that needed a smaller cap, the
+    next block starts at the cap that converged.
+  * Removal attempts fail fast: one ccx cut-back instead of about five. The released stress acts at once, so a
+    smaller increment does not rescue a removal; in the 003 crush, every converged removal needed at most one
+    cut-back.
+  * While failed cells wait, the platen is held: a block that leaves failed cells waiting advances
+    `release_travel` = 1e-3 / `fine_increments` (2e-5 mm in the crush). The cap therefore changes how a backlog
+    is split into removals, not the travel at which cells fail.
+  * Before (fixed cap of 8, `release_travel` 0.1 / `fine_increments` = 0.002 mm per block), a 234-cell backlog
+    in the 003 crush crept 0.002 mm per block while it was released, ~0.016 mm per 20 min of wall time.
 * Checkpoint / resume: solver option `checkpoint_dir` writes `checkpoint.json` / `checkpoint.npz` after every block
   (time, block, step, peak, PEEQ growth rate, tail flag, stuck cells, cell state, removal steps, cell PEEQ, frozen
   displacement, and the path of that block's `.rout`, which is kept until the next checkpoint is written).

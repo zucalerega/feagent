@@ -78,3 +78,48 @@ foreground process; nothing is installed, so it does not survive a reboot.
 Mesh sources are the scratch outputs of each system's build. The harness_expert meshes were copied at 20:49 ET,
 from reports dated 20:27 and 20:45. If that agent rebuilds them, the queued runs still use the copied files (check
 the sha256). The queue fills in the queued run dirs and start times in the Spark's `queue/<system>__<part>.json`.
+
+## Release policy change, 2026-10-31 ~21:45 ET: adaptive release, platen held while a backlog is released
+
+Up to now each erosion block removed at most 8 failed cells (highest PEEQ first). A block that left failed cells
+waiting still advanced the platen 0.002 mm. In 003 most removals of 8 (or 4) cells did not converge, and each
+diverging try cost ~70 s of ccx cut-backs. So a 234-cell backlog was released at ~42 s per cell on 8 threads, and
+the platen crept 0.002 mm per release block (0.016 mm per 20 min).
+
+New policy (`--release adaptive`, the default; `_ccx_failure` `adaptive_release`):
+
+- The cap starts at 64 and halves on non-convergence down to 1. It doubles after a block that converged at its
+  first try; after a block that needed a smaller cap, the next block starts at the cap that converged.
+- Removal tries fail fast: one cut-back. Every converged removal in the slow run needed at most one.
+- The platen is held while failed cells wait (2e-5 mm per release block).
+- Unchanged: the increment bounds (0.05 / 0.02 / 0.05 mm), the failure criterion and the stop rules.
+
+Check on the 003 baseline (scratchpad `crush3/cmp003/`): all three runs resumed from the same checkpoint (step 161,
+1.2197 mm, 202 failed cells, 279 waiting).
+
+| failed cells | slow (cap 8, creep) | fixed cap 8, held | adaptive, held |
+|---|---|---|---|
+| 206 | 3308 N at 1.2202 mm | 3307 N at 1.2197 mm | 3307 N at 1.2197 mm |
+| 210 | 3213 N at 1.2222 mm | 3209 N | 3209 N |
+| 212 / 214 | 3006 N (214) at 1.2242 mm | 3146 N (212) | 3146 N (212), 3000 N (214) |
+| 218 | 2911 N at 1.2262 mm | | 2888 N (-0.8 %) at 1.2198 mm |
+| 222 / 220 | 2797 N (222) | | 2799 N (220) |
+| 226 / 224 | 2741 N (226) at 1.2302 mm | | 2742 N (224) at 1.2198 mm |
+| 234 / 236 | 2601 N (234) at 1.2336 mm | | 2459 N (236) at 1.2199 mm |
+
+- At the same number of failed cells the force agrees within ~1 % (identical to the held fixed-cap run while
+  their release orders coincide).
+- At the same travel it does not: while a backlog is released, the slow schedule's force falls over a creep of
+  0.002 mm per release block (+0.016 mm for these 30 cells), and the held schedules' force falls at 1.2197 mm.
+- That travel offset is the slow schedule's creep: the crack speed depended on how many cells each block could
+  remove. With the platen held, the crack runs at the travel where it starts, whatever the cap.
+
+Pace in the crack phase:
+
+| schedule | threads | time per failed cell |
+|---|---|---|
+| slow (cap 8, creep) | 8 | 42 s |
+| fixed cap 8, held | 4 | 145 s |
+| adaptive, held | 4 | 17 s |
+
+Applied to every run below; the runs above that used the slow schedule are kept as they are.

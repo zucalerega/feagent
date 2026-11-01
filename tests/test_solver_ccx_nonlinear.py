@@ -446,3 +446,32 @@ def test_hex_notched_bar_erodes_and_separates(tmp_path):
     cen = r.model.X[r.model.conn].mean(axis=1)
     failed = r.state == 1
     assert failed.sum() > 10 and np.all(np.abs(cen[failed, 0] - 2.0) < 0.35)
+
+
+@needs_ccx
+def test_failure_adaptive_release_matches_fixed(tmp_path):
+    """Adaptive release (cap 64, x2 / /2, platen held while a backlog is released) only changes how failed cells
+    are split into removals: the notched bar gives the same force-travel curve as a fixed cap of 8 with the platen
+    held the same way, and separates at about the same travel."""
+    mesh = _notched(tmp_path / "notch.msh")
+    runs = {}
+    for name, fo in (("fixed", {"max_remove": 8, "release_travel": 1e-3 / 400}),
+                     ("adaptive", {"max_remove": 64, "adaptive_release": True})):
+        r = solve(_failure_case(mesh, 0.05, [0.4, 0.0, 0.0], **fo), backend="ccx")
+        assert r.separated and r.converged, (name, r.stop_reason)
+        runs[name] = r
+    lam = {k: np.array([h["lambda"] for h in r.history]) for k, r in runs.items()}
+    F = {k: np.array([h["force"] for h in r.history]) for k, r in runs.items()}
+    peak = F["fixed"].max()
+    assert abs(F["adaptive"].max() - peak) < 1e-3 * peak
+    nf = {k: np.array([h["n_failed"] for h in r.history]) for k, r in runs.items()}
+    # before the first failure: the same curve
+    m = nf["adaptive"] == 0
+    assert np.allclose(F["adaptive"][m], np.interp(lam["adaptive"][m], lam["fixed"], F["fixed"]), rtol=1e-6)
+    # crack run (platen held): the force at the same number of failed cells (last increment with that count)
+    common = sorted(set(nf["fixed"][:-1]) & set(nf["adaptive"][:-1]) - {0})
+    assert len(common) >= 1
+    last = {k: {c: F[k][np.nonzero(nf[k] == c)[0][-1]] for c in common} for k in F}
+    diff = max(abs(last["adaptive"][c] - last["fixed"][c]) for c in common)
+    assert diff < 0.03 * peak, (diff / peak, common)
+    assert abs(lam["adaptive"][-1] - lam["fixed"][-1]) < 0.05 * lam["fixed"][-1]     # 1.5 % here

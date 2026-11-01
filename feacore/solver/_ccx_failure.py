@@ -31,6 +31,17 @@ Options (``failure`` dict; all but criterion / limit optional):
   max_remove        cells removed per block at most (8), see below. A cell whose removal alone does not
                     converge is kept ("stuck") for STUCK_BLOCKS blocks while other candidates go; if no
                     removal converges the block runs without removal.
+  adaptive_release  false (default): every block removes at most max_remove cells. true: max_remove is the upper
+                    bound of an adaptive cap that starts there, doubles after every converged block that removed
+                    failed cells at its first try, stays after a block that needed a smaller cap, and halves on
+                    non-convergence (the retry ladder), down to 1; a block that removes cells fails fast (ccx may
+                    cut its increment back once, not ~5 times: the released stress acts at once, so smaller
+                    increments do not rescue a removal; converged removals needed at most one cut-back). Blocks that leave
+                    failed cells waiting advance the platen by only 1 / (10 fine_increments), so the cap changes how
+                    the removals are split up, not the travel at which cells fail.
+  release_travel    ramp fraction a block advances while it leaves failed cells waiting (default 0.1 / fine_increments,
+                    1e-3 / fine_increments with adaptive_release: the platen is practically held while a backlog
+                    of failed cells is released, so the travel at which cells fail does not depend on the cap)
   stop_force_ratio  0.01
   stop_force_count  consecutive increments (after the first failure) with force < stop_force_ratio x peak
                     that stop the run (default 1)
@@ -83,15 +94,15 @@ def _split_deck(inp: str):
 
 
 def _block_step(step: list[str], t1: float, period: float, dt: float, remove: np.ndarray,
-                dt_max: float | None = None) -> str:
-    """Step text of one block: automatic incrementation starting at dt, bounded by dt_max (default dt),
-    Dirichlet totals at t1, removals."""
+                dt_max: float | None = None, dt_min_ratio: float = 1e-3) -> str:
+    """Step text of one block: automatic incrementation starting at dt, bounded by dt_max (default dt) and
+    dt_min_ratio x dt_max, Dirichlet totals at t1, removals."""
     dt_max = dt if dt_max is None else dt_max
     out, in_bc, k = [], False, 0
     while k < len(step):
         ln = step[k]
         if ln.startswith("*STATIC"):
-            out += ["*STATIC", f"{fnum(min(dt, period))}, {fnum(period)}, {fnum(dt_max * 1e-3)}, "
+            out += ["*STATIC", f"{fnum(min(dt, period))}, {fnum(period)}, {fnum(dt_max * dt_min_ratio)}, "
                                 f"{fnum(min(dt_max, period))}"]
             if len(remove):
                 out += ["*MODEL CHANGE, TYPE=ELEMENT, REMOVE", id_lines(remove + 1)]
@@ -168,6 +179,16 @@ class _Topology:
         return np.unique(np.concatenate(removed)).astype(np.int64), bool(np.any(joined & supported))
 
 
+def _attempts_adaptive(cap: int):
+    """Adaptive release ladder: the cap halved down to one cell at the full increment (a smaller increment does
+    not help a removal: the released stress acts at once), other single cells, then no removal."""
+    out = []
+    while cap >= 1:
+        out.append((cap, 1.0))
+        cap //= 2
+    return out + [(1, 1.0)] * STUCK_TRIES + [(0, 1.0), (0, 0.25)]
+
+
 def _attempts(max_remove: int):
     """(removal cap, increment scale) per attempt: full size, then smaller increments, then the cap halved
     down to one cell (a staggered release converges where removing many stressed cells at once does not)."""
@@ -229,6 +250,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     n_near = int(fo.get("near_increments", max(n, n_fine // 2)))
     peeq_step, refine_at = float(fo.get("peeq_step", 0.2)), float(fo.get("refine_at", 0.5))
     max_remove = int(fo.get("max_remove", 8))
+    adaptive = bool(fo.get("adaptive_release", False))
+    release_dt = float(fo.get("release_travel", (1e-3 if adaptive else 0.1) / n_fine))
     inc_max = float(fo.get("max_increment", 1.0 / n))                 # ccx increment bound (ramp fraction)
     inc_near = float(fo.get("max_increment_near", 1.0 / n_near))
     stop_ratio, max_blocks = float(fo.get("stop_force_ratio", 0.01)), int(fo.get("max_blocks", 5000))
@@ -254,6 +277,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     history, stuck, prev_cap = [], {}, None
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
     step0, prev_rout, tail, low = 0, None, False, 0
+    rel_cap = max_remove                                # current release cap (adaptive_release)
     ckpt_dir = options.get("checkpoint_dir")
     resume = options.get("resume")
     if resume is not None:
@@ -264,6 +288,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         step0, prev_rout = int(ck["step"]), Path(ck["rout"])
         tail, low = bool(ck.get("tail", False)), int(ck.get("low", 0))
         stuck = {int(c): int(u) for c, u in (ck.get("stuck") or {}).items()}
+        rel_cap = min(max_remove, int(ck.get("release_cap", max_remove)))
         if not prev_rout.exists():
             raise CcxError(f"resume: restart file {prev_rout} is missing")
     while t < t_end - 1e-12 and k < max_blocks:
@@ -275,7 +300,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             hi, inc = 1.0 / n_tail, inc_tail
         dt = float(np.clip(peeq_step * limit / rate, 1.0 / n_fine, hi)) if rate > 0 else hi
         run, errors, plan, tried = None, [], None, set()
-        for attempt, (cap, scale) in enumerate(_attempts(max_remove)):
+        for attempt, (cap, scale) in enumerate(_attempts_adaptive(rel_cap) if adaptive else _attempts(max_remove)):
             if run is None and attempt and cap == 1 and len(plan[1]) and prev_cap == 1:
                 stuck[int(plan[1][0])] = k + STUCK_BLOCKS     # its removal does not converge: keep it for now
             prev_cap = cap
@@ -284,7 +309,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             if key in tried:                            # same removal and increment as an earlier attempt
                 continue
             tried.add(key)
-            ddt = dt if plan[3] == 0 else 0.1 / n_fine     # deferred failures: let the crack run at ~fixed travel
+            ddt = dt if plan[3] == 0 else release_dt       # deferred failures: let the crack run at ~fixed travel
             t1 = min(t_end, t + ddt)
             job = f"b{k:04d}" + ("" if attempt == 0 else f"r{attempt}")
             if k > 0:
@@ -294,7 +319,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             head = model_txt if k == 0 else "*RESTART, READ\n"
             m = max(1, int(np.ceil((t1 - t) / inc - 1e-6)))     # equal increments <= the bound
             d_inc = (t1 - t) / m * scale
-            txt = head + _block_step(step, t1, t1 - t, d_inc, plan[1], d_inc)
+            fast = adaptive and len(plan[1]) > 0    # fail fast: 1 cutback (x 1/4) when cells are removed
+            txt = head + _block_step(step, t1, t1 - t, d_inc, plan[1], d_inc, 0.2 if fast else 1e-3)
             try:
                 run = run_ccx(txt, job=job, workdir=wd, ccx=options.get("ccx"), threads=options.get("threads"),
                               timeout=options.get("timeout"), check=False)
@@ -308,6 +334,11 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             stop = f"no convergence in block {k} (t {t:.6g}): " + "; ".join(errors[:2])
             break
         st, removal, joined, deferred = plan
+        n_take = int(((st == FAILED) & (state != FAILED)).sum())
+        if adaptive and (n_take or cap == 0):     # cap 0: every removal failed, the block ran without one
+            # double after a block whose first try converged; after a halving, start the next block at the cap
+            # that converged (re-trying the failed size every block costs a diverging ccx run each time)
+            rel_cap = (min(max_remove, 2 * cap) if attempt == 0 else cap) if cap else 1
         removed_at[removal] = (history[-1]["step"] if history else step0) + 1
         state[:] = st
         series = [(tt, b) for tt, b in parse_frd_series(run.frd) if "DISP" in b and "STRESS" in b]
@@ -322,6 +353,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             rec = _record(res, i, inc, k, attempt, state, agg, limit, driven, frozen_U,
                           (history[-1]["step"] if history else step0) + 1)
             rec["removed_in_block"], rec["deferred"] = int(len(removal)), int(deferred)
+            rec["release_cap"] = int(cap)
             rec["stuck"] = int(sum(1 for c, u in stuck.items() if u > k and state[c] == ALIVE))
             if series_dir:
                 _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg)
@@ -342,7 +374,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         if ckpt_dir:
             save_checkpoint(ckpt_dir, {
                 "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "tail": tail,
-                "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "rout": str(prev_rout.resolve()),
+                "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "release_cap": rel_cap, "rout": str(prev_rout.resolve()),
                 "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U})
         if not options.get("keep_files"):
             for suf in (".frd", ".dat"):

@@ -19,7 +19,9 @@ Step policy (platen travel per output increment; every converged ccx increment i
   * <= 0.05 mm after that (tail).
   Erosion blocks (one ccx restart step each, failed cells are removed between blocks): <= 0.25 mm, <= 0.06 mm
   near failure, >= 0.02 mm, <= 0.10 mm in the tail; blocks that only release deferred failed cells advance
-  0.002 mm.
+  0.002 mm. Release (--release adaptive, default): the failed cells over the limit are removed highest PEEQ first,
+  up to a cap that starts at 64, doubles (max 64) after every converged block and halves on non-convergence down to
+  1; --release fixed: at most 8 per block (the runs before 2026-10-31 21:10 ET).
 Stop: full separation (no face-connected, supported chain of intact cells joins bottom and top), or force
 < 1 % of peak over 3 consecutive increments after the first failure, or 30 % of the height of travel.
 
@@ -57,8 +59,10 @@ AX = {"x": 0, "y": 1, "z": 2}
 POLICY_MM = {"inc": 0.05, "inc_near": 0.02, "inc_tail": 0.05, "block": 0.25, "block_near": 0.06,
              "block_min": 0.02, "block_tail": 0.10}
 TAIL_RATIO, STOP_RATIO, STOP_COUNT, MAX_CRUSH = 0.6, 0.01, 3, 0.30
+RELEASE = {"adaptive": {"adaptive_release": True, "max_remove": 64}, "fixed": {"max_remove": 8},
+           "fixed-held": {"max_remove": 8, "release_travel": "held"}}   # fixed cap, platen held (comparison)
 COLS = ["step", "platen_travel_mm", "force_N", "n_failed", "n_detached", "max_peeq", "iterations", "block",
-        "retry", "tail", "removed_in_block", "deferred", "stuck", "imbalance_rel", "wall_s"]
+        "retry", "tail", "removed_in_block", "deferred", "stuck", "imbalance_rel", "wall_s", "release_cap"]
 
 
 def _material(path):
@@ -68,7 +72,7 @@ def _material(path):
     return mod.material(path)
 
 
-def failure_options(D: float, limit: float, end_fraction: float) -> dict:
+def failure_options(D: float, limit: float, end_fraction: float, release: str = "adaptive") -> dict:
     mm = lambda v: v * 1e-3 / D                     # noqa: E731  mm of travel -> ramp fraction
     p = POLICY_MM
     return {"criterion": "peeq", "limit": limit, "aggregate": "mean",
@@ -78,7 +82,8 @@ def failure_options(D: float, limit: float, end_fraction: float) -> dict:
             "tail_force_ratio": TAIL_RATIO, "max_increment_tail": mm(p["inc_tail"]),
             "tail_increments": int(round(1.0 / mm(p["block_tail"]))),
             "path_groups": ["top", "bottom"], "stop_force_ratio": STOP_RATIO, "stop_force_count": STOP_COUNT,
-            "end_fraction": end_fraction}
+            "end_fraction": end_fraction, **RELEASE[release]} | (
+        {"release_travel": 1e-3 / int(round(1.0 / mm(p["block_min"])))} if release == "fixed-held" else {})
 
 
 def _driven_value(case: Case) -> np.ndarray:
@@ -157,6 +162,8 @@ def main():
     ap.add_argument("--material", default=str(ROOT / "experiments" / "material" / "alpha_fast_dogbone1.json"))
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--run-id", default=None)
+    ap.add_argument("--release", choices=sorted(RELEASE), default="adaptive",
+                    help="failed-cell release per block: adaptive cap 64 -> x2 / /2 (default) or fixed 8")
     ap.add_argument("--resume", default=None, help="run dir to continue (a new run dir is written)")
     ap.add_argument("--restart-file", default=None, help="parent's last-block .rout (runs without checkpoint)")
     a = ap.parse_args()
@@ -191,7 +198,7 @@ def main():
     H = float(m.X[m.nodes_of("top"), k].mean() - m.X[m.nodes_of("bottom"), k].mean())
     if a.resume:
         D = float(-_driven_value(case)[k])
-        case.analysis.options["failure"] = failure_options(D, limit, min(1.0, MAX_CRUSH * H / D))
+        case.analysis.options["failure"] = failure_options(D, limit, min(1.0, MAX_CRUSH * H / D), a.release)
         ck_dir = parent if (parent / "checkpoint.json").exists() else None
         if ck_dir is not None:
             resume = load_checkpoint(ck_dir)
@@ -208,7 +215,7 @@ def main():
                     analysis=Analysis("elasticity", "3d", order=order, options={
                         "nonlinear": True, "nlgeom": True, "load_factor_max": 1.0,
                         "increments": int(round(1.0 / (POLICY_MM["block"] * 1e-3 / D))),
-                        "failure": failure_options(D, limit, 1.0)}),
+                        "failure": failure_options(D, limit, 1.0, a.release)}),
                     materials={"resin": mat},
                     bcs=[BC("fixed", group="bottom"), BC("displacement", group="top", components=[0, 1, 2], value=val)])
     out.mkdir(parents=True, exist_ok=True)
@@ -216,7 +223,7 @@ def main():
     meta = {"system": a.system, "part": a.part, "axis": axis, "mesh": str(mesh_path), "order": order,
             "height_m": H, "ramp_travel_m": D, "max_travel_m": MAX_CRUSH * H, "threads": a.threads,
             "policy_mm": POLICY_MM, "tail_force_ratio": TAIL_RATIO, "stop_force_ratio": STOP_RATIO,
-            "stop_force_count": STOP_COUNT, "continued_from": str(parent) if parent else None,
+            "stop_force_count": STOP_COUNT, "release": a.release, "continued_from": str(parent) if parent else None,
             "continued_at_step": int(resume["step"]) if resume else None,
             "resume_kind": None if not resume else ("legacy (vtu + csv + rout)" if "legacy_from" in resume
                                                     else "checkpoint"),
@@ -240,7 +247,7 @@ def main():
         row = [rec["step"], rec["lambda"] * D * 1e3, -rec["reaction"][k], rec["n_failed"], rec["n_detached"],
                rec["max_peeq_alive"], rec["iterations"], rec["block"], rec["retry"], int(rec.get("tail", False)),
                rec.get("removed_in_block", 0), rec.get("deferred", 0), rec.get("stuck", 0),
-               rec.get("imbalance_rel"), time.time() - t0]
+               rec.get("imbalance_rel"), time.time() - t0, rec.get("release_cap")]
         rows.append(row)
         w.writerow([f"{v:.6g}" if isinstance(v, float) else v for v in row])
         f.flush()
