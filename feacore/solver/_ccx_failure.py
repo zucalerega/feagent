@@ -39,7 +39,10 @@ Options (``failure`` dict; all but criterion / limit optional):
                     of the max cell PEEQ so that it grows by about peeq_step x limit (default 0.2), clipped to
                     [1 / fine_increments, 1 / increments] of the ramp (fine_increments default 5 x increments)
   near_increments   once a cell has PEEQ >= refine_at x limit (or has failed) the block is at most
-                    1 / near_increments of the ramp (default fine_increments / 2); refine_at default 0.5
+                    1 / near_increments of the ramp (default fine_increments / 2); refine_at default 0.5.
+                    For the other criteria the damage index stands for PEEQ / limit here and in peeq_step
+                    (peeq_tension: the tensile PEEQ, so crushing far from a tensile failure keeps the coarse
+                    bounds)
   max_increment     bound of ccx's automatic increments inside a block (ramp fraction; default
                     1 / increments); max_increment_near the same once failure is near (default
                     1 / near_increments). Every converged ccx increment is an output increment.
@@ -360,6 +363,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         else:       # criterion changed on resume: no stress at hand; the next block end recomputes it
             damage = damage_index(fo, agg_peeq) if crit == "peeq" else np.zeros(model.n_elems)
         t, k, peak, rate = float(ck["t"]), int(ck["block"]), float(ck["peak"]), float(ck.get("rate", 0.0))
+        if ck.get("rate_unit") != "damage":     # older checkpoints: max PEEQ growth per ramp
+            rate /= limit
         step0, prev_rout = int(ck["step"]), Path(ck["rout"])
         tail, low = bool(ck.get("tail", False)), int(ck.get("low", 0))
         stuck = {int(c): int(u) for c, u in (ck.get("stuck") or {}).items()}
@@ -367,14 +372,15 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         if not prev_rout.exists():
             raise CcxError(f"resume: restart file {prev_rout} is missing")
     while t < t_end - 1e-12 and k < max_blocks:
-        pk = agg_peeq[state == ALIVE].max(initial=0.0)
-        near = bool(state.any() or pk >= refine_at * limit
-                    or (crit != "peeq" and damage[state == ALIVE].max(initial=0.0) >= refine_at))
+        # how close the next failure is: max cell PEEQ / limit, or for the other criteria their damage index
+        pk = agg_peeq[state == ALIVE].max(initial=0.0) / limit if crit == "peeq" else \
+            damage[state == ALIVE].max(initial=0.0)
+        near = bool(state.any() or pk >= refine_at)
         hi = 1.0 / (n_near if near else n)
         inc = inc_near if near else inc_max
         if tail:
             hi, inc = 1.0 / n_tail, inc_tail
-        dt = float(np.clip(peeq_step * limit / rate, 1.0 / n_fine, hi)) if rate > 0 else hi
+        dt = float(np.clip(peeq_step / rate, 1.0 / n_fine, hi)) if rate > 0 else hi
         run, errors, plan, tried = None, [], None, set()
         for attempt, (cap, scale) in enumerate(_attempts_adaptive(rel_cap) if adaptive else _attempts(max_remove)):
             if run is None and attempt and cap == 1 and len(plan[1]) and prev_cap == 1:
@@ -448,18 +454,21 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             if options.get("on_increment"):
                 options["on_increment"](rec)
         last = res.increments[-1]
-        pk_before = agg_peeq[state == ALIVE].max(initial=0.0)
+        pk_before = agg_peeq[state == ALIVE].max(initial=0.0) / limit if crit == "peeq" else \
+            damage[state == ALIVE].max(initial=0.0)
         if last.peeq_ip is not None:
             agg_peeq = last.peeq_ip.mean(axis=1) if agg == "mean" else last.peeq_ip.max(axis=1)
         if crit != "peeq":
             damage = damage_index(fo, agg_peeq, model, last.S, peeq_t if crit == "peeq_tension" else None)
-        rate = max(0.0, (agg_peeq[state == ALIVE].max(initial=0.0) - pk_before) / max(last.time - t, 1e-300))
+        pk_after = agg_peeq[state == ALIVE].max(initial=0.0) / limit if crit == "peeq" else \
+            damage[state == ALIVE].max(initial=0.0)
+        rate = max(0.0, (pk_after - pk_before) / max(last.time - t, 1e-300))    # damage (PEEQ / limit) per ramp
         if tail_ratio is not None and state.any() and history[-1]["force"] < float(tail_ratio) * peak:
             tail = True             # crack established: the tail bounds apply from the next block on
         old_rout, prev_rout, t, k = prev_rout, wd / f"{job}.rout", float(last.time), k + 1
         if ckpt_dir:
             save_checkpoint(ckpt_dir, {
-                "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "tail": tail,
+                "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "rate_unit": "damage", "tail": tail,
                 "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "release_cap": rel_cap, "rout": str(prev_rout.resolve()),
                 "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U}
                 | ({"damage": damage, "peeq_t": peeq_t, "criterion_options": {c: fo.get(c) for c in CRIT_KEYS}}
