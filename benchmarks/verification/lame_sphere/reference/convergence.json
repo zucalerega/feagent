@@ -1,0 +1,325 @@
+{
+ "case": "verification/lame_sphere",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 30.0,
+   "n_nodes": 1365,
+   "n_dof": 4095,
+   "solver_cpu_s": 0.20901299999999998,
+   "solver_wall_s": 0.18223351200049365,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.019130312387136264,
+     "error": 0.004341400324653771,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.007151812595296103,
+     "error": 0.0012537633414544218,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 74.34211678647986,
+     "error": 0.040789635010718056,
+     "passed": false,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 21.67860770823797,
+     "error": 0.011668359717771965,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -196379.11017,
+     "error": 0.0001505953133885489,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 0.9468475473608018,
+   "all_within_tolerance": false
+  },
+  {
+   "level": 2,
+   "h": 16.0,
+   "n_nodes": 1510,
+   "n_dof": 4530,
+   "solver_cpu_s": 0.212607,
+   "solver_wall_s": 0.18221430300036445,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.01914930286310581,
+     "error": 0.005338400313054883,
+     "passed": false,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.007132820395674075,
+     "error": 0.0014051446056294846,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 74.99307489928479,
+     "error": 0.049903048589987065,
+     "passed": false,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 22.02643763980313,
+     "error": 0.027900423190812852,
+     "passed": false,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -196379.11294499994,
+     "error": 0.00015060944634720326,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 0.8504630666249611,
+   "all_within_tolerance": false
+  },
+  {
+   "level": 3,
+   "h": 10.0,
+   "n_nodes": 4409,
+   "n_dof": 13227,
+   "solver_cpu_s": 0.898654,
+   "solver_wall_s": 0.7075343470005464,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.019012362232780442,
+     "error": 0.0018509827790268768,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.007141919198321986,
+     "error": 0.00013131223492198266,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 71.04234377631042,
+     "error": 0.005407187131654183,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 21.444252842943026,
+     "error": 0.0007317993373412909,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -196355.46993869997,
+     "error": 3.0196604037017575e-05,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 6.5,
+   "n_nodes": 14373,
+   "n_dof": 43119,
+   "solver_cpu_s": 7.015667,
+   "solver_wall_s": 4.645997251999688,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.019053178891430676,
+     "error": 0.0002918918001104144,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.007142123059290611,
+     "error": 0.0001027716993144516,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 72.66242512684626,
+     "error": 0.017273951775847594,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 21.494730522581293,
+     "error": 0.0030874243871270583,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -196350.4014183,
+     "error": 4.3828416108391e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 4.5,
+   "n_nodes": 37213,
+   "n_dof": 111639,
+   "solver_cpu_s": 44.04732,
+   "solver_wall_s": 27.632164446999923,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "ur_inner": {
+     "value": 0.01904556589015151,
+     "error": 0.0001077907670458955,
+     "passed": true,
+     "failure": null
+    },
+    "ur_outer": {
+     "value": 0.0071428339137734964,
+     "error": 3.2520717104661534e-06,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_inner": {
+     "value": 71.5584063049159,
+     "error": 0.00181768826882265,
+     "passed": true,
+     "failure": null
+    },
+    "hoop_outer": {
+     "value": 21.42069968025449,
+     "error": 0.0003673482547903954,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_x": {
+     "value": -196350.15968727102,
+     "error": 3.1517155897183834e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "ur_inner": {
+   "q_fine": 0.01904556589015151,
+   "monotone": false,
+   "value": 0.01904556589015151,
+   "order": null,
+   "uncertainty": 1.4372373124187238e-05,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "ur_outer": {
+   "q_fine": 0.0071428339137734964,
+   "monotone": true,
+   "value": 0.0071428339137734964,
+   "order": null,
+   "uncertainty": 1.3420023838679778e-06,
+   "method": "finest value (no observed order); GCI Fs=3"
+  },
+  "hoop_inner": {
+   "q_fine": 71.5584063049159,
+   "monotone": false,
+   "value": 71.5584063049159,
+   "order": null,
+   "uncertainty": 3.7402324004941447,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "hoop_outer": {
+   "q_fine": 21.42069968025449,
+   "monotone": false,
+   "value": 21.42069968025449,
+   "order": null,
+   "uncertainty": 0.2508041979052854,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "reaction_x": {
+   "q_fine": -196350.15968727102,
+   "monotone": true,
+   "value": -196350.15968727102,
+   "order": null,
+   "uncertainty": 0.8189445766833163,
+   "method": "finest value (implausible order 7.62); GCI Fs=3"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   4095,
+   4530,
+   13227,
+   43119,
+   111639
+  ],
+  "accuracy": [
+   0.9468,
+   0.8505,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   false,
+   false,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.21,
+   0.21,
+   0.9,
+   7.02,
+   44.05
+  ]
+ }
+}

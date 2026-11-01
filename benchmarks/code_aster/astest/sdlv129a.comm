@@ -1,0 +1,321 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="EXCEPTION"), DEBUG=_F(SDVERI="OUI"))
+
+M = LIRE_MAILLAGE(FORMAT="MED")
+#
+# MAILLAGE, MODELE ET MATERIAU
+#
+M = MODI_MAILLAGE(reuse=M, MAILLAGE=M, INFO=2, ORIE_PEAU=(_F(GROUP_MA_PEAU="SLAT2"),))
+
+MO = AFFE_MODELE(MAILLAGE=M, AFFE=_F(TOUT="OUI", PHENOMENE="MECANIQUE", MODELISATION="3D"))
+
+MAT = DEFI_MATERIAU(ELAS=_F(E=210000.0, NU=0.3, RHO=7.8e-6))
+
+CM = AFFE_MATERIAU(MAILLAGE=M, AFFE=_F(TOUT="OUI", MATER=MAT))
+
+#
+# CONDITIONS AUX LIMITES ET CHARGEMENTS
+#
+CH = AFFE_CHAR_MECA(
+    MODELE=MO,
+    DDL_IMPO=(
+        _F(GROUP_NO="CINT2", DY=0.0),
+        _F(GROUP_NO="NHAUT", DY=0.0),
+        _F(GROUP_MA="SLAT1", DZ=0.0),
+    ),
+    FACE_IMPO=_F(GROUP_MA="SLAT2", DNOR=0.0),
+)
+
+ROTA = AFFE_CHAR_MECA(MODELE=MO, ROTATION=_F(VITESSE=0.5, AXE=(0.0, 1.0, 0.0)))
+#
+# CALCUL DES CONTRAINTES STATIQUES
+#
+RES_STAT = MECA_STATIQUE(
+    MODELE=MO,
+    CHAM_MATER=CM,
+    SOLVEUR=_F(POSTTRAITEMENTS="MINI"),
+    EXCIT=(_F(CHARGE=CH), _F(CHARGE=ROTA)),
+)
+
+RES_STAT = CALC_CHAMP(
+    reuse=RES_STAT, CRITERES=("SIEQ_ELGA", "SIEQ_ELNO"), CONTRAINTE=("SIGM_ELNO"), RESULTAT=RES_STAT
+)
+
+
+TEST_RESU(
+    RESU=_F(
+        NUME_ORDRE=1,
+        RESULTAT=RES_STAT,
+        NOM_CHAM="SIEQ_ELNO",
+        GROUP_NO="N111",
+        NOM_CMP="VMIS_SG",
+        VALE_CALC=307.71251493866,
+        GROUP_MA="M294",
+    )
+)
+
+TEST_RESU(
+    RESU=_F(
+        NUME_ORDRE=1,
+        RESULTAT=RES_STAT,
+        NOM_CHAM="SIEQ_ELNO",
+        GROUP_NO="N111",
+        NOM_CMP="VMIS",
+        VALE_CALC=307.71251493866,
+        GROUP_MA="M294",
+    )
+)
+
+#
+# CALCUL DES CONTRAINTES MODALES
+#
+MER = CALC_MATR_ELEM(OPTION="RIGI_MECA", MODELE=MO, CHARGE=CH, CHAM_MATER=CM)
+
+MEM = CALC_MATR_ELEM(OPTION="MASS_MECA", MODELE=MO, CHARGE=CH, CHAM_MATER=CM)
+
+NU = NUME_DDL(MATR_RIGI=MER)
+
+A = ASSE_MATRICE(MATR_ELEM=MER, NUME_DDL=NU)
+
+B = ASSE_MATRICE(MATR_ELEM=MEM, NUME_DDL=NU)
+
+MODE = CALC_MODES(
+    MATR_RIGI=A, CHAM_MATER=CM, VERI_MODE=_F(SEUIL=1e-05), CALC_FREQ=_F(NMAX_FREQ=5), MATR_MASS=B
+)
+
+
+MODE = CALC_CHAMP(
+    reuse=MODE,
+    CRITERES=("SIEQ_ELGA", "SIEQ_ELNO"),
+    CONTRAINTE=("SIEF_ELGA", "SIGM_ELNO"),
+    RESULTAT=MODE,
+)
+
+
+TEST_RESU(
+    RESU=_F(
+        NUME_MODE=1,
+        RESULTAT=MODE,
+        NOM_CHAM="SIEQ_ELNO",
+        GROUP_NO="N111",
+        NOM_CMP="VMIS_SG",
+        VALE_CALC=9.8002549473086,
+        GROUP_MA="M294",
+    )
+)
+
+TEST_RESU(
+    RESU=_F(
+        NUME_MODE=2,
+        RESULTAT=MODE,
+        NOM_CHAM="SIEQ_ELNO",
+        GROUP_NO="N111",
+        NOM_CMP="VMIS_SG",
+        VALE_CALC=-31.150885035073,
+        GROUP_MA="M294",
+    )
+)
+
+TEST_RESU(
+    RESU=_F(
+        NUME_MODE=1,
+        RESULTAT=MODE,
+        NOM_CHAM="SIEQ_ELNO",
+        GROUP_NO="N111",
+        NOM_CMP="VMIS",
+        VALE_CALC=9.8002549473086,
+        GROUP_MA="M294",
+    )
+)
+
+TEST_RESU(
+    RESU=_F(
+        NUME_MODE=2,
+        RESULTAT=MODE,
+        NOM_CHAM="SIEQ_ELNO",
+        GROUP_NO="N111",
+        NOM_CMP="VMIS",
+        VALE_CALC=31.150885035073,
+        GROUP_MA="M294",
+    )
+)
+
+#
+#
+# CALCUL EN FATIGUE
+#
+F_WOHLER = DEFI_FONCTION(
+    NOM_PARA="SIGM",
+    PROL_DROITE="LINEAIRE",
+    PROL_GAUCHE="LINEAIRE",
+    VALE=(500.0, 1.0e6, 1000.0, 0.0),
+    TITRE="FONCTION DE WOHLER",
+)
+MATE = DEFI_MATERIAU(FATIGUE=_F(WOHLER=F_WOHLER), RCCM=_F(SU=1000))
+# MODE 1 SEUL (AUX NOEUDS, GOODMAN)
+D_MOD1 = CALC_FATIGUE(
+    TYPE_CALCUL="FATIGUE_VIBR",
+    OPTION="DOMA_ELNO_SIGM",
+    HISTOIRE=_F(EQUI_GD="VMIS_SG", RESULTAT=RES_STAT, MODE_MECA=MODE, NUME_MODE=1, FACT_PARTICI=1),
+    DOMMAGE="WOHLER",
+    CORR_SIGM_MOYE="GOODMAN",
+    MATER=MATE,
+    INFO=1,
+)
+
+TEST_RESU(
+    CHAM_ELEM=_F(
+        GROUP_NO="N111",
+        REFERENCE="ANALYTIQUE",
+        NOM_CMP="DOMA",
+        GROUP_MA="M294",
+        CHAM_GD=D_MOD1,
+        VALE_CALC=35.319871206588,
+        VALE_REFE=35.32,
+    )
+)
+
+TEST_RESU(CHAM_ELEM=_F(NOM_CMP="DOMA", TYPE_TEST="MIN", CHAM_GD=D_MOD1, VALE_CALC=21.138430122629))
+
+# MODE 1 SEUL (AUX NOEUDS, GERBER)
+D_MOD1b = CALC_FATIGUE(
+    TYPE_CALCUL="FATIGUE_VIBR",
+    OPTION="DOMA_ELNO_SIGM",
+    HISTOIRE=_F(EQUI_GD="VMIS_SG", RESULTAT=RES_STAT, MODE_MECA=MODE, NUME_MODE=1, FACT_PARTICI=1),
+    DOMMAGE="WOHLER",
+    CORR_SIGM_MOYE="GERBER",
+    MATER=MATE,
+    INFO=1,
+)
+
+TEST_RESU(
+    CHAM_ELEM=_F(
+        GROUP_NO="N111",
+        REFERENCE="ANALYTIQUE",
+        NOM_CMP="DOMA",
+        GROUP_MA="M294",
+        CHAM_GD=D_MOD1b,
+        VALE_CALC=46.188237602877,
+        VALE_REFE=46.18,
+    )
+)
+
+TEST_RESU(CHAM_ELEM=_F(NOM_CMP="DOMA", TYPE_TEST="MIN", CHAM_GD=D_MOD1b, VALE_CALC=27.712900759549))
+
+# MODE 1 SEUL (AUX PTS DE GAUSS, GERBER)
+D_MOD1G = CALC_FATIGUE(
+    TYPE_CALCUL="FATIGUE_VIBR",
+    OPTION="DOMA_ELGA_SIGM",
+    HISTOIRE=_F(EQUI_GD="VMIS_SG", RESULTAT=RES_STAT, MODE_MECA=MODE, NUME_MODE=1, FACT_PARTICI=1),
+    DOMMAGE="WOHLER",
+    CORR_SIGM_MOYE="GERBER",
+    MATER=MATE,
+    INFO=1,
+)
+
+
+# (MODE 1) + 0,5 * (MODE 2) (AUX NOEUDS, GOODMAN)
+D_MOD12 = CALC_FATIGUE(
+    TYPE_CALCUL="FATIGUE_VIBR",
+    OPTION="DOMA_ELNO_SIGM",
+    HISTOIRE=_F(
+        EQUI_GD="VMIS_SG",
+        RESULTAT=RES_STAT,
+        MODE_MECA=MODE,
+        NUME_MODE=(1, 2),
+        FACT_PARTICI=(1, 0.5),
+    ),
+    DOMMAGE="WOHLER",
+    CORR_SIGM_MOYE="GOODMAN",
+    MATER=MATE,
+    INFO=1,
+)
+
+
+TEST_RESU(
+    CHAM_ELEM=_F(
+        GROUP_NO="N111",
+        REFERENCE="ANALYTIQUE",
+        NOM_CMP="DOMA",
+        GROUP_MA="M294",
+        CHAM_GD=D_MOD12,
+        VALE_CALC=13.640757776617,
+        VALE_REFE=13.64,
+    )
+)
+
+TDMG12 = POST_RELEVE_T(
+    ACTION=_F(
+        INTITULE="(MODE 1) + 0,5 * (MODE 2)", CHAM_GD=D_MOD12, TOUT_CMP="OUI", OPERATION="EXTREMA"
+    )
+)
+
+TEST_TABLE(
+    VALE_CALC=6.6633585061017,
+    NOM_PARA="VALE",
+    TABLE=TDMG12,
+    FILTRE=_F(NOM_PARA="EXTREMA", VALE_K="MIN"),
+)
+
+# (MODE 1) + 0,5 * (MODE 2) (AUX NOEUDS, GERBER)
+D_MOD12b = CALC_FATIGUE(
+    TYPE_CALCUL="FATIGUE_VIBR",
+    OPTION="DOMA_ELNO_SIGM",
+    HISTOIRE=_F(
+        EQUI_GD="VMIS_SG",
+        RESULTAT=RES_STAT,
+        MODE_MECA=MODE,
+        NUME_MODE=(1, 2),
+        FACT_PARTICI=(1, 0.5),
+    ),
+    DOMMAGE="WOHLER",
+    CORR_SIGM_MOYE="GERBER",
+    MATER=MATE,
+    INFO=1,
+)
+
+
+TEST_RESU(
+    CHAM_ELEM=_F(
+        GROUP_NO="N111",
+        REFERENCE="ANALYTIQUE",
+        NOM_CMP="DOMA",
+        GROUP_MA="M294",
+        CHAM_GD=D_MOD12b,
+        VALE_CALC=17.838189657729,
+        VALE_REFE=17.83,
+    )
+)
+
+TDMG12b = POST_RELEVE_T(
+    ACTION=_F(
+        INTITULE="(MODE 1) + 0,5 * (MODE 2)", CHAM_GD=D_MOD12b, TOUT_CMP="OUI", OPERATION="EXTREMA"
+    )
+)
+
+TEST_TABLE(
+    VALE_CALC=8.7357950393493,
+    NOM_PARA="VALE",
+    TABLE=TDMG12b,
+    FILTRE=_F(NOM_PARA="EXTREMA", VALE_K="MIN"),
+)
+
+FIN()

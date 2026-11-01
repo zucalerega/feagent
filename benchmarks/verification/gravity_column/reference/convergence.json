@@ -1,0 +1,249 @@
+{
+ "case": "verification/gravity_column",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 50.0,
+   "n_nodes": 464,
+   "n_dof": 1392,
+   "solver_cpu_s": 0.058071,
+   "solver_wall_s": 0.061137430000599124,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "uz_top": {
+     "value": -0.00467496,
+     "error": 0.000500993630573137,
+     "passed": true,
+     "failure": null
+    },
+    "szz_mid": {
+     "value": -1.96248,
+     "error": 1.0191082802727676e-05,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 9734.83483,
+     "error": 0.007914921783439697,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 2,
+   "h": 25.0,
+   "n_nodes": 999,
+   "n_dof": 2997,
+   "solver_cpu_s": 0.132359,
+   "solver_wall_s": 0.12153595800009498,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "uz_top": {
+     "value": -0.004674956066311311,
+     "error": 0.0005001517710830028,
+     "passed": true,
+     "failure": null
+    },
+    "szz_mid": {
+     "value": -1.9624799999999998,
+     "error": 1.019108280284082e-05,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 9759.147829,
+     "error": 0.005437163923567109,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 15.0,
+   "n_nodes": 4416,
+   "n_dof": 13248,
+   "solver_cpu_s": 0.762896,
+   "solver_wall_s": 0.6270916000003126,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "uz_top": {
+     "value": -0.004674952028123412,
+     "error": 0.000499287547430807,
+     "passed": true,
+     "failure": null
+    },
+    "szz_mid": {
+     "value": -1.9624800000000004,
+     "error": 1.0191082802501388e-05,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 9773.0262683,
+     "error": 0.004022800682802724,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 10.0,
+   "n_nodes": 11204,
+   "n_dof": 33612,
+   "solver_cpu_s": 2.264073,
+   "solver_wall_s": 1.7174684940000589,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "uz_top": {
+     "value": -0.004674956736710117,
+     "error": 0.0005002952449675804,
+     "passed": true,
+     "failure": null
+    },
+    "szz_mid": {
+     "value": -1.9624802325048012,
+     "error": 1.0072609018681946e-05,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 9780.788866659,
+     "error": 0.0032317078564077636,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 7.0,
+   "n_nodes": 29090,
+   "n_dof": 87270,
+   "solver_cpu_s": 11.429411,
+   "solver_wall_s": 7.738596764999784,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "uz_top": {
+     "value": -0.004674954826385465,
+     "error": 0.0004998864111567197,
+     "passed": true,
+     "failure": null
+    },
+    "szz_mid": {
+     "value": -1.9624788417343924,
+     "error": 1.0781281838471927e-05,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 9791.12081782,
+     "error": 0.002178770158471573,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "uz_top": {
+   "q_fine": -0.004674954826385465,
+   "monotone": false,
+   "value": -0.004674954826385465,
+   "order": null,
+   "uncertainty": 3.589949245272431e-09,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "szz_mid": {
+   "q_fine": -1.9624788417343924,
+   "monotone": false,
+   "value": -1.9624788417343924,
+   "order": null,
+   "uncertainty": 4.6929162327292174e-06,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  },
+  "reaction_z": {
+   "q_fine": 9791.12081782,
+   "monotone": true,
+   "value": 9791.12081782,
+   "order": null,
+   "uncertainty": 34.86339730202772,
+   "method": "finest value (no observed order); GCI Fs=3"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   1392,
+   2997,
+   13248,
+   33612,
+   87270
+  ],
+  "accuracy": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.06,
+   0.13,
+   0.76,
+   2.26,
+   11.43
+  ]
+ }
+}

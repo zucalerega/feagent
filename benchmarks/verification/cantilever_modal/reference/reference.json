@@ -1,0 +1,72 @@
+{
+ "id": "verification/cantilever_modal",
+ "volume": 39999.99999999999,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -1e-07,
+  -5.0000001,
+  -10.0000001,
+  200.0000001,
+  5.0000001,
+  10.0000001
+ ],
+ "n_cad_faces": 6,
+ "qois": [
+  {
+   "id": "f1",
+   "kind": "frequency",
+   "mode": 1,
+   "reference": 209.36944068439885,
+   "tolerance": {
+    "rel": 0.01
+   },
+   "reference_type": "numerical",
+   "provenance": "Richardson extrapolation of the reference pipeline",
+   "closed_form": {
+    "euler_bernoulli": 208.87914861102007
+   },
+   "description": "first natural frequency [Hz] (bending in y)",
+   "weight": 1.0,
+   "gate": false,
+   "uncertainty": 0.07119914450141848,
+   "richardson": {
+    "q_fine": 209.4264,
+    "monotone": true,
+    "order": 1.786380290408775,
+    "uncertainty": 0.07119914450141848,
+    "method": "richardson"
+   }
+  },
+  {
+   "id": "f2",
+   "kind": "frequency",
+   "mode": 2,
+   "reference": 415.6723168948375,
+   "tolerance": {
+    "rel": 0.01
+   },
+   "reference_type": "numerical",
+   "provenance": "Richardson extrapolation of the reference pipeline",
+   "closed_form": {
+    "euler_bernoulli": 417.75829722204014
+   },
+   "description": "second natural frequency [Hz] (bending in z)",
+   "weight": 1.0,
+   "gate": false,
+   "uncertainty": 0.11122888145314261,
+   "richardson": {
+    "q_fine": 415.7613,
+    "monotone": true,
+    "order": 1.6827686582762658,
+    "uncertainty": 0.11122888145314261,
+    "method": "richardson"
+   }
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 1,
+  "reference_n_dof": 2865,
+  "reference_solver_cpu_s": 0.191037
+ }
+}

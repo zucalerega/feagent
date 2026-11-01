@@ -101,3 +101,21 @@ def test_read_msh_groups(parts_dir, tmp_path):
     assert m.volume_groups["domain"]
     assert m.order == 1
     assert len(m.tet_tags) == len(m.tets) == len(m.tet_volume)
+
+
+def test_numpy_values_serialize_to_json():
+    bb = ((np.float64(0), np.float64(0), np.float64(0)), (np.float64(1), np.float64(2), np.float64(3)))
+    face = FaceInfo(tag=np.int64(1), kind="plane", area=np.float64(2.0),
+                    center=(np.float64(0.5), np.float64(1.0), np.float64(1.5)), bbox=bb,
+                    normal=np.array([0.0, 0.0, 1.0]), radius=None, axis=None, axis_point=None,
+                    concave=np.bool_(False), angle_span=None, volumes=[np.int64(1)], edges=[],
+                    neighbors=[np.int64(2)], thickness=np.float64(0.5))
+    geo = GeometryModel(source="a.step", units="mm", bbox=bb, diag=np.float64(3.7),
+                        ref_size=np.float64(1.0), volumes=[], faces=[face], edges=[],
+                        features=[Feature("hole", [np.int64(1)], {"r": np.float64(1.0)})],
+                        hazards=[])
+    d = json.loads(json.dumps(geo.to_dict()))
+    g2 = GeometryModel.from_dict(d)
+    assert g2.faces[0].tag == 1 and g2.faces[0].normal == (0.0, 0.0, 1.0)
+    assert g2.faces[0].concave is False and g2.features[0].params == {"r": 1.0}
+    assert g2.bbox == ((0.0, 0.0, 0.0), (1.0, 2.0, 3.0))

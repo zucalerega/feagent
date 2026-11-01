@@ -1,0 +1,1233 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# Fichier de commande onde plane inclinee (sur un par.ede de 200 par 400)
+
+DEBUT(CODE="OUI")
+
+mail1 = LIRE_MAILLAGE()
+
+mail = CREA_MAILLAGE(MAILLAGE=mail1, CREA_POI1=(_F(NOM_GROUP_MA="PLATE", GROUP_MA=("SUG", "SUD")),))
+
+mail = MODI_MAILLAGE(
+    reuse=mail,
+    MAILLAGE=mail,
+    ORIE_PEAU=_F(GROUP_MA_PEAU=("SULA", "SUB"), GROUP_MA_INTERNE=("VOLTOT",)),
+)
+# IMPR_RESU(RESU=_F(MAILLAGE=mail), FORMAT='ASTER', UNITE=8)
+
+
+# parametre du sol et determination des parametre du modele d'interaction sol-structure
+Esol = 30000000000
+Nusol = 0.25
+Msol = 2450.0
+
+G = Esol / (2.0 * (1.0 + Nusol))
+Vs = (G / Msol) ** 0.5
+
+E_ed = Esol * (1.0 - Nusol) / ((1.0 + Nusol) * (1.0 - 2.0 * Nusol))
+Vp = (E_ed / Msol) ** 0.5
+
+
+# parametres materiaux du modele
+
+sol = DEFI_MATERIAU(ELAS=_F(E=Esol, NU=Nusol, RHO=Msol))
+
+# ------------------------------------------------------------
+# Définition des chargements sur les bords
+# ------------------------------------------------------------
+
+from math import *
+
+# Coordonnées du point de départ de l'onde.
+z0 = -200.0
+y0 = 0.0
+x0 = 0.0
+
+# Angle d'incidence par rapport à la verticale de propagation de l'onde (0=vertical)
+a = 21.0
+
+a2 = radians(a)
+cosa = cos(a2)
+sina = sin(a2)
+
+# Longueur du modèle en direction X
+Lt = 400.0
+
+# Sollicitation en acceleration
+
+LINST = DEFI_LIST_REEL(DEBUT=0.0, INTERVALLE=_F(JUSQU_A=0.3, PAS=0.002))  # 1,
+
+acce_0 = (
+    DEFI_FONCTION(
+        NOM_RESU="ACCE",
+        NOM_PARA="INST",
+        PROL_GAUCHE="CONSTANT",
+        PROL_DROITE="CONSTANT",
+        VALE=(
+            0,
+            0,
+            0.014,
+            0,
+            0.016,
+            0.0117113321616078,
+            0.018,
+            0.0234226643232156,
+            0.02,
+            0.0468453286464312,
+            0.022,
+            0.0936906572928623,
+            0.024,
+            0.187381314585725,
+            0.026,
+            0.368124552684678,
+            0.028,
+            0.535826794978997,
+            0.03,
+            0.684547105928689,
+            0.032,
+            0.809016994374947,
+            0.034,
+            0.90482705246602,
+            0.036,
+            0.968583161128631,
+            0.038,
+            1.0,
+            0.04,
+            0.992114701314478,
+            0.042,
+            0.951056516295154,
+            0.044,
+            0.876306680043864,
+            0.046,
+            0.770513242775789,
+            0.048,
+            0.63742398974869,
+            0.05,
+            0.481753674101716,
+            0.052,
+            0.309016994374948,
+            0.054,
+            0.125333233564304,
+            0.056,
+            -0.0627905195293133,
+            0.058,
+            -0.248689887164854,
+            0.06,
+            -0.425779291565073,
+            0.062,
+            -0.587785252292473,
+            0.064,
+            -0.728968627421412,
+            0.066,
+            -0.844327925502015,
+            0.068,
+            -0.929776485888251,
+            0.07,
+            -0.982287250728689,
+            0.072,
+            -1,
+            0.074,
+            -0.982287250728689,
+            0.076,
+            -0.929776485888252,
+            0.078,
+            -0.844327925502016,
+            0.08,
+            -0.728968627421412,
+            0.082,
+            -0.587785252292473,
+            0.084,
+            -0.425779291565073,
+            0.086,
+            -0.248689887164854,
+            0.088,
+            -0.124344943582427,
+            0.09,
+            -0.0621724717912136,
+            0.092,
+            -0.0310862358956068,
+            0.094,
+            -0.0155431179478034,
+            0.096,
+            0,
+        ),
+    ),
+)
+
+
+acce_1 = CALC_FONCTION(COMB=_F(FONCTION=acce_0, COEF=1.0), LIST_PARA=LINST)
+
+
+vite_1 = CALC_FONCTION(INTEGRE=_F(FONCTION=acce_1))
+depl_1 = CALC_FONCTION(INTEGRE=_F(FONCTION=vite_1))
+
+CHMAT = AFFE_MATERIAU(
+    MAILLAGE=mail,
+    AFFE=(_F(GROUP_MA=("VOLG", "VOLD"), MATER=sol), _F(GROUP_MA=("SULA", "SUB"), MATER=sol)),
+)
+
+MATN = DEFI_MATERIAU(ELAS=_F(E=0.001e0, NU=Nusol, RHO=0.0001, AMOR_HYST=0.0))
+
+CHMATB = AFFE_MATERIAU(
+    MAILLAGE=mail, AFFE=(_F(TOUT="OUI", MATER=MATN), _F(GROUP_MA=("SUG", "SUD"), MATER=sol))
+)
+
+
+# ------------------------------------------------------------
+# Définition des modèles
+# ------------------------------------------------------------
+
+# Modèle avec surface libre
+MODELE = AFFE_MODELE(
+    MAILLAGE=mail,
+    AFFE=(
+        _F(GROUP_MA=("VOLG", "VOLD"), PHENOMENE="MECANIQUE", MODELISATION="3D"),
+        _F(GROUP_MA="PLATE", PHENOMENE="MECANIQUE", MODELISATION="DIS_T"),
+        _F(GROUP_MA=("SUG", "SUD", "SUB"), PHENOMENE="MECANIQUE", MODELISATION="3D_ABSO"),
+    ),
+)
+
+LIAISON = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    LIAISON_GROUP=(
+        _F(
+            GROUP_NO_1="SUF",
+            GROUP_NO_2="SUT",
+            DDL_1=("DX",),
+            DDL_2=("DX",),
+            COEF_MULT_1=1.0,
+            COEF_MULT_2=-1.0,
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO_1="SUF",
+            GROUP_NO_2="SUT",
+            DDL_1=("DY",),
+            DDL_2=("DY",),
+            COEF_MULT_1=1.0,
+            COEF_MULT_2=-1.0,
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO_1="SUF",
+            GROUP_NO_2="SUT",
+            DDL_1=("DZ",),
+            DDL_2=("DZ",),
+            COEF_MULT_1=1.0,
+            COEF_MULT_2=-1.0,
+            COEF_IMPO=0.0,
+        ),
+    ),
+)
+
+ELEM = AFFE_CARA_ELEM(
+    MODELE=MODELE, DISCRET=(_F(GROUP_MA="PLATE", REPERE="GLOBAL", CARA="M_T_D_N", VALE=(0.0e10,)),)
+)
+
+
+ASSEMBLAGE(
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    CHARGE=LIAISON,
+    CARA_ELEM=ELEM,
+    NUME_DDL=CO("NUMEDDL"),
+    MATR_ASSE=(
+        _F(MATRICE=CO("RIGI"), OPTION="RIGI_MECA"),
+        _F(MATRICE=CO("MASSE"), OPTION="MASS_MECA"),
+        _F(MATRICE=CO("AMOR"), OPTION="AMOR_MECA"),
+    ),
+)
+
+ASSEMBLAGE(
+    MODELE=MODELE,
+    CHAM_MATER=CHMATB,
+    CHARGE=LIAISON,
+    CARA_ELEM=ELEM,
+    NUME_DDL=CO("NUMEDDLB"),
+    MATR_ASSE=(
+        _F(MATRICE=CO("RIGIB"), OPTION="RIGI_MECA"),
+        _F(MATRICE=CO("MASSEB"), OPTION="MASS_MECA"),
+        _F(MATRICE=CO("AMORB"), OPTION="AMOR_MECA"),
+    ),
+)
+
+ELEM2 = AFFE_CARA_ELEM(
+    MODELE=MODELE, DISCRET=(_F(GROUP_MA="PLATE", REPERE="GLOBAL", CARA="M_T_D_N", VALE=(1.0e13,)),)
+)
+
+ASSEMBLAGE(
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    CARA_ELEM=ELEM2,
+    CHARGE=LIAISON,
+    NUME_DDL=CO("NUMEDDL2"),
+    MATR_ASSE=(
+        _F(MATRICE=CO("RIGI2"), OPTION="RIGI_MECA"),
+        _F(MATRICE=CO("MASSE2"), OPTION="MASS_MECA"),
+        _F(MATRICE=CO("AMOR2"), OPTION="AMOR_MECA"),
+    ),
+)
+
+
+# Chargement P incident
+ONDEP = AFFE_CHAR_MECA_F(
+    MODELE=MODELE,
+    ONDE_PLANE=_F(
+        DIRECTION=(sina, 0.000, cosa),
+        TYPE_ONDE="P",
+        FONC_SIGNAL=vite_1,
+        COOR_SOURCE=(x0, y0, z0),
+        DEPL_IMPO=depl_1,
+        GROUP_MA=("SUB", "SUD", "SUG"),
+    ),
+)
+
+ONDEP0 = AFFE_CHAR_MECA_F(
+    MODELE=MODELE,
+    ONDE_PLANE=_F(
+        DIRECTION=(sina, 0.000, cosa),
+        TYPE_ONDE="P",
+        FONC_SIGNAL=vite_1,
+        COOR_SOURCE=(x0, y0, z0),
+        DEPL_IMPO=depl_1,
+        GROUP_MA=("SUB"),
+    ),
+)
+
+
+# onde SV
+ONDESV = AFFE_CHAR_MECA_F(
+    MODELE=MODELE,
+    ONDE_PLANE=_F(
+        DIRECTION=(sina, 0.000, cosa),
+        TYPE_ONDE="SV",
+        FONC_SIGNAL=vite_1,
+        COOR_SOURCE=(x0, y0, z0),
+        DEPL_IMPO=depl_1,
+        GROUP_MA=("SUG", "SUD", "SUB"),
+    ),
+)
+
+ONDESV0 = AFFE_CHAR_MECA_F(
+    MODELE=MODELE,
+    ONDE_PLANE=_F(
+        DIRECTION=(sina, 0.000, cosa),
+        TYPE_ONDE="SV",
+        FONC_SIGNAL=vite_1,
+        COOR_SOURCE=(x0, y0, z0),
+        DEPL_IMPO=depl_1,
+        GROUP_MA=("SUB",),
+    ),
+)
+
+# Résultats sans ondes réfléchies
+ResuP = DYNA_VIBRA(
+    BASE_CALCUL="PHYS",
+    TYPE_CALCUL="TRAN",
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    MATR_MASS=MASSE,
+    MATR_RIGI=RIGI,
+    MATR_AMOR=AMOR,
+    SCHEMA_TEMPS=_F(SCHEMA="NEWMARK"),
+    INCREMENT=_F(LIST_INST=LINST),
+    ARCHIVAGE=_F(LIST_INST=LINST),
+    EXCIT=(_F(CHARGE=ONDEP),),
+)
+
+FX1 = FORMULE(NOM_PARA=("X", "Y", "Z"), VALE="X-Lt/2.", Lt=Lt)
+FX2 = FORMULE(NOM_PARA=("X", "Y", "Z"), VALE="X+Lt/2.", Lt=Lt)
+
+FY = FORMULE(NOM_PARA=("X", "Y", "Z"), VALE="Y")
+FZ = FORMULE(NOM_PARA=("X", "Y", "Z"), VALE="Z")
+
+XX1 = PROJ_CHAMP(
+    RESULTAT=ResuP,
+    METHODE="COLLOCATION",
+    NOM_CHAM=("DEPL", "VITE", "ACCE"),  #'FORC_NODA'),
+    MODELE_1=MODELE,
+    MODELE_2=MODELE,
+    VIS_A_VIS=(
+        _F(GROUP_MA_2="SUD", GROUP_MA_1="VOLD", CAS_FIGURE="3D", TRANSF_GEOM_2=(FX1, FY, FZ)),
+    ),
+    PROL_ZERO="OUI",
+    LIST_INST=LINST,
+)
+
+XX2 = PROJ_CHAMP(
+    RESULTAT=ResuP,
+    METHODE="COLLOCATION",
+    NOM_CHAM=("DEPL", "VITE", "ACCE"),  #'FORC_NODA'),
+    MODELE_1=MODELE,
+    MODELE_2=MODELE,
+    VIS_A_VIS=(
+        _F(GROUP_MA_2="SUG", GROUP_MA_1="VOLG", CAS_FIGURE="3D", TRANSF_GEOM_2=(FX2, FY, FZ)),
+    ),
+    PROL_ZERO="OUI",
+    LIST_INST=LINST,
+)
+
+EVOCH1A = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="DYNA_TRANS",
+    CONV_RESU=_F(
+        COEF=1.0e13,  # ,
+        NOM_CHAM_INIT="ACCE",
+        RESU_INIT=XX1,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+    ),
+)
+EVOCH1 = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="EVOL_CHAR",  #
+    CONV_RESU=_F(
+        COEF=1.0,  # 1.E13, #,
+        NOM_CHAM_INIT="DEPL",
+        RESU_INIT=EVOCH1A,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+        GROUP_NO_INTERF="SUD",
+        COOR_REFE=(Lt / 2.0, 0.0, z0),
+        VITE_ONDE=(Vp / sina),
+        DIRECTION=(1.0, 0.0, 0.0),
+    ),
+)
+
+EVOLB1 = AFFE_CHAR_MECA(MODELE=MODELE, EVOL_CHAR=EVOCH1)
+
+EVOCH2A = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="DYNA_TRANS",  #'EVOL_CHAR', #
+    CONV_RESU=_F(
+        COEF=1.0e13,  # ,
+        NOM_CHAM_INIT="ACCE",
+        RESU_INIT=XX2,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+    ),
+)
+
+EVOCH2 = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="EVOL_CHAR",  #
+    CONV_RESU=_F(
+        COEF=1.0,  # 1.E13, #,
+        NOM_CHAM_INIT="DEPL",
+        RESU_INIT=EVOCH2A,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+        GROUP_NO_INTERF="SUG",
+        COOR_REFE=(Lt / 2.0, 0.0, z0),
+        VITE_ONDE=(Vp / sina),
+        DIRECTION=(1.0, 0.0, 0.0),
+    ),
+)
+
+
+EVOLB2 = AFFE_CHAR_MECA(MODELE=MODELE, EVOL_CHAR=EVOCH2)
+
+# Résultat avec ondes réfléchies de cisaillement et de compression (selon théorie)
+ResuP0 = DYNA_VIBRA(
+    BASE_CALCUL="PHYS",
+    TYPE_CALCUL="TRAN",
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    CARA_ELEM=ELEM2,
+    MATR_MASS=MASSE2,
+    MATR_RIGI=RIGI2,
+    MATR_AMOR=AMOR2,
+    SCHEMA_TEMPS=_F(SCHEMA="NEWMARK"),
+    INCREMENT=_F(LIST_INST=LINST),
+    ARCHIVAGE=_F(LIST_INST=LINST),
+    EXCIT=(_F(CHARGE=ONDEP0), _F(CHARGE=EVOLB1), _F(CHARGE=EVOLB2)),
+)
+
+
+# On recupère les fonctions de deplacement X et Z aux points de post-traitement
+
+accxc = CALC_FONCTION(COMB=_F(FONCTION=acce_1, COEF=1.0), LIST_PARA=LINST)
+
+
+azNGHP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMHP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDHP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNGBP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMBP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDBP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+
+axNGHP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNMHP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNDHP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNGBP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNMBP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNDBP = RECU_FONCTION(
+    RESULTAT=ResuP0,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+# On recompose la composante de l'onde P --> A_p = Ax*sina + Az*cosa
+
+APF_NGH = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNGHP(INST)*sina+azNGHP(INST)*cosa",
+    sina=sina,
+    cosa=cosa,
+    axNGHP=axNGHP,
+    azNGHP=azNGHP,
+)
+
+AP_NGH = CALC_FONC_INTERP(
+    FONCTION=APF_NGH,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+APF_NMH = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNMHP(INST)*sina+azNMHP(INST)*cosa",
+    sina=sina,
+    cosa=cosa,
+    axNMHP=axNMHP,
+    azNMHP=azNMHP,
+)
+
+AP_NMH = CALC_FONC_INTERP(
+    FONCTION=APF_NMH,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+APF_NDH = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNDHP(INST)*sina+azNDHP(INST)*cosa",
+    sina=sina,
+    cosa=cosa,
+    axNDHP=axNDHP,
+    azNDHP=azNDHP,
+)
+
+AP_NDH = CALC_FONC_INTERP(
+    FONCTION=APF_NDH,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+APF_NGB = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNGBP(INST)*sina+azNGBP(INST)*cosa",
+    sina=sina,
+    cosa=cosa,
+    axNGBP=axNGBP,
+    azNGBP=azNGBP,
+)
+
+AP_NGB = CALC_FONC_INTERP(
+    FONCTION=APF_NGB,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+APF_NMB = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNMBP(INST)*sina+azNMBP(INST)*cosa",
+    sina=sina,
+    cosa=cosa,
+    axNMBP=axNMBP,
+    azNMBP=azNMBP,
+)
+
+AP_NMB = CALC_FONC_INTERP(
+    FONCTION=APF_NMB,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+APF_NDB = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNDBP(INST)*sina+azNDBP(INST)*cosa",
+    sina=sina,
+    cosa=cosa,
+    axNDBP=axNDBP,
+    azNDBP=azNDBP,
+)
+
+AP_NDB = CALC_FONC_INTERP(
+    FONCTION=APF_NDB,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+TEST_FONCTION(
+    VALEUR=(
+        _F(
+            VALE_CALC=0.99144369183902,
+            VALE_REFE=1.0,
+            PRECISION=1.1e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.038,
+            FONCTION=AP_NGB,
+        ),
+        _F(
+            VALE_CALC=0.99881237539670,
+            VALE_REFE=1.0,
+            PRECISION=3.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.058,
+            FONCTION=AP_NMB,
+        ),
+        _F(
+            VALE_CALC=0.99881236254586,
+            VALE_REFE=1.0,
+            PRECISION=3.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.076,
+            FONCTION=AP_NDB,
+        ),
+        _F(
+            VALE_CALC=1.993126492816,
+            VALE_REFE=2.0,
+            PRECISION=0.5e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.088,
+            FONCTION=AP_NGH,
+        ),
+        _F(
+            VALE_CALC=1.966849907512,
+            VALE_REFE=2.0,
+            PRECISION=1.8e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.106,
+            FONCTION=AP_NMH,
+        ),
+        _F(
+            VALE_CALC=1.989474974413,
+            VALE_REFE=2.0,
+            PRECISION=7.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.126,
+            FONCTION=AP_NDH,
+        ),
+    )
+)
+
+ResuS = DYNA_VIBRA(
+    BASE_CALCUL="PHYS",
+    TYPE_CALCUL="TRAN",
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    MATR_MASS=MASSE,
+    MATR_RIGI=RIGI,
+    MATR_AMOR=AMOR,
+    SCHEMA_TEMPS=_F(SCHEMA="NEWMARK"),
+    INCREMENT=_F(LIST_INST=LINST),
+    ARCHIVAGE=_F(LIST_INST=LINST),
+    EXCIT=(_F(CHARGE=ONDESV),),
+)
+
+
+XX1S = PROJ_CHAMP(
+    RESULTAT=ResuS,
+    METHODE="COLLOCATION",
+    NOM_CHAM=("DEPL", "VITE", "ACCE"),  #'FORC_NODA'),
+    MODELE_1=MODELE,
+    MODELE_2=MODELE,
+    VIS_A_VIS=(
+        _F(GROUP_MA_2="SUD", GROUP_MA_1="VOLD", CAS_FIGURE="3D", TRANSF_GEOM_2=(FX1, FY, FZ)),
+    ),
+    PROL_ZERO="OUI",
+    LIST_INST=LINST,
+)
+
+XX2S = PROJ_CHAMP(
+    RESULTAT=ResuS,
+    METHODE="COLLOCATION",
+    NOM_CHAM=("DEPL", "VITE", "ACCE"),  #'FORC_NODA'),
+    MODELE_1=MODELE,
+    MODELE_2=MODELE,
+    VIS_A_VIS=(
+        _F(GROUP_MA_2="SUG", GROUP_MA_1="VOLG", CAS_FIGURE="3D", TRANSF_GEOM_2=(FX2, FY, FZ)),
+    ),
+    PROL_ZERO="OUI",
+    LIST_INST=LINST,
+)
+
+EVOCH1AS = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="DYNA_TRANS",
+    CONV_RESU=_F(
+        COEF=1.0e13,  # ,
+        NOM_CHAM_INIT="ACCE",
+        RESU_INIT=XX1S,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+    ),
+)
+EVOCH1S = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="EVOL_CHAR",  #
+    CONV_RESU=_F(
+        COEF=1.0,  # 1.E13, #,
+        NOM_CHAM_INIT="DEPL",
+        RESU_INIT=EVOCH1AS,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+        GROUP_NO_INTERF="SUD",
+        COOR_REFE=(Lt / 2.0, 0.0, z0),
+        VITE_ONDE=(Vs / sina),
+        DIRECTION=(1.0, 0.0, 0.0),
+    ),
+)
+
+EVOLB1S = AFFE_CHAR_MECA(MODELE=MODELE, EVOL_CHAR=EVOCH1S)
+
+EVOCH2AS = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="DYNA_TRANS",  #'EVOL_CHAR', #
+    CONV_RESU=_F(
+        COEF=1.0e13,  # ,
+        NOM_CHAM_INIT="ACCE",
+        RESU_INIT=XX2S,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+    ),
+)
+
+EVOCH2S = CREA_RESU(
+    OPERATION="CONV_RESU",
+    TYPE_RESU="EVOL_CHAR",  #
+    CONV_RESU=_F(
+        COEF=1.0,  # 1.E13, #,
+        NOM_CHAM_INIT="DEPL",
+        RESU_INIT=EVOCH2AS,
+        NUME_DDL=NUMEDDL2,
+        PRECISION=1.0e-6,
+        CRITERE="RELATIF",
+        LIST_INST=LINST,
+        GROUP_NO_INTERF="SUG",
+        COOR_REFE=(Lt / 2.0, 0.0, z0),
+        VITE_ONDE=(Vs / sina),
+        DIRECTION=(1.0, 0.0, 0.0),
+    ),
+)
+
+
+EVOLB2S = AFFE_CHAR_MECA(MODELE=MODELE, EVOL_CHAR=EVOCH2S)
+
+# Résultat avec ondes réfléchies de cisaillement et de compression (selon théorie)
+ResuS0 = DYNA_VIBRA(
+    BASE_CALCUL="PHYS",
+    TYPE_CALCUL="TRAN",
+    MODELE=MODELE,
+    CHAM_MATER=CHMAT,
+    CARA_ELEM=ELEM2,
+    MATR_MASS=MASSE2,
+    MATR_RIGI=RIGI2,
+    MATR_AMOR=AMOR2,
+    SCHEMA_TEMPS=_F(SCHEMA="NEWMARK"),
+    INCREMENT=_F(LIST_INST=LINST),
+    ARCHIVAGE=_F(LIST_INST=LINST),
+    EXCIT=(_F(CHARGE=ONDESV0), _F(CHARGE=EVOLB1S), _F(CHARGE=EVOLB2S)),
+)
+
+# On recupère les fonctions de deplacement X et Z aux points de post-traitement
+
+
+azNGHS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMHS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDHS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNGBS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNMBS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+azNDBS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DZ",
+)
+
+
+axNGHS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NGH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNMHS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NMH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNDHS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NDH",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNGBS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NGB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNMBS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NMB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+axNDBS = RECU_FONCTION(
+    RESULTAT=ResuS0,
+    GROUP_NO="NDB",
+    NOM_CHAM="ACCE",
+    INTERPOL="LIN",
+    PROL_DROITE="CONSTANT",
+    PROL_GAUCHE="CONSTANT",
+    LIST_INST=LINST,
+    NOM_CMP="DX",
+)
+
+
+# On recompose la composante de l'onde S --> A_s = Ax*cosa - Az*sina
+
+ASF_NGH = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNGHS(INST)*cosa-azNGHS(INST)*sina",
+    sina=sina,
+    cosa=cosa,
+    axNGHS=axNGHS,
+    azNGHS=azNGHS,
+)
+
+AS_NGH = CALC_FONC_INTERP(
+    FONCTION=ASF_NGH,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+ASF_NMH = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNMHS(INST)*cosa-azNMHS(INST)*sina",
+    sina=sina,
+    cosa=cosa,
+    axNMHS=axNMHS,
+    azNMHS=azNMHS,
+)
+
+AS_NMH = CALC_FONC_INTERP(
+    FONCTION=ASF_NMH,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+ASF_NDH = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNDHS(INST)*cosa-azNDHS(INST)*sina",
+    sina=sina,
+    cosa=cosa,
+    axNDHS=axNDHS,
+    azNDHS=azNDHS,
+)
+
+AS_NDH = CALC_FONC_INTERP(
+    FONCTION=ASF_NDH,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+ASF_NGB = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNGBS(INST)*cosa-azNGBS(INST)*sina",
+    sina=sina,
+    cosa=cosa,
+    axNGBS=axNGBS,
+    azNGBS=azNGBS,
+)
+
+AS_NGB = CALC_FONC_INTERP(
+    FONCTION=ASF_NGB,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+ASF_NMB = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNMBS(INST)*cosa-azNMBS(INST)*sina",
+    sina=sina,
+    cosa=cosa,
+    axNMBS=axNMBS,
+    azNMBS=azNMBS,
+)
+
+AS_NMB = CALC_FONC_INTERP(
+    FONCTION=ASF_NMB,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+
+ASF_NDB = FORMULE(
+    NOM_PARA="INST",
+    VALE="axNDBS(INST)*cosa-azNDBS(INST)*sina",
+    sina=sina,
+    cosa=cosa,
+    axNDBS=axNDBS,
+    azNDBS=azNDBS,
+)
+
+AS_NDB = CALC_FONC_INTERP(
+    FONCTION=ASF_NDB,
+    LIST_PARA=LINST,
+    NOM_PARA="INST",
+    NOM_RESU="ACCE",
+    PROL_GAUCHE="CONSTANT",
+    PROL_DROITE="CONSTANT",
+    INTERPOL="LIN",
+)
+
+TEST_FONCTION(
+    VALEUR=(
+        _F(
+            VALE_CALC=0.99779013107275,
+            VALE_REFE=1.0,
+            PRECISION=0.5e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.038,
+            FONCTION=AS_NGB,
+        ),
+        _F(
+            VALE_CALC=0.99777206110100,
+            VALE_REFE=1.0,
+            PRECISION=5.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.070,
+            FONCTION=AS_NMB,
+        ),
+        _F(
+            VALE_CALC=0.99585875358264,
+            VALE_REFE=1.0,
+            PRECISION=6.0e-3,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.104,
+            FONCTION=AS_NDB,
+        ),
+        _F(
+            VALE_CALC=1.956255654791,
+            VALE_REFE=2.0,
+            PRECISION=2.3e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.124,
+            FONCTION=AS_NGH,
+        ),
+        _F(
+            VALE_CALC=1.958907658080,
+            VALE_REFE=2.0,
+            PRECISION=2.2e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.156,
+            FONCTION=AS_NMH,
+        ),
+        _F(
+            VALE_CALC=1.956255701610,
+            VALE_REFE=2.0,
+            PRECISION=2.3e-2,
+            REFERENCE="ANALYTIQUE",
+            CRITERE="RELATIF",
+            VALE_PARA=0.188,
+            FONCTION=AS_NDH,
+        ),
+    )
+)
+
+
+FIN()

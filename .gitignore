@@ -1,9 +1,12 @@
 .venv/
 __pycache__/
+*.py[cod]
 out/
 .feagent/
 examples/**/out/*.msh
 .pytest_cache/
+build/
+dist/
 # feacore
 *.egg-info/
 /work/
@@ -17,7 +20,6 @@ benchmarks/gold/_meshes/
 *.cvg
 *.12d
 spooles.out
-.venv/
 ace_runs/
 runs/
 models/*
@@ -26,3 +28,10 @@ models/*
 # ACE: cached field-error references and baselines (rebuilt with python -m ace.field_error --precompute)
 ace/field_refs/
 ace/field_refs_gpu/
+.feacore_python
+.feacore_token
+.feacore_autoupdate_deferrals
+# feabench: solver scratch; downloaded datasets (SimJEB etc.) are never committed (licensing + size)
+*.dat
+!benchmarks/**/*.dat.ref
+data/

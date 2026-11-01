@@ -24,7 +24,11 @@ Boundary conditions (``BC.type``)
 ---------------------------------
 ``group`` is normally a facet group (edges in 2D, faces in 3D). Dirichlet types (fixed,
 displacement, temperature) may also use lower-dimensional groups (points in 2D; curves or
-points in 3D), constraining every node on them.
+points in 3D), constraining every node on them. They may also carry ``where``: an expression in
+x, y, z (same syntax as values) that keeps only the group's nodes where it is true (nonzero). For
+example ``{"type": "displacement", "group": "outer", "components": [2], "value": 0,
+"where": "abs(z) < 1e-6"}`` constrains the line where the outer face meets z = 0, so no edge group
+is needed. Selecting no node is an error.
 elasticity:
   fixed         all displacement components = 0 on ``group`` (or the node nearest ``point``)
   displacement  prescribed ``components`` (0=x, 1=y, 2=z) = ``value`` (scalar for all listed
@@ -43,6 +47,19 @@ Loads (``Load.type``), applied on cell group ``group`` ("*" = whole domain)
 elasticity: body_force (vector, force / volume), temperature (T field for thermal strain
             alpha * (T - analysis.T_ref))
 heat:       source (volumetric heat source / Poisson right-hand side)
+
+flow (incompressible, steady by default; OpenFOAM backend):
+  velocity_inlet  velocity ``value``: a vector [ux, uy(, uz)] (entries may be expressions) or a scalar
+                  speed along the inward normal
+  pressure_outlet static pressure ``value`` (Pa, physical, not kinematic; usually 0)
+  wall            no-slip; optional ``value`` = wall velocity vector (moving wall / lid)
+  slip            zero normal velocity, zero shear
+  symmetry        symmetry plane
+  2D flow meshes lie in the xy-plane; the backend extrudes one cell layer of ``analysis.thickness``,
+  so forces and flow rates are per that thickness. ``analysis.order`` selects the convection scheme
+  (1 = upwind, 2 = second order). Options: ``turbulence`` ("laminar" default, or a RANS model name),
+  ``max_iterations``, ``residual_tol`` (keep it tight, e.g. 1e-8, so the iteration error stays far
+  below the discretization error that the GCI measures).
 
 Nonlinear (elastoplastic) analysis (opt-in; CalculiX backend only)
 -------------------------------------------------------------------
@@ -68,6 +85,8 @@ Quantities of interest (``QoI.type``)
   integral/mean  integral of ``field`` over cell or facet ``group`` including thickness (plane) or
                  2*pi*r (axisymmetric); mean = integral / equally weighted measure
   strain_energy  total strain energy 0.5 u.K.u (elasticity only)
+  force          flow: total fluid force (pressure + viscous) on the body through ``group``, ``component``
+  flow_rate      flow: volumetric flow rate through ``group``, positive out of the domain
 """
 
 from __future__ import annotations
@@ -82,21 +101,24 @@ import numpy as np
 
 SCHEMA_VERSION = 1
 
-PHYSICS = ("elasticity", "heat")
+PHYSICS = ("elasticity", "heat", "flow")
 FORMULATIONS = {
     "elasticity": ("plane_stress", "plane_strain", "axisymmetric", "3d"),
     "heat": ("2d", "axisymmetric", "3d"),
+    "flow": ("2d", "3d"),
 }
 BC_TYPES = {
     "elasticity": ("fixed", "displacement", "symmetry", "pressure", "traction", "force"),
     "heat": ("temperature", "flux", "convection"),
+    "flow": ("velocity_inlet", "pressure_outlet", "wall", "slip", "symmetry"),
 }
 LOAD_TYPES = {
     "elasticity": ("body_force", "temperature"),
     "heat": ("source",),
+    "flow": (),
 }
 QOI_TYPES = ("point", "point_difference", "max", "min", "max_abs", "reaction", "integral", "mean",
-             "strain_energy")
+             "strain_energy", "force", "flow_rate")
 
 # Fields a backend must be able to probe. In 2D, uz, syz and sxz are 0; szz is the out-of-plane
 # stress (0 in plane stress). Axisymmetric: sxx = s_rr, syy = s_zz (axial), sxy = s_rz, and the
@@ -107,6 +129,7 @@ ELASTICITY_FIELDS = (
     "von_mises", "tresca", "s1", "s2", "s3",
 )
 HEAT_FIELDS = ("T", "qx", "qy", "qz", "q_mag")  # q = -k grad T
+FLOW_FIELDS = ("ux", "uy", "uz", "u_mag", "p")    # p = static pressure (Pa)
 DISPLACEMENT_LIKE = ("ux", "uy", "uz", "u_mag", "T")
 STRESS_LIKE = tuple(f for f in ELASTICITY_FIELDS if f not in DISPLACEMENT_LIKE) + ("qx", "qy", "qz", "q_mag")
 
@@ -127,6 +150,8 @@ class Material:
     alpha: float = 0.0   # coefficient of thermal expansion
     k: float = 1.0       # conductivity (heat) / diffusion coefficient (Poisson)
     plasticity: dict | None = None   # optional J2 plasticity (nonlinear analyses only), see module doc
+    rho: float = 1.0     # density (flow)
+    mu: float = 0.0      # dynamic viscosity (flow); kinematic viscosity = mu / rho
 
 
 @dataclass
@@ -142,6 +167,7 @@ class BC:
     point: list[float] | None = None    # alternative to group: node nearest to this point
     components: list[int] | None = None
     value: Value | None = None
+    where: str | None = None            # Dirichlet node filter, e.g. "abs(z) < 1e-6"
     h: float | None = None              # convection coefficient
     T_inf: float | None = None          # convection ambient temperature
 
@@ -274,6 +300,8 @@ class Case:
                 errs.append(f"material {name!r}: need E > 0 and -1 < nu < 0.5")
             if a.physics == "heat" and m.k <= 0:
                 errs.append(f"material {name!r}: need k > 0")
+            if a.physics == "flow" and (m.rho <= 0 or m.mu <= 0):
+                errs.append(f"material {name!r}: need rho > 0 and mu > 0")
         errs += _validate_nonlinear(self)
         for r in self.regions:
             if r.material not in self.materials:
@@ -288,6 +316,14 @@ class Case:
                 errs.append(f"{tag}: give exactly one of group / point")
             if b.point is not None and b.type not in ("fixed", "displacement", "temperature"):
                 errs.append(f"{tag}: point BCs only for fixed / displacement / temperature")
+            if b.where is not None:
+                if b.type not in ("fixed", "displacement", "temperature") or b.group is None:
+                    errs.append(f"{tag}: where only for fixed / displacement / temperature on a group")
+                else:
+                    try:
+                        _compile(b.where)
+                    except (CaseError, SyntaxError) as e:
+                        errs.append(f"{tag}: bad where expression: {e}")
             if b.type == "displacement":
                 if not b.components or any(c not in range(ncomp) for c in b.components):
                     errs.append(f"{tag}: components must be a non-empty subset of {list(range(ncomp))}")
@@ -302,6 +338,12 @@ class Case:
                 errs.append(f"{tag}: value must be a scalar or expression")
             if b.type == "convection" and (b.h is None or b.T_inf is None):
                 errs.append(f"{tag}: h and T_inf required")
+            if b.type == "velocity_inlet" and (b.value is None or (isinstance(b.value, list) and len(b.value) != ncomp)):
+                errs.append(f"{tag}: value must be a scalar normal speed or a list of {ncomp} components")
+            if b.type == "pressure_outlet" and (b.value is None or isinstance(b.value, list)):
+                errs.append(f"{tag}: value must be a scalar or expression")
+            if b.type == "wall" and b.value is not None and (not isinstance(b.value, list) or len(b.value) != ncomp):
+                errs.append(f"{tag}: wall velocity must be a list of {ncomp} components")
         for i, l in enumerate(self.loads):
             tag = f"loads[{i}] ({l.type})"
             if l.type not in LOAD_TYPES[a.physics]:
@@ -310,7 +352,7 @@ class Case:
                 errs.append(f"{tag}: value must be a list of {ncomp} components")
             elif l.type == "temperature" and self.materials and all(m.alpha == 0 for m in self.materials.values()):
                 errs.append(f"{tag}: thermal load but every material has alpha = 0")
-        fields = ELASTICITY_FIELDS if a.physics == "elasticity" else HEAT_FIELDS
+        fields = {"elasticity": ELASTICITY_FIELDS, "heat": HEAT_FIELDS, "flow": FLOW_FIELDS}[a.physics]
         names = set()
         for i, q in enumerate(self.qois):
             tag = f"qois[{i}] ({q.name})"
@@ -332,6 +374,12 @@ class Case:
                 errs.append(f"{tag}: reaction needs group and component in {list(range(ncomp))}")
             if q.type == "strain_energy" and a.physics != "elasticity":
                 errs.append(f"{tag}: strain_energy is elasticity-only")
+            if q.type in ("force", "flow_rate") and a.physics != "flow":
+                errs.append(f"{tag}: {q.type} is flow-only")
+            if q.type == "force" and (q.group is None or q.component not in range(ncomp)):
+                errs.append(f"{tag}: force needs group and component in {list(range(ncomp))}")
+            if q.type == "flow_rate" and q.group is None:
+                errs.append(f"{tag}: flow_rate needs group")
         return errs
 
     def check(self) -> "Case":

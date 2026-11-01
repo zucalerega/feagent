@@ -1,0 +1,701 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+# AMORTISSEMENT VISQUEUX PROPORTIONNEL
+# ELEMENTS  : HEXA20
+# REFERENCE : ANALYTIQUE
+
+import numpy
+
+DEBUT(CODE="OUI", ERREUR=_F(ALARME="EXCEPTION"))
+
+ACIER = DEFI_MATERIAU(
+    ELAS=_F(RHO=7.8e03, NU=0.3, E=2.1e11, AMOR_ALPHA=0.2852750549e-04, AMOR_BETA=57.62031174)
+)
+
+# AMOR_ALPHA : 0.1141100220E-03
+
+# AMOR_BETA  : 230.4812469 ))
+
+MAYA = LIRE_MAILLAGE(FORMAT="MED")
+IMPR_RESU(FORMAT="RESULTAT", RESU=_F(MAILLAGE=MAYA))
+
+MATER = AFFE_MATERIAU(MAILLAGE=MAYA, AFFE=_F(TOUT="OUI", MATER=ACIER))
+
+STRUCTUR = AFFE_MODELE(MAILLAGE=MAYA, AFFE=_F(TOUT="OUI", MODELISATION="3D", PHENOMENE="MECANIQUE"))
+
+FIXA = AFFE_CHAR_MECA(
+    MODELE=STRUCTUR,
+    DDL_IMPO=(
+        _F(GROUP_NO="COND1", DX=0.0, DY=0.0),
+        _F(GROUP_NO="COND2", DY=0.0),
+        _F(GROUP_NO="COND3", DZ=0.0),
+    ),
+)
+
+PLAN_X0 = AFFE_CHAR_MECA(
+    MODELE=STRUCTUR,
+    LIAISON_DDL=(
+        _F(
+            GROUP_NO=("N1", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N2", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N3", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N4", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N5", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N6", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N7", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N8", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N10", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N11", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.75000, 0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N12", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N13", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.25000, 0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N15", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.75000, -0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N16", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N17", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.25000, -0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N18", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.25000, -0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N19", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N20", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.75000, -0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N22", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.25000, 0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N23", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N24", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.75000, 0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N25", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N27", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N28", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N29", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.25000, -0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N30", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N32", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.75000, -0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N34", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N35", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.25000, 0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N36", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N37", "N21", "N9"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.75000, 0.75000),
+            COEF_IMPO=0.0,
+        ),
+    ),
+)
+
+PLAN_XL = AFFE_CHAR_MECA(
+    MODELE=STRUCTUR,
+    LIAISON_DDL=(
+        _F(
+            GROUP_NO=("N1481", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1482", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1483", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1484", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1485", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1486", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1487", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -2.00000, 1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1488", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1490", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, 0.00000, -1.00000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1491", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.75000, 0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1492", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1493", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.25000, 0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1495", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.75000, -0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1496", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1497", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.25000, -0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1498", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.25000, -0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1499", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1500", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.75000, -0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1502", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.25000, 0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1503", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1504", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.75000, 0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1505", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1507", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1508", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1509", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.25000, -0.75000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1510", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.50000, -0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1512", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -0.75000, -0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1514", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1515", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.25000, 0.25000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1516", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.50000, 0.50000),
+            COEF_IMPO=0.0,
+        ),
+        _F(
+            GROUP_NO=("N1517", "N1501", "N1489"),
+            DDL=("DX", "DX", "DX"),
+            COEF_MULT=(1.00, -1.75000, 0.75000),
+            COEF_IMPO=0.0,
+        ),
+    ),
+)
+
+# CALCUL DES MATRICES ELEMENTAIRES DE RIGIDITE ET DE MASSE
+
+K_ELEM = CALC_MATR_ELEM(
+    MODELE=STRUCTUR, CHAM_MATER=MATER, OPTION="RIGI_MECA", CHARGE=(FIXA, PLAN_X0, PLAN_XL)
+)
+
+M_ELEM = CALC_MATR_ELEM(
+    MODELE=STRUCTUR, CHAM_MATER=MATER, OPTION="MASS_MECA", CHARGE=(FIXA, PLAN_X0, PLAN_XL)
+)
+
+C_ELEM = CALC_MATR_ELEM(
+    MODELE=STRUCTUR, RIGI_MECA=K_ELEM, MASS_MECA=M_ELEM, CHAM_MATER=MATER, OPTION="AMOR_MECA"
+)
+
+# NUMEROTATION
+
+NUMERO = NUME_DDL(MATR_RIGI=K_ELEM)
+
+# ASSEMBLAGE DES MATRICES DE RIGIDITE ET DE MASSE
+
+
+K_ASSE = ASSE_MATRICE(MATR_ELEM=K_ELEM, NUME_DDL=NUMERO)
+
+M_ASSE = ASSE_MATRICE(MATR_ELEM=M_ELEM, NUME_DDL=NUMERO)
+
+C_ASSE = ASSE_MATRICE(MATR_ELEM=C_ELEM, NUME_DDL=NUMERO)
+
+# CALCUL DES MODES
+
+MODES = CALC_MODES(
+    MATR_RIGI=K_ASSE,
+    OPTION="PLUS_PETITE",
+    CALC_FREQ=_F(NMAX_FREQ=10),
+    MATR_AMOR=C_ASSE,
+    MATR_MASS=M_ASSE,
+    SOLVEUR_MODAL=_F(METHODE="TRI_DIAG"),
+)
+
+TEST_RESU(
+    RESU=(
+        _F(NUME_ORDRE=1, PARA="FREQ", RESULTAT=MODES, VALE_CALC=115.514264024, CRITERE="RELATIF"),
+        _F(NUME_ORDRE=2, PARA="FREQ", RESULTAT=MODES, VALE_CALC=440.943421168, CRITERE="RELATIF"),
+        _F(NUME_ORDRE=3, PARA="FREQ", RESULTAT=MODES, VALE_CALC=647.139152766, CRITERE="RELATIF"),
+        _F(NUME_ORDRE=4, PARA="FREQ", RESULTAT=MODES, VALE_CALC=925.238447080, CRITERE="RELATIF"),
+        _F(NUME_ORDRE=5, PARA="FREQ", RESULTAT=MODES, VALE_CALC=1.51194612e03, CRITERE="RELATIF"),
+    )
+)
+
+# ===============================================================
+# 2) Validation de RHO=f(X,Y,Z) :
+# -----------------------------
+# On calcule les modes propres du barreau avec :
+#   RHO = 1.e3 pour  0. <= X  <=1.
+#   RHO = 3.e3 pour  1. <= X  <=2.
+#
+# On fait 2 nouveaux calculs :
+#  2.1) avec 2 materiaux differents
+#  2.2) avec 1 seul materiau fonction de X
+# On verifie que les deux calculs donnent les memes resultats
+# -------------------------------------------------------------------
+
+# 2.0 : on cree les 3 groupes de mailles correspondant a  X < 1 (GM1) et X > 1 (GM2) :
+MAYA = DEFI_GROUP(
+    reuse=MAYA,
+    MAILLAGE=MAYA,
+    INFO=2,
+    CREA_GROUP_MA=(
+        _F(
+            NOM="GM1",
+            OPTION="BANDE",
+            GROUP_NO_CENTRE="N1",
+            DIST=1.01,
+            VECT_NORMALE=(1.0, 0.0, 0.0),
+            CRIT_NOEUD="TOUS",
+        ),
+        _F(
+            NOM="GM2",
+            OPTION="BANDE",
+            GROUP_NO_CENTRE="N1517",
+            DIST=1.01,
+            VECT_NORMALE=(1.0, 0.0, 0.0),
+            CRIT_NOEUD="TOUS",
+        ),
+    ),
+)
+
+# Calcul 2.1 :
+# ------------
+DETRUIRE(NOM=(MATER, K_ELEM, M_ELEM, NUMERO, K_ASSE, M_ASSE), INFO=1)
+
+ACIE1 = DEFI_MATERIAU(ELAS=_F(RHO=1.0e03, NU=0.3, E=2.1e11))
+ACIE2 = DEFI_MATERIAU(ELAS=_F(RHO=3.0e03, NU=0.3, E=2.1e11))
+
+MATER = AFFE_MATERIAU(
+    MAILLAGE=MAYA, AFFE=(_F(GROUP_MA="GM1", MATER=ACIE1), _F(GROUP_MA="GM2", MATER=ACIE2))
+)
+
+K_ELEM = CALC_MATR_ELEM(
+    MODELE=STRUCTUR, CHAM_MATER=MATER, OPTION="RIGI_MECA", CHARGE=(FIXA, PLAN_X0, PLAN_XL)
+)
+
+M_ELEM = CALC_MATR_ELEM(
+    MODELE=STRUCTUR, CHAM_MATER=MATER, OPTION="MASS_MECA", CHARGE=(FIXA, PLAN_X0, PLAN_XL)
+)
+
+NUMERO = NUME_DDL(MATR_RIGI=K_ELEM)
+K_ASSE = ASSE_MATRICE(MATR_ELEM=K_ELEM, NUME_DDL=NUMERO)
+M_ASSE = ASSE_MATRICE(MATR_ELEM=M_ELEM, NUME_DDL=NUMERO)
+
+MODE2 = CALC_MODES(
+    MATR_RIGI=K_ASSE,
+    MATR_MASS=M_ASSE,
+    OPTION="PLUS_PETITE",
+    CALC_FREQ=_F(NMAX_FREQ=10),
+    SOLVEUR_MODAL=_F(METHODE="TRI_DIAG"),
+)
+
+TEST_RESU(RESU=_F(NUME_ORDRE=1, PARA="FREQ", RESULTAT=MODE2, VALE_CALC=226.938996101))
+TEST_RESU(RESU=_F(NUME_ORDRE=3, PARA="FREQ", RESULTAT=MODE2, VALE_CALC=1111.41079771))
+TEST_RESU(RESU=_F(NUME_ORDRE=7, PARA="FREQ", RESULTAT=MODE2, VALE_CALC=4508.49918197))
+
+
+# Calcul 2.2 :
+# ------------
+DETRUIRE(NOM=(MATER, K_ELEM, M_ELEM, NUMERO, K_ASSE, M_ASSE), INFO=1)
+
+nuf = DEFI_CONSTANTE(VALE=0.3)
+ef = DEFI_CONSTANTE(VALE=2.1e11)
+
+
+def rho(X):
+    if X <= 1.0:
+        return 1.0e3
+    else:
+        return 3.0e3
+
+
+rhof = FORMULE(VALE="rho(X)", rho=rho, NOM_PARA="X")
+ACIE3 = DEFI_MATERIAU(ELAS_FO=_F(RHO=rhof, NU=nuf, E=ef))
+
+CHGEOM = CREA_CHAMP(TYPE_CHAM="NOEU_GEOM_R", OPERATION="EXTR", MAILLAGE=MAYA, NOM_CHAM="GEOMETRIE")
+MATER = AFFE_MATERIAU(
+    MAILLAGE=MAYA, AFFE=_F(TOUT="OUI", MATER=ACIE3), AFFE_VARC=_F(NOM_VARC="GEOM", CHAM_GD=CHGEOM)
+)
+
+K_ELEM = CALC_MATR_ELEM(
+    MODELE=STRUCTUR, CHAM_MATER=MATER, OPTION="RIGI_MECA", CHARGE=(FIXA, PLAN_X0, PLAN_XL)
+)
+
+M_ELEM = CALC_MATR_ELEM(
+    MODELE=STRUCTUR, CHAM_MATER=MATER, OPTION="MASS_MECA", CHARGE=(FIXA, PLAN_X0, PLAN_XL)
+)
+
+NUMERO = NUME_DDL(MATR_RIGI=K_ELEM)
+K_ASSE = ASSE_MATRICE(MATR_ELEM=K_ELEM, NUME_DDL=NUMERO)
+M_ASSE = ASSE_MATRICE(MATR_ELEM=M_ELEM, NUME_DDL=NUMERO)
+
+MODE3 = CALC_MODES(
+    MATR_RIGI=K_ASSE,
+    MATR_MASS=M_ASSE,
+    OPTION="PLUS_PETITE",
+    CALC_FREQ=_F(NMAX_FREQ=10),
+    SOLVEUR_MODAL=_F(METHODE="TRI_DIAG"),
+)
+
+CALC_CHAMP(reuse=MODE3, RESULTAT=MODE3, CHAM_MATER=MATER, PROPRIETES=("MATE_ELEM", "MATE_ELGA"))
+
+MATEGA = CREA_TABLE(
+    RESU=(
+        _F(
+            RESULTAT=MODE3,
+            NOM_CHAM="MATE_ELGA",
+            NUME_ORDRE=1,
+            GROUP_MA=("MA000074", "MA000081"),
+            NOM_CMP="RHO",
+        )
+    )
+)
+
+IMPR_TABLE(TABLE=MATEGA)
+
+TEST_RESU(
+    RESU=_F(
+        NUME_ORDRE=1,
+        PARA="FREQ",
+        RESULTAT=MODE3,
+        REFERENCE="AUTRE_ASTER",
+        VALE_REFE=226.938996101,
+        PRECISION=1.0e-11,
+        VALE_CALC=226.938996101,
+    )
+)
+TEST_RESU(
+    RESU=_F(
+        NUME_ORDRE=3,
+        PARA="FREQ",
+        RESULTAT=MODE3,
+        REFERENCE="AUTRE_ASTER",
+        VALE_REFE=1111.41079771,
+        PRECISION=1.0e-11,
+        VALE_CALC=1111.41079771,
+    )
+)
+TEST_RESU(
+    RESU=_F(
+        NUME_ORDRE=7,
+        PARA="FREQ",
+        RESULTAT=MODE3,
+        REFERENCE="AUTRE_ASTER",
+        VALE_REFE=4508.49918197,
+        PRECISION=1.0e-11,
+        VALE_CALC=4508.49918197,
+    )
+)
+
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=MODE3,
+            NOM_CHAM="MATE_ELGA",
+            GROUP_MA="MA000074",
+            POINT=1,
+            NOM_CMP="RHO",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=1e3,
+            VALE_CALC=1e3,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=MODE3,
+            NOM_CHAM="MATE_ELEM",
+            GROUP_MA="MA000074",
+            NOM_CMP="RHO",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=1e3,
+            VALE_CALC=1e3,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=MODE3,
+            NOM_CHAM="MATE_ELGA",
+            GROUP_MA="MA000081",
+            POINT=1,
+            NOM_CMP="RHO",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=3e3,
+            VALE_CALC=3e3,
+        ),
+        _F(
+            NUME_ORDRE=1,
+            RESULTAT=MODE3,
+            NOM_CHAM="MATE_ELEM",
+            GROUP_MA="MA000081",
+            NOM_CMP="RHO",
+            REFERENCE="ANALYTIQUE",
+            VALE_REFE=3e3,
+            VALE_CALC=3e3,
+        ),
+    )
+)
+
+IMPR_RESU(FORMAT="MED", RESU=_F(RESULTAT=MODE3, NOM_CHAM=("MATE_ELGA", "MATE_ELEM"), TOUT="OUI"))
+
+FIN()
+#

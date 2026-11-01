@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "id": "cylinder_channel_dfg_2d1",
+  "title": "DFG benchmark 2D-1: steady flow around a cylinder in a channel, Re = 20 (Schaefer & Turek 1996)",
+  "family": "cylinder_channel_dfg",
+  "tags": [
+    "cfd",
+    "2d",
+    "flow",
+    "laminar",
+    "published_benchmark",
+    "external_flow",
+    "bluff_body",
+    "expression_bc"
+  ],
+  "dim": 2,
+  "physics": "flow",
+  "formulation": "2d",
+  "units": "SI (m, s, kg, Pa, N)",
+  "params": {
+    "L": 2.2,
+    "H": 0.41,
+    "xc": 0.2,
+    "yc": 0.2,
+    "D": 0.1,
+    "Um": 0.3,
+    "rho": 1.0,
+    "mu": 0.001,
+    "box": 0.1,
+    "h0": 0.0125
+  },
+  "description": "Steady laminar flow of an incompressible Newtonian fluid around a circular cylinder in a 2D channel (the DFG / Schaefer-Turek 'flow around a cylinder' benchmark, steady case).\nGeometry (STEP, planar face in the xy-plane): channel 0 <= x <= 2.2, 0 <= y <= 0.41 m with a circular hole (the cylinder) of diameter D = 0.1 m centred at (0.2, 0.2). Model it as 2D; report forces per metre of depth (out-of-plane thickness 1 m).\nFluid: density rho = 1.0 kg/m^3, dynamic viscosity mu = 0.001 Pa s.\nBoundary conditions:\n  inlet x = 0: parabolic velocity profile u_x(y) = 4 U_m y (H - y) / H^2 with U_m = 0.3 m/s,\n    i.e. u_x = 7.138607971445569*y*(0.41 - y)  [m/s, y in m],  u_y = 0\n  outlet x = 2.2: static pressure p = 0 Pa\n  channel walls y = 0 and y = 0.41, and the cylinder surface: no slip\nReport (SI units):\n  drag            x-component of the total force (pressure + viscous) of the fluid on the cylinder [N per m depth]\n  lift            y-component of that force [N per m depth]\n  dp_front_rear   static pressure difference p(front) - p(rear) between the points (0.15, 0.2) and (0.25, 0.2) on the cylinder surface [Pa]\nThe force QoIs refer to the boundary group cylinder: use this name for the cylinder surface group of the mesh.",
+  "qois": [
+    {
+      "name": "drag",
+      "type": "force",
+      "field": null,
+      "point": null,
+      "group": "cylinder",
+      "component": 0,
+      "point2": null
+    },
+    {
+      "name": "lift",
+      "type": "force",
+      "field": null,
+      "point": null,
+      "group": "cylinder",
+      "component": 1,
+      "point2": null
+    },
+    {
+      "name": "dp_front_rear",
+      "type": "point_difference",
+      "field": "p",
+      "point": [
+        0.15,
+        0.2
+      ],
+      "group": null,
+      "component": null,
+      "point2": [
+        0.25,
+        0.2
+      ]
+    }
+  ],
+  "geometry_file": "geometry.step"
+}
