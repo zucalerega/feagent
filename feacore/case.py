@@ -61,6 +61,20 @@ flow (incompressible, steady by default; OpenFOAM backend):
   ``max_iterations``, ``residual_tol`` (keep it tight, e.g. 1e-8, so the iteration error stays far
   below the discretization error that the GCI measures).
 
+compressible (a perfect gas, ``Material.gamma`` and ``Material.gas_constant``; ``mu`` = 0 is inviscid;
+OpenFOAM backend, rhoCentralFoam run to a steady state; supersonic external flow):
+  freestream      velocity ``value`` [ux, uy(, uz)] (m/s), static pressure ``p_inf`` (Pa) and static
+                  temperature ``T_inf`` (K): fixed where the flow enters, extrapolated where it leaves
+                  (a supersonic freestream boundary). It also gives the initial field and the
+                  reference pressure of the force QoI.
+  outlet          supersonic outflow: everything extrapolated (no value)
+  wall            no slip, adiabatic (viscous gas only; an inviscid gas needs slip)
+  slip            inviscid wall: zero normal velocity
+  symmetry        symmetry plane
+  Fields: ux, uy, uz, u_mag, p (absolute static pressure, Pa), T (K), rho (kg/m^3), mach. Options:
+  ``max_co`` (Courant number), ``steady_tol``, ``max_flow_times``, ``timeout``; see
+  feacore/solver/_foam_compressible.py.
+
 Nonlinear (elastoplastic) analysis (opt-in; CalculiX backend only)
 -------------------------------------------------------------------
 ``Material.plasticity`` (optional): ``{"model": "j2_isotropic", "yield_stress": sy,
@@ -85,7 +99,9 @@ Quantities of interest (``QoI.type``)
   integral/mean  integral of ``field`` over cell or facet ``group`` including thickness (plane) or
                  2*pi*r (axisymmetric); mean = integral / equally weighted measure
   strain_energy  total strain energy 0.5 u.K.u (elasticity only)
-  force          flow: total fluid force (pressure + viscous) on the body through ``group``, ``component``
+  force          flow: total fluid force (pressure + viscous) on the body through ``group``, ``component``;
+                 compressible: with the gauge pressure p - p_inf of the freestream (as if a base at p_inf
+                 closed a body that the domain cuts)
   flow_rate      flow: volumetric flow rate through ``group``, positive out of the domain
 """
 
@@ -101,21 +117,28 @@ import numpy as np
 
 SCHEMA_VERSION = 1
 
-PHYSICS = ("elasticity", "heat", "flow")
+PHYSICS = ("elasticity", "heat", "flow", "compressible")
 FORMULATIONS = {
     "elasticity": ("plane_stress", "plane_strain", "axisymmetric", "3d"),
     "heat": ("2d", "axisymmetric", "3d"),
     "flow": ("2d", "3d"),
+    "compressible": ("2d", "3d"),
 }
+# compressible: a perfect gas (Material.gamma, Material.gas_constant; mu = 0 is inviscid, Euler).
+# freestream: value = velocity [ux, uy(, uz)] in m/s, p_inf = static pressure (Pa), T_inf = static
+# temperature (K); fixed where the flow enters, extrapolated where it leaves (supersonic freestream).
+# outlet: everything extrapolated (supersonic outflow). wall: no slip, adiabatic. slip: inviscid wall.
 BC_TYPES = {
     "elasticity": ("fixed", "displacement", "symmetry", "pressure", "traction", "force"),
     "heat": ("temperature", "flux", "convection"),
     "flow": ("velocity_inlet", "pressure_outlet", "wall", "slip", "symmetry"),
+    "compressible": ("freestream", "outlet", "wall", "slip", "symmetry"),
 }
 LOAD_TYPES = {
     "elasticity": ("body_force", "temperature"),
     "heat": ("source",),
     "flow": (),
+    "compressible": (),
 }
 QOI_TYPES = ("point", "point_difference", "max", "min", "max_abs", "reaction", "integral", "mean",
              "strain_energy", "force", "flow_rate")
@@ -130,6 +153,7 @@ ELASTICITY_FIELDS = (
 )
 HEAT_FIELDS = ("T", "qx", "qy", "qz", "q_mag")  # q = -k grad T
 FLOW_FIELDS = ("ux", "uy", "uz", "u_mag", "p")    # p = static pressure (Pa)
+COMPRESSIBLE_FIELDS = FLOW_FIELDS + ("T", "rho", "mach")   # p absolute static pressure, T static temperature
 DISPLACEMENT_LIKE = ("ux", "uy", "uz", "u_mag", "T")
 STRESS_LIKE = tuple(f for f in ELASTICITY_FIELDS if f not in DISPLACEMENT_LIKE) + ("qx", "qy", "qz", "q_mag")
 
@@ -152,6 +176,8 @@ class Material:
     rho: float = 1.0     # density (flow)
     mu: float = 0.0      # dynamic viscosity (flow); kinematic viscosity = mu / rho
     plasticity: dict | None = None   # optional J2 plasticity (nonlinear analyses only), see module doc
+    gamma: float | None = None         # compressible: ratio of specific heats cp / cv
+    gas_constant: float | None = None  # compressible: specific gas constant R = cp - cv (J/(kg K))
 
 
 @dataclass
@@ -169,7 +195,8 @@ class BC:
     value: Value | None = None
     where: str | None = None            # Dirichlet node filter, e.g. "abs(z) < 1e-6"
     h: float | None = None              # convection coefficient
-    T_inf: float | None = None          # convection ambient temperature
+    T_inf: float | None = None          # convection ambient temperature; freestream static temperature
+    p_inf: float | None = None          # freestream static pressure (compressible)
 
 
 @dataclass
@@ -243,9 +270,13 @@ class Case:
     def to_dict(self) -> dict:
         d = asdict(self)
         d.pop("base_dir", None)
-        for m in d["materials"].values():      # linear cases serialise exactly as before
-            if m.get("plasticity") is None:
-                m.pop("plasticity", None)
+        for m in d["materials"].values():      # linear / incompressible cases serialise exactly as before
+            for k in ("plasticity", "gamma", "gas_constant"):
+                if m.get(k) is None:
+                    m.pop(k, None)
+        for b in d["bcs"]:
+            if b.get("p_inf") is None:
+                b.pop("p_inf", None)
         return d
 
     @classmethod
@@ -302,6 +333,11 @@ class Case:
                 errs.append(f"material {name!r}: need k > 0")
             if a.physics == "flow" and (m.rho <= 0 or m.mu <= 0):
                 errs.append(f"material {name!r}: need rho > 0 and mu > 0")
+            if a.physics == "compressible" and not (m.gamma is not None and m.gamma > 1.0
+                                                    and m.gas_constant is not None and m.gas_constant > 0
+                                                    and m.mu >= 0):
+                errs.append(f"material {name!r}: a compressible gas needs gamma > 1, gas_constant > 0 and mu >= 0 "
+                            f"(mu = 0: inviscid)")
         errs += _validate_nonlinear(self)
         for r in self.regions:
             if r.material not in self.materials:
@@ -344,6 +380,16 @@ class Case:
                 errs.append(f"{tag}: value must be a scalar or expression")
             if b.type == "wall" and b.value is not None and (not isinstance(b.value, list) or len(b.value) != ncomp):
                 errs.append(f"{tag}: wall velocity must be a list of {ncomp} components")
+            if a.physics == "compressible" and b.type == "wall" and b.value is not None:
+                errs.append(f"{tag}: compressible walls are stationary (no value)")
+            if b.type == "freestream":
+                if not isinstance(b.value, list) or len(b.value) != ncomp or any(
+                        isinstance(v, (str, bool)) or not isinstance(v, (int, float)) for v in b.value):
+                    errs.append(f"{tag}: value must be the freestream velocity, a list of {ncomp} numbers (m/s)")
+                if b.p_inf is None or not b.p_inf > 0 or b.T_inf is None or not b.T_inf > 0:
+                    errs.append(f"{tag}: p_inf > 0 (static pressure, Pa) and T_inf > 0 (static temperature, K) required")
+            if b.type == "outlet" and b.value is not None:
+                errs.append(f"{tag}: an outlet takes no value (supersonic outflow: everything is extrapolated)")
         for i, l in enumerate(self.loads):
             tag = f"loads[{i}] ({l.type})"
             if l.type not in LOAD_TYPES[a.physics]:
@@ -352,7 +398,8 @@ class Case:
                 errs.append(f"{tag}: value must be a list of {ncomp} components")
             elif l.type == "temperature" and self.materials and all(m.alpha == 0 for m in self.materials.values()):
                 errs.append(f"{tag}: thermal load but every material has alpha = 0")
-        fields = {"elasticity": ELASTICITY_FIELDS, "heat": HEAT_FIELDS, "flow": FLOW_FIELDS}[a.physics]
+        fields = {"elasticity": ELASTICITY_FIELDS, "heat": HEAT_FIELDS, "flow": FLOW_FIELDS,
+                  "compressible": COMPRESSIBLE_FIELDS}[a.physics]
         names = set()
         for i, q in enumerate(self.qois):
             tag = f"qois[{i}] ({q.name})"
@@ -374,7 +421,7 @@ class Case:
                 errs.append(f"{tag}: reaction needs group and component in {list(range(ncomp))}")
             if q.type == "strain_energy" and a.physics != "elasticity":
                 errs.append(f"{tag}: strain_energy is elasticity-only")
-            if q.type in ("force", "flow_rate") and a.physics != "flow":
+            if q.type in ("force", "flow_rate") and a.physics not in ("flow", "compressible"):
                 errs.append(f"{tag}: {q.type} is flow-only")
             if q.type == "force" and (q.group is None or q.component not in range(ncomp)):
                 errs.append(f"{tag}: force needs group and component in {list(range(ncomp))}")
