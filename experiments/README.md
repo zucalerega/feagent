@@ -76,7 +76,27 @@ One command runs the experiments on all of them (CPU, <= 4 solver threads, <= 4 
   `all_systems_<part>_linear.mp4` (3 x 2 grid, ffmpeg xstack).
 - `--crush` launches `crush.py` per system x part (hours each, one after the other); `render_crush.py` renders the
   newest run per system x part (follows `continued_from`; tet10 and hex vtus) -> `<system>_<part>_crush.mp4`.
+  - Broken cells are red in all three panels and are also drawn as an x-ray overlay. Otherwise abc_00000003's crack,
+    which runs round the bottom ring inside the wall, stays hidden behind intact cells and the platen. Its camera
+    also sits lower (`PART_VIEW`).
+  - In the held ending of a separated run, the intact piece on the top platen lifts 6 % of the height. The caption
+    says it is not simulated.
+  - `--only i,j` renders a few frames to look at first.
+- `snap_compare.py --part P --run SYSTEM:RUN_DIR[:LABEL] ...` -> `<part>_snap_compare.mp4`: one tile per system
+  (`render_crush.py --layout single`), all on the same platen travel in every frame. The clock slows down from each
+  run's peak force to its end, so each snap plays in slow motion. Rerun it as more systems finish.
 - `compare.py` -> `STUDY_OUT/comparison.{md,json,png}`; rerun it as crush runs finish.
+- Omniverse version (`experiments/omniverse/`, on the DGX Spark with the Isaac Sim 6.2 container):
+  `make_crush_video.sh RUN_DIR NAME "label"` runs three steps.
+  - `build_crush_usd.py` writes a USD time series: the intact surface with von Mises colours, broken cells red,
+    fragments grey, brushed-metal platens, a studio floor and lights, and a frame plan with an orbiting camera.
+  - `render_crush_rtx.py` renders it headless with RTX Real-Time, at about 0.7 s per frame.
+  - `assemble_crush.py` adds the caption bar, the force-travel inset and the colour key, giving
+    `<name>_crush_rtx.mp4`.
+  - Check frames first with `ONLY=0,250,-1`.
+  - `watch_crush_videos.py --spark <user@spark-host> --runs runs/nonlinear --out DIR` runs on the laptop and polls
+    every 10 min. For each newly separated run it renders both videos on the Spark, refreshes the snap comparison of
+    that part and copies the videos and contact sheets back to DIR.
 
 Expected (2026-10-31, six systems): F_full 4558 N (abc_00000003) and 2394 N (abc_00000065); spread across systems:
 compliance 1.3 % / 0.8 %, robust von Mises 15.5 % / 4.8 %, peak von Mises 88 % / 42 %.

@@ -2,7 +2,8 @@
 
     LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe __GLX_VENDOR_LIBRARY_NAME=mesa \
     python experiments/physical/render_crush.py RUN_DIR --out OUT.mp4 [--label "mesh system"] [--workers 4]
-        [--min-s 11] [--hold-s 3] [--fps 30] [--max-frames N]
+        [--min-s 11] [--hold-s 4] [--fps 30] [--max-frames N] [--only 0,-1] [--layout panels|single]
+        [--size 1920x1080] [--clock CLOCK.json] [--no-lift]
 
 RUN_DIR is a crush.py run dir: result_NNNN.vtu (points in m; point fields displacement [m], von_mises [Pa]; cell
 fields PEEQ, failed, state 0 intact / 1 failed / 2 detached fragment), force_displacement.csv, run.json. A run that
@@ -10,7 +11,13 @@ continues another one (run.json continued_from) is followed back, so the video s
 linear or quadratic cell type pyvista reads (C3D10 tetra10, C3D4, C3D8 hexahedron).
 Panels: outside (von Mises up to the UTS; failed cells red; detached fragments grey; platens), cut in half (von Mises),
 cut in half (displacement + yellow arrows). True scale (no magnification), interpolated between increments so the
-loading part lasts >= --min-s, slow 70 degree orbit, a held ending on the last (separated) state.
+loading part lasts >= --min-s, slow 70 degree orbit, a held ending on the last (separated) state. Broken cells are
+drawn red in all three panels, also as an x-ray overlay (visible through intact cells and platens). In the held ending of a separated run the piece attached to the top platen (face-connected
+intact cells) and the platen are lifted by LIFT_FRAC of the height, so the crack faces show (labelled "not simulated";
+--no-lift turns it off). Per-part camera (PART_VIEW): abc_00000003 cracks at its bottom ring, so its camera sits low.
+--layout single: the outside view only, with large captions (tiles of snap_compare.py); --clock CLOCK.json
+({"fps": 30, "travel_mm": [per frame]}) puts the frames on a shared platen-travel time base (snap_compare.py writes it).
+--only i,j renders just those frame indices (negative = from the end) as PNGs, for a look before a full render.
 Frames split over processes with WORKER=i NWORK=n (or --workers n); frames already on disk are kept (resumable)."""
 from __future__ import annotations
 
@@ -33,10 +40,15 @@ import pyvista as pv  # noqa: E402
 
 pv.OFF_SCREEN = True
 REPO = Path(__file__).resolve().parents[2]
-TITLE_S, ORBIT = 1.0, 70.0
+TITLE_S, ORBIT, LIFT_S, LIFT_FRAC = 1.0, 70.0, 1.5, 0.06
 AX = {"x": 0, "y": 1, "z": 2}
 PART_NAMES = {"abc_00000003": "closed tube with stubs", "abc_00000065": "shaft clamp"}
 BG = dict(color="#1d2330", top="#3a4356")
+# camera elevation change (deg) from pyvista's iso view per part, and the platen opacity
+PART_VIEW = {"abc_00000003": {"elev": -24.0}, "abc_00000065": {"elev": 0.0}}
+PLATEN_OPACITY = 0.28
+FACES = {10: [(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)],                       # VTK_TETRA
+         12: [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]}  # VTK_HEXAHEDRON
 MATERIAL_CAPTION = "Formlabs Alpha Fast Resin, 2-min cure, calibrated from dogbone test: E 1.88 GPa, UTS 50.5 MPa"
 
 
@@ -52,8 +64,12 @@ def chain(run: Path) -> list[Path]:
         if not meta.exists():
             break
         parent = json.loads(meta.read_text()).get("continued_from")
-        if not parent or not Path(parent).exists():
+        if not parent:
             break
+        if not Path(parent).exists():      # the chain was copied to another machine: look next to this run
+            parent = run.parent / Path(parent).name
+            if not parent.exists():
+                break
         run = Path(parent); out.insert(0, run)
     return out
 
@@ -108,6 +124,32 @@ def platens(lo, hi, axis):
     return slab(lo[axis], True), slab(hi[axis], False)
 
 
+def upper_piece(g0, pts, state, axis):
+    """Cells of the intact pieces (face-connected) that touch the top platen: they rise in the held ending."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    cd = g0.cells_dict
+    ct = next(iter(cd))
+    conn = np.asarray(cd[ct])
+    if len(cd) != 1 or ct not in FACES or len(conn) != g0.n_cells:
+        return np.zeros(g0.n_cells, bool)
+    ids = np.where(state == 0)[0]
+    fl = FACES[ct]
+    faces = np.sort(np.concatenate([conn[ids][:, list(f)] for f in fl]), axis=1)
+    owner = np.tile(ids, len(fl))
+    _, inv = np.unique(faces, axis=0, return_inverse=True)
+    inv = inv.ravel()
+    order = np.argsort(inv, kind="stable")
+    same = inv[order][1:] == inv[order][:-1]
+    a, b = owner[order][:-1][same], owner[order][1:][same]
+    n = g0.n_cells
+    graph = coo_matrix((np.ones(len(a)), (a, b)), shape=(n, n))
+    _, lab = connected_components(graph, directed=False)
+    top = pts[:, axis] >= pts[:, axis].max() - 1e-3 * np.ptp(pts[:, axis])
+    touch = top[conn].any(axis=1) & (state == 0)
+    return np.isin(lab, np.unique(lab[touch])) & (state == 0)
+
+
 def cut_azimuth(axis: int, c: int, frac: float, orbit: float) -> float:
     """Camera azimuth (deg, from pyvista's iso view) of panel c at orbit fraction frac. Panel 0 orbits 0 -> orbit.
     The cut panels swing through face-on of the cut plane (normal along (axis + 1) % 3) when it is horizontal,
@@ -121,44 +163,94 @@ def cut_azimuth(axis: int, c: int, frac: float, orbit: float) -> float:
     return face_on + orbit / 2 - orbit * frac
 
 
-def frame_plan(n_inc, fps, min_s, hold_s):
-    """(increment a, increment b, t) per frame: the loading part lasts >= min_s seconds."""
+def _ease(x):
+    x = min(max(x, 0.0), 1.0)
+    return x * x * (3 - 2 * x)
+
+
+def frame_plan(n_inc, fps, min_s, hold_s, lift=True):
+    """(increment a, increment b, t, lift fraction) per frame: the loading part lasts >= min_s seconds."""
     n_load = max(int(min_s * fps), n_inc)
-    plan = [(0, 0, 0.0)] * int(TITLE_S * fps)
+    plan = [(0, 0, 0.0, 0.0)] * int(TITLE_S * fps)
     for f in range(n_load):
         x = f / (n_load - 1) * (n_inc - 1)
         a = int(np.floor(x)); b = min(a + 1, n_inc - 1)
-        plan.append((a, b, x - a))
-    return plan + [(n_inc - 1, n_inc - 1, 0.0)] * int(hold_s * fps)
+        plan.append((a, b, x - a, 0.0))
+    n_hold = int(hold_s * fps)
+    return plan + [(n_inc - 1, n_inc - 1, 0.0, _ease(k / (LIFT_S * fps)) if lift else 0.0) for k in range(n_hold)]
 
 
-def scene(pl, g0, pts, u, vm, state, ids_half, plats, umax, arrows_idx, uts):
+def clock_plan(travel, clock, fps, lift=True):
+    """Frames on a shared platen-travel clock: per clock travel, the bracketing increments of this run; past the
+    run's last increment its final state is held (and lifted)."""
+    tr = np.maximum.accumulate(travel)
+    plan, n_inc, done = [], len(tr), None
+    for f, T in enumerate(clock):
+        a = int(np.searchsorted(tr, T, side="right") - 1)
+        a = min(max(a, 0), n_inc - 1)
+        if a >= n_inc - 1:
+            done = f if done is None else done
+            plan.append((n_inc - 1, n_inc - 1, 0.0, _ease((f - done) / (LIFT_S * fps)) if lift else 0.0))
+            continue
+        b = a + 1
+        t = 0.0 if tr[b] <= tr[a] else float(np.clip((T - tr[a]) / (tr[b] - tr[a]), 0, 1))
+        plan.append((a, b, t, 0.0))
+    return plan
+
+
+def _surf(cur, mask):
+    return cur.extract_cells(np.where(mask)[0]).extract_surface(algorithm="dataset_surface") if mask.any() else None
+
+
+def xray(pl, mesh, color, opacity=0.9):
+    """Draw mesh in a layer-1 renderer over the current subplot (no depth test against the part), so broken cells
+    inside the wall or behind the platen stay visible. Returns (overlay, base) to share the camera after framing."""
+    from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper, vtkRenderer
+    base = pl.renderer
+    ov = vtkRenderer(); ov.SetLayer(1); ov.SetViewport(base.GetViewport()); ov.InteractiveOff()
+    mp = vtkPolyDataMapper(); mp.SetInputData(mesh); mp.ScalarVisibilityOff()
+    ac = vtkActor(); ac.SetMapper(mp)
+    pr = ac.GetProperty(); pr.SetColor(pv.Color(color).float_rgb); pr.SetOpacity(opacity); pr.SetAmbient(0.35)
+    ov.AddActor(ac)
+    pl.ren_win.SetNumberOfLayers(2); pl.ren_win.AddRenderer(ov)
+    return ov, base
+
+
+def scene(pl, g0, pts, u, vm, state, ids_half, plats, umax, arrows_idx, uts, panels=3, upper=None, lift_vec=None,
+          bar_scale=1.0):
     cur = g0.copy(); cur.points = pts + u
     cur.point_data["vm"] = vm; cur.point_data["umag"] = np.linalg.norm(u, axis=1) * 1e3
-    sb = dict(color="white", title_font_size=14, label_font_size=12, position_x=0.2, position_y=0.02, width=0.6, height=0.11,
-              fmt="%.0f", n_labels=5)
+    lifted = cur.copy(); lifted.points = cur.points + (lift_vec if lift_vec is not None else 0.0)
+    sb = dict(color="white", title_font_size=int(14 * bar_scale), label_font_size=int(12 * bar_scale), position_x=0.2,
+              position_y=0.02, width=0.6, height=0.11, fmt="%.0f", n_labels=5)
     in_half = np.zeros(cur.n_cells, bool); in_half[ids_half] = True
-    for c in range(3):
+    up = upper if (upper is not None and lift_vec is not None) else np.zeros(cur.n_cells, bool)
+    overlays = []
+    for c in range(panels):
         pl.subplot(0, c)
         sel = (state == 0) & (in_half if c else True)
-        body = cur.extract_cells(np.where(sel)[0]).extract_surface(algorithm="dataset_surface") if sel.any() else None
-        if body is not None and body.n_points:
+        first = True
+        for grid, mask in ((cur, sel & ~up), (lifted, sel & up)):
+            body = _surf(grid, mask)
+            if body is None or not body.n_points:
+                continue
             if c < 2:
-                pl.add_mesh(body, scalars="vm", clim=[0, uts], cmap="turbo", show_scalar_bar=(c == 0),
+                pl.add_mesh(body, scalars="vm", clim=[0, uts], cmap="turbo", show_scalar_bar=(c == 0 and first),
                             scalar_bar_args={**sb, "title": f"von Mises (MPa), colour limit = UTS {uts:.1f}; red = broken"})
             else:
-                pl.add_mesh(body, scalars="umag", clim=[0, umax], cmap="viridis",
+                pl.add_mesh(body, scalars="umag", clim=[0, umax], cmap="viridis", show_scalar_bar=first,
                             scalar_bar_args={**sb, "title": "displacement (um)"})
+            first = False
         bad = (state == 1) & (in_half if c else True)
-        if bad.any() and c < 2:
-            pl.add_mesh(cur.extract_cells(np.where(bad)[0]).extract_surface(algorithm="dataset_surface"), color="#ff2a2a")
+        if bad.any():
+            pl.add_mesh(_surf(cur, bad), color="#ff2a2a")
+            overlays.append(xray(pl, _surf(cur, bad), "#ff2a2a", 0.85))
         frag = (state == 2) & (in_half if c else True)
-        if frag.any() and c < 2:
-            pl.add_mesh(cur.extract_cells(np.where(frag)[0]).extract_surface(algorithm="dataset_surface"),
-                        color="#b9bec8", opacity=0.6)
+        if frag.any():
+            pl.add_mesh(_surf(cur, frag), color="#b9bec8", opacity=0.6)
         if c == 0:
             for p in plats:
-                pl.add_mesh(p, color="#8a8f98", opacity=0.55)
+                pl.add_mesh(p, color="#8a8f98", opacity=PLATEN_OPACITY)
         if c == 2 and arrows_idx.size:
             a = pv.PolyData(pts[arrows_idx] + u[arrows_idx]); a["v"] = u[arrows_idx]
             n = np.linalg.norm(a["v"], axis=1).max() or 1.0
@@ -166,10 +258,12 @@ def scene(pl, g0, pts, u, vm, state, ids_half, plats, umax, arrows_idx, uts):
                                 geom=pv.Arrow(tip_length=0.35, shaft_radius=0.04)), color="#ffe14d")
     for bar in pl.scalar_bars.values():
         bar.SetTextPositionToPrecedeScalarBar()
+    return overlays
 
 
 def render(run: Path, out: Path, label: str, fps: int, min_s: float, hold_s: float, zoom: float,
-           wid: int = 0, nwork: int = 1, max_frames: int | None = None):
+           wid: int = 0, nwork: int = 1, max_frames: int | None = None, only: list[int] | None = None,
+           layout: str = "panels", size=(1920, 1080), clock: list[float] | None = None, lift: bool = True):
     rows, runs = series(run)
     if not rows:
         raise SystemExit(f"{run}: no increments with a .vtu")
@@ -194,49 +288,86 @@ def render(run: Path, out: Path, label: str, fps: int, min_s: float, hold_s: flo
     on_cut = np.where(np.abs(pts[:, side] - mid[side]) < 0.04 * np.ptp(pts[:, side]))[0]
     arrows_idx = np.random.default_rng(0).choice(on_cut, size=min(300, on_cut.size), replace=False)
     last = load(files[-1]); umax = float(np.linalg.norm(last[1], axis=1).max() * 1e3) or 1.0
+    separated = bool(summ.get("separated"))
+    lift = lift and separated
+    upper = upper_piece(g0, pts, last[3], axis) if lift else None
+    if upper is not None and not upper.any():
+        lift, upper = False, None          # nothing intact is attached to the top
+    lift_mm = LIFT_FRAC * float(hi[axis] - lo[axis])
     peak_i = int(np.argmax(force))
     frames = out.parent / (out.stem + "_frames"); frames.mkdir(parents=True, exist_ok=True)
     cache = {}
     get = lambda i: zero if i == 0 else cache.setdefault(i, load(files[i - 1]))  # noqa: E731
-    plan = frame_plan(n_inc, fps, min_s, hold_s)
+    plan = clock_plan(travel, clock, fps, lift) if clock is not None else frame_plan(n_inc, fps, min_s, hold_s, lift)
     if max_frames:
         plan = plan[:max_frames]
+    todo = range(len(plan)) if only is None else sorted({i % len(plan) for i in only})
     nodes = meta.get("n_nodes") or summ.get("n_nodes") or g0.n_points
     ctype = {12: "hexahedron", 10: "tetra", 24: "tetra10", 25: "hexahedron20"}.get(int(pv.read(files[0]).celltypes[0]), "")
-    bounds = list(np.ravel(np.c_[lo - 0.1 * (hi - lo), hi + 0.1 * (hi - lo)]))
-    for f, (a, b, t) in enumerate(plan):
+    el = PART_VIEW.get(part, {}).get("elev", 0.0)
+    span = hi - lo; span[axis] += lift_mm if lift else 0.0
+    bounds = list(np.ravel(np.c_[lo - 0.1 * span, lo + 1.1 * span]))
+    single = layout == "single"
+    W, H = size
+    k = H / 1080                      # caption scale
+    for f in todo:
         if f % nwork != wid or (frames / f"f{f:04d}.png").exists():
             continue
+        a, b, t, lf = plan[f]
         if len(cache) > 6:
             cache.clear()
         A, B = get(a), get(b)
         u = (1 - t) * A[1] + t * B[1]; vm = (1 - t) * A[2] + t * B[2]; state = B[3] if t > 0.5 else A[3]
         tr = (1 - t) * travel[a] + t * travel[b]; fo = (1 - t) * force[a] + t * force[b]
+        fo = fo if abs(fo) >= 0.5 else 0.0          # no "-0 N" after separation
         shift = np.zeros(3); shift[axis] = -tr
-        bot, top = platens(lo, hi, axis); top.points = top.points + shift
-        pl = pv.Plotter(off_screen=True, shape=(2, 3), row_weights=[0.86, 0.14], groups=[(1, np.s_[:])],
-                        window_size=(1920, 1080), border=False)
-        scene(pl, g0, pts, u, vm, state, ids_half, (bot, top), umax, arrows_idx, uts)
+        lv = None
+        if lf > 0:
+            lv = np.zeros(3); lv[axis] = lf * lift_mm
+        bot, top = platens(lo, hi, axis); top.points = top.points + shift + (lv if lv is not None else 0.0)
+        panels = 1 if single else 3
+        if single:
+            pl = pv.Plotter(off_screen=True, shape=(2, 1), row_weights=[0.82, 0.18], window_size=(W, H), border=False)
+        else:
+            pl = pv.Plotter(off_screen=True, shape=(2, 3), row_weights=[0.86, 0.14], groups=[(1, np.s_[:])],
+                            window_size=(W, H), border=False)
+        overlays = scene(pl, g0, pts, u, vm, state, ids_half, (bot, top), umax, arrows_idx, uts, panels,
+              upper if lv is not None else None, lv, bar_scale=max(k, 0.7))
         labels = ("outside", "inside: cut in half, von Mises", "inside: movement (arrows = displacement)")
-        for c in range(3):   # deterministic camera: same framing every frame, orbit by frame index
-            pl.subplot(0, c); pl.set_background(BG["color"], top=BG["top"])
-            pl.add_text(labels[c], font_size=12, position="upper_left", color="white")
+        orbit_f = f / len(plan)
+        for c in range(panels):   # deterministic camera: same framing every frame, orbit by frame index
+            pl.subplot(0, c); pl.set_background(BG["color"], top=BG["top"], all_renderers=False)
+            if not single:
+                pl.add_text(labels[c], font_size=12, position="upper_left", color="white")
             pl.camera_position = "iso"; pl.reset_camera(bounds=bounds)
-            pl.camera.Azimuth(cut_azimuth(axis, c, f / len(plan), ORBIT)); pl.camera.zoom(zoom)
-        pl.subplot(1, 0); pl.set_background(BG["color"], top=BG["color"])
+            pl.camera.Azimuth(cut_azimuth(axis, c, orbit_f, ORBIT)); pl.camera.Elevation(el)
+            pl.camera.OrthogonalizeViewUp(); pl.camera.zoom(zoom)
+        for ov, base in overlays:   # x-ray layers share their panel's (final) camera
+            ov.SetActiveCamera(base.GetActiveCamera())
+        pl.subplot(1, 0); pl.set_background(BG["color"], all_renderers=False)
         n_broken = int((state == 1).sum()); n_frag = int((state == 2).sum())
-        phase = "separated" if (a == n_inc - 1 and summ.get("separated")) else \
+        phase = "separated" if (a == n_inc - 1 and separated) else \
             ("after peak" if a >= peak_i and force[a] < force[peak_i] else "loading")
-        pl.add_text(f"{part} ({PART_NAMES.get(part, '')})   -   mesh system: {label}   -   {nodes:,} nodes, "
-                    f"{g0.n_cells:,} {ctype} cells   -   nonlinear crush (CalculiX)", font_size=12, position=(8, 110),
-                    color="white")
-        pl.add_text(f"platen travel {tr:6.3f} mm    force {fo:8.0f} N (peak {force[peak_i]:.0f} N at "
-                    f"{travel[peak_i]:.3f} mm)    broken elements {n_broken}" + (f", detached {n_frag}" if n_frag else "")
-                    + f"    [{phase}]\nmaterial: {MATERIAL_CAPTION}\nJ2 plasticity from the test curve, a cell breaks at "
-                    f"PEEQ {peeq:g}; NLGEOM; bonded platens, displacement control; true scale (no magnification); "
-                    f"red = broken, grey = detached", font_size=10, position=(8, 8), color="white")
+        if single:
+            pl.add_text(label, font_size=int(15 * k), position=(int(10 * k), int(H * 0.18 * 0.55)), color="white")
+            pl.add_text(f"travel {tr:6.3f} mm   force {fo:6.0f} N   broken {n_broken}"
+                        + (f" (+{n_frag} detached)" if n_frag else "") + f"   [{phase}]"
+                        + (f"\npeak {force[peak_i]:.0f} N at {travel[peak_i]:.3f} mm; {nodes:,} nodes, {ctype}"
+                           + (f"; upper piece lifted {lf * lift_mm:.1f} mm (not simulated)" if lf > 0 else "")),
+                        font_size=int(10 * k), position=(int(10 * k), int(6 * k)), color="white")
+        else:
+            pl.add_text(f"{part} ({PART_NAMES.get(part, '')})   -   mesh system: {label}   -   {nodes:,} nodes, "
+                        f"{g0.n_cells:,} {ctype} cells   -   nonlinear crush (CalculiX)", font_size=12, position=(8, 110),
+                        color="white")
+            pl.add_text(f"platen travel {tr:6.3f} mm    force {fo:8.0f} N (peak {force[peak_i]:.0f} N at "
+                        f"{travel[peak_i]:.3f} mm)    broken elements {n_broken}" + (f", detached {n_frag}" if n_frag else "")
+                        + f"    [{phase}]\nmaterial: {MATERIAL_CAPTION}\nJ2 plasticity from the test curve, a cell breaks at "
+                        f"PEEQ {peeq:g}; NLGEOM; bonded platens, displacement control; true scale; "
+                        f"red = broken (drawn through the part), grey = detached" + (f"\nheld ending: the upper piece and its platen are lifted "
+                        f"{lf * lift_mm:.1f} mm to show the crack (not simulated)" if lf > 0 else ""),
+                        font_size=10, position=(8, 4), color="white")
         pl.screenshot(str(frames / f"f{f:04d}.png")); pl.close()
-    if nwork > 1 and wid != 0:
+    if only is not None or (nwork > 1 and wid != 0):
         return None
     while len(list(frames.glob("f*.png"))) < len(plan):
         time.sleep(3)
@@ -254,10 +385,15 @@ def main(argv=None):
     ap.add_argument("--label", default=None)
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--min-s", type=float, default=11.0)
-    ap.add_argument("--hold-s", type=float, default=3.0)
+    ap.add_argument("--hold-s", type=float, default=4.0)
     ap.add_argument("--zoom", type=float, default=1.1)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--max-frames", type=int, default=None, help="render only the first N frames (preview)")
+    ap.add_argument("--only", default=None, help="comma-separated frame indices to render as PNGs (no video)")
+    ap.add_argument("--layout", default="panels", choices=["panels", "single"])
+    ap.add_argument("--size", default="1920x1080")
+    ap.add_argument("--clock", default=None, help="JSON {fps, travel_mm: [...]}: shared platen-travel time base")
+    ap.add_argument("--no-lift", action="store_true", help="hold the separated state without lifting the upper piece")
     a = ap.parse_args(argv)
     run, out = Path(a.run_dir), Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -273,8 +409,14 @@ def main(argv=None):
         if any(rc):
             raise SystemExit(f"workers failed: {rc}")
         return
-    render(run, out, label, a.fps, a.min_s, a.hold_s, a.zoom, int(os.environ.get("WORKER", "0")),
-           int(os.environ.get("NWORK", "1")), a.max_frames)
+    clock, fps = None, a.fps
+    if a.clock:
+        cj = json.loads(Path(a.clock).read_text())
+        clock, fps = [float(v) for v in cj["travel_mm"]], int(cj.get("fps", a.fps))
+    w, h = (int(v) for v in a.size.lower().split("x"))
+    render(run, out, label, fps, a.min_s, a.hold_s, a.zoom, int(os.environ.get("WORKER", "0")),
+           int(os.environ.get("NWORK", "1")), a.max_frames,
+           [int(v) for v in a.only.split(",")] if a.only else None, a.layout, (w, h), clock, not a.no_lift)
 
 
 if __name__ == "__main__":
