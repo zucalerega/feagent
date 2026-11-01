@@ -51,8 +51,10 @@ PARTS = {
 }
 
 
-def make_spec(step: Path, part: str, purpose: str, out: Path) -> dict:
-    cfg, knobs = PARTS[part], PARTS[part][purpose]
+def make_spec(step: Path, part: str, purpose: str, out: Path, global_size: float | None = None) -> dict:
+    cfg, knobs = PARTS[part], dict(PARTS[part][purpose])
+    if global_size:
+        knobs["global"] = global_size           # node-count matching (--global)
     groups = {}
     for name in ("bottom", "top"):
         sel, n = cfg[name]
@@ -92,11 +94,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("step"), ap.add_argument("axis"), ap.add_argument("out")
     ap.add_argument("--purpose", choices=["linear", "nonlinear"], required=True)
+    ap.add_argument("--global", dest="global_size", type=float, default=None,
+                    help="override the global size [m] (node-count matching; default from PARTS)")
     a = ap.parse_args()
     step, out = Path(a.step), Path(a.out)
     part = step.parent.parent.name.replace("_bc0", "")
     out.mkdir(parents=True, exist_ok=True)
-    spec = make_spec(step, part, a.purpose, out)
+    spec = make_spec(step, part, a.purpose, out, a.global_size)
     force = 100.0 * (1 if a.axis in "xyz" else 0)
     sign = -1.0  # compressive on the top platen: push in -axis direction? top is at +axis -> -axis
     vec = [0.0, 0.0, 0.0]

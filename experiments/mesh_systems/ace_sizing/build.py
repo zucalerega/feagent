@@ -38,6 +38,8 @@ def main(argv=None):
     ap.add_argument("--purpose", choices=["linear", "nonlinear"], required=True)
     ap.add_argument("--h", type=float); ap.add_argument("--no-hotspots", action="store_true")
     ap.add_argument("--ho-opt", action="store_true", help="gmsh HighOrder optimise after curving (can abort gmsh)")
+    ap.add_argument("--node-cap", type=int, default=NL_NODE_CAP,
+                    help=f"nonlinear: attempts above this node count are skipped (default {NL_NODE_CAP})")
     a = ap.parse_args(argv)
     t0 = time.time()
     part = Path(a.step).resolve().parents[1].name.removesuffix("_bc0")
@@ -66,7 +68,7 @@ def main(argv=None):
     for k, (scale, frac) in enumerate((sc, fr) for sc in (1, .93, .86, .8, .74, .68, .62) for fr in (CONTACT_FRAC, .7)):
         hk = h * scale
         s, rep = attempt(hk, frac)
-        if a.purpose == "nonlinear" and s["nodes"] > NL_NODE_CAP:
+        if a.purpose == "nonlinear" and s["nodes"] > a.node_cap:
             continue
         sicn_ok = next(g.status for g in rep.gates if g.id == "sicn") != "fail"
         tried.append({"h": hk, "contact_frac": frac, "sicn_min": rep.sicn.min, "inverted": rep.inverted})

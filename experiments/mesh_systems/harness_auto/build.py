@@ -91,6 +91,8 @@ def main(argv=None):
     ap.add_argument("step"), ap.add_argument("axis", choices="xyz"), ap.add_argument("out")
     ap.add_argument("--purpose", choices=["linear", "nonlinear"], required=True)
     ap.add_argument("--part", default=None, help="part id (default: from the STEP path, <part>_bc0/public/...)")
+    ap.add_argument("--global", dest="global_size", type=float, default=None,
+                    help="nonlinear: override the global size [m] (node-count matching; default from NONLINEAR)")
     a = ap.parse_args(argv)
     t0 = time.time()
     os.environ.update(CPU_ENV)
@@ -113,6 +115,9 @@ def main(argv=None):
     order = 2
     if a.purpose == "nonlinear":
         spec["size"], order0 = NONLINEAR[part]
+        spec["size"] = dict(spec["size"])
+        if a.global_size:
+            spec["size"]["global"] = a.global_size
         spec["element"]["order"] = order0
     spec["geometry"] = os.path.relpath(step, work)
     (work / "mesh.yaml").write_text("# harness_auto: feagent auto_spec + contract groups by query\n"
