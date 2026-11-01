@@ -25,7 +25,8 @@
    "label": "automesher",
    "nodes": 2937,
    "dofs": 8811,
-   "mean_rel_err": 0.1659
+   "mean_rel_err": 0.07838,
+   "note": "curved P2 (gmsh default sizes), only the midside nodes CalculiX rejects straightened; the earlier 16.6 % straightened every midside node, which facets the curved faces"
   },
   "swarm_bc0": {
    "label": "swarm bc0 mesh",

@@ -123,9 +123,15 @@ def _need_ccx() -> None:
                            f"on this machine: {e}") from e
 
 
-def _straighten(path: Path) -> None:
-    """Rewrite a quadratic tet mesh in place with every midside node at its straight edge midpoint
-    (CalculiX refuses curved or misplaced midside nodes)."""
+MIDSIDE_TOL = 0.24      # CalculiX rejects a midside node more than 0.25 edge lengths off its edge midpoint
+
+
+def _straighten(path: Path, only_rejected: bool = True) -> int:
+    """Rewrite a quadratic tet mesh in place, moving midside nodes to their straight edge midpoints;
+    returns how many were moved. only_rejected: just the ones CalculiX would reject (more than
+    MIDSIDE_TOL edge lengths off), so the rest of the curved boundary stays curved; straightening
+    every edge facets the bore and the pocket fillets and makes the part too stiff (the pilot's
+    straightened meshes read 6-8 % against 2-4 % for curved ones at the same node counts)."""
     import gmsh
     from feacore.geometry.gmsh_tools import gmsh_session
     tet10_edges = [(0, 1, 4), (1, 2, 5), (0, 2, 6), (0, 3, 7), (2, 3, 8), (1, 3, 9)]   # gmsh ordering
@@ -138,10 +144,15 @@ def _straighten(path: Path) -> None:
         done = set()
         for a, b, m in tet10_edges:
             for na, nb, nm in conn[:, [a, b, m]]:
-                if nm not in done:
-                    done.add(nm)
-                    gmsh.model.mesh.setNode(int(nm), list(0.5 * (X[na] + X[nb])), [])
+                if nm in done:
+                    continue
+                mid = 0.5 * (X[na] + X[nb])
+                if only_rejected and np.linalg.norm(X[nm] - mid) <= MIDSIDE_TOL * np.linalg.norm(X[nb] - X[na]):
+                    continue
+                done.add(nm)
+                gmsh.model.mesh.setNode(int(nm), list(mid), [])
         gmsh.write(str(path))
+    return len(done)
 
 
 def _peaks(X: np.ndarray, v: np.ndarray, n: int = 3, sep: float = 8e-3) -> list[int]:
@@ -223,10 +234,18 @@ def run_curve(problem_id: str, mesh: dict, workdir: Path, threads: int = 4, seri
                     raise
                 straight = workdir / "mesh_straight.msh"
                 shutil.copyfile(mesh["path"], straight)
-                _straighten(straight)
+                out["straightened_edges"] = _straighten(straight)          # only the rejected edges
                 mesh["path"], out["straightened"] = str(straight), True
-                res = solve(build_case(problem, mesh, adaptive), backend="ccx", threads=threads,
-                            timeout=CCX_TIMEOUT_S)
+                try:
+                    res = solve(build_case(problem, mesh, adaptive), backend="ccx", threads=threads,
+                                timeout=CCX_TIMEOUT_S)
+                except MeshError as e2:
+                    if "midside" not in str(e2):
+                        raise
+                    out["straightened_edges"] = _straighten(straight, only_rejected=False)   # last resort
+                    out["straightened_all"] = True
+                    res = solve(build_case(problem, mesh, adaptive), backend="ccx", threads=threads,
+                                timeout=CCX_TIMEOUT_S)
         except (CcxError, MeshError, NotImplementedError, ValueError) as e:
             err = f"{type(e).__name__}: {e}"   # keeps the fixed-increment result, if there was one
             if not adaptive and res is None and "no converged increment" in str(e):
@@ -290,14 +309,17 @@ def run_curve(problem_id: str, mesh: dict, workdir: Path, threads: int = 4, seri
 
 
 def automesher_baseline(problem_id: str) -> dict:
-    """run_curve on the automesher's mesh (gmsh default sizes, straight-sided P2 so CalculiX accepts
-    it). Cached in ace/field_refs/<pid>_nl_auto.json; computing it needs ccx."""
+    """run_curve on the automesher's mesh: gmsh default sizes, quadratic with curved boundary edges
+    (folded cells unfolded as in field mode), scored exactly like an agent's mesh (run_curve
+    straightens only the edges CalculiX rejects). Cached in ace/field_refs/<pid>_nl_auto.json;
+    computing it needs ccx."""
     f = CACHE / f"{problem_id}_nl_auto.json"
     if f.exists():
         return json.loads(f.read_text())
     _need_ccx()
     import gmsh
     from ace import fea
+    from ace.field_error import _unfold_tet10
     from feacore.geometry.gmsh_tools import ensure_domain_group, gmsh_session
     p = fea.get_problem(problem_id)
     with tempfile.TemporaryDirectory() as tmp:
@@ -306,8 +328,8 @@ def automesher_baseline(problem_id: str) -> dict:
             p.build_geometry()
             ensure_domain_group(p.dim)
             gmsh.model.mesh.generate(p.dim)
-            gmsh.option.setNumber("Mesh.SecondOrderLinear", 1)      # straight midside nodes
             gmsh.model.mesh.setOrder(2)
+            _unfold_tet10()
             gmsh.write(str(path))
         res = run_curve(problem_id, {"path": str(path), "order": 2}, Path(tmp) / "nonlinear", series=False)
     if not res["ok"]:

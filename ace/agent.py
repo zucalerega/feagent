@@ -678,7 +678,7 @@ class Tools:
                  for u, fm, fs, e in zip(r["checkpoints_mm"], r["force_meas_N"], r["force_sim_N"], r["rel_err"])]
         return {"mesh": n, "mean_rel_err": f"{r['mean_rel_err']:.2%}", "checkpoints": table,
                 "nodes": r["nodes"], "dofs": r["dofs"], "peeq_max": solve_feedback._sig(r["peeq_max"]),
-                "hotspots": r.get("hotspots") or [], "straightened": r.get("straightened", False),
+                "hotspots": r.get("hotspots") or [], "straightened": r.get("straightened", False), "straightened_edges": r.get("straightened_edges", 0),
                 "wall_s": round(r.get("wall_s") or 0), "checks_left": left}, False
 
     def _result_of(self, n) -> tuple:

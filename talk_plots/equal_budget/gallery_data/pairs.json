@@ -1,0 +1,2409 @@
+{
+ "later_vs_earlier": [
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g14-nafems_le1-a5",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0062068718159574736,
+   "earlier_dofs": 1224,
+   "later_dofs": 1182,
+   "ratio": 2.7642725851815517
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g17-nafems_le1-a3",
+   "later": "g18-nafems_le1-a5",
+   "earlier_error": 0.04018460573224659,
+   "later_error": 0.014751301390910897,
+   "earlier_dofs": 774,
+   "later_dofs": 666,
+   "ratio": 2.724139699091673
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g13-nafems_le1-a4",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.006447183524573446,
+   "earlier_dofs": 1224,
+   "later_dofs": 1088,
+   "ratio": 2.6612373504168922
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g11-nafems_le1-a1",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0067503638064567726,
+   "earlier_dofs": 1224,
+   "later_dofs": 1116,
+   "ratio": 2.5417127272719755
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g18-nafems_le1-a2",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0067503638064567726,
+   "earlier_dofs": 1224,
+   "later_dofs": 1116,
+   "ratio": 2.5417127272719755
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g8-nafems_le1-a2",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0067503638064567726,
+   "earlier_dofs": 1224,
+   "later_dofs": 1116,
+   "ratio": 2.5417127272719755
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g9-nafems_le1-a1",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0067503638064567726,
+   "earlier_dofs": 1224,
+   "later_dofs": 1116,
+   "ratio": 2.5417127272719755
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g15-nafems_le1-a5",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.006846576368387133,
+   "earlier_dofs": 1224,
+   "later_dofs": 1166,
+   "ratio": 2.5059949202946106
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g15-nafems_le1-a0",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.006985900406387855,
+   "earlier_dofs": 1224,
+   "later_dofs": 1084,
+   "ratio": 2.4560163475704004
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g7-nafems_le1-a4",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0073780106585033655,
+   "earlier_dofs": 1224,
+   "later_dofs": 994,
+   "ratio": 2.325489402866719
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g3-nafems_le1-a3",
+   "later": "g18-nafems_le1-a5",
+   "earlier_error": 0.0340481050362499,
+   "later_error": 0.014751301390910897,
+   "earlier_dofs": 698,
+   "later_dofs": 666,
+   "ratio": 2.3081424569922246
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g3-nafems_le1-a3",
+   "later": "g7-nafems_le1-a1",
+   "earlier_error": 0.0340481050362499,
+   "later_error": 0.014751301390910897,
+   "earlier_dofs": 698,
+   "later_dofs": 666,
+   "ratio": 2.3081424569922246
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g16-nafems_le1-a0",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0074403204300748215,
+   "earlier_dofs": 1224,
+   "later_dofs": 1080,
+   "ratio": 2.3060143392795704
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g6-nafems_le1-a2",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.0074403204300748215,
+   "earlier_dofs": 1224,
+   "later_dofs": 1080,
+   "ratio": 2.3060143392795704
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a1",
+   "later": "g7-cooks_membrane-a2",
+   "earlier_error": 0.02781626199331083,
+   "later_error": 0.013127163481252917,
+   "earlier_dofs": 968,
+   "later_dofs": 930,
+   "ratio": 2.1189849606912885
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a2",
+   "later": "g7-cooks_membrane-a2",
+   "earlier_error": 0.02781626199331083,
+   "later_error": 0.013127163481252917,
+   "earlier_dofs": 968,
+   "later_dofs": 930,
+   "ratio": 2.1189849606912885
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a3",
+   "later": "g5-cooks_membrane-a1",
+   "earlier_error": 0.028971131859824577,
+   "later_error": 0.013691014609249423,
+   "earlier_dofs": 898,
+   "later_dofs": 886,
+   "ratio": 2.1160690194758947
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a3",
+   "later": "g12-cooks_membrane-a1",
+   "earlier_error": 0.028971131859824577,
+   "later_error": 0.01372659571976899,
+   "earlier_dofs": 898,
+   "later_dofs": 870,
+   "ratio": 2.1105838950367324
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "earlier": "g5-nafems_le1-a1",
+   "later": "g6-nafems_le1-a0",
+   "earlier_error": 0.017157485600587278,
+   "later_error": 0.008131137769471393,
+   "earlier_dofs": 1224,
+   "later_dofs": 782,
+   "ratio": 2.1100965310175392
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a1",
+   "later": "g5-cooks_membrane-a1",
+   "earlier_error": 0.02781626199331083,
+   "later_error": 0.013691014609249423,
+   "earlier_dofs": 968,
+   "later_dofs": 886,
+   "ratio": 2.031716624896348
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a2",
+   "later": "g5-cooks_membrane-a1",
+   "earlier_error": 0.02781626199331083,
+   "later_error": 0.013691014609249423,
+   "earlier_dofs": 968,
+   "later_dofs": 886,
+   "ratio": 2.031716624896348
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a1",
+   "later": "g12-cooks_membrane-a1",
+   "earlier_error": 0.02781626199331083,
+   "later_error": 0.01372659571976899,
+   "earlier_dofs": 968,
+   "later_dofs": 870,
+   "ratio": 2.026450152768028
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "earlier": "g1-cooks_membrane-a2",
+   "later": "g12-cooks_membrane-a1",
+   "earlier_error": 0.02781626199331083,
+   "later_error": 0.01372659571976899,
+   "earlier_dofs": 968,
+   "later_dofs": 870,
+   "ratio": 2.026450152768028
+  }
+ ],
+ "vs_equal_dof_automesher": [
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a1",
+   "gen": 10,
+   "error": 0.010578983752285066,
+   "dofs": 732,
+   "auto_error_equal_dofs": 0.03635972427518253,
+   "ratio": 3.4369770411386455
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a7",
+   "gen": 10,
+   "error": 0.010746610442267332,
+   "dofs": 710,
+   "auto_error_equal_dofs": 0.0368965486633758,
+   "ratio": 3.4333196370698
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a6",
+   "gen": 9,
+   "error": 0.010780047706066788,
+   "dofs": 724,
+   "auto_error_equal_dofs": 0.03655213719643475,
+   "ratio": 3.390721283716023
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a1",
+   "gen": 9,
+   "error": 0.010884669270904854,
+   "dofs": 716,
+   "auto_error_equal_dofs": 0.03674772337151202,
+   "ratio": 3.376099214124964
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a0",
+   "gen": 10,
+   "error": 0.011199567627533425,
+   "dofs": 716,
+   "auto_error_equal_dofs": 0.03674772337151202,
+   "ratio": 3.2811733982631686
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a6",
+   "gen": 10,
+   "error": 0.011200119576765151,
+   "dofs": 716,
+   "auto_error_equal_dofs": 0.03674772337151202,
+   "ratio": 3.2810116998880825
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a4",
+   "gen": 8,
+   "error": 0.012070847307387056,
+   "dofs": 686,
+   "auto_error_equal_dofs": 0.03751098904495322,
+   "ratio": 3.107568846637422
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a2",
+   "gen": 9,
+   "error": 0.012226631845318369,
+   "dofs": 678,
+   "auto_error_equal_dofs": 0.03772292134727508,
+   "ratio": 3.085307697533999
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a7",
+   "gen": 9,
+   "error": 0.012130197413268921,
+   "dofs": 702,
+   "auto_error_equal_dofs": 0.03709790351454481,
+   "ratio": 3.0583099557773346
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a5",
+   "gen": 7,
+   "error": 0.012551029212493823,
+   "dofs": 670,
+   "auto_error_equal_dofs": 0.037938588046308355,
+   "ratio": 3.0227471710879845
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a4",
+   "gen": 7,
+   "error": 0.012501463757787337,
+   "dofs": 678,
+   "auto_error_equal_dofs": 0.03772292134727508,
+   "ratio": 3.017480358952122
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a0",
+   "gen": 8,
+   "error": 0.01252476262254263,
+   "dofs": 678,
+   "auto_error_equal_dofs": 0.03772292134727508,
+   "ratio": 3.0118671693928696
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a3",
+   "gen": 7,
+   "error": 0.012709259161533015,
+   "dofs": 686,
+   "auto_error_equal_dofs": 0.03751098904495322,
+   "ratio": 2.9514693632566207
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a7",
+   "gen": 8,
+   "error": 0.012710832142192997,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.9387868168012137
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a3",
+   "gen": 8,
+   "error": 0.013048115881051649,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.862821442618827
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a7",
+   "gen": 6,
+   "error": 0.013392050327563366,
+   "dofs": 668,
+   "auto_error_equal_dofs": 0.037993101194729255,
+   "ratio": 2.836989129030697
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g2-cooks_membrane-a0",
+   "gen": 2,
+   "error": 0.011263790501232161,
+   "dofs": 952,
+   "auto_error_equal_dofs": 0.03172130889433878,
+   "ratio": 2.8162197166991647
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a7",
+   "gen": 7,
+   "error": 0.01356702283328916,
+   "dofs": 662,
+   "auto_error_equal_dofs": 0.03815810072625812,
+   "ratio": 2.812562578772277
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a3",
+   "gen": 5,
+   "error": 0.014106744652117335,
+   "dofs": 642,
+   "auto_error_equal_dofs": 0.038724484307356276,
+   "ratio": 2.7451042222944024
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a2",
+   "gen": 6,
+   "error": 0.014163801780075315,
+   "dofs": 646,
+   "auto_error_equal_dofs": 0.03860913430505979,
+   "ratio": 2.7259019085802607
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g4-cooks_membrane-a6",
+   "gen": 4,
+   "error": 0.014671486069114665,
+   "dofs": 604,
+   "auto_error_equal_dofs": 0.039876076991575415,
+   "ratio": 2.7179303312375156
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a1",
+   "gen": 6,
+   "error": 0.013970459392864423,
+   "dofs": 676,
+   "auto_error_equal_dofs": 0.03777648364215051,
+   "ratio": 2.704025872008568
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g3-cooks_membrane-a6",
+   "gen": 3,
+   "error": 0.015186333225641788,
+   "dofs": 604,
+   "auto_error_equal_dofs": 0.039876076991575415,
+   "ratio": 2.6257870414857973
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g4-cooks_membrane-a3",
+   "gen": 4,
+   "error": 0.015013283124783826,
+   "dofs": 622,
+   "auto_error_equal_dofs": 0.039317605951941115,
+   "ratio": 2.6188546252775233
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g3-cooks_membrane-a3",
+   "gen": 3,
+   "error": 0.015551174820548679,
+   "dofs": 590,
+   "auto_error_equal_dofs": 0.040327764692290456,
+   "ratio": 2.5932294606451864
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g2-cooks_membrane-a3",
+   "gen": 2,
+   "error": 0.016499506914828693,
+   "dofs": 530,
+   "auto_error_equal_dofs": 0.042459437157606215,
+   "ratio": 2.5733761243159585
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g3-cooks_membrane-a5",
+   "gen": 3,
+   "error": 0.015366963524829032,
+   "dofs": 620,
+   "auto_error_equal_dofs": 0.039378470701985496,
+   "ratio": 2.5625407803148676
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a4",
+   "gen": 6,
+   "error": 0.015129895665624084,
+   "dofs": 646,
+   "auto_error_equal_dofs": 0.03860913430505979,
+   "ratio": 2.5518440548656107
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a0",
+   "gen": 5,
+   "error": 0.015348237066657777,
+   "dofs": 628,
+   "auto_error_equal_dofs": 0.03913673664942908,
+   "ratio": 2.549917393082818
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g3-cooks_membrane-a2",
+   "gen": 3,
+   "error": 0.015370986605292755,
+   "dofs": 628,
+   "auto_error_equal_dofs": 0.03913673664942908,
+   "ratio": 2.5461434359687076
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g2-cooks_membrane-a0",
+   "gen": 2,
+   "error": 0.017101093001140398,
+   "dofs": 520,
+   "auto_error_equal_dofs": 0.04284966680014905,
+   "ratio": 2.5056683100484625
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g4-cooks_membrane-a0",
+   "gen": 4,
+   "error": 0.01615080936179754,
+   "dofs": 590,
+   "auto_error_equal_dofs": 0.040327764692290456,
+   "ratio": 2.496950077788677
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a2",
+   "gen": 7,
+   "error": 0.013127163481252917,
+   "dofs": 930,
+   "auto_error_equal_dofs": 0.032109133025259966,
+   "ratio": 2.4460069436261276
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a4",
+   "gen": 5,
+   "error": 0.01632248607536391,
+   "dofs": 604,
+   "auto_error_equal_dofs": 0.039876076991575415,
+   "ratio": 2.443014918650275
+  },
+  {
+   "run_dir": "split1_aborted_gen0",
+   "problem": "nafems_le1",
+   "run_id": "g0-nafems_le1-a1",
+   "gen": 0,
+   "error": 0.0038070751701383297,
+   "dofs": 1764,
+   "auto_error_equal_dofs": 0.009254049613657812,
+   "ratio": 2.430750431786606
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g12-cooks_membrane-a1",
+   "gen": 12,
+   "error": 0.01372659571976899,
+   "dofs": 870,
+   "auto_error_equal_dofs": 0.03324162809123818,
+   "ratio": 2.4216949905039975
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g2-cooks_membrane-a1",
+   "gen": 2,
+   "error": 0.016782853051454164,
+   "dofs": 584,
+   "auto_error_equal_dofs": 0.04052623321367154,
+   "ratio": 2.414740395415672
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a1",
+   "gen": 5,
+   "error": 0.013691014609249423,
+   "dofs": 886,
+   "auto_error_equal_dofs": 0.03292826046873252,
+   "ratio": 2.405100089987979
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a2",
+   "gen": 5,
+   "error": 0.016772002478101206,
+   "dofs": 590,
+   "auto_error_equal_dofs": 0.040327764692290456,
+   "ratio": 2.404469278188185
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g4-cooks_membrane-a4",
+   "gen": 4,
+   "error": 0.017160565526803336,
+   "dofs": 576,
+   "auto_error_equal_dofs": 0.0407956027897841,
+   "ratio": 2.3772877837892263
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g10-nafems_le11_axisym-a4",
+   "gen": 10,
+   "error": 0.00709657219830879,
+   "dofs": 648,
+   "auto_error_equal_dofs": 0.016793803604908415,
+   "ratio": 2.366466955540959
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g10-nafems_le11_axisym-a3",
+   "gen": 10,
+   "error": 0.0069479470907321825,
+   "dofs": 678,
+   "auto_error_equal_dofs": 0.016375561678597963,
+   "ratio": 2.356892109964569
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g10-nafems_le11_axisym-a2",
+   "gen": 10,
+   "error": 0.00705820266242796,
+   "dofs": 678,
+   "auto_error_equal_dofs": 0.016375561678597963,
+   "ratio": 2.320075302706725
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g5-nafems_le1-a2",
+   "gen": 5,
+   "error": 0.008131137769471393,
+   "dofs": 782,
+   "auto_error_equal_dofs": 0.018669538519921113,
+   "ratio": 2.296054875618572
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g6-nafems_le1-a0",
+   "gen": 6,
+   "error": 0.008131137769471393,
+   "dofs": 782,
+   "auto_error_equal_dofs": 0.018669538519921113,
+   "ratio": 2.296054875618572
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g10-nafems_le1-a1",
+   "gen": 10,
+   "error": 0.0036281707325858258,
+   "dofs": 2060,
+   "auto_error_equal_dofs": 0.008317380354445979,
+   "ratio": 2.292444586398534
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g14-nafems_le1-a4",
+   "gen": 14,
+   "error": 0.004618432463310591,
+   "dofs": 1456,
+   "auto_error_equal_dofs": 0.010559963675674645,
+   "ratio": 2.286482212214713
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g9-nafems_le11_axisym-a0",
+   "gen": 9,
+   "error": 0.007353016861162208,
+   "dofs": 662,
+   "auto_error_equal_dofs": 0.016594951613601444,
+   "ratio": 2.2568901890126316
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a4",
+   "gen": 6,
+   "error": 0.014483013087406543,
+   "dofs": 900,
+   "auto_error_equal_dofs": 0.032661036429020227,
+   "ratio": 2.2551271777431503
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a5",
+   "gen": 6,
+   "error": 0.014483013087406543,
+   "dofs": 900,
+   "auto_error_equal_dofs": 0.032661036429020227,
+   "ratio": 2.2551271777431503
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a3",
+   "gen": 7,
+   "error": 0.014483013087406543,
+   "dofs": 900,
+   "auto_error_equal_dofs": 0.032661036429020227,
+   "ratio": 2.2551271777431503
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a4",
+   "gen": 7,
+   "error": 0.014483013087406543,
+   "dofs": 900,
+   "auto_error_equal_dofs": 0.032661036429020227,
+   "ratio": 2.2551271777431503
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g9-nafems_le11_axisym-a4",
+   "gen": 9,
+   "error": 0.007209295400558689,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.01619010628922306,
+   "ratio": 2.2457265779355358
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g3-nafems_le11_axisym-a7",
+   "gen": 3,
+   "error": 0.007799011094784703,
+   "dofs": 608,
+   "auto_error_equal_dofs": 0.017400806626934,
+   "ratio": 2.2311555164436343
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g15-nafems_le1-a3",
+   "gen": 15,
+   "error": 0.004372926304402018,
+   "dofs": 1634,
+   "auto_error_equal_dofs": 0.009754461124113586,
+   "ratio": 2.2306484136936473
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g5-nafems_le1-a3",
+   "gen": 5,
+   "error": 0.004372926304402018,
+   "dofs": 1634,
+   "auto_error_equal_dofs": 0.009754461124113586,
+   "ratio": 2.2306484136936473
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a3",
+   "gen": 19,
+   "error": 0.016613540249666405,
+   "dofs": 704,
+   "auto_error_equal_dofs": 0.03704724741732221,
+   "ratio": 2.2299429778710835
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a3",
+   "gen": 8,
+   "error": 0.016613540249666405,
+   "dofs": 704,
+   "auto_error_equal_dofs": 0.03704724741732221,
+   "ratio": 2.2299429778710835
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g9-nafems_le11_axisym-a3",
+   "gen": 9,
+   "error": 0.007263697531524158,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.01619010628922306,
+   "ratio": 2.2289070021099646
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g5-nafems_le11_axisym-a6",
+   "gen": 5,
+   "error": 0.0073533413309810475,
+   "dofs": 678,
+   "auto_error_equal_dofs": 0.016375561678597963,
+   "ratio": 2.2269551951307576
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g12-cooks_membrane-a4",
+   "gen": 12,
+   "error": 0.016533821685608234,
+   "dofs": 724,
+   "auto_error_equal_dofs": 0.03655213719643475,
+   "ratio": 2.210749449914011
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g13-cooks_membrane-a2",
+   "gen": 13,
+   "error": 0.016533821685608234,
+   "dofs": 724,
+   "auto_error_equal_dofs": 0.03655213719643475,
+   "ratio": 2.210749449914011
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a2",
+   "gen": 6,
+   "error": 0.016533821685608234,
+   "dofs": 724,
+   "auto_error_equal_dofs": 0.03655213719643475,
+   "ratio": 2.210749449914011
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a0",
+   "gen": 11,
+   "error": 0.016533821685608234,
+   "dofs": 724,
+   "auto_error_equal_dofs": 0.03655213719643475,
+   "ratio": 2.210749449914011
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a4",
+   "gen": 18,
+   "error": 0.016533821685608234,
+   "dofs": 724,
+   "auto_error_equal_dofs": 0.03655213719643475,
+   "ratio": 2.210749449914011
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a3",
+   "gen": 9,
+   "error": 0.016533821685608234,
+   "dofs": 724,
+   "auto_error_equal_dofs": 0.03655213719643475,
+   "ratio": 2.210749449914011
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "cooks_membrane",
+   "run_id": "g1-cooks_membrane-a6",
+   "gen": 1,
+   "error": 0.019185178593866786,
+   "dofs": 532,
+   "auto_error_equal_dofs": 0.0423826972040237,
+   "ratio": 2.2091374858283994
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g8-nafems_le11_axisym-a2",
+   "gen": 8,
+   "error": 0.007479486157288463,
+   "dofs": 670,
+   "auto_error_equal_dofs": 0.01648423678696752,
+   "ratio": 2.203926371453243
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g1-nafems_le1-a2",
+   "gen": 1,
+   "error": 0.00981691633066143,
+   "dofs": 696,
+   "auto_error_equal_dofs": 0.021627636916380463,
+   "ratio": 2.203098833472819
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g2-nafems_le1-a2",
+   "gen": 2,
+   "error": 0.00981691633066143,
+   "dofs": 696,
+   "auto_error_equal_dofs": 0.021627636916380463,
+   "ratio": 2.203098833472819
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g3-nafems_le11_axisym-a0",
+   "gen": 3,
+   "error": 0.008105428290876317,
+   "dofs": 586,
+   "auto_error_equal_dofs": 0.017801963163773298,
+   "ratio": 2.196301358166558
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g10-nafems_le11_axisym-a5",
+   "gen": 10,
+   "error": 0.00737869422905756,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.01619010628922306,
+   "ratio": 2.194169562612562
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g4-nafems_le11_axisym-a7",
+   "gen": 4,
+   "error": 0.007669668810742673,
+   "dofs": 648,
+   "auto_error_equal_dofs": 0.016793803604908415,
+   "ratio": 2.1896386948789552
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g5-nafems_le11_axisym-a7",
+   "gen": 5,
+   "error": 0.007919397099009897,
+   "dofs": 616,
+   "auto_error_equal_dofs": 0.01727450910385512,
+   "ratio": 2.181290935141366
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g4-nafems_le11_axisym-a1",
+   "gen": 4,
+   "error": 0.007701554373958185,
+   "dofs": 648,
+   "auto_error_equal_dofs": 0.016793803604908415,
+   "ratio": 2.1805732699485314
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g16-nafems_le1-a1",
+   "gen": 16,
+   "error": 0.0040734944480696755,
+   "dofs": 1876,
+   "auto_error_equal_dofs": 0.008870342490807035,
+   "ratio": 2.177575691802026
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g7-nafems_le11_axisym-a1",
+   "gen": 7,
+   "error": 0.0077017640039876815,
+   "dofs": 650,
+   "auto_error_equal_dofs": 0.016764988285741165,
+   "ratio": 2.1767725260162334
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g4-nafems_le11_axisym-a2",
+   "gen": 4,
+   "error": 0.007715146427202537,
+   "dofs": 656,
+   "auto_error_equal_dofs": 0.01667936447511355,
+   "ratio": 2.1618986279125467
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g4-nafems_le11_axisym-a5",
+   "gen": 4,
+   "error": 0.008134471339136364,
+   "dofs": 600,
+   "auto_error_equal_dofs": 0.017529718858222916,
+   "ratio": 2.1549917784926444
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g10-nafems_le1-a2",
+   "gen": 10,
+   "error": 0.004939043909017497,
+   "dofs": 1456,
+   "auto_error_equal_dofs": 0.010559963675674645,
+   "ratio": 2.138058270021595
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g8-nafems_le11_axisym-a5",
+   "gen": 8,
+   "error": 0.007726504901176507,
+   "dofs": 670,
+   "auto_error_equal_dofs": 0.01648423678696752,
+   "ratio": 2.133466165854303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g4-nafems_le1-a3",
+   "gen": 4,
+   "error": 0.005943026106286467,
+   "dofs": 1170,
+   "auto_error_equal_dofs": 0.012615109574859387,
+   "ratio": 2.1226744337392804
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g7-nafems_le11_axisym-a0",
+   "gen": 7,
+   "error": 0.008018726028024187,
+   "dofs": 634,
+   "auto_error_equal_dofs": 0.016999460670461607,
+   "ratio": 2.1199702560046525
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a1",
+   "gen": 10,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a4",
+   "gen": 10,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a0",
+   "gen": 11,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a1",
+   "gen": 11,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a2",
+   "gen": 11,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a3",
+   "gen": 11,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g14-cooks_membrane-a2",
+   "gen": 14,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a0",
+   "gen": 15,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g16-cooks_membrane-a0",
+   "gen": 16,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g16-cooks_membrane-a2",
+   "gen": 16,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a1",
+   "gen": 17,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a0",
+   "gen": 18,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a2",
+   "gen": 18,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a0",
+   "gen": 19,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a2",
+   "gen": 19,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a0",
+   "gen": 5,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a0",
+   "gen": 8,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a3",
+   "gen": 10,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a5",
+   "gen": 10,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a3",
+   "gen": 11,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g12-cooks_membrane-a1",
+   "gen": 12,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g13-cooks_membrane-a0",
+   "gen": 13,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g13-cooks_membrane-a1",
+   "gen": 13,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g13-cooks_membrane-a2",
+   "gen": 13,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g14-cooks_membrane-a0",
+   "gen": 14,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a1",
+   "gen": 15,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a2",
+   "gen": 15,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a4",
+   "gen": 15,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g16-cooks_membrane-a2",
+   "gen": 16,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g16-cooks_membrane-a4",
+   "gen": 16,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g16-cooks_membrane-a5",
+   "gen": 16,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a2",
+   "gen": 17,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a4",
+   "gen": 17,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g4-cooks_membrane-a0",
+   "gen": 4,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a4",
+   "gen": 5,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a3",
+   "gen": 6,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a4",
+   "gen": 6,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a5",
+   "gen": 6,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a0",
+   "gen": 7,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a0",
+   "gen": 9,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a2",
+   "gen": 9,
+   "error": 0.017750257961840307,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192083671821638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g1-cooks_membrane-a0",
+   "gen": 1,
+   "error": 0.017750258647334063,
+   "dofs": 682,
+   "auto_error_equal_dofs": 0.0376164951923738,
+   "ratio": 2.1192082853408714
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g3-nafems_le11_axisym-a4",
+   "gen": 3,
+   "error": 0.008168448614241076,
+   "dofs": 614,
+   "auto_error_equal_dofs": 0.017305843125345347,
+   "ratio": 2.118620553623109
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g9-nafems_le11_axisym-a5",
+   "gen": 9,
+   "error": 0.007650421821726745,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.01619010628922306,
+   "ratio": 2.1162370737838425
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g6-nafems_le11_axisym-a5",
+   "gen": 6,
+   "error": 0.008103614401939912,
+   "dofs": 626,
+   "auto_error_equal_dofs": 0.01712018353598808,
+   "ratio": 2.1126601892471224
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a1",
+   "gen": 18,
+   "error": 0.017615036660086552,
+   "dofs": 698,
+   "auto_error_equal_dofs": 0.037199859488006776,
+   "ratio": 2.111824131044641
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a4",
+   "gen": 19,
+   "error": 0.017615036660086552,
+   "dofs": 698,
+   "auto_error_equal_dofs": 0.037199859488006776,
+   "ratio": 2.111824131044641
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a5",
+   "gen": 19,
+   "error": 0.017615036660086552,
+   "dofs": 698,
+   "auto_error_equal_dofs": 0.037199859488006776,
+   "ratio": 2.111824131044641
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g12-cooks_membrane-a2",
+   "gen": 12,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g12-cooks_membrane-a3",
+   "gen": 12,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g13-cooks_membrane-a4",
+   "gen": 13,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g13-cooks_membrane-a5",
+   "gen": 13,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a5",
+   "gen": 7,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a2",
+   "gen": 8,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a0",
+   "gen": 9,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a2",
+   "gen": 9,
+   "error": 0.01599451163036717,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121586016
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a3",
+   "gen": 9,
+   "error": 0.015994511630367428,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121585982
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a4",
+   "gen": 9,
+   "error": 0.015994511630367428,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121585982
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a5",
+   "gen": 9,
+   "error": 0.015994511630367428,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166121585982
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g6-cooks_membrane-a3",
+   "gen": 6,
+   "error": 0.01599451237807851,
+   "dofs": 848,
+   "auto_error_equal_dofs": 0.03368709852719285,
+   "ratio": 2.106166023126979
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a2",
+   "gen": 17,
+   "error": 0.01778707498782745,
+   "dofs": 690,
+   "auto_error_equal_dofs": 0.03740638965666426,
+   "ratio": 2.103009611319638
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a4",
+   "gen": 5,
+   "error": 0.01778707498782745,
+   "dofs": 690,
+   "auto_error_equal_dofs": 0.03740638965666426,
+   "ratio": 2.103009611319638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a5",
+   "gen": 5,
+   "error": 0.01778707498782745,
+   "dofs": 690,
+   "auto_error_equal_dofs": 0.03740638965666426,
+   "ratio": 2.103009611319638
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a3",
+   "gen": 18,
+   "error": 0.015789037800319664,
+   "dofs": 872,
+   "auto_error_equal_dofs": 0.03320197978246704,
+   "ratio": 2.102850104126981
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g4-cooks_membrane-a5",
+   "gen": 4,
+   "error": 0.017740688491676367,
+   "dofs": 696,
+   "auto_error_equal_dofs": 0.037251162420136576,
+   "ratio": 2.099758554331992
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g5-nafems_le11_axisym-a5",
+   "gen": 5,
+   "error": 0.008040350491283354,
+   "dofs": 642,
+   "auto_error_equal_dofs": 0.0168810869674147,
+   "ratio": 2.099546156068159
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g1-nafems_le11_axisym-a3",
+   "gen": 1,
+   "error": 0.007056944595796415,
+   "dofs": 812,
+   "auto_error_equal_dofs": 0.014809749034910797,
+   "ratio": 2.0986063917424644
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g3-nafems_le1-a0",
+   "gen": 3,
+   "error": 0.004580620334570059,
+   "dofs": 1672,
+   "auto_error_equal_dofs": 0.009601404902711108,
+   "ratio": 2.0960927126505244
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g6-nafems_le11_axisym-a6",
+   "gen": 6,
+   "error": 0.008110907945036067,
+   "dofs": 634,
+   "auto_error_equal_dofs": 0.016999460670461607,
+   "ratio": 2.0958764155208294
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a1",
+   "gen": 19,
+   "error": 0.01783052638175276,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.094970452934992
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g14-cooks_membrane-a1",
+   "gen": 14,
+   "error": 0.017830527073472546,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.094970371662436
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a0",
+   "gen": 10,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a3",
+   "gen": 10,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a5",
+   "gen": 10,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a5",
+   "gen": 11,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g13-cooks_membrane-a0",
+   "gen": 13,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g14-cooks_membrane-a3",
+   "gen": 14,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g14-cooks_membrane-a4",
+   "gen": 14,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g14-cooks_membrane-a5",
+   "gen": 14,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a1",
+   "gen": 15,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a3",
+   "gen": 15,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a4",
+   "gen": 15,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a5",
+   "gen": 15,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g16-cooks_membrane-a3",
+   "gen": 16,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g16-cooks_membrane-a5",
+   "gen": 16,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a0",
+   "gen": 17,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a3",
+   "gen": 17,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a5",
+   "gen": 17,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a1",
+   "gen": 18,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a5",
+   "gen": 18,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a4",
+   "gen": 19,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a5",
+   "gen": 19,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g9-cooks_membrane-a1",
+   "gen": 9,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g12-cooks_membrane-a3",
+   "gen": 12,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g14-cooks_membrane-a2",
+   "gen": 14,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g3-cooks_membrane-a1",
+   "gen": 3,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g3-cooks_membrane-a2",
+   "gen": 3,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g3-cooks_membrane-a5",
+   "gen": 3,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g4-cooks_membrane-a1",
+   "gen": 4,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a0",
+   "gen": 5,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a3",
+   "gen": 7,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a1",
+   "gen": 8,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g8-cooks_membrane-a4",
+   "gen": 8,
+   "error": 0.017851328870606163,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925291445141303
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g17-cooks_membrane-a4",
+   "gen": 17,
+   "error": 0.017851329563722207,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925290632672113
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a3",
+   "gen": 18,
+   "error": 0.017851329563722207,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925290632672113
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g18-cooks_membrane-a4",
+   "gen": 18,
+   "error": 0.017851329563722207,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925290632672113
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g19-cooks_membrane-a3",
+   "gen": 19,
+   "error": 0.017851329563722207,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925290632672113
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g5-cooks_membrane-a2",
+   "gen": 5,
+   "error": 0.017851329563722207,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925290632672113
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g10-cooks_membrane-a4",
+   "gen": 10,
+   "error": 0.017851329563722207,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0925290632672113
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g7-nafems_le11_axisym-a6",
+   "gen": 7,
+   "error": 0.008316914470461808,
+   "dofs": 610,
+   "auto_error_equal_dofs": 0.017368990544006594,
+   "ratio": 2.088393550960992
+  },
+  {
+   "run_dir": "cook_auto",
+   "problem": "cooks_membrane",
+   "run_id": "g15-cooks_membrane-a2",
+   "gen": 15,
+   "error": 0.018021551189893577,
+   "dofs": 684,
+   "auto_error_equal_dofs": 0.03756362795206991,
+   "ratio": 2.084372624546075
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g2-nafems_le11_axisym-a2",
+   "gen": 2,
+   "error": 0.008214380397822294,
+   "dofs": 626,
+   "auto_error_equal_dofs": 0.01712018353598808,
+   "ratio": 2.084172232944897
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g7-cooks_membrane-a2",
+   "gen": 7,
+   "error": 0.017939201130593583,
+   "dofs": 692,
+   "auto_error_equal_dofs": 0.03735442593004991,
+   "ratio": 2.0822792307259173
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g13-nafems_le1-a4",
+   "gen": 13,
+   "error": 0.006447183524573446,
+   "dofs": 1088,
+   "auto_error_equal_dofs": 0.013401761690509434,
+   "ratio": 2.078700201324905
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g2-nafems_le1-a1",
+   "gen": 2,
+   "error": 0.005619942730746617,
+   "dofs": 1284,
+   "auto_error_equal_dofs": 0.011675507636596924,
+   "ratio": 2.077513632429101
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g7-nafems_le1-a5",
+   "gen": 7,
+   "error": 0.005619942730746617,
+   "dofs": 1284,
+   "auto_error_equal_dofs": 0.011675507636596924,
+   "ratio": 2.077513632429101
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g8-nafems_le1-a0",
+   "gen": 8,
+   "error": 0.005619942730746617,
+   "dofs": 1284,
+   "auto_error_equal_dofs": 0.011675507636596924,
+   "ratio": 2.077513632429101
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g8-nafems_le11_axisym-a6",
+   "gen": 8,
+   "error": 0.00830161430106214,
+   "dofs": 618,
+   "auto_error_equal_dofs": 0.017243333109542236,
+   "ratio": 2.0771060283222336
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g1-nafems_le11_axisym-a1",
+   "gen": 1,
+   "error": 0.007229190268707483,
+   "dofs": 802,
+   "auto_error_equal_dofs": 0.014912371316428436,
+   "ratio": 2.0627996721816313
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g2-nafems_le11_axisym-a7",
+   "gen": 2,
+   "error": 0.0086304122474566,
+   "dofs": 586,
+   "auto_error_equal_dofs": 0.017801963163773298,
+   "ratio": 2.062701369684811
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g8-nafems_le11_axisym-a1",
+   "gen": 8,
+   "error": 0.008273606652828292,
+   "dofs": 634,
+   "auto_error_equal_dofs": 0.016999460670461607,
+   "ratio": 2.0546614534364434
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g12-nafems_le1-a5",
+   "gen": 12,
+   "error": 0.004714669362690758,
+   "dofs": 1652,
+   "auto_error_equal_dofs": 0.009681220074670614,
+   "ratio": 2.053425029394923
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g5-nafems_le11_axisym-a1",
+   "gen": 5,
+   "error": 0.008357765353905613,
+   "dofs": 624,
+   "auto_error_equal_dofs": 0.017150740318733846,
+   "ratio": 2.052072484987778
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g2-nafems_le1-a5",
+   "gen": 2,
+   "error": 0.006470258131516976,
+   "dofs": 1102,
+   "auto_error_equal_dofs": 0.013259871752945865,
+   "ratio": 2.0493574573719577
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g6-nafems_le11_axisym-a3",
+   "gen": 6,
+   "error": 0.008253453933819505,
+   "dofs": 642,
+   "auto_error_equal_dofs": 0.0168810869674147,
+   "ratio": 2.04533606206275
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g1-nafems_le1-a5",
+   "gen": 1,
+   "error": 0.013742716644605224,
+   "dofs": 522,
+   "auto_error_equal_dofs": 0.02797309315402232,
+   "ratio": 2.035484968323443
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g2-nafems_le11_axisym-a5",
+   "gen": 2,
+   "error": 0.008816451570505783,
+   "dofs": 582,
+   "auto_error_equal_dofs": 0.017886354096163584,
+   "ratio": 2.028747501545849
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g3-nafems_le11_axisym-a1",
+   "gen": 3,
+   "error": 0.009140939224233473,
+   "dofs": 554,
+   "auto_error_equal_dofs": 0.018505773563952742,
+   "ratio": 2.0244936663501965
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g6-nafems_le11_axisym-a0",
+   "gen": 6,
+   "error": 0.00848192338468228,
+   "dofs": 626,
+   "auto_error_equal_dofs": 0.01712018353598808,
+   "ratio": 2.0184317588750984
+  },
+  {
+   "run_dir": "split1",
+   "problem": "nafems_le1",
+   "run_id": "g14-nafems_le1-a5",
+   "gen": 14,
+   "error": 0.0062068718159574736,
+   "dofs": 1182,
+   "auto_error_equal_dofs": 0.01250839972832059,
+   "ratio": 2.0152502096405933
+  },
+  {
+   "run_dir": "split1",
+   "problem": "cooks_membrane",
+   "run_id": "g11-cooks_membrane-a5",
+   "gen": 11,
+   "error": 0.01810252769033087,
+   "dofs": 736,
+   "auto_error_equal_dofs": 0.036260787961300896,
+   "ratio": 2.003078718154312
+  },
+  {
+   "run_dir": "deep1",
+   "problem": "nafems_le11_axisym",
+   "run_id": "g2-nafems_le11_axisym-a4",
+   "gen": 2,
+   "error": 0.008645123770284204,
+   "dofs": 614,
+   "auto_error_equal_dofs": 0.017305843125345347,
+   "ratio": 2.001803974725098
+  }
+ ]
+}

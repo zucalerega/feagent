@@ -1,0 +1,5 @@
+# Cook's membrane: score vs generations trained
+
+Metric: the scorer's base score (accuracy x efficiency, no bonuses; `checks.base_score` in `ace_runs/deep1/gen*/runs/*cooks_membrane*.json`) divided by the automesher's own score 0.25, so 1x = the automesher. It rewards accuracy and charges for DOFs. Best agent per generation (pink), mean of the agents per generation (blue), min-max band. Only correctly set-up runs are used (44 of 44): a run counts when its recorded setup, re-solved on its own mesh, gives the same field error (to 1e-6) as the problem's own setup (`ace/checks.py reference_setup`), so the differences shown are the mesh alone (`data/runs_deep1.csv`, column setup_ok). Generation 0: best 1.39x, mean 1.27x; generation 10: best 4.50x, mean 4.38x. Circled points are the runs drawn in the panels. Values: `data/per_generation_cooks_membrane.csv`.
+
+Caveats: one training run (no repeats); 4 runs per generation; agents are reassigned between the two problems each generation. Chosen over the accuracy gain (fig_B2) as the headline because it is the quantity the agents were trained on and includes the DOF cost.

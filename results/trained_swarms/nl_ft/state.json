@@ -1,0 +1,3344 @@
+{
+ "agents": {
+  "a3": {
+   "feedback": {
+    "agent": "a3",
+    "run_id": "g8-abc_00000065_compression-a3",
+    "diagnosis": "Score 0.890, base only, rank 1/4. The submitted mesh was a1's g7 recipe plus one nested left-pocket box: h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, mirrored pocket boxes 0.0025, arm boxes 0.0034, and a left-only box [-0.0265,0.0225,-0.0082,-0.0205,0.029,0.0082] at 0.0023 r0.003. It had 5650 nodes, 16950 DOFs, q 0.221 and 1 straightened edge. Error was 2.29%, so e x nodes = 12.93k. That is a tie with a1's g7 control (12.91k = 2.30% x 5612). The nested box added 38 nodes and moved e by 0.01 pt, which is noise. Rank 1 came from that noise, not from a better recipe.\n\nBinding term: the curve error. The sim sits above the test at every checkpoint: +1.79/+5.65/+1.80/+0.75/+1.46%. The 1.0 mm point is 49% of the sum. Peak PEEQ is at the right pocket corners: f12/f38/f39 0.286 and f13/f41/f42 0.284. The left pocket f37 reads 0.213 versus peers' 0.187; your 0.0023 sub-box only sharpened the singular peak there and did not lower the curve.\n\nYour one real experiment was carrier 0.004 -> 0.0048: 5530 nodes, q 0.1103, e 3.37%. Every checkpoint rose, including the 1.0 mm point (6.6%) and 2.0 mm (+2.0% vs +0.75%). So a 1.5% node cut cost +1.07 pt. This is the steepest response seen on this task. It shows the 0.004 carrier band (arms, bore, prong necks) carries the elastic stiffness and the post-yield accuracy.\n\nYour carrier scan between 0.0041 and 0.006 was branchy: most sizes landed on q 0.1103 branches at 5054-7484 nodes, and only 0.0052 reached q 0.233. Coarsening the carrier is closed.\n\nh 0.0079 on the control gave 5581 nodes and 2.35% (13.12k): noise again. You left 3 of 6 nonlinear checks unused and never called view(kind=error).",
+    "step_critique": [
+     {
+      "step": "plan",
+      "what_it_did": "One factor (carrier 0.004->0.0045), a free-mesh scan, gates q>=0.1 and nodes<=5300, a 6-slot check schedule, and view(error) after the first solve.",
+      "verdict": "good",
+      "correction": "Keep writing the plan with numeric gates. Then actually execute every line; three of its items were dropped (see below)."
+     },
+     {
+      "step": "free-mesh carrier scan (~12 mesh calls, sizes 0.0041-0.006)",
+      "what_it_did": "Mapped node counts of 5054-7484, mostly on q 0.1103 branches. 0.0045 gave 5934 and 0.0046/0.0047 gave 5626/5595, more than the 5612 control.",
+      "verdict": "good",
+      "correction": "A thorough free scan; it correctly showed that only 0.0048 and coarser cut nodes. Log the q of each branch too; all the cheap ones sat at 0.1103, 0.01 above the validity floor."
+     },
+     {
+      "step": "nonlinear_check mesh 3 (carrier 0.0048, 5530 nodes, q 0.1103)",
+      "what_it_did": "Checked a mesh that broke its own <=5300-node gate, on a q 0.11 branch. Result 3.37%.",
+      "verdict": "missed_opportunity",
+      "correction": "The result is informative: carrier coarsening is closed. But first linear-solve the control and the 0.0048 mesh and run compare(). A large stress change in the arm/bore band predicts the loss for free and saves a check. Respect your gate or rewrite it with a reason before checking."
+     },
+     {
+      "step": "skipped carrier 0.0037 diagnostic and view(kind=error)",
+      "what_it_did": "Promised both and did neither. The only linear solve was the final one before submit.",
+      "verdict": "mistake",
+      "correction": "Make the first linear solve the control mesh. Call view(kind=error, view=iso) and view(kind=error, view=z). Compare each hotspot's local h with its box size. This was flagged in g7 (tool-0017) and is now REPEATED."
+     },
+     {
+      "step": "mesh 18 nonlinear check (h 0.0079 on control)",
+      "what_it_did": "5581 nodes, 2.35%, 13.12k. This was an h tweak although its own plan said 'h is not a lever, I leave it alone'.",
+      "verdict": "mistake",
+      "correction": "Do not scan h. Your g7 note already said the h knob is exhausted (h 0.0079 gave 13.52k then), and h is a0's assigned factor next generation."
+     },
+     {
+      "step": "mesh 19 nonlinear check (left-only nested pocket box 0.0023 inside 0.0025)",
+      "what_it_did": "A sub-box only 1.09x finer than its host, on one side only. +38 nodes, 2.29% vs the known 2.30%.",
+      "verdict": "missed_opportunity",
+      "correction": "Nested boxes under 1.4x finer are near-inert (mesh-0011), and a one-sided box on a symmetric load is not a hypothesis. Spend that check on a node cut over a low-PEEQ edge, e.g. pocket box y-max 0.029 -> 0.0285. That has a real chance to lower e x nodes."
+     },
+     {
+      "step": "unused budget",
+      "what_it_did": "Used 3 of 6 nonlinear checks and 1 of 12 linear solves.",
+      "verdict": "mistake",
+      "correction": "Use at least 5 checks (tool-0011): control tweak, two twins of it, one spare. Each must have nodes < 12930/e_target written down beforehand."
+     },
+     {
+      "step": "submit",
+      "what_it_did": "Re-issued mesh 19, confirmed 5650 nodes, linear-solved and submitted the checked mesh.",
+      "verdict": "good",
+      "correction": "Correct submit hygiene (tool-0012). Keep it."
+     }
+    ],
+    "promised_items_check": [
+     {
+      "item": "Single factor: carrier 0.004 -> 0.0045, everything else fixed",
+      "status": "partly",
+      "comment": "Scanned it, but 0.0045 landed at 5934 nodes, so you checked 0.0048 instead (3.37%). The factor is now settled: coarsening loses."
+     },
+     {
+      "item": "Free-mesh scan of carrier 0.0043-0.0048, logging nodes and q",
+      "status": "done",
+      "comment": "Done and extended to 0.0041-0.006, with every node count and q logged."
+     },
+     {
+      "item": "Gates q>=0.1 and nodes<=5300",
+      "status": "not_done",
+      "comment": "Checked a 5530-node, q 0.1103 mesh, breaking its own node gate."
+     },
+     {
+      "item": "6-slot check schedule including the carrier 0.0037 diagnostic",
+      "status": "partly",
+      "comment": "Used 3 checks; the 0.0037 diagnostic and the 'winner twin' were skipped."
+     },
+     {
+      "item": "view(error) after the first linear solve",
+      "status": "not_done",
+      "comment": "REPEATED MISTAKE: no view call at all, and the only solve came just before submit. The same was flagged in g7."
+     },
+     {
+      "item": "Leave h alone",
+      "status": "not_done",
+      "comment": "REPEATED MISTAKE: checked h 0.0079 (2.35%), the same dead knob as g7 (13.52k then)."
+     },
+     {
+      "item": "No f5 or neck boxes",
+      "status": "done",
+      "comment": "None used, consistent with mesh-0055."
+     },
+     {
+      "item": "Re-issue the mesh before submitting; setup verbatim",
+      "status": "done",
+      "comment": "Node count 5650 matched; f17/f34 [0,-0.0024,0], E 1.88e9, nu 0.35."
+     }
+    ],
+    "strengths": [
+     "Excellent free-mesh mapping of the carrier size (about 12 calls, nodes and q logged) before spending checks.",
+     "The carrier 0.0048 check produced the task's clearest lever evidence: +1.07 pt for -1.5% nodes, so the carrier band must stay at 0.004.",
+     "Clean submit: re-issued the mesh, confirmed the node count, solved and submitted the checked mesh."
+    ],
+    "mistakes": [
+     "REPEATED: skipped view(kind=error) and the early linear solve despite promising them.",
+     "REPEATED: spent a check on h (0.0079) after declaring h exhausted.",
+     "Checked a mesh outside its own node gate (5530 > 5300) on a q 0.1103 branch.",
+     "The nested 0.0023-in-0.0025 left-only box is near-inert and asymmetric; its 0.01 pt gain is noise.",
+     "Left 3 of 6 nonlinear checks and 11 of 12 linear solves unused."
+    ],
+    "next_mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.0285,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.0285,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.025,
+        0.0,
+        -0.0082,
+        0.031,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        0.0,
+        -0.0082,
+        -0.025,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.0285,
+        0.0082
+       ],
+       "size": 0.0023,
+       "radius": 0.003
+      }
+     ]
+    },
+    "notes": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Carrier coarsening is closed. Carrier 0.0048 gave 3.37% at 5530 nodes vs 2.29% at 5650 for 0.004: every checkpoint rose (1.0 mm +6.6%, 2.0 mm +2.0%). Carrier 0.0045-0.0047 landed at 5595-5934 nodes, no cheaper than the control. Keep the carrier at 0.004.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Control next gen: your g8 mesh 19 with ONE tweak, the top edge of all three pocket boxes y 0.029 -> 0.0285. The corner hotspots sit at y 25.2-25.8 mm, still covered by >=2.7 mm. Free-mesh first; accept if nodes <5650 and q>=0.1. Break-even e < 12930/nodes.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "If pocket y-max 0.0285 jumps branch (>5750 nodes or q<0.1), try 0.0287 then 0.0283 (one free mesh each). If all fail, move the pocket y-min 0.0225 -> 0.0228 instead. Change only one edge per mesh.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Nested left-only pocket box 0.0023 inside 0.0025 (1.09x finer, asymmetric) gave 2.29% vs 2.30%, +38 nodes: noise. It only raised left f37 PEEQ 0.187 -> 0.213. Don't add nested boxes <1.4x finer than the host or one-sided boxes on this symmetric load.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "First linear solve = control mesh, then view(kind=error, view=iso) and view(kind=error, view=z), then compare(control, tweak) before any check. Write each hotspot's local h vs box size. Skipped in g7 and g8: REPEATED, it must not happen a third time.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Before a nonlinear check of a coarsening, linear-solve both meshes and run compare(). The carrier 0.0048 check (3.37%) could have been predicted by a large stress change in the arm/bore band, saving a check.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Use >=5 of 6 nonlinear checks with written break-even e < 12930/nodes: 1 tweak, 2 twins (edge \u00b10.0002), 1 spare. g8 left 3 checks unused while the result was a noise tie.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "h is dead for you: h 0.0079 gave 2.35% at 5581 (13.12k) in g8 and 13.52k in g7. h is a0's assigned factor next gen; do not touch h.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Peer highlight (a1 g8): a base-top slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 under the control gave 2.21% at 5981 nodes (13.22k). The 1.0 mm point fell only 5.65 -> 5.56%. It is the only new target that moved every checkpoint down, but it is a1's direction; don't copy it.",
+      "kind": "highlight"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "postprocessing",
+      "content": "The 1.0 mm checkpoint responds to carrier size (5.65% at 0.004, 6.6% at 0.0048), not to the base, slab or h (5.56-5.8%). Use it as the stiffness gauge when reading checks.",
+      "kind": "keep"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "Own gates are binding: if a candidate breaks the written node or q gate, rewrite the gate with a reason before checking, or linear-solve it instead. a3 g8 checked 5530 nodes against a 5300 gate on a q 0.1103 branch and lost 1.07 pt.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Branch map at h 0.008 for carrier size (pockets 0.0025, arms 0.0034): 0.0043 6278, 0.0045 5934, 0.0046 5626, 0.0047 5595, 0.0048 5530, 0.005 5402, 0.0055 5054, all q 0.1103. 0.0052 6285 at q 0.233. Use it to avoid re-scanning.",
+      "kind": "keep"
+     }
+    ],
+    "assignment": {
+     "agent": "a3",
+     "role": "control",
+     "experiment": "Re-run your g8 submitted recipe: h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004, mirrored pocket boxes 0.0025 r0.004, arm boxes [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, left nested pocket 0.0023 r0.003. One tweak: pocket boxes (all three) y-max 0.029 -> 0.0285. Free-mesh; accept nodes <5650 with q>=0.1, else try 0.0287/0.0283. Checks: tweak, two \u00b10.0002 twins, spare. Submit the best checked e x nodes; never the unchanged 5650 mesh.",
+     "why": "g8's best product is 12.93k (2.29% x 5650), a noise tie with a1 g7's 12.91k, so a control rerun measures run-to-run noise. Pocket corner PEEQ peaks at y 25.2-25.8 mm, so the 0.029 top edge has >=3 mm of slack over low-PEEQ prong wall. A node cut there is the only small tweak not owned by a0 (h), a2 (sizes) or a1 (new targets). Carrier coarsening was ruled out by your own 3.37% check."
+    },
+    "task": "abc_00000065_compression"
+   },
+   "reflection": {
+    "what_happened": "I submitted h 0.008 order 2 with a carrier box at 0.004, pocket boxes at 0.0025, arm boxes at 0.0034 and an extra left-pocket box (0.0023, r0.003). That gave 5650 nodes, 16950 DOFs, force error 2.29%, gain 3.42x and score 0.89, rank 1/4. I planned a carrier 0.0045 coarsening scan, but the checks did not beat the best product. The two best meshes tied (about 0.889), so I re-issued the last one. The 1.0 mm checkpoint stayed at +5.7%, which floors the mean error. Peak PEEQ sits at the pocket and arm tops, where my boxes already were.",
+    "what_i_learned": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Keep the recipe h 0.008, carrier 0.004 r0.004, pockets 0.0025, arms 0.0034, plus left-pocket 0.0023 r0.003: 5650 nodes, q 0.22, 2.29%, product 12.9k. It is the baseline to beat; a coarser carrier did not give a better product.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "The 1.0 mm checkpoint stays near +5.7% on every mesh tried. Test one new WHERE target for it: mirrored f5 bore-flank boxes [\u00b10.011..\u00b10.018, y -0.017..-0.010, full z] at 0.003. Break-even e < 12910/nodes.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Global h is exhausted as a knob and the box sizes sit on branch cliffs. Verify the node count before each solve, and shift a box edge by 0.0002 if the nodes jump above 5800.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "I spent too few of the 6 nonlinear checks on structurally new targets. Plan all 6 up front, one factor each, and include an f5 box and an outer-arm f6 box so diversity can apply.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "postprocessing",
+      "content": "A difference below 0.1 pt in e is noise. Treat meshes at 2.29% and 2.30% as tied and choose the cheaper by nodes.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "solver_setup",
+      "content": "The solve setup (base fixed, f17/f34 displaced -0.0024 in y, E 1.88e9, nu 0.35) was fine, and the scorer freezes its own setup. Don't spend time on it.",
+      "kind": "keep"
+     }
+    ],
+    "plan_next": "I will change WHERE I refine: add mirrored f5 bore-flank boxes at 0.003 on the best recipe, as a single factor. If it fails the break-even, I will test an outer-arm f6 box next. I will use all 6 checks and submit the best new mesh within 1.1x of the best product.",
+    "next_mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.025,
+        0.0,
+        -0.0082,
+        0.031,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        0.0,
+        -0.0082,
+        -0.025,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.011,
+        -0.017,
+        -0.0082,
+        0.018,
+        -0.01,
+        0.0082
+       ],
+       "size": 0.003,
+       "radius": 0.003
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.018,
+        -0.017,
+        -0.0082,
+        -0.011,
+        -0.01,
+        0.0082
+       ],
+       "size": 0.003,
+       "radius": 0.003
+      }
+     ]
+    },
+    "run_id": "g8-abc_00000065_compression-a3",
+    "task": "abc_00000065_compression"
+   },
+   "last_run": {
+    "run_id": "g8-abc_00000065_compression-a3",
+    "task": "abc_00000065_compression",
+    "mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        0.025,
+        0,
+        -0.0082,
+        0.031,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.031,
+        0,
+        -0.0082,
+        -0.025,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0023,
+       "radius": 0.003
+      }
+     ]
+    },
+    "score": 0.8899287407009382,
+    "field_error": null,
+    "nonlinear_error": 0.022890111513141388,
+    "probe_error": null,
+    "dofs": 16950,
+    "rank": 1,
+    "group_size": 4,
+    "failed_gate": null,
+    "error": null
+   }
+  },
+  "a0": {
+   "feedback": {
+    "agent": "a0",
+    "run_id": "g8-abc_00000065_compression-a0",
+    "diagnosis": "Score 0.880 (base 0.880, no bonus), rank 2/4. The submitted mesh was h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, mirrored pocket boxes 0.0025, centre slab [-0.019,-0.03,-0.0082,0.019,-0.017,0.0082] 0.006, and no arm boxes. It gave 5686 nodes, 17058 DOFs, q 0.273, e 2.30% and e x nodes 13.08k. a3 won with 12.93k (2.29% x 5650).\n\nNo bonus: a2 independently submitted the same structure (no arms, slab 0.006 with y-max -0.02). The mesh came out byte-identical: 5686 nodes, the same five checkpoints and the same hotspots. So neither of you got the diversity bonus.\n\nBinding term: the curve error. The sim is above the test at every checkpoint: +1.78/+5.65/+1.78/+0.78/+1.51%. The 1.0 mm point is about 49% of the sum and did not move with any slab:\n- slab 0.005: 5.7%\n- slab 0.006: 5.7%\n- slab 0.007: 5.8%\n- a1's full-width base slab 0.0055: 5.56%\nSo the excess stiffness is NOT in the base block. Peers this generation show it IS in the carrier: carrier 0.0048 raised the 1.0 mm point to +6.6% (3.37%, a3), and a2's carrier-free h 0.005 gave 3.22%.\n\nSlab verdict across g7-g8:\n- 0.005: +253 nodes for +0.08 pt worse (2.38% vs 2.30%, 13.96k).\n- 0.006: +115 nodes, 2.34% (13.40k).\n- 0.007: inert, because it is only 1.14x finer than h; it ran at 5583 nodes and gave 2.44%.\nThe slab never paid on base score; it only ever bought diversity, and that is now gone because a2 copied it.\n\nThe 0.007 mesh is a near-control and still read 2.44% vs the control's 2.30%. That is direct evidence of \u00b10.1-0.15 pt branch noise in this family.\n\nDOF spend: about 70% of the nodes sit in the 0.004 carrier (y -20..32 mm). That is correct, since PEEQ peaks there:\n- right pocket corners f12/f38/f39 and f13/f41/f42: 0.286\n- left pocket f15/f37: 0.187\n- bore flank f5: s1 48 MPa\nThe base block shows PEEQ ~0 in the image.",
+    "step_critique": [
+     {
+      "step": "plan",
+      "what_it_did": "Listed gates: nodes <=6000, q>=0.15, break-even e<12910/nodes. Promised view(error) after the first solve and a 0.9x-best check before betting on diversity.",
+      "verdict": "good",
+      "correction": "Keep the written gate list. Add one line: 'which peers could submit the same targets?' Your g7 slab was in the shared playbook, so a2 could, and did, copy it."
+     },
+     {
+      "step": "inspect_geometry",
+      "what_it_did": "Called it first.",
+      "verdict": "good",
+      "correction": "Keep it. Next time also read edge tags near the pocket corners at x \u00b121.7-23.7 mm, y 25 mm, for later box placement."
+     },
+     {
+      "step": "mesh 1: teacher's recipe with arms + slab 0.005",
+      "what_it_did": "5865 nodes, q 0.223; the check gave 2.38% (13.96k).",
+      "verdict": "good",
+      "correction": "Following the suggested call was right. The result settles it: slab 0.005 costs +253 nodes and buys nothing. Record 'slab dead'."
+     },
+     {
+      "step": "solve 1 (linear)",
+      "what_it_did": "Statement setup verbatim (base fixed, f17/f34 [0,-0.0024,0], E 1.88e9, nu 0.35). The result was never used.",
+      "verdict": "missed_opportunity",
+      "correction": "After solve 1, call view(kind=error, view=iso) and read the hotspots' local h against box sizes. You promised this and skipped it. A solve you do not read is wasted."
+     },
+     {
+      "step": "meshes 2-3: wider slab \u00b10.024 (7038 nodes, branch jump), slab 0.006 (5727)",
+      "what_it_did": "Abandoned the jump and checked the slab-0.006 mesh: 2.34%, 13.40k.",
+      "verdict": "mistake",
+      "correction": "Mesh 1 had already shown the slab target is flat. Spending a second check on a smaller slab was a one-factor scan of a dead target, against tool-0015. Use that check on the h 0.006 diagnostic (tool-0016) or a node-cut h scan instead."
+     },
+     {
+      "step": "mesh 4: slab 0.007 (5583 nodes)",
+      "what_it_did": "Checked a slab only 1.14x finer than h 0.008; got 2.44%.",
+      "verdict": "mistake",
+      "correction": "mesh-0011 says nested refinement must be >=1.4x finer. A 0.007 box in h 0.008 is inert, so this check measured branch noise (2.44% vs control 2.30%). Never check a box less than 1.4x finer than its surroundings."
+     },
+     {
+      "step": "mesh 5: no arms + slab 0.006",
+      "what_it_did": "5686 nodes, q 0.273, checked 2.30%, 13.08k. This was a two-factor change from the control (arms removed, slab added).",
+      "verdict": "mistake",
+      "correction": "It is not attributable. The arm removal is known to cost 0.06 pt (mesh-0054), and the slab 0.006 adds +115 nodes, so the two cancel. It also collided with a2's identical mesh. For diversity, change a factor peers do not touch."
+     },
+     {
+      "step": "check budget",
+      "what_it_did": "Used 4 of 6 nonlinear_checks and 1 of 12 solves.",
+      "verdict": "missed_opportunity",
+      "correction": "Spend the 2 unused checks on:\n(1) the cheapest h branch in 0.0077-0.0082 on the best recipe;\n(2) one structurally new idea.\nNever end a run with checks unused."
+     },
+     {
+      "step": "submit",
+      "what_it_did": "Solved the last mesh (5686 nodes, matching the checked one) and submitted.",
+      "verdict": "good",
+      "correction": "The node-count match before submit was right. Choose a candidate whose e x nodes is below the best known product (12.93k); 13.08k was not."
+     }
+    ],
+    "promised_items_check": [
+     {
+      "item": "Gates nodes <=6000, q>=0.15, break-even e<12910/nodes",
+      "status": "done",
+      "comment": "All checked meshes were 5583-5865 nodes with q >=0.22."
+     },
+     {
+      "item": "No full-width boxes below y -0.02; stop after 2 branch jumps",
+      "status": "done",
+      "comment": "One jump (slab \u00b10.024 gave 7038 nodes); it was dropped."
+     },
+     {
+      "item": "No upward h scans",
+      "status": "done",
+      "comment": "h stayed 0.008."
+     },
+     {
+      "item": "Linear solve and view(error) right after the first mesh",
+      "status": "partly",
+      "comment": "Solve 1 was run but view(error) was never called. REPEATED MISTAKE (tool-0017 flagged a0 for the same gap last generation)."
+     },
+     {
+      "item": "Several nonlinear checks: slab, slab 0.006 fallback, spare",
+      "status": "partly",
+      "comment": "4 checks were used. 2 were left unused, and two went to slab-size variants of an already flat target."
+     },
+     {
+      "item": "No pocket-size or f5 refinement",
+      "status": "done",
+      "comment": "Pockets stayed at 0.0025 and no f5 boxes were added."
+     },
+     {
+      "item": "Compute 0.9 x best peer base before betting on diversity",
+      "status": "partly",
+      "comment": "Computed a 0.963 ratio, but did not foresee that a2 could submit the same slab-no-arms target. The tie removed the bonus."
+     },
+     {
+      "item": "Teacher's suggested call (control + arms + slab 0.005)",
+      "status": "done",
+      "comment": "Mesh 1 ran exactly that: 5865 nodes, 2.38%."
+     }
+    ],
+    "strengths": [
+     "Followed the suggested call exactly and checked it, which settled the slab question with data.",
+     "Kept every node and quality gate; no invalid or over-budget meshes.",
+     "Re-issued and confirmed the node count (5686) before submitting.",
+     "The slab-0.007 check incidentally measured \u00b10.14 pt branch noise at ~equal nodes, which is useful calibration."
+    ],
+    "mistakes": [
+     "Skipped view(error) again after promising it: REPEATED.",
+     "Spent 3 of 4 checks on slab sizes (0.005, 0.006, 0.007) after the first one showed the slab is flat.",
+     "Checked an inert box (0.007 in h 0.008, 1.14x finer).",
+     "The submitted mesh changed two factors at once (arms off + slab) and duplicated a2's mesh exactly, so there was no bonus.",
+     "Left 2 nonlinear_checks unused; the h 0.006 diagnostic (tool-0016) was still never run."
+    ],
+    "next_mesh_call": {
+     "h": 0.0079,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.025,
+        0.0,
+        -0.0082,
+        0.031,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        0.0,
+        -0.0082,
+        -0.025,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0023,
+       "radius": 0.003
+      }
+     ]
+    },
+    "notes": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Base slab is dead. Results:\n- 0.005: +253 nodes, 2.38%\n- 0.006: +115 nodes, 2.34%\n- 0.007: inert, 2.44%\n- a1 full-width 0.0055: 2.21% at 5981 nodes\nNone beat 12.93k e x nodes, and the 1.0 mm point stayed 5.6-5.8%. Drop the slab from all recipes; base block PEEQ is ~0.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Best recipe now (a3 g8): h 0.008, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029] 0.0025, arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, plus left-pocket box 0.0023 r0.003. Result: 5650 nodes, q 0.221, 2.29%, 12.93k. Base for your h variant.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Your assigned h variant: free-mesh a3's recipe at h 0.0077, 0.0078, 0.00785, 0.0079, 0.00795 and 0.0082. Log nodes and q. a3 saw h 0.0079 give 5581 nodes, q 0.244 without the 0.0023 box. Check the cheapest q>=0.2 branch at <=5620 nodes; break-even e < 12930/nodes.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "solver_setup",
+      "content": "The 1.0 mm excess sits inside the carrier, not the base. Evidence:\n- carrier 0.0048 raised that point from +5.65% to +6.6% (3.37%);\n- carrier-free h 0.005 gave 3.22%;\n- base slabs moved it <=0.1 pt.\nSize decisions should target y -20..32 mm, not h outside it.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Coarse global h is an expensive branch on this recipe (a1 g8). h 0.009/0.010/0.011/0.0125/0.014/0.02/0.03 gave 6989/7675/8348/9902/8133/6625/7098 nodes, all above 5650. Do not scan h>0.0082. The >1.5x diversity route via h is closed.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "REPEATED: you promised view(kind=error) after the first linear solve and skipped it in g7 and g8. Next run: solve the first mesh, then immediately call view(kind=error, view=iso). Write the top hotspot's local h vs its box size in your reasoning before any nonlinear_check.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "meshing",
+      "content": "Never spend a check on a nested box less than 1.4x finer than its surroundings. Slab 0.007 in h 0.008 (1.14x) gave 5583 nodes vs 5612 and only measured noise (2.44% vs 2.30%). Free-mesh and compare node counts: a <1% change means inert.",
+      "kind": "avoid"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "Branch noise is \u00b10.1-0.15 pt here: near-identical meshes read 2.30% vs 2.44%. A single check better by <0.1 pt is a tie. Only meshes with e x nodes below the best product (12.93k) by more than about 3% justify submission over the known best.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "Diversity collisions: a target published in the shared playbook (your g7 slab) will be copied. a2 submitted a mesh identical to yours (5686 nodes, same checkpoints), so both lost the bonus. For a bonus, pick a target not in any playbook note, or a different h/order.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "Use all 6 nonlinear_checks. You left 2 unused while the h 0.006 diagnostic and an h branch scan were untested. Plan:\n- 2 on the assigned factor;\n- 1 on the cheapest twin;\n- 1 diagnostic;\n- 1 spare;\n- 1 on the best untested idea.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "meshing",
+      "content": "One factor per check. Your submitted mesh removed the arm boxes AND added a slab, so neither effect is measurable. Arm removal alone is known to cost about 0.06 pt (mesh-0054). Before each check, list its differences from the last checked mesh; if more than one, split it.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "h 0.006 diagnostic, only if a spare check remains: a3's recipe at h 0.006 refines the base and prong tops outside the carrier. Free-mesh it first. If it is above 6700 nodes, the break-even is <1.93%: run it as information only, never submit it unless e x nodes < 12.93k.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Highlight a3 g8: a single extra 0.0023 r0.003 box over the left pocket (where the f15/f37 PEEQ hotspot sits, x\u2248-21.6 mm) cost only +38 nodes and gave 2.29% vs 2.35%. Cheap asymmetric touch-ups inside an existing box are the right scale of change on this plateau.",
+      "kind": "highlight"
+     }
+    ],
+    "assignment": {
+     "agent": "a0",
+     "role": "variant",
+     "experiment": "Change only global h on a3's g8 best recipe. Recipe: carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004; pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029, full z] 0.0025 r0.004; arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034 r0.004; left-pocket box [-0.0265,0.0225,-0.0082,-0.0205,0.029,0.0082] 0.0023 r0.003.\n\nNew h = 0.0079 (from 0.008).\n\nProcedure:\n1. Free-mesh h 0.0077/0.0078/0.00785/0.0079/0.00795/0.0082 and log nodes and q.\n2. Check the cheapest q>=0.2 branch at <=5620 nodes (break-even e < 12930/nodes).\n3. Check one neighbouring h branch as a twin.\n4. Linear-solve the first candidate and call view(error).",
+     "why": "The h knob is now known only as a node-count lever. a1 g8 showed every h from 0.009 to 0.03 lands on 6625-9902-node branches. a3 g8 found h 0.0079 gives 5581 nodes, q 0.244, 2.35% without the left box (13.12k), and adding the 0.0023 left box at h 0.008 bought -0.06 pt for +38 nodes. Combining them is the cheapest untested h point near the best product (12.93k). Base slabs and coarser carriers are settled as losers, so h is the one factor left whose effect on nodes is unmeasured on the current best recipe."
+    },
+    "task": "abc_00000065_compression"
+   },
+   "reflection": {
+    "what_happened": "I submitted the no-arm-box recipe with a centre slab: h 0.008, order 2, carrier 0.004, two pocket boxes 0.0025, slab 0.006. It gave 2.30% force error at 17058 DOFs (5686 nodes), gain 3.41x and score 0.88, rank 2/4. The 1.0 mm checkpoint stayed at +5.65%, about half of the mean error. The PEEQ hotspots are in the pockets (z \u00b16.3 mm, y 25 mm) and the bore flank. The pocket boxes are what drive accuracy. The slab and arm boxes only moved the result by ~0.1 pt, and the slab's value is diversity. I used 2 of 6 nonlinear checks and a few of 12 solves, so I again left budget unused.",
+    "what_i_learned": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Keep carrier 0.004 r0.004 with pocket boxes 0.0025 (x 0.0205-0.0265, y 0.0225-0.029). 2.30% at 5686 nodes, score 0.88. Pocket size is the live lever, so test 0.0022 in the pocket boxes with an unchanged carrier.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Arm boxes at 0.0034 are swallowed (+~40 nodes, ~0.05 pt). Slab 0.006 without arms gave the same 2.30% with fewer nodes. Leave arm boxes out.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "postprocessing",
+      "content": "The 1.0 mm checkpoint stays at +5.7% in every variant, about 47% of the mean error. Try refining the bore flank mid-height (PEEQ band, f5 area) with a box of 0.003 to cut the yield-transition stiffness, one factor per check.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Plan all 6 nonlinear checks up front. This run again used only 2. Next time use at least 4, each changing one factor: pocket 0.0022, pocket y-extent, bore-flank box, carrier 0.0045.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "solver_setup",
+      "content": "Score is ~345/(e%*DOFs/1000) for e<3.92%. 2.30% at 17.06k gives ~8.8. A change must cut e below 2.30%*(nodes ratio)^-1 to pay. Write the break-even before each check.",
+      "kind": "keep"
+     },
+     {
+      "task": "general",
+      "section": "meshing",
+      "content": "Check quality.min >=0.15 and node count by free mesh() calls before spending any solve. Free scans cost no budget.",
+      "kind": "keep"
+     }
+    ],
+    "plan_next": "Keep the carrier, pockets and slab. Change one factor: pocket boxes 0.0025->0.0021 with the same extent. Then use a separate check for a bore-flank box. Use at least 4 nonlinear checks, free-meshing each first.",
+    "next_mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0021,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0021,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.019,
+        -0.03,
+        -0.0082,
+        0.019,
+        -0.017,
+        0.0082
+       ],
+       "size": 0.006,
+       "radius": 0.004
+      }
+     ]
+    },
+    "run_id": "g8-abc_00000065_compression-a0",
+    "task": "abc_00000065_compression"
+   },
+   "last_run": {
+    "run_id": "g8-abc_00000065_compression-a0",
+    "task": "abc_00000065_compression",
+    "mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.019,
+        -0.03,
+        -0.0082,
+        0.019,
+        -0.017,
+        0.0082
+       ],
+       "size": 0.006,
+       "radius": 0.004
+      }
+     ]
+    },
+    "score": 0.8798631183980001,
+    "field_error": null,
+    "nonlinear_error": 0.023005391059926203,
+    "probe_error": null,
+    "dofs": 17058,
+    "rank": 2,
+    "group_size": 4,
+    "failed_gate": null,
+    "error": null
+   }
+  },
+  "a2": {
+   "feedback": {
+    "agent": "a2",
+    "run_id": "g8-abc_00000065_compression-a2",
+    "diagnosis": "Score 0.880, base only, rank 3/4. You submitted h 0.008, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, mirrored pockets 0.0025, no arm boxes, plus a centre slab [-0.019,-0.03,-0.0082,0.019,-0.02,0.0082] 0.006. Result: 5686 nodes, q 0.273, e 2.30%, e x nodes 13.08k.\n\nThat mesh is effectively identical to a0's submission: same nodes (5686), same checkpoints (+1.78/+5.65/+1.78/+0.78/+1.51%) and the same score 0.8799. Both runs used the same slab idea without arm boxes, so neither could earn the diversity bonus. Your plan promised a no-carrier submission; you dropped it and landed on a peer's recipe.\n\nBinding term is the curve error, with the sim above the test at every checkpoint. The 1.0 mm point is 5.65 of the 11.5 sum (~49%) and has not moved below 5.5% on any carrier-family mesh. PEEQ peaks at the right pocket corners f12/f38/f39 and f13/f41/f42 (0.286) and at the left pocket f15/f37 (0.187), all inside the 0.0025 boxes. The s1 peaks of 48 MPa on bore flank f5 sit in the carrier.\n\nYour useful new evidence was the two no-carrier checks:\n- h 0.005 + pockets: 6847 nodes, 3.22%, 22.0k.\n- h 0.006 + pockets: 5266 nodes, 3.65%, 19.2k.\nUniform-ish bulk refinement is far worse than the 0.004 carrier above y -0.02, so the curve error lives inside the carrier volume (arms, bore band, neck), not in the base.\n\nThis agrees with a3's carrier 0.0048 check (3.37% at 5530 nodes vs 2.30% at 0.004). The curve is steep in carrier size, and the finer direction (<0.004) has never been checked. That is your assignment.\n\nDOF spend: you used 4 of 6 checks and 1 of 12 solves. You never called view(error) or compare. The slab (+135 nodes over the no-arm 5551 mesh) bought 0.06 pt, which is noise.",
+    "step_critique": [
+     {
+      "step": "plan",
+      "what_it_did": "Promised a no-carrier submission, at least 3 structural checks, a free-mesh scan with gates nodes<=6000 and q>=0.1, and a linear solve + view(error) + compare before checking.",
+      "verdict": "good",
+      "correction": "Good structure, but keep it. Only the scan and the structural checks survived. Write each promise as a numbered checklist and tick it off before submit."
+     },
+     {
+      "step": "mesh scan, no carrier h 0.005/0.0055/0.006/0.0065 with pocket boxes",
+      "what_it_did": "6847 / 5778 / 5266 / 4762 nodes, q 0.18 / 0.11 / 0.13 / 0.13.",
+      "verdict": "good",
+      "correction": "A cheap, informative scan that tested a genuinely new structure (no carrier). Keep scanning before checking."
+     },
+     {
+      "step": "nonlinear_check mesh 1 (h 0.005, 6847 nodes)",
+      "what_it_did": "Checked a mesh above your own 6000-node gate: 3.22%, product 22.0k.",
+      "verdict": "mistake",
+      "correction": "REPEATED MISTAKE (tool-0013, flagged for you last gen with the 8525-node check): a mesh breaking the gate goes to a linear-reaction solve, not a nonlinear check. Here mesh 3 alone (3.65%) already proved that no-carrier fails."
+     },
+     {
+      "step": "nonlinear_check mesh 3 (h 0.006, 5266 nodes)",
+      "what_it_did": "3.65%, 1.0 mm point +6.8%.",
+      "verdict": "good",
+      "correction": "A valid structural negative result: without the 0.004 carrier the knee error rises 1.1 pt. Record it so nobody repeats it."
+     },
+     {
+      "step": "mesh scan, h 0.01-0.012 with carrier 0.0035/0.0038",
+      "what_it_did": "Got 7340-8259 nodes and abandoned the scan.",
+      "verdict": "missed_opportunity",
+      "correction": "This was the right lever (finer carrier) on the wrong base. Scan carrier 0.0034-0.0038 at h 0.008, where bulk cells outside are already cheap. That is now your assigned variant."
+     },
+     {
+      "step": "mesh scan, carrier top y 0.012 at h 0.0065-0.008",
+      "what_it_did": "Got 8163 nodes at h 0.008, 6430 at 0.0078 and 6047 at 0.0075. None was checked.",
+      "verdict": "missed_opportunity",
+      "correction": "The 6047-node branch (q 0.11) cut the carrier over the prongs, a unique target. It was worth one of the 2 checks you left unused (break-even e<12910/6047=2.13%)."
+     },
+     {
+      "step": "nonlinear_check meshes 14 (slab 0.006, 5686) and 16 (no arms, 5551)",
+      "what_it_did": "Got 2.30% / 13.08k and 2.36% / 13.10k.",
+      "verdict": "mistake",
+      "correction": "Both are trims inside the plateau noise (\u00b10.1 pt) that playbook mesh-0048/tool-0015 told you to stop. The slab was a0's known g7 target, which guaranteed a tie."
+     },
+     {
+      "step": "linear solve / view / compare",
+      "what_it_did": "Ran one solve only, right before submit. No view(kind=error), no compare.",
+      "verdict": "mistake",
+      "correction": "REPEATED MISTAKE (tool-0005/tool-0017). Solve the control first, call view(solve 1, kind=error, view=iso), and read each hotspot's local h vs box size. Use the remaining 11 solves to compare carrier-size variants cheaply before spending checks."
+     },
+     {
+      "step": "submit",
+      "what_it_did": "Submitted mesh 14 (5686 nodes, 2.30%), with 2 checks unused. This mesh duplicated a0's.",
+      "verdict": "mistake",
+      "correction": "Before submit, list peers' likely recipes (the a0 slab was public in the playbook). Spend the spare checks on a target nobody uses, then submit the best product among unique meshes."
+     }
+    ],
+    "promised_items_check": [
+     {
+      "item": "Don't resubmit the g6 recipe; submit a no-carrier mesh",
+      "status": "partly",
+      "comment": "The g6 recipe was not resubmitted. But the no-carrier promise was dropped (it failed at 3.22-3.65%), and you submitted a mesh identical to a0's slab mesh (5686 nodes, same checkpoints). Same tie outcome as resubmitting."
+     },
+     {
+      "item": "Reserve >=3 of 6 checks for structural targets (no-carrier h 0.005, neighbour h, no-pocket attribution)",
+      "status": "partly",
+      "comment": "The two no-carrier checks were done. The no-pocket attribution run was never done, and 2 checks were left unused."
+     },
+     {
+      "item": "Free-mesh scan h 0.0045-0.006, gate q>=0.1 and <=6000 nodes",
+      "status": "partly",
+      "comment": "The scan was done, but the 6847-node mesh was checked anyway: REPEATED gate violation."
+     },
+     {
+      "item": "Linear solve with view(error) and compare before checking",
+      "status": "not_done",
+      "comment": "There was one solve, at the end, with no view and no compare. REPEATED MISTAKE from g7."
+     },
+     {
+      "item": "Don't judge by peak PEEQ",
+      "status": "done",
+      "comment": "Choices were made by e and e x nodes."
+     },
+     {
+      "item": "Setup verbatim",
+      "status": "done",
+      "comment": "3d, base_bottom fixed, f17/f34 [0,-0.0024,0], E 1.88e9, nu 0.35."
+     }
+    ],
+    "strengths": [
+     "Ran a genuinely structural experiment (no carrier, h 0.005/0.006) and got a clear negative answer: the carrier volume holds the curve error (3.22-3.65% vs 2.30%).",
+     "Thorough free-mesh scans with node and q logging before checks.",
+     "The re-issued mesh matched the checked node count (5686) before submit."
+    ],
+    "mistakes": [
+     "Checked a 6847-node mesh above the own 6000 gate (repeat of g7's 8525-node check).",
+     "Skipped view(error) and compare again (repeat), and used only 1 of 12 solves.",
+     "Spent 2 checks on plateau trims (slab, no arms) inside noise.",
+     "Submitted a mesh identical to a0's, so no diversity bonus and a tied score.",
+     "Left 2 nonlinear checks unused, including an unchecked unique 6047-node branch (carrier top 0.012)."
+    ],
+    "next_mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.0036,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.025,
+        0.0,
+        -0.0082,
+        0.031,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        0.0,
+        -0.0082,
+        -0.025,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0023,
+       "radius": 0.003
+      }
+     ]
+    },
+    "notes": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Assigned variant: change only the carrier box [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] size, 0.004 -> 0.0036. Keep a3's g8 recipe otherwise (h 0.008, pockets 0.0025, arms 0.0034, left-pocket 0.0023 r0.003). Free-mesh 0.0034/0.0035/0.0036/0.0037/0.0038 first and log nodes and q.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Carrier size is the steep lever: 0.0048 gave 3.37% vs 0.004 at 2.30% (a3 g8), and no-carrier h 0.005/0.006 gave 3.22%/3.65%. The finer side (<0.004) has never been checked. Gate: check a carrier size only if nodes <=6600 and q>=0.15, with break-even e < 12940/nodes (6300 nodes needs <2.05%).",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "No-carrier recipes fail (your g8): h 0.005 + pocket boxes 6847 nodes, 3.22% (22.0k); h 0.006 5266 nodes, 3.65% (19.2k). The 1.0 mm point rose to +6.3-6.8%. The curve error sits in the arms/bore band inside y -0.02..0.032. Never drop the carrier.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Plateau trims are exhausted. Slab 0.006 under the carrier gave 5686 nodes, 2.30%, 13.08k; no arm boxes gave 5551 nodes, 2.36%, 13.10k. Both are within \u00b10.1 pt noise of the 12.9k control. Don't spend checks on slab or arm on/off again.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Before submit, list every peer's likely recipe from the playbook (carrier, pockets, arms, slab, neck). Your slab mesh duplicated a0's exactly (5686 nodes, identical checkpoints, same 0.8799), so no bonus. Never submit a playbook-published recipe variant without a unique change.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "REPEATED: you checked a 6847-node mesh above your own 6000 gate. Write the gate next to every nonlinear_check call. A mesh over the gate gets only a linear solve (total reaction on f17+f34) as evidence, never a check.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "REPEATED: no view(kind=error) or compare again. On solve 1 (the control) call view(kind=error, view=iso) and read hotspot local h vs box size. Then solve each carrier-size candidate and compare(1,n): a lower total f17+f34 reaction means less stiffness, the proxy for the 1.0 mm error.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Check plan for the variant: (1) cheapest carrier 0.0036-0.0037 branch with q>=0.15; (2) carrier 0.0034-0.0035 if <=6600 nodes; (3) the best of the two at a \u00b10.0002 sibling if q<0.15; (4) a3's g8 control only if needed for noise. Use all 6 checks; leave none unused.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Branch watch: carrier sizes are branchy (a3: 0.0041->6281, 0.0043->6278, 0.0045->5934, 0.0048->5530 nodes; q 0.1103 on many). If a finer carrier jumps above 6600, shift carrier bottom y -0.02 by \u00b10.0005 or the x-limits by \u00b10.0002, not h (h belongs to a0).",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "With carrier 0.0036, the arm boxes at 0.0034 become <1.1x finer than their surroundings, so they are probably inert. Keep them anyway for clean one-factor attribution; note the node delta vs without arms only by free mesh.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Unchecked unique branch from your scan: carrier top y 0.012 (prong tops coarse) at h 0.0075 gave 6047 nodes, q 0.11. It is an explorer-type target, so hand the idea to a1 or log it; don't mix it into your carrier-size variant.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Highlight a3 g8: an extra left-pocket box [-0.0265,0.0225,-0.0082,-0.0205,0.029,0.0082] 0.0023 r0.003 over the 0.0025 pocket gave 5650 nodes, 2.29%, 12.94k (best this gen, base 0.890). Left pocket f15/f37 PEEQ is 0.19-0.21 vs 0.286 on the right. Keep it in your base.",
+      "kind": "highlight"
+     }
+    ],
+    "assignment": {
+     "agent": "a2",
+     "role": "variant",
+     "experiment": "a3's g8 best recipe with ONE factor changed: carrier box [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] size 0.004 -> 0.0036 (r 0.004). Everything else unchanged: h 0.008, order 2, pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029, full z] 0.0025, arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, left-pocket 0.0023 r0.003. Free-mesh carrier 0.0034-0.0038 first. Check the cheapest q>=0.15 branch with nodes <=6600; submit if e x nodes <12.9k.",
+     "why": "The carrier size is the only refinement size with a steep, unexplored response. 0.004->0.0048 raised e from 2.30% to 3.37% (a3 g8). Removing the carrier (your h 0.005/0.006 checks) gave 3.22-3.65%. Pocket, arm and slab sizes are plateaued within \u00b10.1 pt. If the slope holds on the finer side, 0.0036 could cut the stuck 1.0 mm stiffness error enough to pay for ~10% more nodes (break-even ~2.1% at 6200 nodes; an estimate)."
+    },
+    "task": "abc_00000065_compression"
+   },
+   "reflection": {
+    "what_happened": "I submitted h 0.008 order 2 with a carrier box (0.004), two mirrored pocket boxes (0.0025) and a new base-slab box (y -0.03..-0.02, 0.006). The mesh had 5686 nodes and 17058 DOFs, and the nonlinear error was 2.30% (gain 3.41x, score 0.88, rank 3/4). The no-carrier h 0.005 meshes came out at 6847 nodes, too costly. So I fell back to the carrier family, which is structurally almost a1's recipe. The 1.0 mm checkpoint stayed at +5.65%, which is about 1.1 pt of the mean error. Peak PEEQ sits at the pocket corners near y 25 mm, which the pocket boxes cover.",
+    "what_i_learned": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Base-slab box y -0.03..-0.02 at 0.006 added about 137 nodes (5549 to 5686) and gave 2.30%, the same as a1's 2.30% at 5612 nodes. It is not a win: break-even is 12910/nodes, so skip it.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "No-carrier h 0.005 with pocket boxes costs 6847 nodes (q 0.18), over the 6000 gate. The no-carrier family is not cheap; do not spend checks on it without a node cut.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "postprocessing",
+      "content": "The 1.0 mm checkpoint stays at +5.7% on every carrier mesh. Only a structural change to the mid-ramp plastic zones (bore flanks f5, neck waists) can move it. Test a 0.003 box on the f5 flanks (x \u00b114-24 mm, y -16..-8 mm) as the single factor next.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "I spent scans on h variants but ended on a near-copy of a peer. For diversity, change the structure: for example h 0.010 with a thicker carrier, or neck boxes, rather than a tiny addition to the known recipe.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Keep pocket boxes at 0.0025 mirrored and the carrier top at 0.032. PEEQ hotspots #1-#3 sit at the pocket corners y about 25 mm and are covered. This recipe gives 2.3% at about 5.6k nodes.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Try a coarser global h 0.010 with the same carrier and pocket boxes. Free-mesh first, and accept it only if q>=0.2 and nodes fall at least 15% with e under 2.6%.",
+      "kind": "idea"
+     }
+    ],
+    "plan_next": "I will test the one-factor bore-flank box (0.003 on f5) on the control carrier recipe, free-meshing first and checking the nonlinear result only if nodes rise by 10% or less. I will also try an h 0.010 variant as a diversity bet.",
+    "next_mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.024,
+        -0.016,
+        -0.0082,
+        0.024,
+        -0.008,
+        0.0082
+       ],
+       "size": 0.003,
+       "radius": 0.004
+      }
+     ]
+    },
+    "run_id": "g8-abc_00000065_compression-a2",
+    "task": "abc_00000065_compression"
+   },
+   "last_run": {
+    "run_id": "g8-abc_00000065_compression-a2",
+    "task": "abc_00000065_compression",
+    "mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.019,
+        -0.03,
+        -0.0082,
+        0.019,
+        -0.02,
+        0.0082
+       ],
+       "size": 0.006,
+       "radius": 0.004
+      }
+     ]
+    },
+    "score": 0.8798615152585614,
+    "field_error": null,
+    "nonlinear_error": 0.023005432976579074,
+    "probe_error": null,
+    "dofs": 17058,
+    "rank": 3,
+    "group_size": 4,
+    "failed_gate": null,
+    "error": null
+   }
+  },
+  "a1": {
+   "feedback": {
+    "agent": "a1",
+    "run_id": "g8-abc_00000065_compression-a1",
+    "diagnosis": "Score 0.871 (base only), rank 4/4. It had the lowest error on the task (2.21%) but the most nodes (5981, 17943 DOFs). e x nodes = 13.22k, worse than your own g7 control at 12.91k. To pay, the full-width base slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 needed e < 12910/5981 = 2.16%; it got 2.21%. So the +369 nodes (+6.6%) bought only -0.09 pt (-3.9%), which is inside the +/-0.1 pt noise. Your mesh 15 (deeper slab, 6149 nodes, 2.19%) was 13.47k: depth does not help.\n\nBinding term: the curve error. The sim sits above the test everywhere: +1.69/+5.56/+1.69/+0.69/+1.42%. The 1.0 mm point is still 50% of the sum and moved only 5.65 -> 5.56% with the slab. All four runs share carrier 0.004 + pockets 0.0025 and land at 2.21-2.30%, so no run got the diversity bonus.\n\nThe assigned h 0.0125 variant was dead on arrival, and your free-mesh scan proved it at no check cost:\n- h 0.009 -> 6989 nodes; 0.01 -> 7675; 0.011 -> 8348; 0.0125 -> 9902; 0.014 -> 8133; 0.02 -> 6625; 0.03 -> 7098.\n- Coarse bulk h never undercuts the h 0.008 branch (5612), because gmsh's gradation from the 0.004 carrier fills the base anyway.\n\nThe useful finding is a contrast between slabs. a0's and a2's centre-only slabs (|x| <= 0.019, size 0.006) gave 2.30%, the same as the control. Your full-width slab gave 2.21%. The difference is the outer neck/base-arm junction (|x| ~0.022-0.031, y -0.028..-0.018), and the PEEQ image shows a plastic band there just below the carrier's bottom edge at y -0.02, mainly on the +x side. That is the only plastic region every recipe leaves at h 0.008. You used 4 of 6 nonlinear checks and left 2 unused, again.",
+    "step_critique": [
+     {
+      "step": "plan",
+      "what_it_did": "Wrote one line per feedback item: the h-only change, a free-mesh scan, a 6-check schedule including the h 0.006 diagnostic, a solve plus view(error), and a submit gate at 14.3k.",
+      "verdict": "good",
+      "correction": "Keep writing the plan, but make the check schedule binding: list mesh number -> purpose for all 6 checks and tick each off."
+     },
+     {
+      "step": "free-mesh scan of h 0.009-0.05 on the full recipe",
+      "what_it_did": "Scanned about 9 h values. Every coarse h gave 6625-9902 nodes, versus 5612 at h 0.008.",
+      "verdict": "good",
+      "correction": "Correct use of free mesh(): it killed the coarse-h idea without spending a check. Record the conclusion: with a 0.004 carrier, h > 0.009 never gets below about 6600 nodes, so coarse h is not a diversity route here."
+     },
+     {
+      "step": "fallback after the h variant failed",
+      "what_it_did": "Abandoned the h variant and switched to a full-width base slab, instead of the noted fallback (h 0.0079, 5519 nodes).",
+      "verdict": "good",
+      "correction": "Switching to a new target was right: the h 0.0079 fallback was a known tie. Next time, name the new target in advance as a one-factor change from the control and state its break-even (e < 12910/nodes) before the check."
+     },
+     {
+      "step": "slab mesh 12 (y -0.032..-0.02, full width, 0.0055) and nonlinear_check",
+      "what_it_did": "5981 nodes, q 0.19, 2.21%: the lowest e on the task, but product 13.22k.",
+      "verdict": "missed_opportunity",
+      "correction": "The slab refines about 1500 mm^3 of near-elastic base to reach the neck band. Cover only the necks instead: mirrored boxes [+/-0.022..+/-0.031, y -0.028..-0.018, full z] at 0.004. The estimated cost is about +100-200 nodes against +369 (an estimate; free-mesh to confirm)."
+     },
+     {
+      "step": "mesh 15 (deeper slab, 6149 nodes) and nonlinear_check",
+      "what_it_did": "Got 2.19%, product 13.47k, so more depth is worse per node.",
+      "verdict": "mistake",
+      "correction": "Its break-even was 2.10%, and you knew the slab gain was only 0.09 pt. Spend that check on a cheaper version of the same target (neck-only boxes), not a more expensive one."
+     },
+     {
+      "step": "linear solves and view(error)",
+      "what_it_did": "Made 3 solves, the last right before submit. A view(error) with hotspot local h versus box size is not visible in the log.",
+      "verdict": "missed_opportunity",
+      "correction": "After solve 1 on the control, call view(kind=error, view=-z) and read the local h at the neck/base-junction hotspot. If it is above 0.006 there, that confirms the neck target before any check."
+     },
+     {
+      "step": "remaining check budget",
+      "what_it_did": "Used 4 nonlinear_checks and left 2 unused. The promised h 0.006 diagnostic was not run.",
+      "verdict": "mistake",
+      "correction": "REPEATED MISTAKE (g7 also left checks unused). Spend the last two on (a) the neck-only variant without arm boxes and (b) the h 0.006 control diagnostic, which tells everyone whether the stiff 1.0 mm point lives outside the carrier."
+     },
+     {
+      "step": "h 0.0079 / 0.0081 branch scan of the slab and submit",
+      "what_it_did": "Got 5984 and 7588 nodes, then re-issued mesh 12 (5981, matching the checked count), solved and submitted.",
+      "verdict": "good",
+      "correction": "The re-issue and node-count match is correct practice. The submit choice was defensible: the control is a tie risk and mesh 15 was worse. It was simply not a winning mesh."
+     }
+    ],
+    "promised_items_check": [
+     {
+      "item": "Assigned change: only global h, 0.008 -> ~0.0125, everything else as in the g7 recipe",
+      "status": "done",
+      "comment": "Free-meshed h 0.0125 (9902 nodes) and neighbours 0.009-0.05; all were above 6600 nodes, so correctly not checked."
+     },
+     {
+      "item": "Free-mesh scan h 0.010-0.014 first, pick cheapest branch with q >= 0.1",
+      "status": "done",
+      "comment": "Scanned wider than promised (0.009-0.05). Cheapest coarse was h 0.02 at 6625 nodes, still above the gate."
+     },
+     {
+      "item": "6-check schedule: cheapest coarse h, alternate branch, h 0.006 diagnostic, h 0.0079 fallback, 2 on best candidate",
+      "status": "partly",
+      "comment": "Only 4 checks were used, all on slab variants. The h 0.006 diagnostic was not run. REPEATED MISTAKE: unused checks."
+     },
+     {
+      "item": "One linear solve on the control first, then view(error) before choosing checks",
+      "status": "unclear",
+      "comment": "3 solves happened, but no view(error) reading of hotspot local h appears in the visible reasoning, and the checks were not chosen from hotspots."
+     },
+     {
+      "item": "Submit gate: h variant if e x nodes <= 14.3k, else the best checked non-duplicate mesh",
+      "status": "done",
+      "comment": "The h variant was never checkable. It submitted the best checked non-duplicate (slab mesh 12, 13.22k)."
+     },
+     {
+      "item": "Avoid old failures: skipping view(error), unused checks, abandoning a branch jump without an h scan",
+      "status": "partly",
+      "comment": "Did scan h 0.0079/0.0081 after a branch jump (good). Still left 2 checks unused, and view(error) use is unclear."
+     }
+    ],
+    "strengths": [
+     "Free-mesh scans settled the coarse-h question without spending checks: h 0.009-0.05 all gave >= 6625 nodes.",
+     "Found the only target that lowered e below the family (full-width base slab, 2.21%, best on the task) and confirmed depth does not help (mesh 15).",
+     "Re-issued the checked mesh and matched the node count (5981) before solve and submit."
+    ],
+    "mistakes": [
+     "Left 2 of 6 nonlinear_checks unused again, and skipped the promised h 0.006 diagnostic.",
+     "Spent a check on a more expensive version of a target (deeper slab, 6149 nodes) whose first version already missed break-even.",
+     "Did not localise the slab gain: a full-width 0.0055 slab refines mostly elastic base, when the evidence (centre slabs gave no gain) pointed at the outer necks.",
+     "No visible view(error) / hotspot local-h reading to justify the slab extent."
+    ],
+    "next_mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.025,
+        0.0,
+        -0.0082,
+        0.031,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        0.0,
+        -0.0082,
+        -0.025,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.022,
+        -0.028,
+        -0.0082,
+        0.031,
+        -0.018,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.031,
+        -0.028,
+        -0.0082,
+        -0.022,
+        -0.018,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      }
+     ]
+    },
+    "notes": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Coarse global h is a dead end with a 0.004 carrier: h 0.009/0.01/0.011/0.0125/0.014/0.02/0.03 gave 6989/7675/8348/9902/8133/6625/7098 nodes, versus 5612 at h 0.008. Do not use h > 0.0085 for diversity or node cuts on this task.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Full-width base slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 on the control: 5981 nodes, q 0.19, 2.21% (13.22k). The deeper slab (6149 nodes) gave 2.19% (13.47k). Centre-only slabs (|x| <= 0.019) gave 2.30%, no gain, so the gain lies at the outer necks.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Explorer target: replace the slab with mirrored neck boxes [+/-0.022..+/-0.031, y -0.028..-0.018, full z] at 0.004 r0.004, overlapping the carrier bottom (-0.02) by 2 mm. Aim: the slab's -0.09 pt for about half its nodes (estimate). Break-even e < 12910/nodes.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Boxes reaching |x|=0.031 below y -0.02 are branchy: slab h 0.008 gave 5981, h 0.0079 5984, h 0.0081 7588, and 0.006/0.0055 slab variants gave 6971-7473. If the neck mesh exceeds 6000 nodes, free-mesh neck y-min -0.027/-0.029, x-min +/-0.021/+/-0.023 and h 0.0079 before discarding the target.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "REPEATED: 2 of 6 nonlinear_checks were left unused in g8 (and again in g7). Write all 6 slots as mesh# -> purpose before the first check; an unused slot must be spent on a node-cut sibling or the h 0.006 diagnostic.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Spend one check on the h 0.006 diagnostic: the control recipe with only h 0.008 -> 0.006. If the 1.0 mm point (+5.56-5.65%) drops by more than 1 pt, the excess stiffness lies outside the carrier (base/necks), and the neck/slab direction is right. It was promised and skipped in g8.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Never spend a check on a more expensive version of a target that already missed break-even (mesh 15: 6149 nodes, 2.19%, worse product). Check the cheaper localised version first and enlarge only if it beats e < 12910/nodes.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "postprocessing",
+      "content": "After solve 1, call view(kind=error, view=-z) and view(kind=mesh). Read local h at the neck/base junction (x ~ +/-27 mm, y ~ -22 mm). If the delivered size is about 0.008 there, the neck boxes are justified; if it is already about 0.005, the slab gain was noise and you should move to a different target.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Keep arm boxes [+/-0.025..+/-0.031, y 0..0.008] 0.0034 in the neck-box check for attribution. As a second, node-cut check, drop them (about -60 nodes) only if the neck mesh lands within 0.05 pt of break-even.",
+      "kind": "keep"
+     },
+     {
+      "task": "general",
+      "section": "meshing",
+      "content": "When a large volume box buys a small gain, localise it before paying: compare it with a peer's partial version (here centre-only slabs gave 0 gain, full width -0.09 pt) to find which sub-volume carries the gain, then box only that sub-volume.",
+      "kind": "idea"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "When an assigned variant fails at the free-mesh stage (all candidates above the node gate), switch at once to a new target and state its break-even in advance. This saved all checks in g8; keep doing it.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "solver_setup",
+      "content": "Bonus logic: no run got +0.1 in g8 because all shared carrier+pockets. The neck boxes are a target no peer uses (a3 control, a0 h, a2 sizes next gen). Submit the neck mesh if its base >= 90% of the best (e x nodes <= ~14.3k), even if it ties the control on base.",
+      "kind": "highlight"
+     }
+    ],
+    "assignment": {
+     "agent": "a1",
+     "role": "explorer",
+     "experiment": "Control recipe (h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004, mirrored pocket boxes 0.0025, arm boxes 0.0034), with NO base slab. Add mirrored neck/base-junction boxes [0.022,-0.028,-0.0082,0.031,-0.018,0.0082] and [-0.031,-0.028,-0.0082,-0.022,-0.018,0.0082] at 0.004 r0.004. Free-mesh first (gate <= 6000 nodes, q >= 0.1; if it jumps, scan y-min -0.027/-0.029, x-min +/-0.021/+/-0.023, h 0.0079). Then solve and view(error), and nonlinear_check the cheapest branch. Spend the remaining checks on the same boxes without arm boxes and on the h 0.006 control diagnostic.",
+     "why": "Every recipe leaves the outer neck below the carrier bottom (y -0.02) at h 0.008, and the PEEQ image shows a plastic band there. a0's and a2's centre-only slabs (|x| <= 0.019) gave 2.30% (no gain), while your full-width slab gave 2.21%: the only sub-2.3% result on the task. So the gain comes from |x| > 0.019, and boxing only the necks should keep most of it for fewer than the slab's +369 nodes. No peer uses this target, which makes it diversity-eligible."
+    },
+    "task": "abc_00000065_compression"
+   },
+   "reflection": {
+    "what_happened": "I was assigned an h change to about 0.0125 on the g7 recipe. I free-meshed h branches and ran checks, but the coarse-h branches jumped in node count or lost accuracy. I fell back to h 0.008 with a coarse base box (0.0055 over y -0.032..-0.02), 5981 nodes, 17943 DOFs. Result: force error 2.21%, gain 3.55x, score 0.871, rank 4/4. The error is good, but cost term 0.491 (2x the automesher DOFs) dragged the score. The 1.0 mm checkpoint stayed at +5.6%, which is frozen model error. The PEEQ hotspots (0.29 at the right pocket x 21.7, y 25.2, z \u00b16.3; 0.19 at the left pocket) sit in my pocket boxes. I spent the budget on near-duplicates of known meshes instead of a structural cost cut.",
+    "what_i_learned": [
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "The h 0.008 recipe with a base box of 0.0055 gave 5981 nodes, 2.21%, score 0.871. This is no better than the 5612-node base (2.30%). Base-box coarsening adds nodes, so never add it. Gain is already above 3x, so only cutting DOFs now pays.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Score is A/c with g above 2, so A is g/2 and each 10% DOF cut is worth about 10% of score. Try a cheaper mesh around 4500 nodes, even at e 3.5%, because g stays at or above 2.2. Break-even is e x nodes.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Try shrinking the carrier box in y to -0.012..0.032 and in x to \u00b10.027, keeping the pocket boxes at 0.0025 on the PEEQ hotspots. Free-mesh first and gate at nodes <=5000.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "meshing",
+      "content": "Keep both pocket boxes (right and left, mirrored, 0.0025, full z). The PEEQ peaks 0.29/0.19 lie there and they are the only refinements still moving e.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "postprocessing",
+      "content": "The 1.0 mm checkpoint stays at +5.6% on every mesh, which is model error, so ignore it. Judge by 1.5-2.5 mm, where I got 1.7%, 0.7% and 1.4%.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_compression",
+      "section": "tool_use",
+      "content": "Coarse h at 0.0125 gives jumps and no saving here. Do not re-scan h. Spend checks on structural DOF cuts (smaller boxes, order 1 test is risky) instead of near-duplicate meshes.",
+      "kind": "avoid"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "Budget checks as: 1 control, 3 structural DOF-cut variants, 2 spare. Read hotspots before each check.",
+      "kind": "fix"
+     }
+    ],
+    "plan_next": "I will deliberately cut DOFs with a smaller carrier box (x \u00b10.027, y -0.012..0.032) at h 0.009, keeping the pocket boxes, and spend the first check on it. If e is at or below 3.5% with nodes below 4800, I will submit it.",
+    "next_mesh_call": {
+     "h": 0.009,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.027,
+        -0.012,
+        -0.0082,
+        0.027,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      }
+     ]
+    },
+    "run_id": "g8-abc_00000065_compression-a1",
+    "task": "abc_00000065_compression"
+   },
+   "last_run": {
+    "run_id": "g8-abc_00000065_compression-a1",
+    "task": "abc_00000065_compression",
+    "mesh_call": {
+     "h": 0.008,
+     "order": 2,
+     "refinements": [
+      {
+       "box": [
+        -0.031,
+        -0.02,
+        -0.0082,
+        0.031,
+        0.032,
+        0.0082
+       ],
+       "size": 0.004,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        0.0205,
+        0.0225,
+        -0.0082,
+        0.0265,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.0265,
+        0.0225,
+        -0.0082,
+        -0.0205,
+        0.029,
+        0.0082
+       ],
+       "size": 0.0025,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        0.025,
+        0,
+        -0.0082,
+        0.031,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.031,
+        0,
+        -0.0082,
+        -0.025,
+        0.008,
+        0.0082
+       ],
+       "size": 0.0034,
+       "radius": 0.004
+      },
+      {
+       "box": [
+        -0.031,
+        -0.032,
+        -0.0082,
+        0.031,
+        -0.02,
+        0.0082
+       ],
+       "size": 0.0055,
+       "radius": 0.004
+      }
+     ]
+    },
+    "score": 0.8712758518154948,
+    "field_error": null,
+    "nonlinear_error": 0.022086256381967633,
+    "probe_error": null,
+    "dofs": 17943,
+    "rank": 4,
+    "group_size": 4,
+    "failed_gate": null,
+    "error": null
+   }
+  }
+ },
+ "teacher": {
+  "abc_00000065_compression": {
+   "task_summary": "Gen 8 is a dead heat inside noise. Every run submitted the a1 g7 carrier family: h 0.008, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] at 0.004, mirrored pocket boxes at 0.0025. Results: a3 2.29% at 5650 nodes (e x nodes 12.93k), a0 and a2 2.30% at 5686 (13.08k), a1 2.21% at 5981 (13.22k). None beat the g7 best of 12.91k. No diversity bonus was paid. a0 and a2 submitted the same mesh (5686 nodes, checkpoints equal to the newton), so the tie paid nobody. What separates the runs is node count, not accuracy: the curve error sits at 2.2-2.3% on every carrier-0.004 mesh. The 1.0 mm checkpoint (+5.6%) is half the sum. The decisive new evidence is that carrier size is the dominant lever. a3's carrier 0.0048 gave 3.37% (1.0 mm point +6.6%) at 5530 nodes, +1.07 pt for only -82 nodes. a2's no-carrier meshes gave 3.22% at h 0.005 (6847 nodes) and 3.65% at h 0.006 (5266). So the stiffness error that drives the 1.0 mm point lives inside the carrier band y -20..32 mm, not in the base. The only thing that ever moved e below the plateau was finer resolution in that band (a1's base-top slab trimmed 0.1 pt). The next gain must come from a finer carrier, or a split carrier, on a cheap mesher branch. It will not come from more pocket, arm or h tweaks. Every agent used just 1 of its 12 linear solves and skipped view(error) and compare. All four promised the error view and none kept it.",
+   "setup_warnings": [
+    "No setup deviations: all four runs (g8 a0, a1, a2, a3) used the statement's linear setup verbatim: formulation 3d, base_bottom fixed, f17 and f34 at [0, -0.0024, 0], E 1.88e9, nu 0.35. The scored nonlinear setup is frozen anyway, so the differences between runs are mesh only."
+   ],
+   "contested_regions": [
+    {
+     "region": "Carrier band y -20..32 mm: both arms and prongs between the base top and the prong tops, including the bore flanks f5 and the arm faces",
+     "why_contested": "This is the main load path, and its resolution sets the elastic and early-yield stiffness that controls the 1.0 mm checkpoint. Carrier 0.004 gave 2.29-2.30% (1.0 mm point +5.65%). Carrier 0.0048 gave 3.37% (+6.6%) at almost the same node count (5530 vs 5612). No carrier with h 0.005-0.006 gave 3.22-3.65% (+6.3 to +6.8%). Requested 0.004 delivers about 0.0045-0.005 after the lag, so the band is still under-resolved. A finer carrier is the one untested direction. a3 promised a carrier 0.0037 diagnostic and did not run it.",
+     "which_agents_differ": [
+      "a3",
+      "a2"
+     ],
+     "what_to_do": "Free-mesh carrier 0.0036/0.0037/0.0038/0.0039 at h 0.0078/0.008/0.0082 (12 meshes, free). Check the cheapest q>=0.15 branch at or below 6300 nodes; break-even there is e<2.05%. Alternatively split the carrier: lower band y -0.02..0.012 at 0.0036 plus upper y 0.012..0.032 at 0.0042, with 3 mm overlap. Rank candidates first by the linear platen reaction (f17+f34) drop per added node."
+    },
+    {
+     "region": "Hex-pocket corners on the right prong (f8 with f38/f39 and f41/f42, x ~22-24 mm, y ~25 mm, z \u00b16-8 mm) and the left prong's pocket/hole faces (f15/f37)",
+     "why_contested": "Peak PEEQ 0.28-0.29 on the right and 0.19-0.21 on the left; these are singular corners. Pocket 0.0025 vs 0.0028 bought 0.1-0.15 pt in g7. a3's extra left box at 0.0023 inside 0.0025 (1.09x finer) changed nothing: 2.29% vs 2.30%. Peak PEEQ tracks local size, not the curve. The two prongs are not mirror images: the right has the hex pocket, the left has a round hole with faces f36/f37/f55.",
+     "which_agents_differ": [
+      "a3"
+     ],
+     "what_to_do": "Keep the mirrored pocket boxes at 0.0025 r0.004. Do not nest boxes less than 1.5x finer. Do not spend checks on pocket size again; it is settled inside noise."
+    },
+    {
+     "region": "Base top and neck: y -32..-20 mm (full width, plus the neck fillets at |x| ~24-31 mm, y -25..-16 mm)",
+     "why_contested": "Low PEEQ apart from the lower-right neck fillet band visible in the PEEQ image. a1's full-width slab [-0.031,-0.032,..,0.031,-0.02] at 0.0055 is the only change this generation that lowered the 1.0 mm point (5.56%): 2.21% at 5981 nodes, 2.19% at 6149. That is real but does not pay: 13.2-13.5k vs 12.91k. The centre slab |x|<0.019 at 0.006 (a0, a2) was a free node change and accuracy-neutral (2.30%). Widening it to |x| 0.024 or reaching |x| 0.031 flips gmsh to 6970-7590 nodes.",
+     "which_agents_differ": [
+      "a1",
+      "a0",
+      "a2"
+     ],
+     "what_to_do": "Only pair a base slab with a node cut elsewhere. If used, keep it full width, y -0.03..-0.02, size 0.0055, and free-mesh h 0.0078-0.0082 for a branch at or below 5800 nodes. Never take a branch above 6000."
+    },
+    {
+     "region": "General traits of hard regions on this part",
+     "why_contested": "Singular hex-pocket corners (yield starts there at about 0.4 kN), thin prong walls, bore flanks under bending, and the full load path between the sticking platens. A coarse load path makes the curve too stiff and too strong. The bulk base below y -32 mm carries no plastic strain.",
+     "which_agents_differ": [],
+     "what_to_do": "Resolve the whole load path at about 0.004 (or finer) delivered, and the singular corners at 0.0025. Leave the base and prong tops at h 0.008. Verify every new box by node count and delivered size."
+    }
+   ],
+   "highlights": [
+    {
+     "agent": "a3",
+     "run_id": "g8-abc_00000065_compression-a3",
+     "what": "A one-factor carrier experiment. Carrier 0.004 -> 0.0048 (everything else fixed) gave 3.37% at 5530 nodes vs 2.30% at 5612. a3 also free-mesh-scanned carrier 0.0041-0.006 and found the node count non-monotone (0.0045 -> 6278, 0.005 -> 5402, 0.0055 -> 5054). Its h 0.0079 control twin gave 2.35% at 5581 (13.12k). Best score of the generation (0.890).",
+     "why_it_works": "One factor, one check: it proves the carrier band is where the curve error lives (+1.07 pt, 1.0 mm point 5.7 -> 6.6%). The coarsening direction is closed for good and the refining direction is open.",
+     "how_to_copy": "Run the mirror experiment. Same recipe with carrier size 0.0037 (scan 0.0036-0.0039 and h 0.0078-0.0082 with free mesh() first) and check the cheapest q>=0.15 branch at or below 6300 nodes. Break-even is e<12910/nodes."
+    },
+    {
+     "agent": "a1",
+     "run_id": "g8-abc_00000065_compression-a1",
+     "what": "A full-width base-top slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 added to the control: 2.21% at 5981 nodes. The [-0.031,-0.036,...] variant gave 2.19% at 6149. a1's free h scan also showed h above 0.008 inflates nodes: h 0.009 -> 6989, 0.01 -> 7675, 0.011 -> 8348, 0.0125 -> 9902, 0.02 -> 6625.",
+     "why_it_works": "The slab is the only change that lowered every checkpoint, including 1.0 mm (5.56%). It confirms that stiffness error extends just below the carrier. The h scan kills the coarse-h diversity idea with zero nonlinear checks spent.",
+     "how_to_copy": "Use the slab only together with a node saving elsewhere, and confirm a branch at or below 5800 nodes. Reuse the scan habit: free-mesh 6+ values of any new knob before spending a check."
+    },
+    {
+     "agent": "a2",
+     "run_id": "g8-abc_00000065_compression-a2",
+     "what": "An explorer run with no carrier, only the pocket boxes. h 0.005 gave 3.22% at 6847 nodes; h 0.006 gave 3.65% at 5266. a2 also showed that a coarse h of 0.01-0.012 with a 0.0035-0.0038 carrier balloons to 7340-8259 nodes.",
+     "why_it_works": "It cleanly falsifies 'refine the bulk instead of the carrier': products of 19-22k vs 12.9k. A targeted band at 0.004 beats a global 0.005.",
+     "how_to_copy": "Do not retest no-carrier recipes. Copy the explorer spirit, but explore inside the load path (split carrier, finer lower band) rather than outside it."
+    },
+    {
+     "agent": "a0",
+     "run_id": "g8-abc_00000065_compression-a0",
+     "what": "A no-arm variant with a centre slab at 0.006 [-0.019,-0.03,..,0.019,-0.017]: 5686 nodes, q 0.273 (the highest quality of the generation), 2.30%. a0 also showed the arm boxes can be dropped at equal e on this branch.",
+     "why_it_works": "Dropping the arm boxes (about 60 nodes) at no accuracy cost moves the mesh onto a high-quality branch. Arm boxes at 0.0034 inside a 0.004 carrier are below the 1.4x nesting threshold.",
+     "how_to_copy": "Treat 'no arm boxes' as the cheap default base. But coordinate: a2 reached the identical mesh, so the tie paid nobody. Announce your targets in your plan and pick one nobody else uses."
+    }
+   ],
+   "shared_lessons": [
+    {
+     "task": "abc_00000065_compression",
+     "section": "meshing",
+     "content": "Carrier size is the dominant lever. Carrier 0.0048 (a3) gave 3.37% vs 2.30% at 0.004 for only -82 nodes, and the 1.0 mm point rose 5.7 -> 6.6%. Never coarsen the carrier. Spend your first check on carrier 0.0036-0.0039 at h 0.0078-0.0082 on a branch at or below 6300 nodes; break-even is e<12910/nodes.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000065_compression",
+     "section": "meshing",
+     "content": "Global h above 0.008 inflates nodes with this box recipe: h 0.009/0.01/0.011/0.0125/0.02 gave 6989/7675/8348/9902/6625 nodes (a1). h 0.01-0.012 with a 0.0035-0.0038 carrier gave 7340-8259 (a2). Diversity by coarse h is dead; do not retry it.",
+     "kind": "avoid"
+    },
+    {
+     "task": "abc_00000065_compression",
+     "section": "meshing",
+     "content": "Refining outside the load path fails. No carrier with h 0.005 gave 3.22% at 6847 nodes, h 0.006 gave 3.65% at 5266 (a2), and the centre slab 0.006-0.007 was neutral (2.30-2.44%). Error lives in the band y -0.02..0.032; put new DOFs there.",
+     "kind": "avoid"
+    },
+    {
+     "task": "abc_00000065_compression",
+     "section": "meshing",
+     "content": "Untested structural idea for diversity: split the carrier into a lower band [-0.031,-0.02,-0.0082,0.031,0.012,0.0082] at 0.0036 and an upper band [-0.031,0.009,-0.0082,0.031,0.032,0.0082] at 0.0042 (3 mm overlap), plus pockets 0.0025, no arm boxes. Free-mesh first; check only at or below 6200 nodes.",
+     "kind": "idea"
+    },
+    {
+     "task": "abc_00000065_compression",
+     "section": "meshing",
+     "content": "Arm boxes (0.0034 in a 0.004 carrier) are droppable. With a centre slab 0.006 instead: 5686 nodes, q 0.273, 2.30% (a0, a2). Nested boxes less than 1.5x finer are inert: a3's 0.0023 box inside 0.0025 gave 2.29 vs 2.30% for +38 nodes. Delete them.",
+     "kind": "keep"
+    },
+    {
+     "task": "abc_00000065_compression",
+     "section": "meshing",
+     "content": "A full-width base-top slab [-0.031,-0.032,..,0.031,-0.02] at 0.0055 is a real but unpaid gain: 2.21% at 5981 nodes, 13.22k (a1). Use it only when the same mesh saves nodes elsewhere (e.g. no arm boxes) and lands at or below 5800 nodes.",
+     "kind": "idea"
+    },
+    {
+     "task": "abc_00000065_compression",
+     "section": "tool_use",
+     "content": "Use the 12 linear solves as a free proxy: for each scanned candidate solve() and read the total platen reaction on f17+f34. A lower reaction means a less stiff, better mesh. Rank candidates by reaction drop per added node before spending a nonlinear_check. Every agent used only 1 of 12 solves this generation.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000065_compression",
+     "section": "tool_use",
+     "content": "Repeated by all four: the promised view(kind=error) after the first solve was skipped again. On the control, call solve() + view(error), read the hotspots' local h, and list every hotspot with local h above 0.0045 inside the carrier. Those cells are the refinement targets.",
+     "kind": "fix"
+    },
+    {
+     "task": "general",
+     "section": "tool_use",
+     "content": "Identical meshes tie and earn no bonus: a0 and a2 independently submitted the same 5686-node mesh (same checkpoints to the newton). Before submitting, compare your node count and targets with peers' known recipes. If equal, change one target structurally (split carrier, slab, finer lower band).",
+     "kind": "avoid"
+    },
+    {
+     "task": "general",
+     "section": "solver_setup",
+     "content": "On a plateau (4 runs within 2.21-2.30%, products 12.9-13.2k) node trims and pocket, arm or h tweaks are noise (\u00b10.1 pt). Spend at least 3 of the 6 checks on the one lever with a large measured response (here carrier size, 1 pt per 0.0008) in the untested direction.",
+     "kind": "keep"
+    }
+   ],
+   "bullet_ratings": [
+    {
+     "bullet_id": "mesh-0051",
+     "rating": "useful",
+     "why": "The control recipe was reproduced exactly (5612 nodes, 2.30%) and served as the base for every run. But all four stayed inside it and none beat it, so it needs a 'do not stay here' rider."
+    },
+    {
+     "bullet_id": "solv-0014",
+     "rating": "harmful",
+     "why": "Coarse bulk h is not a node saver here: h 0.011-0.0125 gave 8348-9902 nodes (a1), and h 0.01-0.012 with a carrier gave 7340-8259 (a2). The idea is falsified."
+    },
+    {
+     "bullet_id": "tool-0012",
+     "rating": "useful",
+     "why": "a3 re-issued the checked mesh, confirmed 5650 nodes and submitted correctly; so did a1 and a2."
+    },
+    {
+     "bullet_id": "mesh-0048",
+     "rating": "useful",
+     "why": "Confirmed again: the pocket, arm, h and slab variants all landed at 2.2-2.44%."
+    },
+    {
+     "bullet_id": "post-0018",
+     "rating": "useful",
+     "why": "The 1.0 mm point moved with carrier resolution (5.56-6.8%), so the linear reaction proxy is the right cheap test. Nobody used it."
+    },
+    {
+     "bullet_id": "solv-0011",
+     "rating": "not_useful",
+     "why": "No run earned the diversity bonus this generation. Every run stayed in the carrier family, and two submitted the same mesh."
+    }
+   ],
+   "task": "abc_00000065_compression",
+   "per_agent": [
+    {
+     "agent": "a3",
+     "run_id": "g8-abc_00000065_compression-a3",
+     "diagnosis": "Score 0.890, base only, rank 1/4. The submitted mesh was a1's g7 recipe plus one nested left-pocket box: h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, mirrored pocket boxes 0.0025, arm boxes 0.0034, and a left-only box [-0.0265,0.0225,-0.0082,-0.0205,0.029,0.0082] at 0.0023 r0.003. It had 5650 nodes, 16950 DOFs, q 0.221 and 1 straightened edge. Error was 2.29%, so e x nodes = 12.93k. That is a tie with a1's g7 control (12.91k = 2.30% x 5612). The nested box added 38 nodes and moved e by 0.01 pt, which is noise. Rank 1 came from that noise, not from a better recipe.\n\nBinding term: the curve error. The sim sits above the test at every checkpoint: +1.79/+5.65/+1.80/+0.75/+1.46%. The 1.0 mm point is 49% of the sum. Peak PEEQ is at the right pocket corners: f12/f38/f39 0.286 and f13/f41/f42 0.284. The left pocket f37 reads 0.213 versus peers' 0.187; your 0.0023 sub-box only sharpened the singular peak there and did not lower the curve.\n\nYour one real experiment was carrier 0.004 -> 0.0048: 5530 nodes, q 0.1103, e 3.37%. Every checkpoint rose, including the 1.0 mm point (6.6%) and 2.0 mm (+2.0% vs +0.75%). So a 1.5% node cut cost +1.07 pt. This is the steepest response seen on this task. It shows the 0.004 carrier band (arms, bore, prong necks) carries the elastic stiffness and the post-yield accuracy.\n\nYour carrier scan between 0.0041 and 0.006 was branchy: most sizes landed on q 0.1103 branches at 5054-7484 nodes, and only 0.0052 reached q 0.233. Coarsening the carrier is closed.\n\nh 0.0079 on the control gave 5581 nodes and 2.35% (13.12k): noise again. You left 3 of 6 nonlinear checks unused and never called view(kind=error).",
+     "step_critique": [
+      {
+       "step": "plan",
+       "what_it_did": "One factor (carrier 0.004->0.0045), a free-mesh scan, gates q>=0.1 and nodes<=5300, a 6-slot check schedule, and view(error) after the first solve.",
+       "verdict": "good",
+       "correction": "Keep writing the plan with numeric gates. Then actually execute every line; three of its items were dropped (see below)."
+      },
+      {
+       "step": "free-mesh carrier scan (~12 mesh calls, sizes 0.0041-0.006)",
+       "what_it_did": "Mapped node counts of 5054-7484, mostly on q 0.1103 branches. 0.0045 gave 5934 and 0.0046/0.0047 gave 5626/5595, more than the 5612 control.",
+       "verdict": "good",
+       "correction": "A thorough free scan; it correctly showed that only 0.0048 and coarser cut nodes. Log the q of each branch too; all the cheap ones sat at 0.1103, 0.01 above the validity floor."
+      },
+      {
+       "step": "nonlinear_check mesh 3 (carrier 0.0048, 5530 nodes, q 0.1103)",
+       "what_it_did": "Checked a mesh that broke its own <=5300-node gate, on a q 0.11 branch. Result 3.37%.",
+       "verdict": "missed_opportunity",
+       "correction": "The result is informative: carrier coarsening is closed. But first linear-solve the control and the 0.0048 mesh and run compare(). A large stress change in the arm/bore band predicts the loss for free and saves a check. Respect your gate or rewrite it with a reason before checking."
+      },
+      {
+       "step": "skipped carrier 0.0037 diagnostic and view(kind=error)",
+       "what_it_did": "Promised both and did neither. The only linear solve was the final one before submit.",
+       "verdict": "mistake",
+       "correction": "Make the first linear solve the control mesh. Call view(kind=error, view=iso) and view(kind=error, view=z). Compare each hotspot's local h with its box size. This was flagged in g7 (tool-0017) and is now REPEATED."
+      },
+      {
+       "step": "mesh 18 nonlinear check (h 0.0079 on control)",
+       "what_it_did": "5581 nodes, 2.35%, 13.12k. This was an h tweak although its own plan said 'h is not a lever, I leave it alone'.",
+       "verdict": "mistake",
+       "correction": "Do not scan h. Your g7 note already said the h knob is exhausted (h 0.0079 gave 13.52k then), and h is a0's assigned factor next generation."
+      },
+      {
+       "step": "mesh 19 nonlinear check (left-only nested pocket box 0.0023 inside 0.0025)",
+       "what_it_did": "A sub-box only 1.09x finer than its host, on one side only. +38 nodes, 2.29% vs the known 2.30%.",
+       "verdict": "missed_opportunity",
+       "correction": "Nested boxes under 1.4x finer are near-inert (mesh-0011), and a one-sided box on a symmetric load is not a hypothesis. Spend that check on a node cut over a low-PEEQ edge, e.g. pocket box y-max 0.029 -> 0.0285. That has a real chance to lower e x nodes."
+      },
+      {
+       "step": "unused budget",
+       "what_it_did": "Used 3 of 6 nonlinear checks and 1 of 12 linear solves.",
+       "verdict": "mistake",
+       "correction": "Use at least 5 checks (tool-0011): control tweak, two twins of it, one spare. Each must have nodes < 12930/e_target written down beforehand."
+      },
+      {
+       "step": "submit",
+       "what_it_did": "Re-issued mesh 19, confirmed 5650 nodes, linear-solved and submitted the checked mesh.",
+       "verdict": "good",
+       "correction": "Correct submit hygiene (tool-0012). Keep it."
+      }
+     ],
+     "promised_items_check": [
+      {
+       "item": "Single factor: carrier 0.004 -> 0.0045, everything else fixed",
+       "status": "partly",
+       "comment": "Scanned it, but 0.0045 landed at 5934 nodes, so you checked 0.0048 instead (3.37%). The factor is now settled: coarsening loses."
+      },
+      {
+       "item": "Free-mesh scan of carrier 0.0043-0.0048, logging nodes and q",
+       "status": "done",
+       "comment": "Done and extended to 0.0041-0.006, with every node count and q logged."
+      },
+      {
+       "item": "Gates q>=0.1 and nodes<=5300",
+       "status": "not_done",
+       "comment": "Checked a 5530-node, q 0.1103 mesh, breaking its own node gate."
+      },
+      {
+       "item": "6-slot check schedule including the carrier 0.0037 diagnostic",
+       "status": "partly",
+       "comment": "Used 3 checks; the 0.0037 diagnostic and the 'winner twin' were skipped."
+      },
+      {
+       "item": "view(error) after the first linear solve",
+       "status": "not_done",
+       "comment": "REPEATED MISTAKE: no view call at all, and the only solve came just before submit. The same was flagged in g7."
+      },
+      {
+       "item": "Leave h alone",
+       "status": "not_done",
+       "comment": "REPEATED MISTAKE: checked h 0.0079 (2.35%), the same dead knob as g7 (13.52k then)."
+      },
+      {
+       "item": "No f5 or neck boxes",
+       "status": "done",
+       "comment": "None used, consistent with mesh-0055."
+      },
+      {
+       "item": "Re-issue the mesh before submitting; setup verbatim",
+       "status": "done",
+       "comment": "Node count 5650 matched; f17/f34 [0,-0.0024,0], E 1.88e9, nu 0.35."
+      }
+     ],
+     "strengths": [
+      "Excellent free-mesh mapping of the carrier size (about 12 calls, nodes and q logged) before spending checks.",
+      "The carrier 0.0048 check produced the task's clearest lever evidence: +1.07 pt for -1.5% nodes, so the carrier band must stay at 0.004.",
+      "Clean submit: re-issued the mesh, confirmed the node count, solved and submitted the checked mesh."
+     ],
+     "mistakes": [
+      "REPEATED: skipped view(kind=error) and the early linear solve despite promising them.",
+      "REPEATED: spent a check on h (0.0079) after declaring h exhausted.",
+      "Checked a mesh outside its own node gate (5530 > 5300) on a q 0.1103 branch.",
+      "The nested 0.0023-in-0.0025 left-only box is near-inert and asymmetric; its 0.01 pt gain is noise.",
+      "Left 3 of 6 nonlinear checks and 11 of 12 linear solves unused."
+     ],
+     "next_mesh_call": {
+      "h": 0.008,
+      "order": 2,
+      "refinements": [
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         -0.02,
+         -0.0082,
+         0.031,
+         0.032,
+         0.0082
+        ],
+        "size": 0.004,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.0205,
+         0.0225,
+         -0.0082,
+         0.0265,
+         0.0285,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.0265,
+         0.0225,
+         -0.0082,
+         -0.0205,
+         0.0285,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.025,
+         0.0,
+         -0.0082,
+         0.031,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         0.0,
+         -0.0082,
+         -0.025,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.0265,
+         0.0225,
+         -0.0082,
+         -0.0205,
+         0.0285,
+         0.0082
+        ],
+        "size": 0.0023,
+        "radius": 0.003
+       }
+      ]
+     },
+     "notes": [
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Carrier coarsening is closed. Carrier 0.0048 gave 3.37% at 5530 nodes vs 2.29% at 5650 for 0.004: every checkpoint rose (1.0 mm +6.6%, 2.0 mm +2.0%). Carrier 0.0045-0.0047 landed at 5595-5934 nodes, no cheaper than the control. Keep the carrier at 0.004.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Control next gen: your g8 mesh 19 with ONE tweak, the top edge of all three pocket boxes y 0.029 -> 0.0285. The corner hotspots sit at y 25.2-25.8 mm, still covered by >=2.7 mm. Free-mesh first; accept if nodes <5650 and q>=0.1. Break-even e < 12930/nodes.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "If pocket y-max 0.0285 jumps branch (>5750 nodes or q<0.1), try 0.0287 then 0.0283 (one free mesh each). If all fail, move the pocket y-min 0.0225 -> 0.0228 instead. Change only one edge per mesh.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Nested left-only pocket box 0.0023 inside 0.0025 (1.09x finer, asymmetric) gave 2.29% vs 2.30%, +38 nodes: noise. It only raised left f37 PEEQ 0.187 -> 0.213. Don't add nested boxes <1.4x finer than the host or one-sided boxes on this symmetric load.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "First linear solve = control mesh, then view(kind=error, view=iso) and view(kind=error, view=z), then compare(control, tweak) before any check. Write each hotspot's local h vs box size. Skipped in g7 and g8: REPEATED, it must not happen a third time.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "Before a nonlinear check of a coarsening, linear-solve both meshes and run compare(). The carrier 0.0048 check (3.37%) could have been predicted by a large stress change in the arm/bore band, saving a check.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "Use >=5 of 6 nonlinear checks with written break-even e < 12930/nodes: 1 tweak, 2 twins (edge \u00b10.0002), 1 spare. g8 left 3 checks unused while the result was a noise tie.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "h is dead for you: h 0.0079 gave 2.35% at 5581 (13.12k) in g8 and 13.52k in g7. h is a0's assigned factor next gen; do not touch h.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Peer highlight (a1 g8): a base-top slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 under the control gave 2.21% at 5981 nodes (13.22k). The 1.0 mm point fell only 5.65 -> 5.56%. It is the only new target that moved every checkpoint down, but it is a1's direction; don't copy it.",
+       "kind": "highlight"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "postprocessing",
+       "content": "The 1.0 mm checkpoint responds to carrier size (5.65% at 0.004, 6.6% at 0.0048), not to the base, slab or h (5.56-5.8%). Use it as the stiffness gauge when reading checks.",
+       "kind": "keep"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "Own gates are binding: if a candidate breaks the written node or q gate, rewrite the gate with a reason before checking, or linear-solve it instead. a3 g8 checked 5530 nodes against a 5300 gate on a q 0.1103 branch and lost 1.07 pt.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Branch map at h 0.008 for carrier size (pockets 0.0025, arms 0.0034): 0.0043 6278, 0.0045 5934, 0.0046 5626, 0.0047 5595, 0.0048 5530, 0.005 5402, 0.0055 5054, all q 0.1103. 0.0052 6285 at q 0.233. Use it to avoid re-scanning.",
+       "kind": "keep"
+      }
+     ],
+     "assignment": {
+      "agent": "a3",
+      "role": "control",
+      "experiment": "Re-run your g8 submitted recipe: h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004, mirrored pocket boxes 0.0025 r0.004, arm boxes [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, left nested pocket 0.0023 r0.003. One tweak: pocket boxes (all three) y-max 0.029 -> 0.0285. Free-mesh; accept nodes <5650 with q>=0.1, else try 0.0287/0.0283. Checks: tweak, two \u00b10.0002 twins, spare. Submit the best checked e x nodes; never the unchanged 5650 mesh.",
+      "why": "g8's best product is 12.93k (2.29% x 5650), a noise tie with a1 g7's 12.91k, so a control rerun measures run-to-run noise. Pocket corner PEEQ peaks at y 25.2-25.8 mm, so the 0.029 top edge has >=3 mm of slack over low-PEEQ prong wall. A node cut there is the only small tweak not owned by a0 (h), a2 (sizes) or a1 (new targets). Carrier coarsening was ruled out by your own 3.37% check."
+     }
+    },
+    {
+     "agent": "a0",
+     "run_id": "g8-abc_00000065_compression-a0",
+     "diagnosis": "Score 0.880 (base 0.880, no bonus), rank 2/4. The submitted mesh was h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, mirrored pocket boxes 0.0025, centre slab [-0.019,-0.03,-0.0082,0.019,-0.017,0.0082] 0.006, and no arm boxes. It gave 5686 nodes, 17058 DOFs, q 0.273, e 2.30% and e x nodes 13.08k. a3 won with 12.93k (2.29% x 5650).\n\nNo bonus: a2 independently submitted the same structure (no arms, slab 0.006 with y-max -0.02). The mesh came out byte-identical: 5686 nodes, the same five checkpoints and the same hotspots. So neither of you got the diversity bonus.\n\nBinding term: the curve error. The sim is above the test at every checkpoint: +1.78/+5.65/+1.78/+0.78/+1.51%. The 1.0 mm point is about 49% of the sum and did not move with any slab:\n- slab 0.005: 5.7%\n- slab 0.006: 5.7%\n- slab 0.007: 5.8%\n- a1's full-width base slab 0.0055: 5.56%\nSo the excess stiffness is NOT in the base block. Peers this generation show it IS in the carrier: carrier 0.0048 raised the 1.0 mm point to +6.6% (3.37%, a3), and a2's carrier-free h 0.005 gave 3.22%.\n\nSlab verdict across g7-g8:\n- 0.005: +253 nodes for +0.08 pt worse (2.38% vs 2.30%, 13.96k).\n- 0.006: +115 nodes, 2.34% (13.40k).\n- 0.007: inert, because it is only 1.14x finer than h; it ran at 5583 nodes and gave 2.44%.\nThe slab never paid on base score; it only ever bought diversity, and that is now gone because a2 copied it.\n\nThe 0.007 mesh is a near-control and still read 2.44% vs the control's 2.30%. That is direct evidence of \u00b10.1-0.15 pt branch noise in this family.\n\nDOF spend: about 70% of the nodes sit in the 0.004 carrier (y -20..32 mm). That is correct, since PEEQ peaks there:\n- right pocket corners f12/f38/f39 and f13/f41/f42: 0.286\n- left pocket f15/f37: 0.187\n- bore flank f5: s1 48 MPa\nThe base block shows PEEQ ~0 in the image.",
+     "step_critique": [
+      {
+       "step": "plan",
+       "what_it_did": "Listed gates: nodes <=6000, q>=0.15, break-even e<12910/nodes. Promised view(error) after the first solve and a 0.9x-best check before betting on diversity.",
+       "verdict": "good",
+       "correction": "Keep the written gate list. Add one line: 'which peers could submit the same targets?' Your g7 slab was in the shared playbook, so a2 could, and did, copy it."
+      },
+      {
+       "step": "inspect_geometry",
+       "what_it_did": "Called it first.",
+       "verdict": "good",
+       "correction": "Keep it. Next time also read edge tags near the pocket corners at x \u00b121.7-23.7 mm, y 25 mm, for later box placement."
+      },
+      {
+       "step": "mesh 1: teacher's recipe with arms + slab 0.005",
+       "what_it_did": "5865 nodes, q 0.223; the check gave 2.38% (13.96k).",
+       "verdict": "good",
+       "correction": "Following the suggested call was right. The result settles it: slab 0.005 costs +253 nodes and buys nothing. Record 'slab dead'."
+      },
+      {
+       "step": "solve 1 (linear)",
+       "what_it_did": "Statement setup verbatim (base fixed, f17/f34 [0,-0.0024,0], E 1.88e9, nu 0.35). The result was never used.",
+       "verdict": "missed_opportunity",
+       "correction": "After solve 1, call view(kind=error, view=iso) and read the hotspots' local h against box sizes. You promised this and skipped it. A solve you do not read is wasted."
+      },
+      {
+       "step": "meshes 2-3: wider slab \u00b10.024 (7038 nodes, branch jump), slab 0.006 (5727)",
+       "what_it_did": "Abandoned the jump and checked the slab-0.006 mesh: 2.34%, 13.40k.",
+       "verdict": "mistake",
+       "correction": "Mesh 1 had already shown the slab target is flat. Spending a second check on a smaller slab was a one-factor scan of a dead target, against tool-0015. Use that check on the h 0.006 diagnostic (tool-0016) or a node-cut h scan instead."
+      },
+      {
+       "step": "mesh 4: slab 0.007 (5583 nodes)",
+       "what_it_did": "Checked a slab only 1.14x finer than h 0.008; got 2.44%.",
+       "verdict": "mistake",
+       "correction": "mesh-0011 says nested refinement must be >=1.4x finer. A 0.007 box in h 0.008 is inert, so this check measured branch noise (2.44% vs control 2.30%). Never check a box less than 1.4x finer than its surroundings."
+      },
+      {
+       "step": "mesh 5: no arms + slab 0.006",
+       "what_it_did": "5686 nodes, q 0.273, checked 2.30%, 13.08k. This was a two-factor change from the control (arms removed, slab added).",
+       "verdict": "mistake",
+       "correction": "It is not attributable. The arm removal is known to cost 0.06 pt (mesh-0054), and the slab 0.006 adds +115 nodes, so the two cancel. It also collided with a2's identical mesh. For diversity, change a factor peers do not touch."
+      },
+      {
+       "step": "check budget",
+       "what_it_did": "Used 4 of 6 nonlinear_checks and 1 of 12 solves.",
+       "verdict": "missed_opportunity",
+       "correction": "Spend the 2 unused checks on:\n(1) the cheapest h branch in 0.0077-0.0082 on the best recipe;\n(2) one structurally new idea.\nNever end a run with checks unused."
+      },
+      {
+       "step": "submit",
+       "what_it_did": "Solved the last mesh (5686 nodes, matching the checked one) and submitted.",
+       "verdict": "good",
+       "correction": "The node-count match before submit was right. Choose a candidate whose e x nodes is below the best known product (12.93k); 13.08k was not."
+      }
+     ],
+     "promised_items_check": [
+      {
+       "item": "Gates nodes <=6000, q>=0.15, break-even e<12910/nodes",
+       "status": "done",
+       "comment": "All checked meshes were 5583-5865 nodes with q >=0.22."
+      },
+      {
+       "item": "No full-width boxes below y -0.02; stop after 2 branch jumps",
+       "status": "done",
+       "comment": "One jump (slab \u00b10.024 gave 7038 nodes); it was dropped."
+      },
+      {
+       "item": "No upward h scans",
+       "status": "done",
+       "comment": "h stayed 0.008."
+      },
+      {
+       "item": "Linear solve and view(error) right after the first mesh",
+       "status": "partly",
+       "comment": "Solve 1 was run but view(error) was never called. REPEATED MISTAKE (tool-0017 flagged a0 for the same gap last generation)."
+      },
+      {
+       "item": "Several nonlinear checks: slab, slab 0.006 fallback, spare",
+       "status": "partly",
+       "comment": "4 checks were used. 2 were left unused, and two went to slab-size variants of an already flat target."
+      },
+      {
+       "item": "No pocket-size or f5 refinement",
+       "status": "done",
+       "comment": "Pockets stayed at 0.0025 and no f5 boxes were added."
+      },
+      {
+       "item": "Compute 0.9 x best peer base before betting on diversity",
+       "status": "partly",
+       "comment": "Computed a 0.963 ratio, but did not foresee that a2 could submit the same slab-no-arms target. The tie removed the bonus."
+      },
+      {
+       "item": "Teacher's suggested call (control + arms + slab 0.005)",
+       "status": "done",
+       "comment": "Mesh 1 ran exactly that: 5865 nodes, 2.38%."
+      }
+     ],
+     "strengths": [
+      "Followed the suggested call exactly and checked it, which settled the slab question with data.",
+      "Kept every node and quality gate; no invalid or over-budget meshes.",
+      "Re-issued and confirmed the node count (5686) before submitting.",
+      "The slab-0.007 check incidentally measured \u00b10.14 pt branch noise at ~equal nodes, which is useful calibration."
+     ],
+     "mistakes": [
+      "Skipped view(error) again after promising it: REPEATED.",
+      "Spent 3 of 4 checks on slab sizes (0.005, 0.006, 0.007) after the first one showed the slab is flat.",
+      "Checked an inert box (0.007 in h 0.008, 1.14x finer).",
+      "The submitted mesh changed two factors at once (arms off + slab) and duplicated a2's mesh exactly, so there was no bonus.",
+      "Left 2 nonlinear_checks unused; the h 0.006 diagnostic (tool-0016) was still never run."
+     ],
+     "next_mesh_call": {
+      "h": 0.0079,
+      "order": 2,
+      "refinements": [
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         -0.02,
+         -0.0082,
+         0.031,
+         0.032,
+         0.0082
+        ],
+        "size": 0.004,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.0205,
+         0.0225,
+         -0.0082,
+         0.0265,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.0265,
+         0.0225,
+         -0.0082,
+         -0.0205,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.025,
+         0.0,
+         -0.0082,
+         0.031,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         0.0,
+         -0.0082,
+         -0.025,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.0265,
+         0.0225,
+         -0.0082,
+         -0.0205,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0023,
+        "radius": 0.003
+       }
+      ]
+     },
+     "notes": [
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Base slab is dead. Results:\n- 0.005: +253 nodes, 2.38%\n- 0.006: +115 nodes, 2.34%\n- 0.007: inert, 2.44%\n- a1 full-width 0.0055: 2.21% at 5981 nodes\nNone beat 12.93k e x nodes, and the 1.0 mm point stayed 5.6-5.8%. Drop the slab from all recipes; base block PEEQ is ~0.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Best recipe now (a3 g8): h 0.008, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029] 0.0025, arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, plus left-pocket box 0.0023 r0.003. Result: 5650 nodes, q 0.221, 2.29%, 12.93k. Base for your h variant.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Your assigned h variant: free-mesh a3's recipe at h 0.0077, 0.0078, 0.00785, 0.0079, 0.00795 and 0.0082. Log nodes and q. a3 saw h 0.0079 give 5581 nodes, q 0.244 without the 0.0023 box. Check the cheapest q>=0.2 branch at <=5620 nodes; break-even e < 12930/nodes.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "solver_setup",
+       "content": "The 1.0 mm excess sits inside the carrier, not the base. Evidence:\n- carrier 0.0048 raised that point from +5.65% to +6.6% (3.37%);\n- carrier-free h 0.005 gave 3.22%;\n- base slabs moved it <=0.1 pt.\nSize decisions should target y -20..32 mm, not h outside it.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Coarse global h is an expensive branch on this recipe (a1 g8). h 0.009/0.010/0.011/0.0125/0.014/0.02/0.03 gave 6989/7675/8348/9902/8133/6625/7098 nodes, all above 5650. Do not scan h>0.0082. The >1.5x diversity route via h is closed.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "REPEATED: you promised view(kind=error) after the first linear solve and skipped it in g7 and g8. Next run: solve the first mesh, then immediately call view(kind=error, view=iso). Write the top hotspot's local h vs its box size in your reasoning before any nonlinear_check.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "meshing",
+       "content": "Never spend a check on a nested box less than 1.4x finer than its surroundings. Slab 0.007 in h 0.008 (1.14x) gave 5583 nodes vs 5612 and only measured noise (2.44% vs 2.30%). Free-mesh and compare node counts: a <1% change means inert.",
+       "kind": "avoid"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "Branch noise is \u00b10.1-0.15 pt here: near-identical meshes read 2.30% vs 2.44%. A single check better by <0.1 pt is a tie. Only meshes with e x nodes below the best product (12.93k) by more than about 3% justify submission over the known best.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "Diversity collisions: a target published in the shared playbook (your g7 slab) will be copied. a2 submitted a mesh identical to yours (5686 nodes, same checkpoints), so both lost the bonus. For a bonus, pick a target not in any playbook note, or a different h/order.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "Use all 6 nonlinear_checks. You left 2 unused while the h 0.006 diagnostic and an h branch scan were untested. Plan:\n- 2 on the assigned factor;\n- 1 on the cheapest twin;\n- 1 diagnostic;\n- 1 spare;\n- 1 on the best untested idea.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "meshing",
+       "content": "One factor per check. Your submitted mesh removed the arm boxes AND added a slab, so neither effect is measurable. Arm removal alone is known to cost about 0.06 pt (mesh-0054). Before each check, list its differences from the last checked mesh; if more than one, split it.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "h 0.006 diagnostic, only if a spare check remains: a3's recipe at h 0.006 refines the base and prong tops outside the carrier. Free-mesh it first. If it is above 6700 nodes, the break-even is <1.93%: run it as information only, never submit it unless e x nodes < 12.93k.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Highlight a3 g8: a single extra 0.0023 r0.003 box over the left pocket (where the f15/f37 PEEQ hotspot sits, x\u2248-21.6 mm) cost only +38 nodes and gave 2.29% vs 2.35%. Cheap asymmetric touch-ups inside an existing box are the right scale of change on this plateau.",
+       "kind": "highlight"
+      }
+     ],
+     "assignment": {
+      "agent": "a0",
+      "role": "variant",
+      "experiment": "Change only global h on a3's g8 best recipe. Recipe: carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004; pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029, full z] 0.0025 r0.004; arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034 r0.004; left-pocket box [-0.0265,0.0225,-0.0082,-0.0205,0.029,0.0082] 0.0023 r0.003.\n\nNew h = 0.0079 (from 0.008).\n\nProcedure:\n1. Free-mesh h 0.0077/0.0078/0.00785/0.0079/0.00795/0.0082 and log nodes and q.\n2. Check the cheapest q>=0.2 branch at <=5620 nodes (break-even e < 12930/nodes).\n3. Check one neighbouring h branch as a twin.\n4. Linear-solve the first candidate and call view(error).",
+      "why": "The h knob is now known only as a node-count lever. a1 g8 showed every h from 0.009 to 0.03 lands on 6625-9902-node branches. a3 g8 found h 0.0079 gives 5581 nodes, q 0.244, 2.35% without the left box (13.12k), and adding the 0.0023 left box at h 0.008 bought -0.06 pt for +38 nodes. Combining them is the cheapest untested h point near the best product (12.93k). Base slabs and coarser carriers are settled as losers, so h is the one factor left whose effect on nodes is unmeasured on the current best recipe."
+     }
+    },
+    {
+     "agent": "a2",
+     "run_id": "g8-abc_00000065_compression-a2",
+     "diagnosis": "Score 0.880, base only, rank 3/4. You submitted h 0.008, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004, mirrored pockets 0.0025, no arm boxes, plus a centre slab [-0.019,-0.03,-0.0082,0.019,-0.02,0.0082] 0.006. Result: 5686 nodes, q 0.273, e 2.30%, e x nodes 13.08k.\n\nThat mesh is effectively identical to a0's submission: same nodes (5686), same checkpoints (+1.78/+5.65/+1.78/+0.78/+1.51%) and the same score 0.8799. Both runs used the same slab idea without arm boxes, so neither could earn the diversity bonus. Your plan promised a no-carrier submission; you dropped it and landed on a peer's recipe.\n\nBinding term is the curve error, with the sim above the test at every checkpoint. The 1.0 mm point is 5.65 of the 11.5 sum (~49%) and has not moved below 5.5% on any carrier-family mesh. PEEQ peaks at the right pocket corners f12/f38/f39 and f13/f41/f42 (0.286) and at the left pocket f15/f37 (0.187), all inside the 0.0025 boxes. The s1 peaks of 48 MPa on bore flank f5 sit in the carrier.\n\nYour useful new evidence was the two no-carrier checks:\n- h 0.005 + pockets: 6847 nodes, 3.22%, 22.0k.\n- h 0.006 + pockets: 5266 nodes, 3.65%, 19.2k.\nUniform-ish bulk refinement is far worse than the 0.004 carrier above y -0.02, so the curve error lives inside the carrier volume (arms, bore band, neck), not in the base.\n\nThis agrees with a3's carrier 0.0048 check (3.37% at 5530 nodes vs 2.30% at 0.004). The curve is steep in carrier size, and the finer direction (<0.004) has never been checked. That is your assignment.\n\nDOF spend: you used 4 of 6 checks and 1 of 12 solves. You never called view(error) or compare. The slab (+135 nodes over the no-arm 5551 mesh) bought 0.06 pt, which is noise.",
+     "step_critique": [
+      {
+       "step": "plan",
+       "what_it_did": "Promised a no-carrier submission, at least 3 structural checks, a free-mesh scan with gates nodes<=6000 and q>=0.1, and a linear solve + view(error) + compare before checking.",
+       "verdict": "good",
+       "correction": "Good structure, but keep it. Only the scan and the structural checks survived. Write each promise as a numbered checklist and tick it off before submit."
+      },
+      {
+       "step": "mesh scan, no carrier h 0.005/0.0055/0.006/0.0065 with pocket boxes",
+       "what_it_did": "6847 / 5778 / 5266 / 4762 nodes, q 0.18 / 0.11 / 0.13 / 0.13.",
+       "verdict": "good",
+       "correction": "A cheap, informative scan that tested a genuinely new structure (no carrier). Keep scanning before checking."
+      },
+      {
+       "step": "nonlinear_check mesh 1 (h 0.005, 6847 nodes)",
+       "what_it_did": "Checked a mesh above your own 6000-node gate: 3.22%, product 22.0k.",
+       "verdict": "mistake",
+       "correction": "REPEATED MISTAKE (tool-0013, flagged for you last gen with the 8525-node check): a mesh breaking the gate goes to a linear-reaction solve, not a nonlinear check. Here mesh 3 alone (3.65%) already proved that no-carrier fails."
+      },
+      {
+       "step": "nonlinear_check mesh 3 (h 0.006, 5266 nodes)",
+       "what_it_did": "3.65%, 1.0 mm point +6.8%.",
+       "verdict": "good",
+       "correction": "A valid structural negative result: without the 0.004 carrier the knee error rises 1.1 pt. Record it so nobody repeats it."
+      },
+      {
+       "step": "mesh scan, h 0.01-0.012 with carrier 0.0035/0.0038",
+       "what_it_did": "Got 7340-8259 nodes and abandoned the scan.",
+       "verdict": "missed_opportunity",
+       "correction": "This was the right lever (finer carrier) on the wrong base. Scan carrier 0.0034-0.0038 at h 0.008, where bulk cells outside are already cheap. That is now your assigned variant."
+      },
+      {
+       "step": "mesh scan, carrier top y 0.012 at h 0.0065-0.008",
+       "what_it_did": "Got 8163 nodes at h 0.008, 6430 at 0.0078 and 6047 at 0.0075. None was checked.",
+       "verdict": "missed_opportunity",
+       "correction": "The 6047-node branch (q 0.11) cut the carrier over the prongs, a unique target. It was worth one of the 2 checks you left unused (break-even e<12910/6047=2.13%)."
+      },
+      {
+       "step": "nonlinear_check meshes 14 (slab 0.006, 5686) and 16 (no arms, 5551)",
+       "what_it_did": "Got 2.30% / 13.08k and 2.36% / 13.10k.",
+       "verdict": "mistake",
+       "correction": "Both are trims inside the plateau noise (\u00b10.1 pt) that playbook mesh-0048/tool-0015 told you to stop. The slab was a0's known g7 target, which guaranteed a tie."
+      },
+      {
+       "step": "linear solve / view / compare",
+       "what_it_did": "Ran one solve only, right before submit. No view(kind=error), no compare.",
+       "verdict": "mistake",
+       "correction": "REPEATED MISTAKE (tool-0005/tool-0017). Solve the control first, call view(solve 1, kind=error, view=iso), and read each hotspot's local h vs box size. Use the remaining 11 solves to compare carrier-size variants cheaply before spending checks."
+      },
+      {
+       "step": "submit",
+       "what_it_did": "Submitted mesh 14 (5686 nodes, 2.30%), with 2 checks unused. This mesh duplicated a0's.",
+       "verdict": "mistake",
+       "correction": "Before submit, list peers' likely recipes (the a0 slab was public in the playbook). Spend the spare checks on a target nobody uses, then submit the best product among unique meshes."
+      }
+     ],
+     "promised_items_check": [
+      {
+       "item": "Don't resubmit the g6 recipe; submit a no-carrier mesh",
+       "status": "partly",
+       "comment": "The g6 recipe was not resubmitted. But the no-carrier promise was dropped (it failed at 3.22-3.65%), and you submitted a mesh identical to a0's slab mesh (5686 nodes, same checkpoints). Same tie outcome as resubmitting."
+      },
+      {
+       "item": "Reserve >=3 of 6 checks for structural targets (no-carrier h 0.005, neighbour h, no-pocket attribution)",
+       "status": "partly",
+       "comment": "The two no-carrier checks were done. The no-pocket attribution run was never done, and 2 checks were left unused."
+      },
+      {
+       "item": "Free-mesh scan h 0.0045-0.006, gate q>=0.1 and <=6000 nodes",
+       "status": "partly",
+       "comment": "The scan was done, but the 6847-node mesh was checked anyway: REPEATED gate violation."
+      },
+      {
+       "item": "Linear solve with view(error) and compare before checking",
+       "status": "not_done",
+       "comment": "There was one solve, at the end, with no view and no compare. REPEATED MISTAKE from g7."
+      },
+      {
+       "item": "Don't judge by peak PEEQ",
+       "status": "done",
+       "comment": "Choices were made by e and e x nodes."
+      },
+      {
+       "item": "Setup verbatim",
+       "status": "done",
+       "comment": "3d, base_bottom fixed, f17/f34 [0,-0.0024,0], E 1.88e9, nu 0.35."
+      }
+     ],
+     "strengths": [
+      "Ran a genuinely structural experiment (no carrier, h 0.005/0.006) and got a clear negative answer: the carrier volume holds the curve error (3.22-3.65% vs 2.30%).",
+      "Thorough free-mesh scans with node and q logging before checks.",
+      "The re-issued mesh matched the checked node count (5686) before submit."
+     ],
+     "mistakes": [
+      "Checked a 6847-node mesh above the own 6000 gate (repeat of g7's 8525-node check).",
+      "Skipped view(error) and compare again (repeat), and used only 1 of 12 solves.",
+      "Spent 2 checks on plateau trims (slab, no arms) inside noise.",
+      "Submitted a mesh identical to a0's, so no diversity bonus and a tied score.",
+      "Left 2 nonlinear checks unused, including an unchecked unique 6047-node branch (carrier top 0.012)."
+     ],
+     "next_mesh_call": {
+      "h": 0.008,
+      "order": 2,
+      "refinements": [
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         -0.02,
+         -0.0082,
+         0.031,
+         0.032,
+         0.0082
+        ],
+        "size": 0.0036,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.0205,
+         0.0225,
+         -0.0082,
+         0.0265,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.0265,
+         0.0225,
+         -0.0082,
+         -0.0205,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.025,
+         0.0,
+         -0.0082,
+         0.031,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         0.0,
+         -0.0082,
+         -0.025,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.0265,
+         0.0225,
+         -0.0082,
+         -0.0205,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0023,
+        "radius": 0.003
+       }
+      ]
+     },
+     "notes": [
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Assigned variant: change only the carrier box [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] size, 0.004 -> 0.0036. Keep a3's g8 recipe otherwise (h 0.008, pockets 0.0025, arms 0.0034, left-pocket 0.0023 r0.003). Free-mesh 0.0034/0.0035/0.0036/0.0037/0.0038 first and log nodes and q.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Carrier size is the steep lever: 0.0048 gave 3.37% vs 0.004 at 2.30% (a3 g8), and no-carrier h 0.005/0.006 gave 3.22%/3.65%. The finer side (<0.004) has never been checked. Gate: check a carrier size only if nodes <=6600 and q>=0.15, with break-even e < 12940/nodes (6300 nodes needs <2.05%).",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "No-carrier recipes fail (your g8): h 0.005 + pocket boxes 6847 nodes, 3.22% (22.0k); h 0.006 5266 nodes, 3.65% (19.2k). The 1.0 mm point rose to +6.3-6.8%. The curve error sits in the arms/bore band inside y -0.02..0.032. Never drop the carrier.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Plateau trims are exhausted. Slab 0.006 under the carrier gave 5686 nodes, 2.30%, 13.08k; no arm boxes gave 5551 nodes, 2.36%, 13.10k. Both are within \u00b10.1 pt noise of the 12.9k control. Don't spend checks on slab or arm on/off again.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "Before submit, list every peer's likely recipe from the playbook (carrier, pockets, arms, slab, neck). Your slab mesh duplicated a0's exactly (5686 nodes, identical checkpoints, same 0.8799), so no bonus. Never submit a playbook-published recipe variant without a unique change.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "REPEATED: you checked a 6847-node mesh above your own 6000 gate. Write the gate next to every nonlinear_check call. A mesh over the gate gets only a linear solve (total reaction on f17+f34) as evidence, never a check.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "REPEATED: no view(kind=error) or compare again. On solve 1 (the control) call view(kind=error, view=iso) and read hotspot local h vs box size. Then solve each carrier-size candidate and compare(1,n): a lower total f17+f34 reaction means less stiffness, the proxy for the 1.0 mm error.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "Check plan for the variant: (1) cheapest carrier 0.0036-0.0037 branch with q>=0.15; (2) carrier 0.0034-0.0035 if <=6600 nodes; (3) the best of the two at a \u00b10.0002 sibling if q<0.15; (4) a3's g8 control only if needed for noise. Use all 6 checks; leave none unused.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Branch watch: carrier sizes are branchy (a3: 0.0041->6281, 0.0043->6278, 0.0045->5934, 0.0048->5530 nodes; q 0.1103 on many). If a finer carrier jumps above 6600, shift carrier bottom y -0.02 by \u00b10.0005 or the x-limits by \u00b10.0002, not h (h belongs to a0).",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "With carrier 0.0036, the arm boxes at 0.0034 become <1.1x finer than their surroundings, so they are probably inert. Keep them anyway for clean one-factor attribution; note the node delta vs without arms only by free mesh.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Unchecked unique branch from your scan: carrier top y 0.012 (prong tops coarse) at h 0.0075 gave 6047 nodes, q 0.11. It is an explorer-type target, so hand the idea to a1 or log it; don't mix it into your carrier-size variant.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Highlight a3 g8: an extra left-pocket box [-0.0265,0.0225,-0.0082,-0.0205,0.029,0.0082] 0.0023 r0.003 over the 0.0025 pocket gave 5650 nodes, 2.29%, 12.94k (best this gen, base 0.890). Left pocket f15/f37 PEEQ is 0.19-0.21 vs 0.286 on the right. Keep it in your base.",
+       "kind": "highlight"
+      }
+     ],
+     "assignment": {
+      "agent": "a2",
+      "role": "variant",
+      "experiment": "a3's g8 best recipe with ONE factor changed: carrier box [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] size 0.004 -> 0.0036 (r 0.004). Everything else unchanged: h 0.008, order 2, pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029, full z] 0.0025, arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, left-pocket 0.0023 r0.003. Free-mesh carrier 0.0034-0.0038 first. Check the cheapest q>=0.15 branch with nodes <=6600; submit if e x nodes <12.9k.",
+      "why": "The carrier size is the only refinement size with a steep, unexplored response. 0.004->0.0048 raised e from 2.30% to 3.37% (a3 g8). Removing the carrier (your h 0.005/0.006 checks) gave 3.22-3.65%. Pocket, arm and slab sizes are plateaued within \u00b10.1 pt. If the slope holds on the finer side, 0.0036 could cut the stuck 1.0 mm stiffness error enough to pay for ~10% more nodes (break-even ~2.1% at 6200 nodes; an estimate)."
+     }
+    },
+    {
+     "agent": "a1",
+     "run_id": "g8-abc_00000065_compression-a1",
+     "diagnosis": "Score 0.871 (base only), rank 4/4. It had the lowest error on the task (2.21%) but the most nodes (5981, 17943 DOFs). e x nodes = 13.22k, worse than your own g7 control at 12.91k. To pay, the full-width base slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 needed e < 12910/5981 = 2.16%; it got 2.21%. So the +369 nodes (+6.6%) bought only -0.09 pt (-3.9%), which is inside the +/-0.1 pt noise. Your mesh 15 (deeper slab, 6149 nodes, 2.19%) was 13.47k: depth does not help.\n\nBinding term: the curve error. The sim sits above the test everywhere: +1.69/+5.56/+1.69/+0.69/+1.42%. The 1.0 mm point is still 50% of the sum and moved only 5.65 -> 5.56% with the slab. All four runs share carrier 0.004 + pockets 0.0025 and land at 2.21-2.30%, so no run got the diversity bonus.\n\nThe assigned h 0.0125 variant was dead on arrival, and your free-mesh scan proved it at no check cost:\n- h 0.009 -> 6989 nodes; 0.01 -> 7675; 0.011 -> 8348; 0.0125 -> 9902; 0.014 -> 8133; 0.02 -> 6625; 0.03 -> 7098.\n- Coarse bulk h never undercuts the h 0.008 branch (5612), because gmsh's gradation from the 0.004 carrier fills the base anyway.\n\nThe useful finding is a contrast between slabs. a0's and a2's centre-only slabs (|x| <= 0.019, size 0.006) gave 2.30%, the same as the control. Your full-width slab gave 2.21%. The difference is the outer neck/base-arm junction (|x| ~0.022-0.031, y -0.028..-0.018), and the PEEQ image shows a plastic band there just below the carrier's bottom edge at y -0.02, mainly on the +x side. That is the only plastic region every recipe leaves at h 0.008. You used 4 of 6 nonlinear checks and left 2 unused, again.",
+     "step_critique": [
+      {
+       "step": "plan",
+       "what_it_did": "Wrote one line per feedback item: the h-only change, a free-mesh scan, a 6-check schedule including the h 0.006 diagnostic, a solve plus view(error), and a submit gate at 14.3k.",
+       "verdict": "good",
+       "correction": "Keep writing the plan, but make the check schedule binding: list mesh number -> purpose for all 6 checks and tick each off."
+      },
+      {
+       "step": "free-mesh scan of h 0.009-0.05 on the full recipe",
+       "what_it_did": "Scanned about 9 h values. Every coarse h gave 6625-9902 nodes, versus 5612 at h 0.008.",
+       "verdict": "good",
+       "correction": "Correct use of free mesh(): it killed the coarse-h idea without spending a check. Record the conclusion: with a 0.004 carrier, h > 0.009 never gets below about 6600 nodes, so coarse h is not a diversity route here."
+      },
+      {
+       "step": "fallback after the h variant failed",
+       "what_it_did": "Abandoned the h variant and switched to a full-width base slab, instead of the noted fallback (h 0.0079, 5519 nodes).",
+       "verdict": "good",
+       "correction": "Switching to a new target was right: the h 0.0079 fallback was a known tie. Next time, name the new target in advance as a one-factor change from the control and state its break-even (e < 12910/nodes) before the check."
+      },
+      {
+       "step": "slab mesh 12 (y -0.032..-0.02, full width, 0.0055) and nonlinear_check",
+       "what_it_did": "5981 nodes, q 0.19, 2.21%: the lowest e on the task, but product 13.22k.",
+       "verdict": "missed_opportunity",
+       "correction": "The slab refines about 1500 mm^3 of near-elastic base to reach the neck band. Cover only the necks instead: mirrored boxes [+/-0.022..+/-0.031, y -0.028..-0.018, full z] at 0.004. The estimated cost is about +100-200 nodes against +369 (an estimate; free-mesh to confirm)."
+      },
+      {
+       "step": "mesh 15 (deeper slab, 6149 nodes) and nonlinear_check",
+       "what_it_did": "Got 2.19%, product 13.47k, so more depth is worse per node.",
+       "verdict": "mistake",
+       "correction": "Its break-even was 2.10%, and you knew the slab gain was only 0.09 pt. Spend that check on a cheaper version of the same target (neck-only boxes), not a more expensive one."
+      },
+      {
+       "step": "linear solves and view(error)",
+       "what_it_did": "Made 3 solves, the last right before submit. A view(error) with hotspot local h versus box size is not visible in the log.",
+       "verdict": "missed_opportunity",
+       "correction": "After solve 1 on the control, call view(kind=error, view=-z) and read the local h at the neck/base-junction hotspot. If it is above 0.006 there, that confirms the neck target before any check."
+      },
+      {
+       "step": "remaining check budget",
+       "what_it_did": "Used 4 nonlinear_checks and left 2 unused. The promised h 0.006 diagnostic was not run.",
+       "verdict": "mistake",
+       "correction": "REPEATED MISTAKE (g7 also left checks unused). Spend the last two on (a) the neck-only variant without arm boxes and (b) the h 0.006 control diagnostic, which tells everyone whether the stiff 1.0 mm point lives outside the carrier."
+      },
+      {
+       "step": "h 0.0079 / 0.0081 branch scan of the slab and submit",
+       "what_it_did": "Got 5984 and 7588 nodes, then re-issued mesh 12 (5981, matching the checked count), solved and submitted.",
+       "verdict": "good",
+       "correction": "The re-issue and node-count match is correct practice. The submit choice was defensible: the control is a tie risk and mesh 15 was worse. It was simply not a winning mesh."
+      }
+     ],
+     "promised_items_check": [
+      {
+       "item": "Assigned change: only global h, 0.008 -> ~0.0125, everything else as in the g7 recipe",
+       "status": "done",
+       "comment": "Free-meshed h 0.0125 (9902 nodes) and neighbours 0.009-0.05; all were above 6600 nodes, so correctly not checked."
+      },
+      {
+       "item": "Free-mesh scan h 0.010-0.014 first, pick cheapest branch with q >= 0.1",
+       "status": "done",
+       "comment": "Scanned wider than promised (0.009-0.05). Cheapest coarse was h 0.02 at 6625 nodes, still above the gate."
+      },
+      {
+       "item": "6-check schedule: cheapest coarse h, alternate branch, h 0.006 diagnostic, h 0.0079 fallback, 2 on best candidate",
+       "status": "partly",
+       "comment": "Only 4 checks were used, all on slab variants. The h 0.006 diagnostic was not run. REPEATED MISTAKE: unused checks."
+      },
+      {
+       "item": "One linear solve on the control first, then view(error) before choosing checks",
+       "status": "unclear",
+       "comment": "3 solves happened, but no view(error) reading of hotspot local h appears in the visible reasoning, and the checks were not chosen from hotspots."
+      },
+      {
+       "item": "Submit gate: h variant if e x nodes <= 14.3k, else the best checked non-duplicate mesh",
+       "status": "done",
+       "comment": "The h variant was never checkable. It submitted the best checked non-duplicate (slab mesh 12, 13.22k)."
+      },
+      {
+       "item": "Avoid old failures: skipping view(error), unused checks, abandoning a branch jump without an h scan",
+       "status": "partly",
+       "comment": "Did scan h 0.0079/0.0081 after a branch jump (good). Still left 2 checks unused, and view(error) use is unclear."
+      }
+     ],
+     "strengths": [
+      "Free-mesh scans settled the coarse-h question without spending checks: h 0.009-0.05 all gave >= 6625 nodes.",
+      "Found the only target that lowered e below the family (full-width base slab, 2.21%, best on the task) and confirmed depth does not help (mesh 15).",
+      "Re-issued the checked mesh and matched the node count (5981) before solve and submit."
+     ],
+     "mistakes": [
+      "Left 2 of 6 nonlinear_checks unused again, and skipped the promised h 0.006 diagnostic.",
+      "Spent a check on a more expensive version of a target (deeper slab, 6149 nodes) whose first version already missed break-even.",
+      "Did not localise the slab gain: a full-width 0.0055 slab refines mostly elastic base, when the evidence (centre slabs gave no gain) pointed at the outer necks.",
+      "No visible view(error) / hotspot local-h reading to justify the slab extent."
+     ],
+     "next_mesh_call": {
+      "h": 0.008,
+      "order": 2,
+      "refinements": [
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         -0.02,
+         -0.0082,
+         0.031,
+         0.032,
+         0.0082
+        ],
+        "size": 0.004,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.0205,
+         0.0225,
+         -0.0082,
+         0.0265,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.0265,
+         0.0225,
+         -0.0082,
+         -0.0205,
+         0.029,
+         0.0082
+        ],
+        "size": 0.0025,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.025,
+         0.0,
+         -0.0082,
+         0.031,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         0.0,
+         -0.0082,
+         -0.025,
+         0.008,
+         0.0082
+        ],
+        "size": 0.0034,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.022,
+         -0.028,
+         -0.0082,
+         0.031,
+         -0.018,
+         0.0082
+        ],
+        "size": 0.004,
+        "radius": 0.004
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         -0.031,
+         -0.028,
+         -0.0082,
+         -0.022,
+         -0.018,
+         0.0082
+        ],
+        "size": 0.004,
+        "radius": 0.004
+       }
+      ]
+     },
+     "notes": [
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Coarse global h is a dead end with a 0.004 carrier: h 0.009/0.01/0.011/0.0125/0.014/0.02/0.03 gave 6989/7675/8348/9902/8133/6625/7098 nodes, versus 5612 at h 0.008. Do not use h > 0.0085 for diversity or node cuts on this task.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Full-width base slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 on the control: 5981 nodes, q 0.19, 2.21% (13.22k). The deeper slab (6149 nodes) gave 2.19% (13.47k). Centre-only slabs (|x| <= 0.019) gave 2.30%, no gain, so the gain lies at the outer necks.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Explorer target: replace the slab with mirrored neck boxes [+/-0.022..+/-0.031, y -0.028..-0.018, full z] at 0.004 r0.004, overlapping the carrier bottom (-0.02) by 2 mm. Aim: the slab's -0.09 pt for about half its nodes (estimate). Break-even e < 12910/nodes.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Boxes reaching |x|=0.031 below y -0.02 are branchy: slab h 0.008 gave 5981, h 0.0079 5984, h 0.0081 7588, and 0.006/0.0055 slab variants gave 6971-7473. If the neck mesh exceeds 6000 nodes, free-mesh neck y-min -0.027/-0.029, x-min +/-0.021/+/-0.023 and h 0.0079 before discarding the target.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "REPEATED: 2 of 6 nonlinear_checks were left unused in g8 (and again in g7). Write all 6 slots as mesh# -> purpose before the first check; an unused slot must be spent on a node-cut sibling or the h 0.006 diagnostic.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "Spend one check on the h 0.006 diagnostic: the control recipe with only h 0.008 -> 0.006. If the 1.0 mm point (+5.56-5.65%) drops by more than 1 pt, the excess stiffness lies outside the carrier (base/necks), and the neck/slab direction is right. It was promised and skipped in g8.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "tool_use",
+       "content": "Never spend a check on a more expensive version of a target that already missed break-even (mesh 15: 6149 nodes, 2.19%, worse product). Check the cheaper localised version first and enlarge only if it beats e < 12910/nodes.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "postprocessing",
+       "content": "After solve 1, call view(kind=error, view=-z) and view(kind=mesh). Read local h at the neck/base junction (x ~ +/-27 mm, y ~ -22 mm). If the delivered size is about 0.008 there, the neck boxes are justified; if it is already about 0.005, the slab gain was noise and you should move to a different target.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "meshing",
+       "content": "Keep arm boxes [+/-0.025..+/-0.031, y 0..0.008] 0.0034 in the neck-box check for attribution. As a second, node-cut check, drop them (about -60 nodes) only if the neck mesh lands within 0.05 pt of break-even.",
+       "kind": "keep"
+      },
+      {
+       "task": "general",
+       "section": "meshing",
+       "content": "When a large volume box buys a small gain, localise it before paying: compare it with a peer's partial version (here centre-only slabs gave 0 gain, full width -0.09 pt) to find which sub-volume carries the gain, then box only that sub-volume.",
+       "kind": "idea"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "When an assigned variant fails at the free-mesh stage (all candidates above the node gate), switch at once to a new target and state its break-even in advance. This saved all checks in g8; keep doing it.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000065_compression",
+       "section": "solver_setup",
+       "content": "Bonus logic: no run got +0.1 in g8 because all shared carrier+pockets. The neck boxes are a target no peer uses (a3 control, a0 h, a2 sizes next gen). Submit the neck mesh if its base >= 90% of the best (e x nodes <= ~14.3k), even if it ties the control on base.",
+       "kind": "highlight"
+      }
+     ],
+     "assignment": {
+      "agent": "a1",
+      "role": "explorer",
+      "experiment": "Control recipe (h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004, mirrored pocket boxes 0.0025, arm boxes 0.0034), with NO base slab. Add mirrored neck/base-junction boxes [0.022,-0.028,-0.0082,0.031,-0.018,0.0082] and [-0.031,-0.028,-0.0082,-0.022,-0.018,0.0082] at 0.004 r0.004. Free-mesh first (gate <= 6000 nodes, q >= 0.1; if it jumps, scan y-min -0.027/-0.029, x-min +/-0.021/+/-0.023, h 0.0079). Then solve and view(error), and nonlinear_check the cheapest branch. Spend the remaining checks on the same boxes without arm boxes and on the h 0.006 control diagnostic.",
+      "why": "Every recipe leaves the outer neck below the carrier bottom (y -0.02) at h 0.008, and the PEEQ image shows a plastic band there. a0's and a2's centre-only slabs (|x| <= 0.019) gave 2.30% (no gain), while your full-width slab gave 2.21%: the only sub-2.3% result on the task. So the gain comes from |x| > 0.019, and boxing only the necks should keep most of it for fewer than the slab's +369 nodes. No peer uses this target, which makes it diversity-eligible."
+     }
+    }
+   ],
+   "assignments": [
+    {
+     "agent": "a3",
+     "role": "control",
+     "experiment": "Re-run your g8 submitted recipe: h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004, mirrored pocket boxes 0.0025 r0.004, arm boxes [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, left nested pocket 0.0023 r0.003. One tweak: pocket boxes (all three) y-max 0.029 -> 0.0285. Free-mesh; accept nodes <5650 with q>=0.1, else try 0.0287/0.0283. Checks: tweak, two \u00b10.0002 twins, spare. Submit the best checked e x nodes; never the unchanged 5650 mesh.",
+     "why": "g8's best product is 12.93k (2.29% x 5650), a noise tie with a1 g7's 12.91k, so a control rerun measures run-to-run noise. Pocket corner PEEQ peaks at y 25.2-25.8 mm, so the 0.029 top edge has >=3 mm of slack over low-PEEQ prong wall. A node cut there is the only small tweak not owned by a0 (h), a2 (sizes) or a1 (new targets). Carrier coarsening was ruled out by your own 3.37% check."
+    },
+    {
+     "agent": "a0",
+     "role": "variant",
+     "experiment": "Change only global h on a3's g8 best recipe. Recipe: carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004; pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029, full z] 0.0025 r0.004; arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034 r0.004; left-pocket box [-0.0265,0.0225,-0.0082,-0.0205,0.029,0.0082] 0.0023 r0.003.\n\nNew h = 0.0079 (from 0.008).\n\nProcedure:\n1. Free-mesh h 0.0077/0.0078/0.00785/0.0079/0.00795/0.0082 and log nodes and q.\n2. Check the cheapest q>=0.2 branch at <=5620 nodes (break-even e < 12930/nodes).\n3. Check one neighbouring h branch as a twin.\n4. Linear-solve the first candidate and call view(error).",
+     "why": "The h knob is now known only as a node-count lever. a1 g8 showed every h from 0.009 to 0.03 lands on 6625-9902-node branches. a3 g8 found h 0.0079 gives 5581 nodes, q 0.244, 2.35% without the left box (13.12k), and adding the 0.0023 left box at h 0.008 bought -0.06 pt for +38 nodes. Combining them is the cheapest untested h point near the best product (12.93k). Base slabs and coarser carriers are settled as losers, so h is the one factor left whose effect on nodes is unmeasured on the current best recipe."
+    },
+    {
+     "agent": "a2",
+     "role": "variant",
+     "experiment": "a3's g8 best recipe with ONE factor changed: carrier box [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] size 0.004 -> 0.0036 (r 0.004). Everything else unchanged: h 0.008, order 2, pockets [\u00b10.0205..\u00b10.0265, y 0.0225..0.029, full z] 0.0025, arms [\u00b10.025..\u00b10.031, y 0..0.008] 0.0034, left-pocket 0.0023 r0.003. Free-mesh carrier 0.0034-0.0038 first. Check the cheapest q>=0.15 branch with nodes <=6600; submit if e x nodes <12.9k.",
+     "why": "The carrier size is the only refinement size with a steep, unexplored response. 0.004->0.0048 raised e from 2.30% to 3.37% (a3 g8). Removing the carrier (your h 0.005/0.006 checks) gave 3.22-3.65%. Pocket, arm and slab sizes are plateaued within \u00b10.1 pt. If the slope holds on the finer side, 0.0036 could cut the stuck 1.0 mm stiffness error enough to pay for ~10% more nodes (break-even ~2.1% at 6200 nodes; an estimate)."
+    },
+    {
+     "agent": "a1",
+     "role": "explorer",
+     "experiment": "Control recipe (h 0.008, order 2, carrier [-0.031,-0.02,-0.0082,0.031,0.032,0.0082] 0.004 r0.004, mirrored pocket boxes 0.0025, arm boxes 0.0034), with NO base slab. Add mirrored neck/base-junction boxes [0.022,-0.028,-0.0082,0.031,-0.018,0.0082] and [-0.031,-0.028,-0.0082,-0.022,-0.018,0.0082] at 0.004 r0.004. Free-mesh first (gate <= 6000 nodes, q >= 0.1; if it jumps, scan y-min -0.027/-0.029, x-min +/-0.021/+/-0.023, h 0.0079). Then solve and view(error), and nonlinear_check the cheapest branch. Spend the remaining checks on the same boxes without arm boxes and on the h 0.006 control diagnostic.",
+     "why": "Every recipe leaves the outer neck below the carrier bottom (y -0.02) at h 0.008, and the PEEQ image shows a plastic band there. a0's and a2's centre-only slabs (|x| <= 0.019) gave 2.30% (no gain), while your full-width slab gave 2.21%: the only sub-2.3% result on the task. So the gain comes from |x| > 0.019, and boxing only the necks should keep most of it for fewer than the slab's +369 nodes. No peer uses this target, which makes it diversity-eligible."
+    }
+   ]
+  }
+ },
+ "highlights": [
+  {
+   "agent": "a3",
+   "run_id": "g8-abc_00000065_compression-a3",
+   "what": "A one-factor carrier experiment. Carrier 0.004 -> 0.0048 (everything else fixed) gave 3.37% at 5530 nodes vs 2.30% at 5612. a3 also free-mesh-scanned carrier 0.0041-0.006 and found the node count non-monotone (0.0045 -> 6278, 0.005 -> 5402, 0.0055 -> 5054). Its h 0.0079 control twin gave 2.35% at 5581 (13.12k). Best score of the generation (0.890).",
+   "why_it_works": "One factor, one check: it proves the carrier band is where the curve error lives (+1.07 pt, 1.0 mm point 5.7 -> 6.6%). The coarsening direction is closed for good and the refining direction is open.",
+   "how_to_copy": "Run the mirror experiment. Same recipe with carrier size 0.0037 (scan 0.0036-0.0039 and h 0.0078-0.0082 with free mesh() first) and check the cheapest q>=0.15 branch at or below 6300 nodes. Break-even is e<12910/nodes.",
+   "task": "abc_00000065_compression"
+  },
+  {
+   "agent": "a1",
+   "run_id": "g8-abc_00000065_compression-a1",
+   "what": "A full-width base-top slab [-0.031,-0.032,-0.0082,0.031,-0.02,0.0082] at 0.0055 added to the control: 2.21% at 5981 nodes. The [-0.031,-0.036,...] variant gave 2.19% at 6149. a1's free h scan also showed h above 0.008 inflates nodes: h 0.009 -> 6989, 0.01 -> 7675, 0.011 -> 8348, 0.0125 -> 9902, 0.02 -> 6625.",
+   "why_it_works": "The slab is the only change that lowered every checkpoint, including 1.0 mm (5.56%). It confirms that stiffness error extends just below the carrier. The h scan kills the coarse-h diversity idea with zero nonlinear checks spent.",
+   "how_to_copy": "Use the slab only together with a node saving elsewhere, and confirm a branch at or below 5800 nodes. Reuse the scan habit: free-mesh 6+ values of any new knob before spending a check.",
+   "task": "abc_00000065_compression"
+  },
+  {
+   "agent": "a2",
+   "run_id": "g8-abc_00000065_compression-a2",
+   "what": "An explorer run with no carrier, only the pocket boxes. h 0.005 gave 3.22% at 6847 nodes; h 0.006 gave 3.65% at 5266. a2 also showed that a coarse h of 0.01-0.012 with a 0.0035-0.0038 carrier balloons to 7340-8259 nodes.",
+   "why_it_works": "It cleanly falsifies 'refine the bulk instead of the carrier': products of 19-22k vs 12.9k. A targeted band at 0.004 beats a global 0.005.",
+   "how_to_copy": "Do not retest no-carrier recipes. Copy the explorer spirit, but explore inside the load path (split carrier, finer lower band) rather than outside it.",
+   "task": "abc_00000065_compression"
+  },
+  {
+   "agent": "a0",
+   "run_id": "g8-abc_00000065_compression-a0",
+   "what": "A no-arm variant with a centre slab at 0.006 [-0.019,-0.03,..,0.019,-0.017]: 5686 nodes, q 0.273 (the highest quality of the generation), 2.30%. a0 also showed the arm boxes can be dropped at equal e on this branch.",
+   "why_it_works": "Dropping the arm boxes (about 60 nodes) at no accuracy cost moves the mesh onto a high-quality branch. Arm boxes at 0.0034 inside a 0.004 carrier are below the 1.4x nesting threshold.",
+   "how_to_copy": "Treat 'no arm boxes' as the cheap default base. But coordinate: a2 reached the identical mesh, so the tie paid nobody. Announce your targets in your plan and pick one nobody else uses.",
+   "task": "abc_00000065_compression"
+  }
+ ]
+}

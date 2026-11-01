@@ -153,7 +153,13 @@ def fingerprint(problem_id: str) -> str:
     """Hash of what the requirements were written from: the statement and the reference setup."""
     from ace.checks import reference_setup
     raw = raw_problem(problem_id)
-    blob = json.dumps({"statement": raw.description(), "setup": reference_setup(raw)}, sort_keys=True, default=str)
+    setup = reference_setup(raw)
+    mat = setup.get("material")
+    if isinstance(mat, dict) and mat.get("rho") == 1.0 and mat.get("mu") == 0.0:
+        # flow-only fields at their defaults (feacore added them for CFD): leave them out, so requirements written
+        # before they existed stay current
+        setup = {**setup, "material": {k: v for k, v in mat.items() if k not in ("rho", "mu")}}
+    blob = json.dumps({"statement": raw.description(), "setup": setup}, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()
 
 

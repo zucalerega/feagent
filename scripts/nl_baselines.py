@@ -4,7 +4,7 @@ nonlinear scoring (ace.nonlinear): their force-displacement curves against the I
 the error-vs-nodes plot, and (--calibrate) the crosshead mapping u_cross = u_part + delta + c * F.
 
 Reference meshes (all P2):
-  auto       the automesher: gmsh default sizes, straight-sided P2 (the score's baseline)
+  auto       the automesher: gmsh default sizes, curved P2 (the score's baseline)
   swarm_bc0  the trained swarm's best bc0 mesh (div_s8 g7 a2; request in baselines/swarm_bc0_request.json),
              i.e. the mesh before fine-tuning on the test
   h4, h25, h20   uniform h = 4, 2.5 and 2 mm
@@ -59,13 +59,14 @@ def make_mesh(name: str, out_dir: Path) -> dict:
     how = BASELINES[name]
     if how == "auto":
         import gmsh
+        from ace.field_error import _unfold_tet10
         from feacore.geometry.gmsh_tools import ensure_domain_group, gmsh_session
         with gmsh_session(p.id):
             p.build_geometry()
             ensure_domain_group(p.dim)
             gmsh.model.mesh.generate(p.dim)                    # gmsh's default sizes
-            gmsh.option.setNumber("Mesh.SecondOrderLinear", 1)  # straight midside nodes: ccx accepts them
-            gmsh.model.mesh.setOrder(2)
+            gmsh.model.mesh.setOrder(2)                        # curved P2, as ace.nonlinear.automesher_baseline;
+            _unfold_tet10()                                    # run_curve straightens only rejected edges
             gmsh.write(str(path))
         return {"ok": True, "path": str(path), "order": 2}
     if isinstance(how, Path):

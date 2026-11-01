@@ -21,23 +21,23 @@
    "label": "automesher",
    "nodes": 2937,
    "dofs": 8811,
-   "mean_rel_err": 0.16596549217445314,
+   "mean_rel_err": 0.07837501521326243,
    "rel_err": [
-    0.14391,
-    0.19429,
-    0.15922,
-    0.15752,
-    0.17489
+    0.05893,
+    0.10507,
+    0.0717,
+    0.06987,
+    0.08631
    ],
    "force_sim_N": [
-    983.32,
-    2584.87,
-    3835.09,
-    4828.14,
-    5572.56
+    910.27,
+    2391.77,
+    3545.55,
+    4462.52,
+    5152.43
    ],
-   "wall_s": 8.2,
-   "straightened": false,
+   "wall_s": 8.1,
+   "straightened": true,
    "dir": "results/real_data_finetune/baselines/auto",
    "score": 0.25
   },
@@ -45,7 +45,7 @@
    "label": "swarm bc0 mesh",
    "nodes": 6430,
    "dofs": 19290,
-   "mean_rel_err": 0.0457279786921285,
+   "mean_rel_err": 0.04572804086809645,
    "rel_err": [
     0.03274,
     0.07507,
@@ -60,10 +60,10 @@
     4314.81,
     4966.05
    ],
-   "wall_s": 19.4,
+   "wall_s": 19.6,
    "straightened": false,
    "dir": "results/real_data_finetune/baselines/swarm_bc0",
-   "score": 0.8288935713201316
+   "score": 0.33544634797792944
   },
   "h4": {
    "label": "uniform 4 mm",
@@ -87,7 +87,7 @@
    "wall_s": 29.1,
    "straightened": false,
    "dir": "results/real_data_finetune/baselines/h4",
-   "score": 1.2900129486604075
+   "score": 0.6091916045432479
   },
   "h25": {
    "label": "uniform 2.5 mm",
@@ -111,7 +111,7 @@
    "wall_s": 117.2,
    "straightened": false,
    "dir": "results/real_data_finetune/baselines/h25",
-   "score": 0.8405223151418924
+   "score": 0.3969255799698859
   },
   "h20": {
    "label": "uniform 2 mm",
@@ -135,7 +135,7 @@
    "wall_s": 273.3,
    "straightened": false,
    "dir": "results/real_data_finetune/baselines/h20",
-   "score": 0.5502138724013924
+   "score": 0.25983124597177576
   }
  },
  "added": []
