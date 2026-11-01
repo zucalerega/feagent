@@ -76,7 +76,9 @@ lets the solver cut an increment back when it does not converge (increments are 
 ``failure`` (optional, ccx): progressive failure by element erosion,
 ``{"criterion": "peeq", "limit": 0.043, ...}``: the ramp runs in restart blocks and after every block
 the cells whose PEEQ (integration-point mean, or max with ``"aggregate": "max"``) reaches ``limit`` are
-removed; loading continues from the current state. Displacement-driven loading only; see
+removed; loading continues from the current state. ``"criterion": "peeq_tension"`` erodes at ``limit`` only
+where the cell is in tension (compressive cells at ``compression_factor`` x limit, default 5);
+``"principal"`` erodes where the max principal stress reaches ``stress_limit``. Displacement-driven loading only; see
 ``docs/solver_ccx_nonlinear.md`` for the block / increment options and the method's limits.
 A material with ``plasticity`` requires ``nonlinear: true``. The skfem backend refuses nonlinear cases.
 
@@ -398,7 +400,7 @@ class Case:
 
 PLASTICITY_MODELS = ("j2_isotropic",)
 NONLINEAR_OPTIONS = ("nonlinear", "increments", "load_factor_max", "nlgeom", "adaptive", "failure")
-FAILURE_CRITERIA = ("peeq",)
+FAILURE_CRITERIA = ("peeq", "peeq_tension", "principal")
 
 
 def hardening_table(p: dict) -> list[tuple[float, float]]:
@@ -435,6 +437,9 @@ def _validate_nonlinear(case: "Case") -> list[str]:
             errs.append("analysis.options.failure.limit must be a number > 0")
         elif fail.get("aggregate", "mean") not in ("mean", "max"):
             errs.append("analysis.options.failure.aggregate must be 'mean' or 'max'")
+        elif fail["criterion"] == "principal" and not (isinstance(fail.get("stress_limit"), (int, float))
+                                                       and fail["stress_limit"] > 0):
+            errs.append("analysis.options.failure.stress_limit (Pa) must be a number > 0 for criterion 'principal'")
     for name, p in plastic.items():
         tag = f"material {name!r}: plasticity"
         if not isinstance(p, dict) or p.get("model") not in PLASTICITY_MODELS:

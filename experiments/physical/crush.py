@@ -4,6 +4,7 @@ scripts/ccx_crush.py (material) and feacore/solver/_ccx_failure.py (erosion driv
 
     python experiments/physical/crush.py --system harness_auto --part abc_00000003 --mesh-dir DIR
         [--out DIR] [--threads 8] [--run-id ID] [--resume RUN_DIR [--restart-file B.rout]]
+        [--platen bonded|sliding|sliding_top] [--failure peeq|peeq_tension|principal] [--compression-factor 5]
 
 --mesh-dir: a contract mesh dir (experiments/mesh_systems/CONTRACT.md): mesh.msh (+ mesh.inp) with groups bottom,
 top (dim 2) and domain (dim 3), metres. Default $MESHSYS_OUT/<system>/<part>/nonlinear. The solver reads
@@ -11,6 +12,19 @@ mesh.msh (same mesh as mesh.inp). Linear tets (C3D4) run as C3D4, quadratic ones
 --out: default runs/nonlinear/<system>/<part>; every run writes a new <out>/<run-id>/ (never overwritten).
 
 Loading: bottom fixed; top moved along -axis (lateral 0), axis per part from the contract.
+--platen (default bonded): bonded = every bottom / top node fully constrained (top: lateral 0);
+  sliding_top = bottom bonded, top nodes constrained only along the axis (frictionless moving platen, the tips
+  may slide sideways); sliding = both platens frictionless (only the axis component on bottom and top nodes)
+  plus the minimum against rigid-body motion, both on bottom nodes: the one nearest the bottom face's
+  centroid holds both lateral components, the bottom node farthest from it along the first lateral axis (in
+  the band within 10 % of the face's extent of its mid-plane in the second) holds the second lateral component (no spin about the axis). Their
+  coordinates are in run.json ("rigid_body_nodes").
+--failure (default peeq): erosion criterion (feacore/solver/_ccx_failure.py): peeq = PEEQ >= failure_peeq in
+  any stress state; peeq_tension = PEEQ >= failure_peeq where the cell is in tension (triaxiality > 0), PEEQ
+  >= --compression-factor x failure_peeq elsewhere; principal = cell max principal stress >= the dogbone UTS
+  (or PEEQ >= --compression-factor x failure_peeq). Alpha Fast's compressive strength is not on the TDS: the
+  factor (default 5, PEEQ 0.215) is an assumption that a brittle resin crushes far later than it breaks in
+  tension.
 
 Step policy (platen travel per output increment; every converged ccx increment is written):
   * <= 0.05 mm through yield (until a cell reaches half the failure PEEQ);
@@ -72,10 +86,12 @@ def _material(path):
     return mod.material(path)
 
 
-def failure_options(D: float, limit: float, end_fraction: float, release: str = "adaptive") -> dict:
+def failure_options(D: float, limit: float, end_fraction: float, release: str = "adaptive",
+                    criterion: dict | None = None) -> dict:
+    """criterion: {"criterion": ..., + its parameters} (default {"criterion": "peeq"})."""
     mm = lambda v: v * 1e-3 / D                     # noqa: E731  mm of travel -> ramp fraction
     p = POLICY_MM
-    return {"criterion": "peeq", "limit": limit, "aggregate": "mean",
+    return {"criterion": "peeq", **(criterion or {}), "limit": limit, "aggregate": "mean",
             "near_increments": int(round(1.0 / mm(p["block_near"]))),
             "fine_increments": int(round(1.0 / mm(p["block_min"]))),
             "max_increment": mm(p["inc"]), "max_increment_near": mm(p["inc_near"]),
@@ -86,10 +102,55 @@ def failure_options(D: float, limit: float, end_fraction: float, release: str = 
         {"release_travel": 1e-3 / int(round(1.0 / mm(p["block_min"])))} if release == "fixed-held" else {})
 
 
+CRIT_KEYS = ("criterion", "compression_factor", "triaxiality_min", "stress_limit")
+
+
+def criterion_options(failure: str, compression_factor: float | None, uts_pa: float) -> dict:
+    if failure == "peeq":
+        return {"criterion": "peeq"}
+    out = {"criterion": failure, "compression_factor": compression_factor}
+    if failure == "peeq_tension":
+        out["triaxiality_min"] = 0.0
+    if failure == "principal":
+        out["stress_limit"] = uts_pa
+    return out
+
+
+def platen_bcs(model, k: int, D: float, platen: str) -> tuple[list[BC], list[list[float]]]:
+    """Dirichlet BCs of the platens (see the module doc) and the rigid-body nodes' coordinates (sliding)."""
+    val = [0.0, 0.0, 0.0]
+    val[k] = -D
+    lat = [c for c in range(3) if c != k]
+    top = BC("displacement", group="top", components=[0, 1, 2], value=val) if platen == "bonded" else \
+        BC("displacement", group="top", components=[k], value=[-D])
+    if platen in ("bonded", "sliding_top"):
+        return [BC("fixed", group="bottom"), top], []
+    if platen != "sliding":
+        raise SystemExit(f"--platen {platen!r}")
+    X = model.X
+    bot = model.nodes_of("bottom")
+    i0 = bot[np.argmin(np.linalg.norm(X[bot] - X[bot].mean(axis=0), axis=1))]
+    dz = np.abs(X[bot, lat[1]] - X[i0, lat[1]])
+    cand = bot[dz <= 0.1 * np.ptp(X[bot, lat[1]]) + 1e-12]       # near the mid-plane of the second lateral axis
+    i1 = cand[np.argmax(np.abs(X[cand, lat[0]] - X[i0, lat[0]]))]
+    p0, p1 = X[i0].tolist(), X[i1].tolist()
+    return [BC("displacement", group="bottom", components=[k], value=[0.0]), top,
+            BC("displacement", point=p0, components=lat, value=[0.0, 0.0]),
+            BC("displacement", point=p1, components=[lat[1]], value=[0.0])], [p0, p1]
+
+
+def _platen_of(case: Case) -> str:
+    top = next(b for b in case.bcs if b.group == "top")
+    bot = next(b for b in case.bcs if b.group == "bottom")
+    return "bonded" if len(top.components) == 3 else ("sliding_top" if bot.type == "fixed" else "sliding")
+
+
 def _driven_value(case: Case) -> np.ndarray:
     for b in case.bcs:
-        if b.type == "displacement":
-            return np.asarray(b.value, float)
+        if b.type == "displacement" and b.group == "top":
+            v = np.zeros(3)
+            v[b.components] = b.value
+            return v
     raise SystemExit("case has no displacement BC")
 
 
@@ -164,6 +225,12 @@ def main():
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--release", choices=sorted(RELEASE), default="adaptive",
                     help="failed-cell release per block: adaptive cap 64 -> x2 / /2 (default) or fixed 8")
+    ap.add_argument("--platen", choices=["bonded", "sliding", "sliding_top"], default="bonded",
+                    help="platen contact: bonded (default), frictionless top, frictionless both")
+    ap.add_argument("--failure", choices=["peeq", "peeq_tension", "principal"], default="peeq",
+                    help="erosion criterion (default peeq: PEEQ >= failure_peeq in any stress state)")
+    ap.add_argument("--compression-factor", type=float, default=5.0,
+                    help="peeq_tension / principal: cells not in tension erode at this x failure_peeq (0: never)")
     ap.add_argument("--resume", default=None, help="run dir to continue (a new run dir is written)")
     ap.add_argument("--restart-file", default=None, help="parent's last-block .rout (runs without checkpoint)")
     a = ap.parse_args()
@@ -178,6 +245,7 @@ def main():
     if out.exists() and any(out.iterdir()):
         raise SystemExit(f"{out} exists and is not empty: never overwrite a previous run")
     mat, limit, mdoc = _material(a.material)
+    crit = criterion_options(a.failure, a.compression_factor or None, float(mdoc.get("uts_eng", 0.0)) * 1e6)
     parent, resume, parent_rows, parent_summary = None, None, [], {}
     if a.resume:
         parent = Path(a.resume).resolve()
@@ -198,7 +266,8 @@ def main():
     H = float(m.X[m.nodes_of("top"), k].mean() - m.X[m.nodes_of("bottom"), k].mean())
     if a.resume:
         D = float(-_driven_value(case)[k])
-        case.analysis.options["failure"] = failure_options(D, limit, min(1.0, MAX_CRUSH * H / D), a.release)
+        crit = {c: case.analysis.options["failure"][c] for c in CRIT_KEYS if c in case.analysis.options["failure"]}
+        case.analysis.options["failure"] = failure_options(D, limit, min(1.0, MAX_CRUSH * H / D), a.release, crit)
         ck_dir = parent if (parent / "checkpoint.json").exists() else None
         if ck_dir is not None:
             resume = load_checkpoint(ck_dir)
@@ -209,21 +278,21 @@ def main():
             resume, parent_rows = _legacy_checkpoint(parent, Path(a.restart_file) if a.restart_file else None, m, D)
     else:
         D = MAX_CRUSH * H
-        val = [0.0, 0.0, 0.0]
-        val[k] = -D
+        bcs = platen_bcs(m, k, D, a.platen)[0]
         case = Case(mesh=str(mesh_path),
                     analysis=Analysis("elasticity", "3d", order=order, options={
                         "nonlinear": True, "nlgeom": True, "load_factor_max": 1.0,
                         "increments": int(round(1.0 / (POLICY_MM["block"] * 1e-3 / D))),
-                        "failure": failure_options(D, limit, 1.0, a.release)}),
-                    materials={"resin": mat},
-                    bcs=[BC("fixed", group="bottom"), BC("displacement", group="top", components=[0, 1, 2], value=val)])
+                        "failure": failure_options(D, limit, 1.0, a.release, crit)}),
+                    materials={"resin": mat}, bcs=bcs)
     out.mkdir(parents=True, exist_ok=True)
     case.save(out / "case.json")
     meta = {"system": a.system, "part": a.part, "axis": axis, "mesh": str(mesh_path), "order": order,
             "height_m": H, "ramp_travel_m": D, "max_travel_m": MAX_CRUSH * H, "threads": a.threads,
             "policy_mm": POLICY_MM, "tail_force_ratio": TAIL_RATIO, "stop_force_ratio": STOP_RATIO,
-            "stop_force_count": STOP_COUNT, "release": a.release, "continued_from": str(parent) if parent else None,
+            "stop_force_count": STOP_COUNT, "release": a.release,
+            "platen": _platen_of(case), "failure": {c: case.analysis.options["failure"].get(c) for c in CRIT_KEYS},
+            "rigid_body_nodes": [b.point for b in case.bcs if b.point is not None], "continued_from": str(parent) if parent else None,
             "continued_at_step": int(resume["step"]) if resume else None,
             "resume_kind": None if not resume else ("legacy (vtu + csv + rout)" if "legacy_from" in resume
                                                     else "checkpoint"),

@@ -475,3 +475,110 @@ def test_failure_adaptive_release_matches_fixed(tmp_path):
     diff = max(abs(last["adaptive"][c] - last["fixed"][c]) for c in common)
     assert diff < 0.03 * peak, (diff / peak, common)
     assert abs(lam["adaptive"][-1] - lam["fixed"][-1]) < 0.05 * lam["fixed"][-1]     # 1.5 % here
+
+
+# ----------------------------------------------------------------------------- tension-only failure, sliding platens
+def test_failure_criteria_damage_index():
+    """peeq: PEEQ / limit in any state; peeq_tension: PEEQ / limit only where the cell's triaxiality > 0,
+    PEEQ / (compression_factor x limit) elsewhere (never with None); principal: sigma_1 / stress_limit."""
+    from types import SimpleNamespace
+
+    from feacore.solver._ccx_failure import cell_stress_measures, damage_index
+
+    m = SimpleNamespace(conn=np.array([[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]), n_corners=4)
+    S = np.zeros((12, 7))
+    S[0:4, 0] = 50.0                  # cell 0: uniaxial tension 50
+    S[4:8, 1] = -50.0                 # cell 1: uniaxial compression
+    S[8:12, 3] = 30.0                 # cell 2: pure shear 30 (sigma_1 = 30, triaxiality 0)
+    eta, s1 = cell_stress_measures(m, S)
+    assert np.allclose(eta, [1 / 3, -1 / 3, 0.0]) and np.allclose(s1, [50.0, 0.0, 30.0])
+    peeq = np.array([0.05, 0.05, 0.05])
+    assert np.allclose(damage_index({"criterion": "peeq", "limit": 0.04}, peeq, m, S), 1.25)
+    d = damage_index({"criterion": "peeq_tension", "limit": 0.04, "compression_factor": 5.0}, peeq, m, S)
+    assert np.allclose(d, [1.25, 0.25, 0.25])
+    d = damage_index({"criterion": "peeq_tension", "limit": 0.04, "compression_factor": None}, peeq, m, S)
+    assert np.allclose(d, [1.25, 0.0, 0.0])
+    d = damage_index({"criterion": "principal", "limit": 0.04, "stress_limit": 40.0, "compression_factor": 5.0},
+                     peeq, m, S)
+    assert np.allclose(d, [1.25, 0.25, 0.75])
+    c = _failure_case("m.msh", 0.05, [0.1, 0, 0], criterion="principal")
+    assert any("stress_limit" in e for e in c.validate())
+    c.analysis.options["failure"]["stress_limit"] = 50e6
+    assert c.validate() == []
+    c.analysis.options["failure"]["criterion"] = "peeq_tension"
+    assert c.validate() == []
+
+
+@needs_ccx
+def test_failure_tension_criterion_spares_compression(meshes):
+    """Uniaxial compression past the failure PEEQ: criterion peeq erodes the bar, peeq_tension (no compressive
+    erosion) keeps every cell and gives the closed-form hardening force; pulled, peeq_tension erodes it."""
+    eps_max, H, lim = 4.0 * SY / E, 2000.0, 0.002
+
+    def run(sign, **fo):
+        c = _bar(meshes["box"], BC("displacement", group="right", components=[0], value=sign * eps_max * L), H=H,
+                 n=8, failure={"limit": lim, **fo})
+        return solve(c, backend="ccx")
+
+    assert run(-1.0, criterion="peeq").state.sum() > 0
+    r = run(-1.0, criterion="peeq_tension", compression_factor=None)
+    assert r.state.sum() == 0 and r.stop_reason == "end of ramp" and r.history[-1]["max_peeq_alive"] > 2 * lim
+    ep = (eps_max - SY / E) / (1.0 + H / E)
+    assert abs(r.history[-1]["force"] - (SY + H * ep) * W * W) < 2e-5 * SY * W * W
+    assert run(1.0, criterion="peeq_tension", compression_factor=None).state.sum() > 0
+
+
+def _platen_box(path, h=0.25):
+    """L x W x W box along y (load axis) with groups bottom (y = 0), top (y = L), body."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
+    with gmsh_session("pbox"):
+        v = gmsh.model.occ.addBox(0, 0, 0, W, L, W)
+        gmsh.model.occ.synchronize()
+        add_group(3, [v], "body")
+        add_group(2, in_box(2, ymax=0), "bottom")
+        add_group(2, in_box(2, ymin=L), "top")
+        set_uniform_size(h)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.write(str(path))
+    return str(path)
+
+
+def _crush_module():
+    import importlib.util
+    p = Path(__file__).resolve().parents[1] / "experiments" / "physical" / "crush.py"
+    spec = importlib.util.spec_from_file_location("crush_exp", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@needs_ccx
+def test_crush_platen_options(tmp_path):
+    """crush.py --platen: sliding (both frictionless + two rigid-body nodes on the bottom) gives the free
+    uniaxial answer (force E eps A, lateral strain nu eps at the top); bonded holds the top laterally."""
+    from feacore.solver._ccx_mesh import build_model, read_gmsh
+
+    crush = _crush_module()
+    mesh = _platen_box(tmp_path / "pbox.msh")
+    m = build_model(read_gmsh(mesh), 3, 2)
+    D = 1e-3 * L
+    out = {}
+    for platen in ("bonded", "sliding_top", "sliding"):
+        bcs, rb = crush.platen_bcs(m, 1, D, platen)
+        assert len(rb) == (2 if platen == "sliding" else 0)
+        c = Case(mesh=mesh, analysis=Analysis("elasticity", "3d", order=2),
+                 materials={"m": Material(E=E, nu=NU)}, bcs=bcs)
+        assert crush._platen_of(c) == platen and np.allclose(crush._driven_value(c), [0, -D, 0])
+        r = solve(c, backend="ccx")
+        top = m.nodes_of("top")
+        A = np.c_[m.X[top], np.ones(len(top))]             # ux on the top = a x + b y + c z + d
+        out[platen] = (-r.reaction("top", 1), np.linalg.lstsq(A, r.U[top, 0], rcond=None)[0][0] * W)
+    bot = m.nodes_of("bottom")
+    for p in rb:
+        assert np.isclose(p[1], 0.0) and np.min(np.linalg.norm(m.X[bot] - p, axis=1)) < 1e-12
+    F_free = E * 1e-3 * W * W
+    assert abs(out["sliding"][0] / F_free - 1) < 1e-6 and abs(out["sliding"][1] / (NU * 1e-3 * W) - 1) < 1e-6
+    assert abs(out["bonded"][1]) < 1e-12 and out["bonded"][0] > 1.01 * F_free
+    assert out["sliding"][0] < out["sliding_top"][0] < out["bonded"][0]

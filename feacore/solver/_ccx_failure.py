@@ -18,6 +18,18 @@ force on the driven groups falls below ``stop_force_ratio`` x its peak after the
 the end of the ramp.
 
 Options (``failure`` dict; all but criterion / limit optional):
+  criterion         which cells fail (default behaviour: "peeq"):
+                    "peeq"          PEEQ >= limit, whatever the stress state;
+                    "peeq_tension"  PEEQ >= limit where the cell is in tension (stress triaxiality
+                                    sigma_m / sigma_vm > triaxiality_min, default 0), PEEQ >=
+                                    compression_factor x limit elsewhere (a brittle resin breaks in tension;
+                                    crushed material in compression keeps carrying load);
+                    "principal"     max principal stress >= stress_limit (Pa), or PEEQ >= compression_factor x
+                                    limit in any state.
+                    The stress of a cell is the mean of the nodal (extrapolated, averaged) Cauchy stress at its
+                    corner nodes at the end of the block. compression_factor default 5 (null: never).
+                    Candidates are released in order of their damage index (PEEQ / its threshold, or
+                    sigma_1 / stress_limit), highest first.
   limit             PEEQ at which a cell fails
   aggregate         "mean" (default) or "max" over the cell's integration points
   peeq_step         every block is one ccx step whose length is chosen from the last block's growth rate
@@ -79,6 +91,7 @@ from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_series, p
 from feacore.solver._ccx_nl import CcxNonlinearResult
 
 ALIVE, FAILED, DETACHED = 0, 1, 2
+CRITERIA = ("peeq", "peeq_tension", "principal")
 STUCK_TRIES, STUCK_BLOCKS = 5, 5    # single-cell alternatives tried; blocks a stuck cell waits
 
 
@@ -217,7 +230,40 @@ def _plan(state, agg_peeq, limit, cap, topo, exclude=()):
     return st, np.concatenate([take, det]).astype(np.int64), joined, int(len(cand) - len(take))
 
 
+def cell_stress_measures(model, S: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(triaxiality sigma_m / sigma_vm, max principal stress) per cell from the nodal schema stress (n, 7)
+    averaged over the cell's corner nodes."""
+    s = S[model.conn[:, :model.n_corners]].mean(axis=1)
+    T = np.zeros((len(s), 3, 3))
+    T[:, 0, 0], T[:, 1, 1], T[:, 2, 2] = s[:, 0], s[:, 1], s[:, 2]
+    T[:, 0, 1] = T[:, 1, 0] = s[:, 3]
+    T[:, 1, 2] = T[:, 2, 1] = s[:, 4]
+    T[:, 0, 2] = T[:, 2, 0] = s[:, 5]
+    sm = np.trace(T, axis1=1, axis2=2) / 3.0
+    dev = T - sm[:, None, None] * np.eye(3)
+    vm = np.sqrt(1.5 * np.einsum("cij,cij->c", dev, dev))
+    return sm / np.maximum(vm, 1e-30 + 1e-12 * np.abs(sm)), np.linalg.eigvalsh(T)[:, -1]
+
+
+def damage_index(fo: dict, agg_peeq: np.ndarray, model=None, S: np.ndarray | None = None) -> np.ndarray:
+    """Per cell: >= 1 means failed under ``fo["criterion"]`` (see the module doc)."""
+    crit, limit = fo.get("criterion", "peeq"), float(fo["limit"])
+    if crit == "peeq":
+        return agg_peeq / limit
+    kc = fo.get("compression_factor", 5.0)
+    d_any = agg_peeq / (float(kc) * limit) if kc is not None else np.zeros_like(agg_peeq)
+    if S is None:
+        return d_any
+    eta, s1 = cell_stress_measures(model, S)
+    if crit == "peeq_tension":
+        return np.where(eta > float(fo.get("triaxiality_min", 0.0)), agg_peeq / limit, d_any)
+    if crit == "principal":
+        return np.maximum(s1 / float(fo["stress_limit"]), d_any)
+    raise ValueError(f"failure criterion {crit!r}: one of {CRITERIA}")
+
+
 CKPT_ARRAYS = ("state", "removed_at", "agg_peeq", "frozen_U")
+CKPT_OPTIONAL = ("damage",)
 
 
 def save_checkpoint(d, ck: dict) -> None:
@@ -225,8 +271,8 @@ def save_checkpoint(d, ck: dict) -> None:
     import json
     d = Path(d)
     d.mkdir(parents=True, exist_ok=True)
-    np.savez(d / "checkpoint.tmp.npz", **{a: ck[a] for a in CKPT_ARRAYS})
-    meta = {k: v for k, v in ck.items() if k not in CKPT_ARRAYS}
+    np.savez(d / "checkpoint.tmp.npz", **{a: ck[a] for a in CKPT_ARRAYS + CKPT_OPTIONAL if a in ck})
+    meta = {k: v for k, v in ck.items() if k not in CKPT_ARRAYS + CKPT_OPTIONAL}
     (d / "checkpoint.tmp.json").write_text(json.dumps(meta, indent=1, default=float))
     os.replace(d / "checkpoint.tmp.npz", d / "checkpoint.npz")
     os.replace(d / "checkpoint.tmp.json", d / "checkpoint.json")
@@ -238,6 +284,7 @@ def load_checkpoint(d) -> dict:
     ck = json.loads((d / "checkpoint.json").read_text())
     with np.load(d / "checkpoint.npz") as z:
         ck.update({a: z[a] for a in CKPT_ARRAYS})
+        ck.update({a: z[a] for a in CKPT_OPTIONAL if a in z.files})
     return ck
 
 
@@ -245,6 +292,11 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     a = case.analysis
     fo = dict(a.options["failure"])
     limit, agg = float(fo["limit"]), fo.get("aggregate", "mean")
+    crit = fo.get("criterion", "peeq")
+    if crit not in CRITERIA:
+        raise ValueError(f"failure criterion {crit!r}: one of {CRITERIA}")
+    if crit == "principal" and not float(fo.get("stress_limit", 0)) > 0:
+        raise ValueError("failure criterion 'principal' needs stress_limit > 0 (Pa)")
     n = int(a.options.get("increments", 20))
     n_fine = int(fo.get("fine_increments", 5 * n))
     n_near = int(fo.get("near_increments", max(n, n_fine // 2)))
@@ -273,6 +325,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     state = np.zeros(model.n_elems, np.int8)            # ALIVE / FAILED / DETACHED
     removed_at = np.full(model.n_elems, -1)
     agg_peeq = np.zeros(model.n_elems)
+    damage = np.zeros(model.n_elems)                # criterion's damage index (crit != "peeq")
     frozen_U = np.zeros((model.n_nodes, 3))
     history, stuck, prev_cap = [], {}, None
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
@@ -284,6 +337,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         ck = load_checkpoint(resume) if isinstance(resume, (str, Path)) else resume
         state[:], removed_at[:] = ck["state"], ck["removed_at"]
         agg_peeq, frozen_U = np.array(ck["agg_peeq"], float), np.array(ck["frozen_U"], float)
+        damage = np.array(ck["damage"], float) if "damage" in ck else damage_index(fo, agg_peeq)
         t, k, peak, rate = float(ck["t"]), int(ck["block"]), float(ck["peak"]), float(ck.get("rate", 0.0))
         step0, prev_rout = int(ck["step"]), Path(ck["rout"])
         tail, low = bool(ck.get("tail", False)), int(ck.get("low", 0))
@@ -293,7 +347,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             raise CcxError(f"resume: restart file {prev_rout} is missing")
     while t < t_end - 1e-12 and k < max_blocks:
         pk = agg_peeq[state == ALIVE].max(initial=0.0)
-        near = bool(state.any() or pk >= refine_at * limit)
+        near = bool(state.any() or pk >= refine_at * limit
+                    or (crit != "peeq" and damage[state == ALIVE].max(initial=0.0) >= refine_at))
         hi = 1.0 / (n_near if near else n)
         inc = inc_near if near else inc_max
         if tail:
@@ -304,7 +359,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             if run is None and attempt and cap == 1 and len(plan[1]) and prev_cap == 1:
                 stuck[int(plan[1][0])] = k + STUCK_BLOCKS     # its removal does not converge: keep it for now
             prev_cap = cap
-            plan = _plan(state, agg_peeq, limit, cap, topo, {c for c, u in stuck.items() if u > k})
+            plan = _plan(state, *((agg_peeq, limit) if crit == "peeq" else (damage, 1.0)), cap, topo,
+                         {c for c, u in stuck.items() if u > k})
             key = (tuple(plan[1].tolist()), scale)
             if key in tried:                            # same removal and increment as an earlier attempt
                 continue
@@ -356,7 +412,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             rec["release_cap"] = int(cap)
             rec["stuck"] = int(sum(1 for c, u in stuck.items() if u > k and state[c] == ALIVE))
             if series_dir:
-                _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg)
+                _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg,
+                           fo=fo if crit != "peeq" else None)
             peak = max(peak, rec["force"])
             low = low + 1 if state.any() and rec["force"] < stop_ratio * peak else 0
             rec["tail"] = tail
@@ -367,6 +424,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         pk_before = agg_peeq[state == ALIVE].max(initial=0.0)
         if last.peeq_ip is not None:
             agg_peeq = last.peeq_ip.mean(axis=1) if agg == "mean" else last.peeq_ip.max(axis=1)
+        if crit != "peeq":
+            damage = damage_index(fo, agg_peeq, model, last.S)
         rate = max(0.0, (agg_peeq[state == ALIVE].max(initial=0.0) - pk_before) / max(last.time - t, 1e-300))
         if tail_ratio is not None and state.any() and history[-1]["force"] < float(tail_ratio) * peak:
             tail = True             # crack established: the tail bounds apply from the next block on
@@ -375,7 +434,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             save_checkpoint(ckpt_dir, {
                 "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "tail": tail,
                 "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "release_cap": rel_cap, "rout": str(prev_rout.resolve()),
-                "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U})
+                "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U}
+                | ({"damage": damage} if crit != "peeq" else {}))
         if not options.get("keep_files"):
             for suf in (".frd", ".dat"):
                 (wd / f"{job}{suf}").unlink(missing_ok=True)
@@ -420,7 +480,7 @@ def _record(res, i, inc, block, attempt, state, agg, limit, driven, frozen_U, st
             "imbalance_rel": bal.get("imbalance_rel")}
 
 
-def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None):
+def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None, fo=None):
     import meshio
 
     m = res.model
@@ -432,6 +492,9 @@ def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None):
             if inc.peeq_ip is not None else np.zeros(m.n_elems)
     pd = {"displacement": frozen_U.copy(), "von_mises": res.nodal("von_mises")[1], "PEEQ": inc.PEEQ.copy()}
     cd = {"PEEQ": [peeq], "failed": [(state != ALIVE).astype(np.int32)], "state": [state.astype(np.int32)]}
+    if fo is not None:              # criterion fields of this increment (not only at block ends)
+        eta, s1 = cell_stress_measures(m, inc.S)
+        cd |= {"triaxiality": [eta], "s1_cell": [s1], "damage": [damage_index(fo, peeq, m, inc.S)]}
     meshio.Mesh(m.X.copy(), [(m.cell_type, m.conn.astype(np.int64))], point_data=pd,
                 cell_data=cd, field_data={"lambda": np.array([inc.lam]), "step": np.array([rec["step"]])}
                 ).write(str(path))
