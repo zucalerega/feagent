@@ -58,6 +58,29 @@ Expected (abc_00000003, 100 N, mesh as produced by automesh, 13.9 MB .msh, all g
 - peak von Mises **2.05 MPa** (reproduced: 2.047 MPa); top-face mean displacement **3.46 um with E = 10 GPa** (reproduced: 3.463 um; solve 29 s, whole script 87 s) (displacement scales as 1/E:
   about 15.5 um at the default Alpha Fast E = 2.23 GPa; stress is E-independent). Reaction 100.000 N.
 
+### Multi-system mesh study (`mesh_systems/` + `physical/run_all.py`)
+
+Six mesh systems (`mesh_systems/CONTRACT.md`; where their outputs live: `mesh_systems/layout.json`) mesh both parts.
+One command runs the experiments on all of them (CPU, <= 4 solver threads, <= 4 render processes):
+
+    python experiments/physical/run_all.py --meshsys MESHSYS_OUT --study STUDY_OUT [--build] [--crush] \
+        [--crush-runs runs/nonlinear] [--systems a,b] [--parts abc_00000003]
+
+- `--build` runs each system's `build.py` for mesh dirs without `report.json`; the canonical index
+  `MESHSYS_OUT/_canon/<system>/<part>/<linear|nonlinear>` is always (re)linked (`physical/meshsys.py`).
+- `linear_ramp.py`: one 100 N skfem/PARDISO solve per system x part (`STUDY_OUT/linear/<system>/<part>/`):
+  compliance 2U/F, top travel, peak and 99.9th-percentile volume-weighted von Mises.
+- `STUDY_OUT/f_full.json`: per part, the force that brings the 99.9th-percentile von Mises to 87 % of the UTS (median
+  over systems); the same F_full drives every system's video.
+- `render_linear.py` -> `STUDY_OUT/videos/<system>_<part>_linear.mp4` (10 s ramp + 3 s hold, 1920x1080) and
+  `all_systems_<part>_linear.mp4` (3 x 2 grid, ffmpeg xstack).
+- `--crush` launches `crush.py` per system x part (hours each, one after the other); `render_crush.py` renders the
+  newest run per system x part (follows `continued_from`; tet10 and hex vtus) -> `<system>_<part>_crush.mp4`.
+- `compare.py` -> `STUDY_OUT/comparison.{md,json,png}`; rerun it as crush runs finish.
+
+Expected (2026-10-31, six systems): F_full 4558 N (abc_00000003) and 2394 N (abc_00000065); spread across systems:
+compliance 1.3 % / 0.8 %, robust von Mises 15.5 % / 4.8 %, peak von Mises 88 % / 42 %.
+
 ## 3. Wingbox (`wingbox/`)
 
     experiments/wingbox/run_cpu.sh assembly_c2      # geometry -> mesh -> case -> PARDISO solve; case outputs in <case>/cpu/
