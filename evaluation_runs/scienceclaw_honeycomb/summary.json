@@ -1,0 +1,6376 @@
+{
+  "setup": {
+    "source": "https://alanchen.cc/s/scienceclaw-run2-xteam-feagent-hlyniu5qon4yd7xipr5l/",
+    "input_hashes": {
+      "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+      "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+    },
+    "geometry": {
+      "bounds_mm": [
+        [
+          -0.699999988079071,
+          -2.0,
+          0.0
+        ],
+        [
+          44.0,
+          74.99909973144531,
+          15.0
+        ]
+      ],
+      "volume_mm3": 16992.86648524077,
+      "cross_section_mm2": 1132.857765682718,
+      "loops": 51,
+      "vertices": 2692,
+      "stl_triangles": 5580
+    },
+    "gauge_height_mm": 73.0,
+    "depth_mm": 15.0,
+    "strains": [
+      0.015,
+      0.03
+    ],
+    "primary_E_MPa": 1670.0,
+    "primary_nu": 0.35,
+    "sensitivity_nu": 0.4,
+    "other_E_MPa": 2230.0,
+    "initial_mesh_sizes_mm": [
+      0.6,
+      0.3,
+      0.15
+    ],
+    "added_refinement_mm": 0.075,
+    "order": 2,
+    "probes": [
+      {
+        "name": "left_1",
+        "side": "left",
+        "row": 1,
+        "point_mm": [
+          3.7300000190734863,
+          10.966721057891846
+        ],
+        "rib_endpoints_mm": [
+          [
+            3.7300000190734863,
+            7.283201217651367
+          ],
+          [
+            3.7300000190734863,
+            14.650240898132324
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_2",
+        "side": "left",
+        "row": 2,
+        "point_mm": [
+          -0.6000000238418579,
+          20.737499237060547
+        ],
+        "rib_endpoints_mm": [
+          [
+            -0.6000000238418579,
+            16.737499237060547
+          ],
+          [
+            -0.6000000238418579,
+            24.737499237060547
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_3",
+        "side": "left",
+        "row": 3,
+        "point_mm": [
+          3.7300000190734863,
+          29.119832038879395
+        ],
+        "rib_endpoints_mm": [
+          [
+            3.7300000190734863,
+            25.72446632385254
+          ],
+          [
+            3.7300000190734863,
+            32.51519775390625
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_4",
+        "side": "left",
+        "row": 4,
+        "point_mm": [
+          -0.6000000238418579,
+          37.07643508911133
+        ],
+        "rib_endpoints_mm": [
+          [
+            -0.6000000238418579,
+            33.2548713684082
+          ],
+          [
+            -0.6000000238418579,
+            40.89799880981445
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_5",
+        "side": "left",
+        "row": 5,
+        "point_mm": [
+          3.7300000190734863,
+          43.44796180725098
+        ],
+        "rib_endpoints_mm": [
+          [
+            3.7300000190734863,
+            40.14822006225586
+          ],
+          [
+            3.7300000190734863,
+            46.747703552246094
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_6",
+        "side": "left",
+        "row": 6,
+        "point_mm": [
+          -0.6000000238418579,
+          49.42919921875
+        ],
+        "rib_endpoints_mm": [
+          [
+            -0.6000000238418579,
+            45.42919921875
+          ],
+          [
+            -0.6000000238418579,
+            53.42919921875
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_7",
+        "side": "left",
+        "row": 7,
+        "point_mm": [
+          3.7300000190734863,
+          54.91477584838867
+        ],
+        "rib_endpoints_mm": [
+          [
+            3.7300000190734863,
+            51.73750305175781
+          ],
+          [
+            3.7300000190734863,
+            58.09204864501953
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_8",
+        "side": "left",
+        "row": 8,
+        "point_mm": [
+          -0.6000000238418579,
+          60.429298400878906
+        ],
+        "rib_endpoints_mm": [
+          [
+            -0.6000000238418579,
+            56.429298400878906
+          ],
+          [
+            -0.6000000238418579,
+            64.4292984008789
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "left_9",
+        "side": "left",
+        "row": 9,
+        "point_mm": [
+          3.7300000190734863,
+          66.31564140319824
+        ],
+        "rib_endpoints_mm": [
+          [
+            3.7300000190734863,
+            62.98552322387695
+          ],
+          [
+            3.7300000190734863,
+            69.64575958251953
+          ]
+        ],
+        "outward_x_sign": -1
+      },
+      {
+        "name": "right_1",
+        "side": "right",
+        "row": 1,
+        "point_mm": [
+          39.56999969482422,
+          10.966721057891846
+        ],
+        "rib_endpoints_mm": [
+          [
+            39.56999969482422,
+            14.650240898132324
+          ],
+          [
+            39.56999969482422,
+            7.283201217651367
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_2",
+        "side": "right",
+        "row": 2,
+        "point_mm": [
+          43.900001525878906,
+          20.737499237060547
+        ],
+        "rib_endpoints_mm": [
+          [
+            43.900001525878906,
+            24.737499237060547
+          ],
+          [
+            43.900001525878906,
+            16.737499237060547
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_3",
+        "side": "right",
+        "row": 3,
+        "point_mm": [
+          39.56999969482422,
+          29.119832038879395
+        ],
+        "rib_endpoints_mm": [
+          [
+            39.56999969482422,
+            32.51519775390625
+          ],
+          [
+            39.56999969482422,
+            25.72446632385254
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_4",
+        "side": "right",
+        "row": 4,
+        "point_mm": [
+          43.900001525878906,
+          37.07643508911133
+        ],
+        "rib_endpoints_mm": [
+          [
+            43.900001525878906,
+            40.89799880981445
+          ],
+          [
+            43.900001525878906,
+            33.2548713684082
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_5",
+        "side": "right",
+        "row": 5,
+        "point_mm": [
+          39.56999969482422,
+          43.44796180725098
+        ],
+        "rib_endpoints_mm": [
+          [
+            39.56999969482422,
+            46.747703552246094
+          ],
+          [
+            39.56999969482422,
+            40.14822006225586
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_6",
+        "side": "right",
+        "row": 6,
+        "point_mm": [
+          43.900001525878906,
+          49.42919921875
+        ],
+        "rib_endpoints_mm": [
+          [
+            43.900001525878906,
+            53.42919921875
+          ],
+          [
+            43.900001525878906,
+            45.42919921875
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_7",
+        "side": "right",
+        "row": 7,
+        "point_mm": [
+          39.56999969482422,
+          54.91477584838867
+        ],
+        "rib_endpoints_mm": [
+          [
+            39.56999969482422,
+            58.09204864501953
+          ],
+          [
+            39.56999969482422,
+            51.73750305175781
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_8",
+        "side": "right",
+        "row": 8,
+        "point_mm": [
+          43.900001525878906,
+          60.429298400878906
+        ],
+        "rib_endpoints_mm": [
+          [
+            43.900001525878906,
+            64.4292984008789
+          ],
+          [
+            43.900001525878906,
+            56.429298400878906
+          ]
+        ],
+        "outward_x_sign": 1
+      },
+      {
+        "name": "right_9",
+        "side": "right",
+        "row": 9,
+        "point_mm": [
+          39.56999969482422,
+          66.31564140319824
+        ],
+        "rib_endpoints_mm": [
+          [
+            39.56999969482422,
+            69.64575958251953
+          ],
+          [
+            39.56999969482422,
+            62.98552322387695
+          ]
+        ],
+        "outward_x_sign": 1
+      }
+    ],
+    "row_definition": "Nine free long exterior vertical ribs, excluding the two half-rows attached to loading bars; midpoint of each straight outer face.",
+    "bonded": "Outer bottom face ux=uy=0; outer top face ux=0,uy=-travel. Bars remain deformable.",
+    "frictionless": "Both outer faces constrained in y only; one bottom-centre point ux=0 removes rigid translation. Closed-contact roller idealisation, no unilateral contact.",
+    "model": "Homogeneous isotropic small-strain linear elasticity, plane strain. No damage, plasticity, geometric nonlinearity, contact or buckling.",
+    "independence": "No peer FE predictions, Instron data or photos read before freeze."
+  },
+  "runs": [
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 263675,
+        "n_cells": 503182,
+        "n_dofs": 2061162,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.047448790290610894,
+        "wall_time": 45.06975927999997,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=2056390, nnz=46546732, t=24.5s, rel_residual=5.89e-15"
+        ]
+      },
+      "bc": "bonded",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 671.2579013311797,
+      "force_N_1p5pct": 335.62895066558985,
+      "force_N_3pct_scaled_to_E2230": 896.3503712386412,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.1581761662373847,
+          "uy_mm_3pct": -0.09018646838763975,
+          "outward_mm_3pct": 0.1581761662373847,
+          "outward_mm_1p5pct": 0.07908808311869235
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.25811931882759787,
+          "uy_mm_3pct": -0.1968236383618812,
+          "outward_mm_3pct": 0.25811931882759787,
+          "outward_mm_1p5pct": 0.12905965941379893
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.057493985185158025,
+          "uy_mm_3pct": -0.4010959261954421,
+          "outward_mm_3pct": 0.057493985185158025,
+          "outward_mm_1p5pct": 0.028746992592579013
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.0995205579126289,
+          "uy_mm_3pct": -0.41087013096419606,
+          "outward_mm_3pct": -0.0995205579126289,
+          "outward_mm_1p5pct": -0.04976027895631445
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.28845972901721856,
+          "uy_mm_3pct": -0.8121498870135834,
+          "outward_mm_3pct": -0.28845972901721856,
+          "outward_mm_1p5pct": -0.14422986450860928
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4120312855904978,
+          "uy_mm_3pct": -0.975862879204992,
+          "outward_mm_3pct": -0.4120312855904978,
+          "outward_mm_1p5pct": -0.2060156427952489
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4538623858472931,
+          "uy_mm_3pct": -1.373461221325713,
+          "outward_mm_3pct": -0.4538623858472931,
+          "outward_mm_1p5pct": -0.22693119292364655
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.43214270979149333,
+          "uy_mm_3pct": -1.6929314830374784,
+          "outward_mm_3pct": -0.43214270979149333,
+          "outward_mm_1p5pct": -0.21607135489574666
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2650209829952746,
+          "uy_mm_3pct": -1.9457660273940447,
+          "outward_mm_3pct": -0.2650209829952746,
+          "outward_mm_1p5pct": -0.1325104914976373
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.15815627555534498,
+          "uy_mm_3pct": -0.09018771963448856,
+          "outward_mm_3pct": 0.15815627555534498,
+          "outward_mm_1p5pct": 0.07907813777767249
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2581860424500094,
+          "uy_mm_3pct": -0.19688925461461343,
+          "outward_mm_3pct": 0.2581860424500094,
+          "outward_mm_1p5pct": 0.1290930212250047
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.05760933559120578,
+          "uy_mm_3pct": -0.40114326718525317,
+          "outward_mm_3pct": 0.05760933559120578,
+          "outward_mm_1p5pct": 0.02880466779560289
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.0993857368670183,
+          "uy_mm_3pct": -0.41094908124963264,
+          "outward_mm_3pct": -0.0993857368670183,
+          "outward_mm_1p5pct": -0.04969286843350915
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.28835834452504955,
+          "uy_mm_3pct": -0.8121577716161474,
+          "outward_mm_3pct": -0.28835834452504955,
+          "outward_mm_1p5pct": -0.14417917226252477
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.41193945532646786,
+          "uy_mm_3pct": -0.9758783744375891,
+          "outward_mm_3pct": -0.41193945532646786,
+          "outward_mm_1p5pct": -0.20596972766323393
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.45378755261103,
+          "uy_mm_3pct": -1.3734612559736337,
+          "outward_mm_3pct": -0.45378755261103,
+          "outward_mm_1p5pct": -0.226893776305515
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4321128592913115,
+          "uy_mm_3pct": -1.6928912276714705,
+          "outward_mm_3pct": -0.4321128592913115,
+          "outward_mm_1p5pct": -0.21605642964565575
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.26502245338574815,
+          "uy_mm_3pct": -1.9457560272111478,
+          "outward_mm_3pct": -0.26502245338574815,
+          "outward_mm_1p5pct": -0.13251122669287407
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": -0.004046414004154286,
+        "R_top_1": -671.2579013311797,
+        "R_bottom_0": 0.004046418034807431,
+        "R_bottom_1": 671.2579022831653
+      },
+      "strain_energy_Nmm": 735.0274021620845,
+      "relative_free_residual": 5.8854367563593985e-15,
+      "relative_force_imbalance": 1.4182241176917333e-09,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.09966716960911874,
+        "max_inplane_principal_strain_qp": 0.0576697223274175,
+        "max_abs_linear_rotation_rad_qp": 0.1462556574277194,
+        "min_deformed_map_det_qp": 0.942866847291616,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 2.7814306413631584e-10,
+      "elapsed_s": 49.95578838,
+      "peak_process_rss_bytes": 6681600000,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "bonded_nu0.35_h0.075",
+      "h_mm": 0.075
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 155658,
+        "n_cells": 292759,
+        "n_dofs": 1208248,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.062206041464908886,
+        "wall_time": 21.30017312800001,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=1204664, nnz=27131784, t=11.2s, rel_residual=5.22e-15"
+        ]
+      },
+      "bc": "bonded",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 672.5277221999085,
+      "force_N_1p5pct": 336.2638610999542,
+      "force_N_3pct_scaled_to_E2230": 898.0460003028717,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.15828916251261496,
+          "uy_mm_3pct": -0.09029958968889126,
+          "outward_mm_3pct": 0.15828916251261496,
+          "outward_mm_1p5pct": 0.07914458125630748
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.2584721683242351,
+          "uy_mm_3pct": -0.19708290820958557,
+          "outward_mm_3pct": 0.2584721683242351,
+          "outward_mm_1p5pct": 0.12923608416211754
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.0577407693136471,
+          "uy_mm_3pct": -0.40143474362844866,
+          "outward_mm_3pct": 0.0577407693136471,
+          "outward_mm_1p5pct": 0.02887038465682355
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09901222660230344,
+          "uy_mm_3pct": -0.41143119988764815,
+          "outward_mm_3pct": -0.09901222660230344,
+          "outward_mm_1p5pct": -0.04950611330115172
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2879504326356808,
+          "uy_mm_3pct": -0.8124616273826271,
+          "outward_mm_3pct": -0.2879504326356808,
+          "outward_mm_1p5pct": -0.1439752163178404
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4113087429069213,
+          "uy_mm_3pct": -0.9761737481007416,
+          "outward_mm_3pct": -0.4113087429069213,
+          "outward_mm_1p5pct": -0.20565437145346066
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4532522907818785,
+          "uy_mm_3pct": -1.373667919317974,
+          "outward_mm_3pct": -0.4532522907818785,
+          "outward_mm_1p5pct": -0.22662614539093925
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4313952637039642,
+          "uy_mm_3pct": -1.6930601024662741,
+          "outward_mm_3pct": -0.4313952637039642,
+          "outward_mm_1p5pct": -0.2156976318519821
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2646239344331781,
+          "uy_mm_3pct": -1.9458474518724393,
+          "outward_mm_3pct": -0.2646239344331781,
+          "outward_mm_1p5pct": -0.13231196721658905
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.15828238597951233,
+          "uy_mm_3pct": -0.09031116203882804,
+          "outward_mm_3pct": 0.15828238597951233,
+          "outward_mm_1p5pct": 0.07914119298975617
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2584316914506784,
+          "uy_mm_3pct": -0.1970819347324893,
+          "outward_mm_3pct": 0.2584316914506784,
+          "outward_mm_1p5pct": 0.1292158457253392
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.057595050997786314,
+          "uy_mm_3pct": -0.40149288616500256,
+          "outward_mm_3pct": 0.057595050997786314,
+          "outward_mm_1p5pct": 0.028797525498893157
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09915931694308554,
+          "uy_mm_3pct": -0.41149386364679247,
+          "outward_mm_3pct": -0.09915931694308554,
+          "outward_mm_1p5pct": -0.04957965847154277
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.288030639474358,
+          "uy_mm_3pct": -0.8125113940822205,
+          "outward_mm_3pct": -0.288030639474358,
+          "outward_mm_1p5pct": -0.144015319737179
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.41131801164427484,
+          "uy_mm_3pct": -0.9762234096199467,
+          "outward_mm_3pct": -0.41131801164427484,
+          "outward_mm_1p5pct": -0.20565900582213742
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4533147209282887,
+          "uy_mm_3pct": -1.3736579300054255,
+          "outward_mm_3pct": -0.4533147209282887,
+          "outward_mm_1p5pct": -0.22665736046414434
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.43142737371354356,
+          "uy_mm_3pct": -1.6930675980511058,
+          "outward_mm_3pct": -0.43142737371354356,
+          "outward_mm_1p5pct": -0.21571368685677178
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2646254063556427,
+          "uy_mm_3pct": -1.945851253218528,
+          "outward_mm_3pct": -0.2646254063556427,
+          "outward_mm_1p5pct": -0.13231270317782134
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.00032023443610285085,
+        "R_top_1": -672.5277221999085,
+        "R_bottom_0": -0.00032024406002406636,
+        "R_bottom_1": 672.5277226278895
+      },
+      "strain_energy_Nmm": 736.4178560814433,
+      "relative_free_residual": 5.219530961746994e-15,
+      "relative_force_imbalance": 6.365376671605769e-10,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.0861003000826677,
+        "max_inplane_principal_strain_qp": 0.05037215150376391,
+        "max_abs_linear_rotation_rad_qp": 0.14508758772188557,
+        "min_deformed_map_det_qp": 0.9493863774142712,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 3.7009373343721563e-10,
+      "elapsed_s": 23.846410076000012,
+      "peak_process_rss_bytes": 3754164224,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "bonded_nu0.35_h0.1",
+      "h_mm": 0.1
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 72502,
+        "n_cells": 132868,
+        "n_dofs": 555842,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.09233736862440707,
+        "wall_time": 8.276110023000001,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=553454, nnz=12352468, t=4.32s, rel_residual=4.25e-15"
+        ]
+      },
+      "bc": "bonded",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 674.9396169815502,
+      "force_N_1p5pct": 337.4698084907751,
+      "force_N_3pct_scaled_to_E2230": 901.2666741729682,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.15847400264529216,
+          "uy_mm_3pct": -0.0905488202742287,
+          "outward_mm_3pct": 0.15847400264529216,
+          "outward_mm_1p5pct": 0.07923700132264608
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.2590363876448565,
+          "uy_mm_3pct": -0.1975950278341581,
+          "outward_mm_3pct": 0.2590363876448565,
+          "outward_mm_1p5pct": 0.12951819382242824
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.057898751729050804,
+          "uy_mm_3pct": -0.40221744292542244,
+          "outward_mm_3pct": 0.057898751729050804,
+          "outward_mm_1p5pct": 0.028949375864525402
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09830534694948725,
+          "uy_mm_3pct": -0.41258579857934957,
+          "outward_mm_3pct": -0.09830534694948725,
+          "outward_mm_1p5pct": -0.04915267347474363
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.28703307947439277,
+          "uy_mm_3pct": -0.8132155609154266,
+          "outward_mm_3pct": -0.28703307947439277,
+          "outward_mm_1p5pct": -0.14351653973719639
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4098200727861596,
+          "uy_mm_3pct": -0.9769095596786979,
+          "outward_mm_3pct": -0.4098200727861596,
+          "outward_mm_1p5pct": -0.2049100363930798
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4521064244997832,
+          "uy_mm_3pct": -1.3739645434798005,
+          "outward_mm_3pct": -0.4521064244997832,
+          "outward_mm_1p5pct": -0.2260532122498916
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4298970923713048,
+          "uy_mm_3pct": -1.693193180581612,
+          "outward_mm_3pct": -0.4298970923713048,
+          "outward_mm_1p5pct": -0.2149485461856524
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2637222593562523,
+          "uy_mm_3pct": -1.9459420337254165,
+          "outward_mm_3pct": -0.2637222593562523,
+          "outward_mm_1p5pct": -0.13186112967812616
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.15842850519906473,
+          "uy_mm_3pct": -0.09052844288388372,
+          "outward_mm_3pct": 0.15842850519906473,
+          "outward_mm_1p5pct": 0.07921425259953237
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2589561626309481,
+          "uy_mm_3pct": -0.19755954205343962,
+          "outward_mm_3pct": 0.2589561626309481,
+          "outward_mm_1p5pct": 0.12947808131547406
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.05782657496769001,
+          "uy_mm_3pct": -0.4021849618375301,
+          "outward_mm_3pct": 0.05782657496769001,
+          "outward_mm_1p5pct": 0.028913287483845005
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09840233638375782,
+          "uy_mm_3pct": -0.41252569307881237,
+          "outward_mm_3pct": -0.09840233638375782,
+          "outward_mm_1p5pct": -0.04920116819187891
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2871471416127091,
+          "uy_mm_3pct": -0.813144551754056,
+          "outward_mm_3pct": -0.2871471416127091,
+          "outward_mm_1p5pct": -0.14357357080635455
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4099258415685983,
+          "uy_mm_3pct": -0.9768007061300494,
+          "outward_mm_3pct": -0.4099258415685983,
+          "outward_mm_1p5pct": -0.20496292078429915
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4521849989002752,
+          "uy_mm_3pct": -1.3739094295009506,
+          "outward_mm_3pct": -0.4521849989002752,
+          "outward_mm_1p5pct": -0.2260924994501376
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4300938721239778,
+          "uy_mm_3pct": -1.6932125752067164,
+          "outward_mm_3pct": -0.4300938721239778,
+          "outward_mm_1p5pct": -0.2150469360619889
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2638775993259321,
+          "uy_mm_3pct": -1.9458959968705396,
+          "outward_mm_3pct": -0.2638775993259321,
+          "outward_mm_1p5pct": -0.13193879966296604
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": -0.002516017046843899,
+        "R_top_1": -674.9396169815502,
+        "R_bottom_0": 0.002516017224941436,
+        "R_bottom_1": 674.9396171876102
+      },
+      "strain_energy_Nmm": 739.0588807563843,
+      "relative_free_residual": 4.245539183301457e-15,
+      "relative_force_imbalance": 3.0530151134706624e-10,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.07306658166342388,
+        "max_inplane_principal_strain_qp": 0.04847354197374449,
+        "max_abs_linear_rotation_rad_qp": 0.13524004735440887,
+        "min_deformed_map_det_qp": 0.9573743334318157,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 2.1863866273008625e-10,
+      "elapsed_s": 9.356422170000002,
+      "peak_process_rss_bytes": 1794158592,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "bonded_nu0.35_h0.15",
+      "h_mm": 0.15
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 22989,
+        "n_cells": 39339,
+        "n_dofs": 170732,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.16969773084114226,
+        "wall_time": 2.1972637800000143,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=169532, nnz=3693136, t=0.875s, rel_residual=3.34e-15"
+        ]
+      },
+      "bc": "bonded",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 682.3943040787202,
+      "force_N_1p5pct": 341.1971520393601,
+      "force_N_3pct_scaled_to_E2230": 911.2211365841592,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.15901964449152212,
+          "uy_mm_3pct": -0.09112669389469523,
+          "outward_mm_3pct": 0.15901964449152212,
+          "outward_mm_1p5pct": 0.07950982224576106
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.26046551404351376,
+          "uy_mm_3pct": -0.19878036618627562,
+          "outward_mm_3pct": 0.26046551404351376,
+          "outward_mm_1p5pct": 0.13023275702175688
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.05820767792310083,
+          "uy_mm_3pct": -0.4038465436264997,
+          "outward_mm_3pct": 0.05820767792310083,
+          "outward_mm_1p5pct": 0.029103838961550416
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09651338879782326,
+          "uy_mm_3pct": -0.4154075028235366,
+          "outward_mm_3pct": -0.09651338879782326,
+          "outward_mm_1p5pct": -0.04825669439891163
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2851444839033281,
+          "uy_mm_3pct": -0.8148809726794207,
+          "outward_mm_3pct": -0.2851444839033281,
+          "outward_mm_1p5pct": -0.14257224195166404
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.40616366740471893,
+          "uy_mm_3pct": -0.9788939501707619,
+          "outward_mm_3pct": -0.40616366740471893,
+          "outward_mm_1p5pct": -0.20308183370235947
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4493060219284675,
+          "uy_mm_3pct": -1.3749101757385729,
+          "outward_mm_3pct": -0.4493060219284675,
+          "outward_mm_1p5pct": -0.22465301096423376
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4257811297703402,
+          "uy_mm_3pct": -1.6941733243781876,
+          "outward_mm_3pct": -0.4257811297703402,
+          "outward_mm_1p5pct": -0.2128905648851701
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.261362150308334,
+          "uy_mm_3pct": -1.9458051213481025,
+          "outward_mm_3pct": -0.261362150308334,
+          "outward_mm_1p5pct": -0.130681075154167
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.158862058490992,
+          "uy_mm_3pct": -0.09112045010970674,
+          "outward_mm_3pct": 0.158862058490992,
+          "outward_mm_1p5pct": 0.079431029245496
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.26058819831374297,
+          "uy_mm_3pct": -0.19893608368331536,
+          "outward_mm_3pct": 0.26058819831374297,
+          "outward_mm_1p5pct": 0.13029409915687148
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.058812920680613875,
+          "uy_mm_3pct": -0.40392353309791923,
+          "outward_mm_3pct": 0.058812920680613875,
+          "outward_mm_1p5pct": 0.029406460340306938
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09581087952898967,
+          "uy_mm_3pct": -0.4155595433818375,
+          "outward_mm_3pct": -0.09581087952898967,
+          "outward_mm_1p5pct": -0.04790543976449484
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2842231701137631,
+          "uy_mm_3pct": -0.8149235105288041,
+          "outward_mm_3pct": -0.2842231701137631,
+          "outward_mm_1p5pct": -0.14211158505688154
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4054577595494201,
+          "uy_mm_3pct": -0.978858660759085,
+          "outward_mm_3pct": -0.4054577595494201,
+          "outward_mm_1p5pct": -0.20272887977471005
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4487301200636187,
+          "uy_mm_3pct": -1.3752186640522372,
+          "outward_mm_3pct": -0.4487301200636187,
+          "outward_mm_1p5pct": -0.22436506003180934
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.424997663174637,
+          "uy_mm_3pct": -1.6945006806258236,
+          "outward_mm_3pct": -0.424997663174637,
+          "outward_mm_1p5pct": -0.2124988315873185
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2610493608444349,
+          "uy_mm_3pct": -1.9458470601105944,
+          "outward_mm_3pct": -0.2610493608444349,
+          "outward_mm_1p5pct": -0.13052468042221746
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": -0.030999784202712988,
+        "R_top_1": -682.3943040787202,
+        "R_bottom_0": 0.030999784231930505,
+        "R_bottom_1": 682.3943041251164
+      },
+      "strain_energy_Nmm": 747.2217629988182,
+      "relative_free_residual": 3.337692514499028e-15,
+      "relative_force_imbalance": 6.799027458286806e-11,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.056453047087451705,
+        "max_inplane_principal_strain_qp": 0.04388037925183464,
+        "max_abs_linear_rotation_rad_qp": 0.12798943660074746,
+        "min_deformed_map_det_qp": 0.9668146549937733,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 4.3654413417471005e-11,
+      "elapsed_s": 2.5144648200000006,
+      "peak_process_rss_bytes": 584171520,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "bonded_nu0.35_h0.3",
+      "h_mm": 0.3
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 8651,
+        "n_cells": 13459,
+        "n_dofs": 61620,
+        "measure": 1132.8577656827201,
+        "h_rep": 0.29012242339648625,
+        "wall_time": 0.7969839959999945,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=61012, nnz=1284088, t=0.236s, rel_residual=2.82e-15"
+        ]
+      },
+      "bc": "bonded",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 697.1361462334759,
+      "force_N_1p5pct": 348.56807311673793,
+      "force_N_3pct_scaled_to_E2230": 930.9063509584738,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.15875829342319742,
+          "uy_mm_3pct": -0.09220841604391182,
+          "outward_mm_3pct": 0.15875829342319742,
+          "outward_mm_1p5pct": 0.07937914671159871
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.26224408974347135,
+          "uy_mm_3pct": -0.20102680447072468,
+          "outward_mm_3pct": 0.26224408974347135,
+          "outward_mm_1p5pct": 0.13112204487173568
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.060108420350927366,
+          "uy_mm_3pct": -0.40624785030070126,
+          "outward_mm_3pct": 0.060108420350927366,
+          "outward_mm_1p5pct": 0.030054210175463683
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09108762035213709,
+          "uy_mm_3pct": -0.42040878121071434,
+          "outward_mm_3pct": -0.09108762035213709,
+          "outward_mm_1p5pct": -0.045543810176068546
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.27828031712916096,
+          "uy_mm_3pct": -0.8177091358123842,
+          "outward_mm_3pct": -0.27828031712916096,
+          "outward_mm_1p5pct": -0.13914015856458048
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.39733753226174795,
+          "uy_mm_3pct": -0.9803115192098415,
+          "outward_mm_3pct": -0.39733753226174795,
+          "outward_mm_1p5pct": -0.19866876613087397
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4429817998537777,
+          "uy_mm_3pct": -1.37547034344775,
+          "outward_mm_3pct": -0.4429817998537777,
+          "outward_mm_1p5pct": -0.22149089992688886
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4186249852029128,
+          "uy_mm_3pct": -1.6939947205376187,
+          "outward_mm_3pct": -0.4186249852029128,
+          "outward_mm_1p5pct": -0.2093124926014564
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.25794106253035953,
+          "uy_mm_3pct": -1.9458329663373939,
+          "outward_mm_3pct": -0.25794106253035953,
+          "outward_mm_1p5pct": -0.12897053126517977
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.15874809146927232,
+          "uy_mm_3pct": -0.09213554084699936,
+          "outward_mm_3pct": 0.15874809146927232,
+          "outward_mm_1p5pct": 0.07937404573463616
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.26237738884367984,
+          "uy_mm_3pct": -0.20100871312345964,
+          "outward_mm_3pct": 0.26237738884367984,
+          "outward_mm_1p5pct": 0.13118869442183992
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.05951133645906599,
+          "uy_mm_3pct": -0.4060215586139275,
+          "outward_mm_3pct": 0.05951133645906599,
+          "outward_mm_1p5pct": 0.029755668229532996
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09242461632037494,
+          "uy_mm_3pct": -0.41968763985007607,
+          "outward_mm_3pct": -0.09242461632037494,
+          "outward_mm_1p5pct": -0.04621230816018747
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.27973047141579194,
+          "uy_mm_3pct": -0.816615980811979,
+          "outward_mm_3pct": -0.27973047141579194,
+          "outward_mm_1p5pct": -0.13986523570789597
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.39855218203078635,
+          "uy_mm_3pct": -0.9792056373342203,
+          "outward_mm_3pct": -0.39855218203078635,
+          "outward_mm_1p5pct": -0.19927609101539318
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.44354454026266155,
+          "uy_mm_3pct": -1.37534595858674,
+          "outward_mm_3pct": -0.44354454026266155,
+          "outward_mm_1p5pct": -0.22177227013133077
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4184795689783532,
+          "uy_mm_3pct": -1.694573574349774,
+          "outward_mm_3pct": -0.4184795689783532,
+          "outward_mm_1p5pct": -0.2092397844891766
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2579241012732069,
+          "uy_mm_3pct": -1.9457784414605117,
+          "outward_mm_3pct": -0.2579241012732069,
+          "outward_mm_1p5pct": -0.12896205063660346
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.012888524704224302,
+        "R_top_1": -697.1361462334759,
+        "R_bottom_0": -0.012888526230286246,
+        "R_bottom_1": 697.1361462459677
+      },
+      "strain_energy_Nmm": 763.3640801279688,
+      "relative_free_residual": 2.8154563157375483e-15,
+      "relative_force_imbalance": 1.8051949632933194e-11,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.04254872731000258,
+        "max_inplane_principal_strain_qp": 0.043064098605573906,
+        "max_abs_linear_rotation_rad_qp": 0.1262803979453866,
+        "min_deformed_map_det_qp": 0.9777912457871754,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 3.029576589597127e-12,
+      "elapsed_s": 0.9307227270000169,
+      "peak_process_rss_bytes": 268521472,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "bonded_nu0.35_h0.6",
+      "h_mm": 0.6
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 263675,
+        "n_cells": 503182,
+        "n_dofs": 2061162,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.047448790290610894,
+        "wall_time": 44.64041882999999,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=2056390, nnz=46546732, t=24.3s, rel_residual=5.80e-15"
+        ]
+      },
+      "bc": "bonded",
+      "E_MPa": 1670.0,
+      "nu": 0.4,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 701.389325669817,
+      "force_N_1p5pct": 350.6946628349085,
+      "force_N_3pct_scaled_to_E2230": 936.5857462537077,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.15944474698278385,
+          "uy_mm_3pct": -0.08978673078764375,
+          "outward_mm_3pct": 0.15944474698278385,
+          "outward_mm_1p5pct": 0.07972237349139193
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.25957279203207134,
+          "uy_mm_3pct": -0.19639843109192104,
+          "outward_mm_3pct": 0.25957279203207134,
+          "outward_mm_1p5pct": 0.12978639601603567
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.059031646122639045,
+          "uy_mm_3pct": -0.40051706164232787,
+          "outward_mm_3pct": 0.059031646122639045,
+          "outward_mm_1p5pct": 0.029515823061319522
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09804366608300291,
+          "uy_mm_3pct": -0.4102898416128376,
+          "outward_mm_3pct": -0.09804366608300291,
+          "outward_mm_1p5pct": -0.049021833041501456
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2870193563846084,
+          "uy_mm_3pct": -0.8116091247863835,
+          "outward_mm_3pct": -0.2870193563846084,
+          "outward_mm_1p5pct": -0.1435096781923042
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4106290803766543,
+          "uy_mm_3pct": -0.9753529920435188,
+          "outward_mm_3pct": -0.4106290803766543,
+          "outward_mm_1p5pct": -0.20531454018832715
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.45248153551232095,
+          "uy_mm_3pct": -1.3730403860025397,
+          "outward_mm_3pct": -0.45248153551232095,
+          "outward_mm_1p5pct": -0.22624076775616048
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4308321803951487,
+          "uy_mm_3pct": -1.692521415296777,
+          "outward_mm_3pct": -0.4308321803951487,
+          "outward_mm_1p5pct": -0.21541609019757435
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.26397371960892824,
+          "uy_mm_3pct": -1.9455512466566602,
+          "outward_mm_3pct": -0.26397371960892824,
+          "outward_mm_1p5pct": -0.13198685980446412
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.15942154202886566,
+          "uy_mm_3pct": -0.08978770045596582,
+          "outward_mm_3pct": 0.15942154202886566,
+          "outward_mm_1p5pct": 0.07971077101443283
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.25964848227745396,
+          "uy_mm_3pct": -0.1964724268155635,
+          "outward_mm_3pct": 0.25964848227745396,
+          "outward_mm_1p5pct": 0.12982424113872698
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.05916278513768523,
+          "uy_mm_3pct": -0.4005708327432981,
+          "outward_mm_3pct": 0.05916278513768523,
+          "outward_mm_1p5pct": 0.029581392568842613
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09788760672566613,
+          "uy_mm_3pct": -0.4103780017127313,
+          "outward_mm_3pct": -0.09788760672566613,
+          "outward_mm_1p5pct": -0.04894380336283306
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2868966129822409,
+          "uy_mm_3pct": -0.8116208400028245,
+          "outward_mm_3pct": -0.2868966129822409,
+          "outward_mm_1p5pct": -0.14344830649112045
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4105193528881579,
+          "uy_mm_3pct": -0.9753677437984943,
+          "outward_mm_3pct": -0.4105193528881579,
+          "outward_mm_1p5pct": -0.20525967644407894
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4523908522050379,
+          "uy_mm_3pct": -1.3730362340018125,
+          "outward_mm_3pct": -0.4523908522050379,
+          "outward_mm_1p5pct": -0.22619542610251894
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.43079120296831935,
+          "uy_mm_3pct": -1.6924735759630511,
+          "outward_mm_3pct": -0.43079120296831935,
+          "outward_mm_1p5pct": -0.21539560148415968
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2639716212435937,
+          "uy_mm_3pct": -1.9455391626237255,
+          "outward_mm_3pct": -0.2639716212435937,
+          "outward_mm_1p5pct": -0.13198581062179685
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": -0.005212005956295229,
+        "R_top_1": -701.389325669817,
+        "R_bottom_0": 0.005212008694385872,
+        "R_bottom_1": 701.389326611896
+      },
+      "strain_energy_Nmm": 768.0213120025375,
+      "relative_free_residual": 5.801034152247206e-15,
+      "relative_force_imbalance": 1.343166891244049e-09,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.09569366026496878,
+        "max_inplane_principal_strain_qp": 0.05702827572877631,
+        "max_abs_linear_rotation_rad_qp": 0.14659172881039595,
+        "min_deformed_map_det_qp": 0.9577386644814867,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 5.131208791198105e-10,
+      "elapsed_s": 49.87477510900004,
+      "peak_process_rss_bytes": 6606635008,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "bonded_nu0.4_h0.075",
+      "h_mm": 0.075
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 263675,
+        "n_cells": 503182,
+        "n_dofs": 2061162,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.047448790290610894,
+        "wall_time": 44.34660030399999,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=2058775, nnz=46604193, t=24.1s, rel_residual=5.90e-15",
+          "reaction QoI 'R_top_0': group 'top' has no Dirichlet constraint on component 0, so its reaction is 0 (did you mean a supported group?)"
+        ]
+      },
+      "bc": "frictionless",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 668.2354974786099,
+      "force_N_1p5pct": 334.11774873930494,
+      "force_N_3pct_scaled_to_E2230": 892.314466692994,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.16642179569273371,
+          "uy_mm_3pct": -0.09229308117902037,
+          "outward_mm_3pct": 0.16642179569273371,
+          "outward_mm_1p5pct": 0.08321089784636686
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.25865876257768244,
+          "uy_mm_3pct": -0.19823811107068964,
+          "outward_mm_3pct": 0.25865876257768244,
+          "outward_mm_1p5pct": 0.12932938128884122
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.056812018627329625,
+          "uy_mm_3pct": -0.4047991244130359,
+          "outward_mm_3pct": 0.056812018627329625,
+          "outward_mm_1p5pct": 0.028406009313664812
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09907668472439349,
+          "uy_mm_3pct": -0.4145453927727117,
+          "outward_mm_3pct": -0.09907668472439349,
+          "outward_mm_1p5pct": -0.049538342362196744
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.28730943865582403,
+          "uy_mm_3pct": -0.8148679540445147,
+          "outward_mm_3pct": -0.28730943865582403,
+          "outward_mm_1p5pct": -0.14365471932791202
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4103189587235178,
+          "uy_mm_3pct": -0.9778781013500073,
+          "outward_mm_3pct": -0.4103189587235178,
+          "outward_mm_1p5pct": -0.2051594793617589
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.45207651108905633,
+          "uy_mm_3pct": -1.3739967763538385,
+          "outward_mm_3pct": -0.45207651108905633,
+          "outward_mm_1p5pct": -0.22603825554452817
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4311945882503202,
+          "uy_mm_3pct": -1.6912549454076258,
+          "outward_mm_3pct": -0.4311945882503202,
+          "outward_mm_1p5pct": -0.2155972941251601
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2678994512662127,
+          "uy_mm_3pct": -1.9443650222442674,
+          "outward_mm_3pct": -0.2678994512662127,
+          "outward_mm_1p5pct": -0.13394972563310634
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.16641856853639714,
+          "uy_mm_3pct": -0.09230302572697731,
+          "outward_mm_3pct": 0.16641856853639714,
+          "outward_mm_1p5pct": 0.08320928426819857
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2587832321781708,
+          "uy_mm_3pct": -0.19833333708393686,
+          "outward_mm_3pct": 0.2587832321781708,
+          "outward_mm_1p5pct": 0.1293916160890854
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.057007525177077585,
+          "uy_mm_3pct": -0.40487302870457653,
+          "outward_mm_3pct": 0.057007525177077585,
+          "outward_mm_1p5pct": 0.028503762588538793
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09882746323545108,
+          "uy_mm_3pct": -0.4146698505607203,
+          "outward_mm_3pct": -0.09882746323545108,
+          "outward_mm_1p5pct": -0.04941373161772554
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.28706185679774726,
+          "uy_mm_3pct": -0.8149095046504546,
+          "outward_mm_3pct": -0.28706185679774726,
+          "outward_mm_1p5pct": -0.14353092839887363
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4100447442396128,
+          "uy_mm_3pct": -0.9779496372015116,
+          "outward_mm_3pct": -0.4100447442396128,
+          "outward_mm_1p5pct": -0.2050223721198064
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4517855136392446,
+          "uy_mm_3pct": -1.3740278819668463,
+          "outward_mm_3pct": -0.4517855136392446,
+          "outward_mm_1p5pct": -0.2258927568196223
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.43091575859799175,
+          "uy_mm_3pct": -1.6912599385753868,
+          "outward_mm_3pct": -0.43091575859799175,
+          "outward_mm_1p5pct": -0.21545787929899587
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.26761879844477016,
+          "uy_mm_3pct": -1.944369783336689,
+          "outward_mm_3pct": -0.26761879844477016,
+          "outward_mm_1p5pct": -0.13380939922238508
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.0,
+        "R_top_1": -668.2354974786099,
+        "R_bottom_0": 4.074648073644746e-09,
+        "R_bottom_1": 668.2354984420361
+      },
+      "strain_energy_Nmm": 731.7178699419542,
+      "relative_free_residual": 5.8990206940886984e-15,
+      "relative_force_imbalance": 1.441759499117581e-09,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.09894057161115592,
+        "max_inplane_principal_strain_qp": 0.05726142647457816,
+        "max_abs_linear_rotation_rad_qp": 0.1456854600575248,
+        "min_deformed_map_det_qp": 0.9433902775922404,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 2.772602147871339e-10,
+      "elapsed_s": 49.301958127000034,
+      "peak_process_rss_bytes": 6681600000,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "frictionless_nu0.35_h0.075",
+      "h_mm": 0.075
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 155658,
+        "n_cells": 292759,
+        "n_dofs": 1208248,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.062206041464908886,
+        "wall_time": 21.218322096999998,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=1206455, nnz=27174749, t=11.2s, rel_residual=5.21e-15",
+          "reaction QoI 'R_top_0': group 'top' has no Dirichlet constraint on component 0, so its reaction is 0 (did you mean a supported group?)"
+        ]
+      },
+      "bc": "frictionless",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 669.4968123590074,
+      "force_N_1p5pct": 334.7484061795037,
+      "force_N_3pct_scaled_to_E2230": 893.9987374614291,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.1665611498874871,
+          "uy_mm_3pct": -0.09241545835576638,
+          "outward_mm_3pct": 0.1665611498874871,
+          "outward_mm_1p5pct": 0.08328057494374355
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.25904489783408746,
+          "uy_mm_3pct": -0.19851679440645106,
+          "outward_mm_3pct": 0.25904489783408746,
+          "outward_mm_1p5pct": 0.12952244891704373
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.05709978802934285,
+          "uy_mm_3pct": -0.4051614222192457,
+          "outward_mm_3pct": 0.05709978802934285,
+          "outward_mm_1p5pct": 0.028549894014671427
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.0985080291236475,
+          "uy_mm_3pct": -0.4151396085708676,
+          "outward_mm_3pct": -0.0985080291236475,
+          "outward_mm_1p5pct": -0.04925401456182375
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2867224549421554,
+          "uy_mm_3pct": -0.8152067548350926,
+          "outward_mm_3pct": -0.2867224549421554,
+          "outward_mm_1p5pct": -0.1433612274710777
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.40949942000049083,
+          "uy_mm_3pct": -0.9782272834159844,
+          "outward_mm_3pct": -0.40949942000049083,
+          "outward_mm_1p5pct": -0.20474971000024542
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4513504852119293,
+          "uy_mm_3pct": -1.3742270935382563,
+          "outward_mm_3pct": -0.4513504852119293,
+          "outward_mm_1p5pct": -0.22567524260596464
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4303138996871726,
+          "uy_mm_3pct": -1.6914131142151243,
+          "outward_mm_3pct": -0.4303138996871726,
+          "outward_mm_1p5pct": -0.2151569498435863
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2673498674392961,
+          "uy_mm_3pct": -1.9444582010006253,
+          "outward_mm_3pct": -0.2673498674392961,
+          "outward_mm_1p5pct": -0.13367493371964806
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.16655325767583148,
+          "uy_mm_3pct": -0.09242588766120713,
+          "outward_mm_3pct": 0.16655325767583148,
+          "outward_mm_1p5pct": 0.08327662883791574
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2590002730138335,
+          "uy_mm_3pct": -0.19851312868257467,
+          "outward_mm_3pct": 0.2590002730138335,
+          "outward_mm_1p5pct": 0.12950013650691675
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.056948762619837716,
+          "uy_mm_3pct": -0.4052166698105744,
+          "outward_mm_3pct": 0.056948762619837716,
+          "outward_mm_1p5pct": 0.028474381309918858
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09866307375263832,
+          "uy_mm_3pct": -0.4151978668065616,
+          "outward_mm_3pct": -0.09866307375263832,
+          "outward_mm_1p5pct": -0.04933153687631916
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.28681350217449386,
+          "uy_mm_3pct": -0.8152531577306825,
+          "outward_mm_3pct": -0.28681350217449386,
+          "outward_mm_1p5pct": -0.14340675108724693
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4095227892758209,
+          "uy_mm_3pct": -0.9782718052815317,
+          "outward_mm_3pct": -0.4095227892758209,
+          "outward_mm_1p5pct": -0.20476139463791046
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4514295641548193,
+          "uy_mm_3pct": -1.3742143219522864,
+          "outward_mm_3pct": -0.4514295641548193,
+          "outward_mm_1p5pct": -0.22571478207740964
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4303654470354789,
+          "uy_mm_3pct": -1.6914167630466306,
+          "outward_mm_3pct": -0.4303654470354789,
+          "outward_mm_1p5pct": -0.21518272351773945
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.26737353497560323,
+          "uy_mm_3pct": -1.9444605568211257,
+          "outward_mm_3pct": -0.26737353497560323,
+          "outward_mm_1p5pct": -0.13368676748780162
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.0,
+        "R_top_1": -669.4968123590074,
+        "R_bottom_0": -1.0233320329644879e-08,
+        "R_bottom_1": 669.4968127886506
+      },
+      "strain_energy_Nmm": 733.0990098053804,
+      "relative_free_residual": 5.2112166990693525e-15,
+      "relative_force_imbalance": 6.419223832291276e-10,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.08547694453953084,
+        "max_inplane_principal_strain_qp": 0.050009154921265044,
+        "max_abs_linear_rotation_rad_qp": 0.14452392775924672,
+        "min_deformed_map_det_qp": 0.9498516718596451,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 3.713922502868172e-10,
+      "elapsed_s": 23.752822425000005,
+      "peak_process_rss_bytes": 3757391872,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "frictionless_nu0.35_h0.1",
+      "h_mm": 0.1
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 72502,
+        "n_cells": 132868,
+        "n_dofs": 555842,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.09233736862440707,
+        "wall_time": 8.213565923000004,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=554647, nnz=12381129, t=4.3s, rel_residual=4.24e-15",
+          "reaction QoI 'R_top_0': group 'top' has no Dirichlet constraint on component 0, so its reaction is 0 (did you mean a supported group?)"
+        ]
+      },
+      "bc": "frictionless",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 671.8927990087057,
+      "force_N_1p5pct": 335.9463995043528,
+      "force_N_3pct_scaled_to_E2230": 897.1981687361758,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.16677104833143497,
+          "uy_mm_3pct": -0.09266835949561489,
+          "outward_mm_3pct": 0.16677104833143497,
+          "outward_mm_1p5pct": 0.08338552416571748
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.2595923597596799,
+          "uy_mm_3pct": -0.1990230155639805,
+          "outward_mm_3pct": 0.2595923597596799,
+          "outward_mm_1p5pct": 0.12979617987983996
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.057226177378465665,
+          "uy_mm_3pct": -0.40594871874621813,
+          "outward_mm_3pct": 0.057226177378465665,
+          "outward_mm_1p5pct": 0.028613088689232832
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09784357564247982,
+          "uy_mm_3pct": -0.416291163521266,
+          "outward_mm_3pct": -0.09784357564247982,
+          "outward_mm_1p5pct": -0.04892178782123991
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2858592080964166,
+          "uy_mm_3pct": -0.8159629475244358,
+          "outward_mm_3pct": -0.2858592080964166,
+          "outward_mm_1p5pct": -0.1429296040482083
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.40807885024629076,
+          "uy_mm_3pct": -0.9789561650852546,
+          "outward_mm_3pct": -0.40807885024629076,
+          "outward_mm_1p5pct": -0.20403942512314538
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.45028281178648616,
+          "uy_mm_3pct": -1.3745248094611753,
+          "outward_mm_3pct": -0.45028281178648616,
+          "outward_mm_1p5pct": -0.22514140589324308
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.42890626006114285,
+          "uy_mm_3pct": -1.6915401684765814,
+          "outward_mm_3pct": -0.42890626006114285,
+          "outward_mm_1p5pct": -0.21445313003057143
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2665483908817454,
+          "uy_mm_3pct": -1.9445544758408766,
+          "outward_mm_3pct": -0.2665483908817454,
+          "outward_mm_1p5pct": -0.1332741954408727
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.16673752254214771,
+          "uy_mm_3pct": -0.09265357543452711,
+          "outward_mm_3pct": 0.16673752254214771,
+          "outward_mm_1p5pct": 0.08336876127107386
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2595502529828032,
+          "uy_mm_3pct": -0.19900632974919077,
+          "outward_mm_3pct": 0.2595502529828032,
+          "outward_mm_1p5pct": 0.1297751264914016
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.057205964205001784,
+          "uy_mm_3pct": -0.40593363745226496,
+          "outward_mm_3pct": 0.057205964205001784,
+          "outward_mm_1p5pct": 0.028602982102500892
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09786737493850065,
+          "uy_mm_3pct": -0.4162603652220531,
+          "outward_mm_3pct": -0.09786737493850065,
+          "outward_mm_1p5pct": -0.04893368746925032
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2858803105032498,
+          "uy_mm_3pct": -0.8159138827288274,
+          "outward_mm_3pct": -0.2858803105032498,
+          "outward_mm_1p5pct": -0.1429401552516249
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4080690465526389,
+          "uy_mm_3pct": -0.9788835521273628,
+          "outward_mm_3pct": -0.4080690465526389,
+          "outward_mm_1p5pct": -0.20403452327631946
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.45022481360071553,
+          "uy_mm_3pct": -1.3744902583528287,
+          "outward_mm_3pct": -0.45022481360071553,
+          "outward_mm_1p5pct": -0.22511240680035777
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4289454669930544,
+          "uy_mm_3pct": -1.6915887504491018,
+          "outward_mm_3pct": -0.4289454669930544,
+          "outward_mm_1p5pct": -0.2144727334965272
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2665252154503198,
+          "uy_mm_3pct": -1.9445188532624962,
+          "outward_mm_3pct": -0.2665252154503198,
+          "outward_mm_1p5pct": -0.1332626077251599
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.0,
+        "R_top_1": -671.8927990087057,
+        "R_bottom_0": 1.536374970626755e-09,
+        "R_bottom_1": 671.8927992157614
+      },
+      "strain_energy_Nmm": 735.7226150394463,
+      "relative_free_residual": 4.246208556248942e-15,
+      "relative_force_imbalance": 3.0817638086818377e-10,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.07256490522120516,
+        "max_inplane_principal_strain_qp": 0.04811772795992331,
+        "max_abs_linear_rotation_rad_qp": 0.13471312842511818,
+        "min_deformed_map_det_qp": 0.9577646960144905,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 1.6978352057606116e-10,
+      "elapsed_s": 9.326270668000006,
+      "peak_process_rss_bytes": 1794158592,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "frictionless_nu0.35_h0.15",
+      "h_mm": 0.15
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 22989,
+        "n_cells": 39339,
+        "n_dofs": 170732,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.16969773084114226,
+        "wall_time": 2.139030869999999,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=170131, nnz=3707529, t=0.893s, rel_residual=3.35e-15",
+          "reaction QoI 'R_top_0': group 'top' has no Dirichlet constraint on component 0, so its reaction is 0 (did you mean a supported group?)"
+        ]
+      },
+      "bc": "frictionless",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 679.2991607320743,
+      "force_N_1p5pct": 339.6495803660371,
+      "force_N_3pct_scaled_to_E2230": 907.0881008577998,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.16735913950343548,
+          "uy_mm_3pct": -0.09323739857334717,
+          "outward_mm_3pct": 0.16735913950343548,
+          "outward_mm_1p5pct": 0.08367956975171774
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.2608361722609193,
+          "uy_mm_3pct": -0.20012197854711758,
+          "outward_mm_3pct": 0.2608361722609193,
+          "outward_mm_1p5pct": 0.13041808613045966
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.057245305002126,
+          "uy_mm_3pct": -0.4075334303256878,
+          "outward_mm_3pct": 0.057245305002126,
+          "outward_mm_1p5pct": 0.028622652501063
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.0964553048714738,
+          "uy_mm_3pct": -0.4189996424968699,
+          "outward_mm_3pct": -0.0964553048714738,
+          "outward_mm_1p5pct": -0.0482276524357369
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.28448354368461365,
+          "uy_mm_3pct": -0.8175609053297318,
+          "outward_mm_3pct": -0.28448354368461365,
+          "outward_mm_1p5pct": -0.14224177184230682
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4050634761811881,
+          "uy_mm_3pct": -0.9807913861040343,
+          "outward_mm_3pct": -0.4050634761811881,
+          "outward_mm_1p5pct": -0.20253173809059405
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.44823419480793697,
+          "uy_mm_3pct": -1.3754047247275596,
+          "outward_mm_3pct": -0.44823419480793697,
+          "outward_mm_1p5pct": -0.22411709740396848
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4256550430239492,
+          "uy_mm_3pct": -1.6923987254282267,
+          "outward_mm_3pct": -0.4256550430239492,
+          "outward_mm_1p5pct": -0.2128275215119746
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.26515357858357474,
+          "uy_mm_3pct": -1.9443925935520001,
+          "outward_mm_3pct": -0.26515357858357474,
+          "outward_mm_1p5pct": -0.13257678929178737
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.16732809952069796,
+          "uy_mm_3pct": -0.09329824148327781,
+          "outward_mm_3pct": 0.16732809952069796,
+          "outward_mm_1p5pct": 0.08366404976034898
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2613987888595718,
+          "uy_mm_3pct": -0.20050225162009783,
+          "outward_mm_3pct": 0.2613987888595718,
+          "outward_mm_1p5pct": 0.1306993944297859
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.05846244472603203,
+          "uy_mm_3pct": -0.40781282111704165,
+          "outward_mm_3pct": 0.05846244472603203,
+          "outward_mm_1p5pct": 0.029231222363016014
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09488319191139741,
+          "uy_mm_3pct": -0.41949681725910826,
+          "outward_mm_3pct": -0.09488319191139741,
+          "outward_mm_1p5pct": -0.047441595955698704
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2824551262369241,
+          "uy_mm_3pct": -0.8178572277946549,
+          "outward_mm_3pct": -0.2824551262369241,
+          "outward_mm_1p5pct": -0.14122756311846205
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.40297795801219116,
+          "uy_mm_3pct": -0.9811775904461145,
+          "outward_mm_3pct": -0.40297795801219116,
+          "outward_mm_1p5pct": -0.20148897900609558
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.44602500694567493,
+          "uy_mm_3pct": -1.3759441282689822,
+          "outward_mm_3pct": -0.44602500694567493,
+          "outward_mm_1p5pct": -0.22301250347283746
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4229958464824093,
+          "uy_mm_3pct": -1.6930596427992033,
+          "outward_mm_3pct": -0.4229958464824093,
+          "outward_mm_1p5pct": -0.21149792324120464
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2627154388355718,
+          "uy_mm_3pct": -1.9445419814515603,
+          "outward_mm_3pct": -0.2627154388355718,
+          "outward_mm_1p5pct": -0.1313577194177859
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.0,
+        "R_top_1": -679.2991607320743,
+        "R_bottom_0": -2.388429067327761e-10,
+        "R_bottom_1": 679.2991607812227
+      },
+      "strain_energy_Nmm": 743.8325810323355,
+      "relative_free_residual": 3.349523820472415e-15,
+      "relative_force_imbalance": 7.235249908156561e-11,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.056092723995966286,
+        "max_inplane_principal_strain_qp": 0.04359422369974431,
+        "max_abs_linear_rotation_rad_qp": 0.12746068380671938,
+        "min_deformed_map_det_qp": 0.9671176291175558,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 4.129185882106867e-11,
+      "elapsed_s": 2.4542642549999982,
+      "peak_process_rss_bytes": 594337792,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "frictionless_nu0.35_h0.3",
+      "h_mm": 0.3
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 8651,
+        "n_cells": 13459,
+        "n_dofs": 61620,
+        "measure": 1132.8577656827201,
+        "h_rep": 0.29012242339648625,
+        "wall_time": 0.7655451169999878,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=61315, nnz=1291341, t=0.236s, rel_residual=2.82e-15",
+          "reaction QoI 'R_top_0': group 'top' has no Dirichlet constraint on component 0, so its reaction is 0 (did you mean a supported group?)"
+        ]
+      },
+      "bc": "frictionless",
+      "E_MPa": 1670.0,
+      "nu": 0.35,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 693.950016916268,
+      "force_N_1p5pct": 346.975008458134,
+      "force_N_3pct_scaled_to_E2230": 926.6518189959746,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.16735954208791595,
+          "uy_mm_3pct": -0.09439894321042526,
+          "outward_mm_3pct": 0.16735954208791595,
+          "outward_mm_1p5pct": 0.08367977104395798
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.26295259895249795,
+          "uy_mm_3pct": -0.2025441561409568,
+          "outward_mm_3pct": 0.26295259895249795,
+          "outward_mm_1p5pct": 0.13147629947624898
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.05955462132031926,
+          "uy_mm_3pct": -0.4101544844777055,
+          "outward_mm_3pct": 0.05955462132031926,
+          "outward_mm_1p5pct": 0.02977731066015963
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09043634675352176,
+          "uy_mm_3pct": -0.42431351877927254,
+          "outward_mm_3pct": -0.09043634675352176,
+          "outward_mm_1p5pct": -0.04521817337676088
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2768628913377725,
+          "uy_mm_3pct": -0.8206444775633123,
+          "outward_mm_3pct": -0.2768628913377725,
+          "outward_mm_1p5pct": -0.13843144566888624
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.3952931634979753,
+          "uy_mm_3pct": -0.9825808640340258,
+          "outward_mm_3pct": -0.3952931634979753,
+          "outward_mm_1p5pct": -0.19764658174898764
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.44077452817426005,
+          "uy_mm_3pct": -1.3761946588164364,
+          "outward_mm_3pct": -0.44077452817426005,
+          "outward_mm_1p5pct": -0.22038726408713002
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.41719202902352637,
+          "uy_mm_3pct": -1.6925099468760516,
+          "outward_mm_3pct": -0.41719202902352637,
+          "outward_mm_1p5pct": -0.20859601451176318
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.26023711490242185,
+          "uy_mm_3pct": -1.9445351997632827,
+          "outward_mm_3pct": -0.26023711490242185,
+          "outward_mm_1p5pct": -0.13011855745121093
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.16730135494449516,
+          "uy_mm_3pct": -0.09429973136715762,
+          "outward_mm_3pct": 0.16730135494449516,
+          "outward_mm_1p5pct": 0.08365067747224758
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2629096381086826,
+          "uy_mm_3pct": -0.202433701261706,
+          "outward_mm_3pct": 0.2629096381086826,
+          "outward_mm_1p5pct": 0.1314548190543413
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.058717465982681516,
+          "uy_mm_3pct": -0.409842895422482,
+          "outward_mm_3pct": 0.058717465982681516,
+          "outward_mm_1p5pct": 0.029358732991340758
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09211564666097004,
+          "uy_mm_3pct": -0.42345050851040783,
+          "outward_mm_3pct": -0.09211564666097004,
+          "outward_mm_1p5pct": -0.04605782333048502
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.27875281553349146,
+          "uy_mm_3pct": -0.8194492812249141,
+          "outward_mm_3pct": -0.27875281553349146,
+          "outward_mm_1p5pct": -0.13937640776674573
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.39705812908476706,
+          "uy_mm_3pct": -0.9813053483178287,
+          "outward_mm_3pct": -0.39705812908476706,
+          "outward_mm_1p5pct": -0.19852906454238353
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4419935327201061,
+          "uy_mm_3pct": -1.375974363582354,
+          "outward_mm_3pct": -0.4419935327201061,
+          "outward_mm_1p5pct": -0.22099676636005305
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.41780721216859473,
+          "uy_mm_3pct": -1.6929465757260669,
+          "outward_mm_3pct": -0.41780721216859473,
+          "outward_mm_1p5pct": -0.20890360608429737
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2610826397258227,
+          "uy_mm_3pct": -1.9444364973944173,
+          "outward_mm_3pct": -0.2610826397258227,
+          "outward_mm_1p5pct": -0.13054131986291134
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.0,
+        "R_top_1": -693.950016916268,
+        "R_bottom_0": -1.2405508373611074e-09,
+        "R_bottom_1": 693.9500169278422
+      },
+      "strain_energy_Nmm": 759.8752685235668,
+      "relative_free_residual": 2.8139997386730508e-15,
+      "relative_force_imbalance": 1.677413193620389e-11,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.04230601357148809,
+        "max_inplane_principal_strain_qp": 0.04276060013058626,
+        "max_abs_linear_rotation_rad_qp": 0.1257960653470409,
+        "min_deformed_map_det_qp": 0.9779998013135719,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 3.33288951992472e-13,
+      "elapsed_s": 0.8717689769999879,
+      "peak_process_rss_bytes": 280145920,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "frictionless_nu0.35_h0.6",
+      "h_mm": 0.6
+    },
+    {
+      "info": {
+        "backend": "skfem",
+        "physics": "elasticity",
+        "formulation": "plane_strain",
+        "order": 2,
+        "dim": 2,
+        "cell_type": "triangle",
+        "n_nodes": 263675,
+        "n_cells": 503182,
+        "n_dofs": 2061162,
+        "measure": 1132.8577656827204,
+        "h_rep": 0.047448790290610894,
+        "wall_time": 44.360207925,
+        "warnings": [
+          "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=2058775, nnz=46604193, t=24.2s, rel_residual=5.80e-15",
+          "reaction QoI 'R_top_0': group 'top' has no Dirichlet constraint on component 0, so its reaction is 0 (did you mean a supported group?)"
+        ]
+      },
+      "bc": "frictionless",
+      "E_MPa": 1670.0,
+      "nu": 0.4,
+      "travel_mm_3pct": 2.19,
+      "force_N_3pct": 698.0886183640472,
+      "force_N_1p5pct": 349.0443091820236,
+      "force_N_3pct_scaled_to_E2230": 932.1782149412127,
+      "rows": [
+        {
+          "name": "left_1",
+          "side": "left",
+          "row": 1,
+          "point_mm": [
+            3.7300000190734863,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              7.283201217651367
+            ],
+            [
+              3.7300000190734863,
+              14.650240898132324
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.16791124470438082,
+          "uy_mm_3pct": -0.0922885494167102,
+          "outward_mm_3pct": 0.16791124470438082,
+          "outward_mm_1p5pct": 0.08395562235219041
+        },
+        {
+          "name": "left_2",
+          "side": "left",
+          "row": 2,
+          "point_mm": [
+            -0.6000000238418579,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              16.737499237060547
+            ],
+            [
+              -0.6000000238418579,
+              24.737499237060547
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.2601328442844024,
+          "uy_mm_3pct": -0.19821786575121028,
+          "outward_mm_3pct": 0.2601328442844024,
+          "outward_mm_1p5pct": 0.1300664221422012
+        },
+        {
+          "name": "left_3",
+          "side": "left",
+          "row": 3,
+          "point_mm": [
+            3.7300000190734863,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              25.72446632385254
+            ],
+            [
+              3.7300000190734863,
+              32.51519775390625
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": -0.05830009757850726,
+          "uy_mm_3pct": -0.4047614849716101,
+          "outward_mm_3pct": 0.05830009757850726,
+          "outward_mm_1p5pct": 0.02915004878925363
+        },
+        {
+          "name": "left_4",
+          "side": "left",
+          "row": 4,
+          "point_mm": [
+            -0.6000000238418579,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              33.2548713684082
+            ],
+            [
+              -0.6000000238418579,
+              40.89799880981445
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.09759781701775926,
+          "uy_mm_3pct": -0.4145006694675478,
+          "outward_mm_3pct": -0.09759781701775926,
+          "outward_mm_1p5pct": -0.04879890850887963
+        },
+        {
+          "name": "left_5",
+          "side": "left",
+          "row": 5,
+          "point_mm": [
+            3.7300000190734863,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              40.14822006225586
+            ],
+            [
+              3.7300000190734863,
+              46.747703552246094
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2858392181453994,
+          "uy_mm_3pct": -0.8148325895888896,
+          "outward_mm_3pct": -0.2858392181453994,
+          "outward_mm_1p5pct": -0.1429196090726997
+        },
+        {
+          "name": "left_6",
+          "side": "left",
+          "row": 6,
+          "point_mm": [
+            -0.6000000238418579,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              45.42919921875
+            ],
+            [
+              -0.6000000238418579,
+              53.42919921875
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.4088599825441217,
+          "uy_mm_3pct": -0.9778431682648878,
+          "outward_mm_3pct": -0.4088599825441217,
+          "outward_mm_1p5pct": -0.20442999127206085
+        },
+        {
+          "name": "left_7",
+          "side": "left",
+          "row": 7,
+          "point_mm": [
+            3.7300000190734863,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              51.73750305175781
+            ],
+            [
+              3.7300000190734863,
+              58.09204864501953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.45062161850327465,
+          "uy_mm_3pct": -1.373984751870145,
+          "outward_mm_3pct": -0.45062161850327465,
+          "outward_mm_1p5pct": -0.22531080925163732
+        },
+        {
+          "name": "left_8",
+          "side": "left",
+          "row": 8,
+          "point_mm": [
+            -0.6000000238418579,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              -0.6000000238418579,
+              56.429298400878906
+            ],
+            [
+              -0.6000000238418579,
+              64.4292984008789
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.42974069397311393,
+          "uy_mm_3pct": -1.691252416919912,
+          "outward_mm_3pct": -0.42974069397311393,
+          "outward_mm_1p5pct": -0.21487034698655696
+        },
+        {
+          "name": "left_9",
+          "side": "left",
+          "row": 9,
+          "point_mm": [
+            3.7300000190734863,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              3.7300000190734863,
+              62.98552322387695
+            ],
+            [
+              3.7300000190734863,
+              69.64575958251953
+            ]
+          ],
+          "outward_x_sign": -1,
+          "ux_mm_3pct": 0.2664344191946119,
+          "uy_mm_3pct": -1.9443706630087294,
+          "outward_mm_3pct": -0.2664344191946119,
+          "outward_mm_1p5pct": -0.13321720959730596
+        },
+        {
+          "name": "right_1",
+          "side": "right",
+          "row": 1,
+          "point_mm": [
+            39.56999969482422,
+            10.966721057891846
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              14.650240898132324
+            ],
+            [
+              39.56999969482422,
+              7.283201217651367
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.16790857217071217,
+          "uy_mm_3pct": -0.0923002248207765,
+          "outward_mm_3pct": 0.16790857217071217,
+          "outward_mm_1p5pct": 0.08395428608535609
+        },
+        {
+          "name": "right_2",
+          "side": "right",
+          "row": 2,
+          "point_mm": [
+            43.900001525878906,
+            20.737499237060547
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              24.737499237060547
+            ],
+            [
+              43.900001525878906,
+              16.737499237060547
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.2602796965984419,
+          "uy_mm_3pct": -0.1983283542203825,
+          "outward_mm_3pct": 0.2602796965984419,
+          "outward_mm_1p5pct": 0.13013984829922096
+        },
+        {
+          "name": "right_3",
+          "side": "right",
+          "row": 3,
+          "point_mm": [
+            39.56999969482422,
+            29.119832038879395
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              32.51519775390625
+            ],
+            [
+              39.56999969482422,
+              25.72446632385254
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": 0.058530013878540704,
+          "uy_mm_3pct": -0.40484800066328847,
+          "outward_mm_3pct": 0.058530013878540704,
+          "outward_mm_1p5pct": 0.029265006939270352
+        },
+        {
+          "name": "right_4",
+          "side": "right",
+          "row": 4,
+          "point_mm": [
+            43.900001525878906,
+            37.07643508911133
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              40.89799880981445
+            ],
+            [
+              43.900001525878906,
+              33.2548713684082
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.09730079985781136,
+          "uy_mm_3pct": -0.4146449278476604,
+          "outward_mm_3pct": -0.09730079985781136,
+          "outward_mm_1p5pct": -0.04865039992890568
+        },
+        {
+          "name": "right_5",
+          "side": "right",
+          "row": 5,
+          "point_mm": [
+            39.56999969482422,
+            43.44796180725098
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              46.747703552246094
+            ],
+            [
+              39.56999969482422,
+              40.14822006225586
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.28553634639376324,
+          "uy_mm_3pct": -0.8148857985338037,
+          "outward_mm_3pct": -0.28553634639376324,
+          "outward_mm_1p5pct": -0.14276817319688162
+        },
+        {
+          "name": "right_6",
+          "side": "right",
+          "row": 6,
+          "point_mm": [
+            43.900001525878906,
+            49.42919921875
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              53.42919921875
+            ],
+            [
+              43.900001525878906,
+              45.42919921875
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4085255116753183,
+          "uy_mm_3pct": -0.9779270070429891,
+          "outward_mm_3pct": -0.4085255116753183,
+          "outward_mm_1p5pct": -0.20426275583765915
+        },
+        {
+          "name": "right_7",
+          "side": "right",
+          "row": 7,
+          "point_mm": [
+            39.56999969482422,
+            54.91477584838867
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              58.09204864501953
+            ],
+            [
+              39.56999969482422,
+              51.73750305175781
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4502645600707747,
+          "uy_mm_3pct": -1.3740189025694345,
+          "outward_mm_3pct": -0.4502645600707747,
+          "outward_mm_1p5pct": -0.22513228003538735
+        },
+        {
+          "name": "right_8",
+          "side": "right",
+          "row": 8,
+          "point_mm": [
+            43.900001525878906,
+            60.429298400878906
+          ],
+          "rib_endpoints_mm": [
+            [
+              43.900001525878906,
+              64.4292984008789
+            ],
+            [
+              43.900001525878906,
+              56.429298400878906
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.4293929215361942,
+          "uy_mm_3pct": -1.691260301503019,
+          "outward_mm_3pct": -0.4293929215361942,
+          "outward_mm_1p5pct": -0.2146964607680971
+        },
+        {
+          "name": "right_9",
+          "side": "right",
+          "row": 9,
+          "point_mm": [
+            39.56999969482422,
+            66.31564140319824
+          ],
+          "rib_endpoints_mm": [
+            [
+              39.56999969482422,
+              69.64575958251953
+            ],
+            [
+              39.56999969482422,
+              62.98552322387695
+            ]
+          ],
+          "outward_x_sign": 1,
+          "ux_mm_3pct": -0.2660847517723369,
+          "uy_mm_3pct": -1.9443767544600747,
+          "outward_mm_3pct": -0.2660847517723369,
+          "outward_mm_1p5pct": -0.13304237588616846
+        }
+      ],
+      "reactions_N_3pct": {
+        "R_top_0": 0.0,
+        "R_top_1": -698.0886183640472,
+        "R_bottom_0": 2.0385639484122633e-09,
+        "R_bottom_1": 698.088619298263
+      },
+      "strain_energy_Nmm": 764.4070374761652,
+      "relative_free_residual": 5.807644493587415e-15,
+      "relative_force_imbalance": 1.3382513201880499e-09,
+      "strain_diagnostics": {
+        "min_inplane_principal_strain_qp": -0.09503283016658813,
+        "max_inplane_principal_strain_qp": 0.056634607445921845,
+        "max_abs_linear_rotation_rad_qp": 0.1459932966555062,
+        "min_deformed_map_det_qp": 0.9581278594600062,
+        "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+      },
+      "relative_energy_work_error": 4.80808726166515e-10,
+      "elapsed_s": 49.565610015000004,
+      "peak_process_rss_bytes": 6616653824,
+      "input_hashes": {
+        "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+        "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+      },
+      "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+      "software": {
+        "numpy": "2.5.4",
+        "scipy": "1.18.1",
+        "scikit-fem": "12.0.2",
+        "gmsh": "4.15.2",
+        "trimesh": "5.2.0"
+      },
+      "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+      "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves.",
+      "run": "frictionless_nu0.4_h0.075",
+      "h_mm": 0.075
+    }
+  ],
+  "convergence": {
+    "bonded": {
+      "finest_h_mm": 0.075,
+      "last_force_change_N": -1.2698208687287433,
+      "last_force_change_relative": -0.0018881316365294554,
+      "max_last_row_change_mm": 0.0007474460875291355,
+      "qualification": "Observed mesh-to-mesh changes, not certified error bounds. Polygonal STL geometry fixed; meshes are not nested."
+    },
+    "frictionless": {
+      "finest_h_mm": 0.075,
+      "last_force_change_N": -1.2613148803975491,
+      "last_force_change_relative": -0.0018839744373886358,
+      "max_last_row_change_mm": 0.0008806885631476025,
+      "qualification": "Observed mesh-to-mesh changes, not certified error bounds. Polygonal STL geometry fixed; meshes are not nested."
+    }
+  }
+}

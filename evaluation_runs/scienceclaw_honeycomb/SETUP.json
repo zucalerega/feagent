@@ -1,0 +1,410 @@
+{
+  "source": "https://alanchen.cc/s/scienceclaw-run2-xteam-feagent-hlyniu5qon4yd7xipr5l/",
+  "input_hashes": {
+    "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+    "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+  },
+  "geometry": {
+    "bounds_mm": [
+      [
+        -0.699999988079071,
+        -2.0,
+        0.0
+      ],
+      [
+        44.0,
+        74.99909973144531,
+        15.0
+      ]
+    ],
+    "volume_mm3": 16992.86648524077,
+    "cross_section_mm2": 1132.857765682718,
+    "loops": 51,
+    "vertices": 2692,
+    "stl_triangles": 5580
+  },
+  "gauge_height_mm": 73.0,
+  "depth_mm": 15.0,
+  "strains": [
+    0.015,
+    0.03
+  ],
+  "primary_E_MPa": 1670.0,
+  "primary_nu": 0.35,
+  "sensitivity_nu": 0.4,
+  "other_E_MPa": 2230.0,
+  "initial_mesh_sizes_mm": [
+    0.6,
+    0.3,
+    0.15
+  ],
+  "added_refinement_mm": 0.075,
+  "order": 2,
+  "probes": [
+    {
+      "name": "left_1",
+      "side": "left",
+      "row": 1,
+      "point_mm": [
+        3.7300000190734863,
+        10.966721057891846
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          7.283201217651367
+        ],
+        [
+          3.7300000190734863,
+          14.650240898132324
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_2",
+      "side": "left",
+      "row": 2,
+      "point_mm": [
+        -0.6000000238418579,
+        20.737499237060547
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          16.737499237060547
+        ],
+        [
+          -0.6000000238418579,
+          24.737499237060547
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_3",
+      "side": "left",
+      "row": 3,
+      "point_mm": [
+        3.7300000190734863,
+        29.119832038879395
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          25.72446632385254
+        ],
+        [
+          3.7300000190734863,
+          32.51519775390625
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_4",
+      "side": "left",
+      "row": 4,
+      "point_mm": [
+        -0.6000000238418579,
+        37.07643508911133
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          33.2548713684082
+        ],
+        [
+          -0.6000000238418579,
+          40.89799880981445
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_5",
+      "side": "left",
+      "row": 5,
+      "point_mm": [
+        3.7300000190734863,
+        43.44796180725098
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          40.14822006225586
+        ],
+        [
+          3.7300000190734863,
+          46.747703552246094
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_6",
+      "side": "left",
+      "row": 6,
+      "point_mm": [
+        -0.6000000238418579,
+        49.42919921875
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          45.42919921875
+        ],
+        [
+          -0.6000000238418579,
+          53.42919921875
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_7",
+      "side": "left",
+      "row": 7,
+      "point_mm": [
+        3.7300000190734863,
+        54.91477584838867
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          51.73750305175781
+        ],
+        [
+          3.7300000190734863,
+          58.09204864501953
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_8",
+      "side": "left",
+      "row": 8,
+      "point_mm": [
+        -0.6000000238418579,
+        60.429298400878906
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          56.429298400878906
+        ],
+        [
+          -0.6000000238418579,
+          64.4292984008789
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "left_9",
+      "side": "left",
+      "row": 9,
+      "point_mm": [
+        3.7300000190734863,
+        66.31564140319824
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          62.98552322387695
+        ],
+        [
+          3.7300000190734863,
+          69.64575958251953
+        ]
+      ],
+      "outward_x_sign": -1
+    },
+    {
+      "name": "right_1",
+      "side": "right",
+      "row": 1,
+      "point_mm": [
+        39.56999969482422,
+        10.966721057891846
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          14.650240898132324
+        ],
+        [
+          39.56999969482422,
+          7.283201217651367
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_2",
+      "side": "right",
+      "row": 2,
+      "point_mm": [
+        43.900001525878906,
+        20.737499237060547
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          24.737499237060547
+        ],
+        [
+          43.900001525878906,
+          16.737499237060547
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_3",
+      "side": "right",
+      "row": 3,
+      "point_mm": [
+        39.56999969482422,
+        29.119832038879395
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          32.51519775390625
+        ],
+        [
+          39.56999969482422,
+          25.72446632385254
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_4",
+      "side": "right",
+      "row": 4,
+      "point_mm": [
+        43.900001525878906,
+        37.07643508911133
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          40.89799880981445
+        ],
+        [
+          43.900001525878906,
+          33.2548713684082
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_5",
+      "side": "right",
+      "row": 5,
+      "point_mm": [
+        39.56999969482422,
+        43.44796180725098
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          46.747703552246094
+        ],
+        [
+          39.56999969482422,
+          40.14822006225586
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_6",
+      "side": "right",
+      "row": 6,
+      "point_mm": [
+        43.900001525878906,
+        49.42919921875
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          53.42919921875
+        ],
+        [
+          43.900001525878906,
+          45.42919921875
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_7",
+      "side": "right",
+      "row": 7,
+      "point_mm": [
+        39.56999969482422,
+        54.91477584838867
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          58.09204864501953
+        ],
+        [
+          39.56999969482422,
+          51.73750305175781
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_8",
+      "side": "right",
+      "row": 8,
+      "point_mm": [
+        43.900001525878906,
+        60.429298400878906
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          64.4292984008789
+        ],
+        [
+          43.900001525878906,
+          56.429298400878906
+        ]
+      ],
+      "outward_x_sign": 1
+    },
+    {
+      "name": "right_9",
+      "side": "right",
+      "row": 9,
+      "point_mm": [
+        39.56999969482422,
+        66.31564140319824
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          69.64575958251953
+        ],
+        [
+          39.56999969482422,
+          62.98552322387695
+        ]
+      ],
+      "outward_x_sign": 1
+    }
+  ],
+  "row_definition": "Nine free long exterior vertical ribs, excluding the two half-rows attached to loading bars; midpoint of each straight outer face.",
+  "bonded": "Outer bottom face ux=uy=0; outer top face ux=0,uy=-travel. Bars remain deformable.",
+  "frictionless": "Both outer faces constrained in y only; one bottom-centre point ux=0 removes rigid translation. Closed-contact roller idealisation, no unilateral contact.",
+  "model": "Homogeneous isotropic small-strain linear elasticity, plane strain. No damage, plasticity, geometric nonlinearity, contact or buckling.",
+  "independence": "No peer FE predictions, Instron data or photos read before freeze."
+}

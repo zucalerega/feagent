@@ -1,0 +1,103 @@
+{
+  "mesh": "../mesh_h0.6.msh",
+  "analysis": {
+    "physics": "elasticity",
+    "formulation": "plane_strain",
+    "order": 2,
+    "thickness": 15.0,
+    "T_ref": 0.0,
+    "options": {
+      "linear_solver": "scipy"
+    }
+  },
+  "materials": {
+    "AlphaFast_assumed": {
+      "E": 1670.0,
+      "nu": 0.35,
+      "alpha": 0.0,
+      "k": 1.0,
+      "rho": 1.0,
+      "mu": 0.0
+    }
+  },
+  "bcs": [
+    {
+      "type": "displacement",
+      "group": "bottom",
+      "point": null,
+      "components": [
+        1
+      ],
+      "value": 0.0,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    },
+    {
+      "type": "displacement",
+      "group": "top",
+      "point": null,
+      "components": [
+        1
+      ],
+      "value": -2.19,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    },
+    {
+      "type": "displacement",
+      "group": "anchor",
+      "point": null,
+      "components": [
+        0
+      ],
+      "value": 0.0,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    }
+  ],
+  "loads": [],
+  "regions": [],
+  "qois": [
+    {
+      "name": "R_top_0",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "top",
+      "component": 0,
+      "point2": null
+    },
+    {
+      "name": "R_top_1",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "top",
+      "component": 1,
+      "point2": null
+    },
+    {
+      "name": "R_bottom_0",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "bottom",
+      "component": 0,
+      "point2": null
+    },
+    {
+      "name": "R_bottom_1",
+      "type": "reaction",
+      "field": null,
+      "point": null,
+      "group": "bottom",
+      "component": 1,
+      "point2": null
+    }
+  ],
+  "meta": {},
+  "schema_version": 1
+}

@@ -1,0 +1,494 @@
+{
+  "info": {
+    "backend": "skfem",
+    "physics": "elasticity",
+    "formulation": "plane_strain",
+    "order": 2,
+    "dim": 2,
+    "cell_type": "triangle",
+    "n_nodes": 72502,
+    "n_cells": 132868,
+    "n_dofs": 555842,
+    "measure": 1132.8577656827204,
+    "h_rep": 0.09233736862440707,
+    "wall_time": 8.213565923000004,
+    "warnings": [
+      "info: linear_solver=scipy (SuperLU, MMD_AT_PLUS_A ordering, symmetric mode), n=554647, nnz=12381129, t=4.3s, rel_residual=4.24e-15",
+      "reaction QoI 'R_top_0': group 'top' has no Dirichlet constraint on component 0, so its reaction is 0 (did you mean a supported group?)"
+    ]
+  },
+  "bc": "frictionless",
+  "E_MPa": 1670.0,
+  "nu": 0.35,
+  "travel_mm_3pct": 2.19,
+  "force_N_3pct": 671.8927990087057,
+  "force_N_1p5pct": 335.9463995043528,
+  "force_N_3pct_scaled_to_E2230": 897.1981687361758,
+  "rows": [
+    {
+      "name": "left_1",
+      "side": "left",
+      "row": 1,
+      "point_mm": [
+        3.7300000190734863,
+        10.966721057891846
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          7.283201217651367
+        ],
+        [
+          3.7300000190734863,
+          14.650240898132324
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": -0.16677104833143497,
+      "uy_mm_3pct": -0.09266835949561489,
+      "outward_mm_3pct": 0.16677104833143497,
+      "outward_mm_1p5pct": 0.08338552416571748
+    },
+    {
+      "name": "left_2",
+      "side": "left",
+      "row": 2,
+      "point_mm": [
+        -0.6000000238418579,
+        20.737499237060547
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          16.737499237060547
+        ],
+        [
+          -0.6000000238418579,
+          24.737499237060547
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": -0.2595923597596799,
+      "uy_mm_3pct": -0.1990230155639805,
+      "outward_mm_3pct": 0.2595923597596799,
+      "outward_mm_1p5pct": 0.12979617987983996
+    },
+    {
+      "name": "left_3",
+      "side": "left",
+      "row": 3,
+      "point_mm": [
+        3.7300000190734863,
+        29.119832038879395
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          25.72446632385254
+        ],
+        [
+          3.7300000190734863,
+          32.51519775390625
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": -0.057226177378465665,
+      "uy_mm_3pct": -0.40594871874621813,
+      "outward_mm_3pct": 0.057226177378465665,
+      "outward_mm_1p5pct": 0.028613088689232832
+    },
+    {
+      "name": "left_4",
+      "side": "left",
+      "row": 4,
+      "point_mm": [
+        -0.6000000238418579,
+        37.07643508911133
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          33.2548713684082
+        ],
+        [
+          -0.6000000238418579,
+          40.89799880981445
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": 0.09784357564247982,
+      "uy_mm_3pct": -0.416291163521266,
+      "outward_mm_3pct": -0.09784357564247982,
+      "outward_mm_1p5pct": -0.04892178782123991
+    },
+    {
+      "name": "left_5",
+      "side": "left",
+      "row": 5,
+      "point_mm": [
+        3.7300000190734863,
+        43.44796180725098
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          40.14822006225586
+        ],
+        [
+          3.7300000190734863,
+          46.747703552246094
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": 0.2858592080964166,
+      "uy_mm_3pct": -0.8159629475244358,
+      "outward_mm_3pct": -0.2858592080964166,
+      "outward_mm_1p5pct": -0.1429296040482083
+    },
+    {
+      "name": "left_6",
+      "side": "left",
+      "row": 6,
+      "point_mm": [
+        -0.6000000238418579,
+        49.42919921875
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          45.42919921875
+        ],
+        [
+          -0.6000000238418579,
+          53.42919921875
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": 0.40807885024629076,
+      "uy_mm_3pct": -0.9789561650852546,
+      "outward_mm_3pct": -0.40807885024629076,
+      "outward_mm_1p5pct": -0.20403942512314538
+    },
+    {
+      "name": "left_7",
+      "side": "left",
+      "row": 7,
+      "point_mm": [
+        3.7300000190734863,
+        54.91477584838867
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          51.73750305175781
+        ],
+        [
+          3.7300000190734863,
+          58.09204864501953
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": 0.45028281178648616,
+      "uy_mm_3pct": -1.3745248094611753,
+      "outward_mm_3pct": -0.45028281178648616,
+      "outward_mm_1p5pct": -0.22514140589324308
+    },
+    {
+      "name": "left_8",
+      "side": "left",
+      "row": 8,
+      "point_mm": [
+        -0.6000000238418579,
+        60.429298400878906
+      ],
+      "rib_endpoints_mm": [
+        [
+          -0.6000000238418579,
+          56.429298400878906
+        ],
+        [
+          -0.6000000238418579,
+          64.4292984008789
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": 0.42890626006114285,
+      "uy_mm_3pct": -1.6915401684765814,
+      "outward_mm_3pct": -0.42890626006114285,
+      "outward_mm_1p5pct": -0.21445313003057143
+    },
+    {
+      "name": "left_9",
+      "side": "left",
+      "row": 9,
+      "point_mm": [
+        3.7300000190734863,
+        66.31564140319824
+      ],
+      "rib_endpoints_mm": [
+        [
+          3.7300000190734863,
+          62.98552322387695
+        ],
+        [
+          3.7300000190734863,
+          69.64575958251953
+        ]
+      ],
+      "outward_x_sign": -1,
+      "ux_mm_3pct": 0.2665483908817454,
+      "uy_mm_3pct": -1.9445544758408766,
+      "outward_mm_3pct": -0.2665483908817454,
+      "outward_mm_1p5pct": -0.1332741954408727
+    },
+    {
+      "name": "right_1",
+      "side": "right",
+      "row": 1,
+      "point_mm": [
+        39.56999969482422,
+        10.966721057891846
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          14.650240898132324
+        ],
+        [
+          39.56999969482422,
+          7.283201217651367
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": 0.16673752254214771,
+      "uy_mm_3pct": -0.09265357543452711,
+      "outward_mm_3pct": 0.16673752254214771,
+      "outward_mm_1p5pct": 0.08336876127107386
+    },
+    {
+      "name": "right_2",
+      "side": "right",
+      "row": 2,
+      "point_mm": [
+        43.900001525878906,
+        20.737499237060547
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          24.737499237060547
+        ],
+        [
+          43.900001525878906,
+          16.737499237060547
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": 0.2595502529828032,
+      "uy_mm_3pct": -0.19900632974919077,
+      "outward_mm_3pct": 0.2595502529828032,
+      "outward_mm_1p5pct": 0.1297751264914016
+    },
+    {
+      "name": "right_3",
+      "side": "right",
+      "row": 3,
+      "point_mm": [
+        39.56999969482422,
+        29.119832038879395
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          32.51519775390625
+        ],
+        [
+          39.56999969482422,
+          25.72446632385254
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": 0.057205964205001784,
+      "uy_mm_3pct": -0.40593363745226496,
+      "outward_mm_3pct": 0.057205964205001784,
+      "outward_mm_1p5pct": 0.028602982102500892
+    },
+    {
+      "name": "right_4",
+      "side": "right",
+      "row": 4,
+      "point_mm": [
+        43.900001525878906,
+        37.07643508911133
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          40.89799880981445
+        ],
+        [
+          43.900001525878906,
+          33.2548713684082
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": -0.09786737493850065,
+      "uy_mm_3pct": -0.4162603652220531,
+      "outward_mm_3pct": -0.09786737493850065,
+      "outward_mm_1p5pct": -0.04893368746925032
+    },
+    {
+      "name": "right_5",
+      "side": "right",
+      "row": 5,
+      "point_mm": [
+        39.56999969482422,
+        43.44796180725098
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          46.747703552246094
+        ],
+        [
+          39.56999969482422,
+          40.14822006225586
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": -0.2858803105032498,
+      "uy_mm_3pct": -0.8159138827288274,
+      "outward_mm_3pct": -0.2858803105032498,
+      "outward_mm_1p5pct": -0.1429401552516249
+    },
+    {
+      "name": "right_6",
+      "side": "right",
+      "row": 6,
+      "point_mm": [
+        43.900001525878906,
+        49.42919921875
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          53.42919921875
+        ],
+        [
+          43.900001525878906,
+          45.42919921875
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": -0.4080690465526389,
+      "uy_mm_3pct": -0.9788835521273628,
+      "outward_mm_3pct": -0.4080690465526389,
+      "outward_mm_1p5pct": -0.20403452327631946
+    },
+    {
+      "name": "right_7",
+      "side": "right",
+      "row": 7,
+      "point_mm": [
+        39.56999969482422,
+        54.91477584838867
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          58.09204864501953
+        ],
+        [
+          39.56999969482422,
+          51.73750305175781
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": -0.45022481360071553,
+      "uy_mm_3pct": -1.3744902583528287,
+      "outward_mm_3pct": -0.45022481360071553,
+      "outward_mm_1p5pct": -0.22511240680035777
+    },
+    {
+      "name": "right_8",
+      "side": "right",
+      "row": 8,
+      "point_mm": [
+        43.900001525878906,
+        60.429298400878906
+      ],
+      "rib_endpoints_mm": [
+        [
+          43.900001525878906,
+          64.4292984008789
+        ],
+        [
+          43.900001525878906,
+          56.429298400878906
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": -0.4289454669930544,
+      "uy_mm_3pct": -1.6915887504491018,
+      "outward_mm_3pct": -0.4289454669930544,
+      "outward_mm_1p5pct": -0.2144727334965272
+    },
+    {
+      "name": "right_9",
+      "side": "right",
+      "row": 9,
+      "point_mm": [
+        39.56999969482422,
+        66.31564140319824
+      ],
+      "rib_endpoints_mm": [
+        [
+          39.56999969482422,
+          69.64575958251953
+        ],
+        [
+          39.56999969482422,
+          62.98552322387695
+        ]
+      ],
+      "outward_x_sign": 1,
+      "ux_mm_3pct": -0.2665252154503198,
+      "uy_mm_3pct": -1.9445188532624962,
+      "outward_mm_3pct": -0.2665252154503198,
+      "outward_mm_1p5pct": -0.1332626077251599
+    }
+  ],
+  "reactions_N_3pct": {
+    "R_top_0": 0.0,
+    "R_top_1": -671.8927990087057,
+    "R_bottom_0": 1.536374970626755e-09,
+    "R_bottom_1": 671.8927992157614
+  },
+  "strain_energy_Nmm": 735.7226150394463,
+  "relative_free_residual": 4.246208556248942e-15,
+  "relative_force_imbalance": 3.0817638086818377e-10,
+  "strain_diagnostics": {
+    "min_inplane_principal_strain_qp": -0.07256490522120516,
+    "max_inplane_principal_strain_qp": 0.04811772795992331,
+    "max_abs_linear_rotation_rad_qp": 0.13471312842511818,
+    "min_deformed_map_det_qp": 0.9577646960144905,
+    "note": "Unrecovered quadrature extrema can be mesh-sensitive near joints/supports; no material failure or nonlinear validity verdict."
+  },
+  "relative_energy_work_error": 1.6978352057606116e-10,
+  "elapsed_s": 9.326270668000006,
+  "peak_process_rss_bytes": 1794158592,
+  "input_hashes": {
+    "SM-W1.stl": "5a60deb5dc602bed4e0a4de44ac803b3c8b56b7db098b5008a631b4797577307",
+    "INPUTS.md": "7a5d923a8091721e210760783337ec989bee80d74a1662a09604625650ffc9f4"
+  },
+  "run_script_sha256": "5c9e280a8ee2cb53b7d504133389684bf2cf00770ef47e4a11313dc2bb2e6b78",
+  "software": {
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "scikit-fem": "12.0.2",
+    "gmsh": "4.15.2",
+    "trimesh": "5.2.0"
+  },
+  "platform": "Linux-6.8.0-1070-gcp-x86_64-with-glibc2.35",
+  "scaling_note": "1.5% outputs and E2230 force are exact algebraic scalings of the same homogeneous linear model, not separate FE solves."
+}

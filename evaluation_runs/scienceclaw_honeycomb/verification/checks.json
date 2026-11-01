@@ -1,0 +1,7 @@
+{
+  "max_ux_error_mm": 3.566591466608315e-15,
+  "max_uy_error_mm": 8.604228440844963e-16,
+  "reaction_N": 6851.2820512820135,
+  "exact_reaction_N": 6851.282051282051,
+  "relative_reaction_error": 5.440092820663267e-15
+}

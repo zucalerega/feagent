@@ -1,0 +1,18 @@
+{
+  "frozen_utc": "2026-11-01T00:48:36.709120+00:00",
+  "independence": "No ScienceClaw FE predictions, Instron data or photos read before this freeze; only input package and loading/probe definitions used.",
+  "results_sha256": {
+    "evaluation_runs/scienceclaw_honeycomb/bonded_nu0.35_h0.075/result.json": "53ee30970cc3df4ebe1fecf1f6ecd3ce89cf855cbb7b73d41dc170a75cac5a32",
+    "evaluation_runs/scienceclaw_honeycomb/bonded_nu0.35_h0.1/result.json": "952f64a7ea7d078f881664f3c033cd57ecba255bffbf825ac0984286ac19643b",
+    "evaluation_runs/scienceclaw_honeycomb/bonded_nu0.35_h0.15/result.json": "567e2bf4053e26c6be6e60fbf98e8c762037b92f2cec47508ba4b4814b893af3",
+    "evaluation_runs/scienceclaw_honeycomb/bonded_nu0.35_h0.3/result.json": "e75296fddda080fcf14151d51e00d79e8e6ec99230b5f80221bfd5c8cb26d6ff",
+    "evaluation_runs/scienceclaw_honeycomb/bonded_nu0.35_h0.6/result.json": "876631159130b919c5ac2e08a3281799036e0d17d5e16a967ee6b18ec1f68c95",
+    "evaluation_runs/scienceclaw_honeycomb/bonded_nu0.4_h0.075/result.json": "3a38162181ae7eedb4e969af35b47a619e48436b56633c25dd2c06ca4c01a48b",
+    "evaluation_runs/scienceclaw_honeycomb/frictionless_nu0.35_h0.075/result.json": "fc6c0ba7646e089e9597b8e19b81ca75647bac89ac813c85f292fae6539fd41f",
+    "evaluation_runs/scienceclaw_honeycomb/frictionless_nu0.35_h0.1/result.json": "2dd5589fb4489d4e4dfb35b329882c0be6ddedc47898fcf4e683aadffabdd87e",
+    "evaluation_runs/scienceclaw_honeycomb/frictionless_nu0.35_h0.15/result.json": "c462885f437c3bb5d6aeddb3f08d3f1cf12e2d3aadbf811f4a36f73d717ab233",
+    "evaluation_runs/scienceclaw_honeycomb/frictionless_nu0.35_h0.3/result.json": "383a2ecba10a293aadf8d68da9613856b56becdffd22918fbc3ed3f966680c04",
+    "evaluation_runs/scienceclaw_honeycomb/frictionless_nu0.35_h0.6/result.json": "65a4b48d72809a7f5faab678c7961863bea04c9f4cb0b9294f9ba115458b31be",
+    "evaluation_runs/scienceclaw_honeycomb/frictionless_nu0.4_h0.075/result.json": "917427eb2c8eb8b1ea66ca18d373cef52a4fa67db511108e45d2473ba89a13c6"
+  }
+}
