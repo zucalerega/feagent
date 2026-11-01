@@ -12,6 +12,7 @@ reflector and the organizer, so feedback can name tools and exact calls.
 | `view(solve, kind, view)` | renders a picture the agent sees | `kind`: `mesh`, `stress` or `error`; `view`: `iso`, `x`, `y`, `z`, `-x`, `-y`, `-z` |
 | `compare(solve_a, solve_b)` | convergence evidence without a reference | how much the stress field changed between the two solves (relative, energy-like) and the 5 regions where it changed most |
 | `submit(solve)` | ends the run | the chosen solve is scored |
+| `nonlinear_check(mesh)` | only on a task scored by a nonlinear simulation of a physical test (`config.TASKS[...]["score"] == "nonlinear"`, e.g. `abc_00000065_compression`): runs that frozen scoring simulation (`ace/nonlinear.py` run_curve: CalculiX, elastoplastic, large deformation) on mesh number `mesh` (as `mesh` returns it); minutes each, at most `nl_previews` per run, does not use a solve | the force at each checkpoint, simulated vs measured, with the relative error; the mean relative error (the scored error); nodes, DOFs, wall time; the largest plastic strain; hotspots (`peeq` / `s1` peaks with location and nearest faces); `straightened` when curved mid-side nodes had to be straightened for CalculiX |
 
 Refinements in `mesh(...)`: `{group: "f12"}` (a face), `{edge: 37}` (a CAD edge, from
 `inspect_geometry`), `{point: [x, y, z]}` or `{box: [xmin, ymin, zmin, xmax, ymax, zmax]}`, each with
@@ -31,6 +32,11 @@ a box).
 6. `compare` the two solves: a small change means the field has converged; a large change in one
    region means refine there. Submit the solve with the best accuracy per DOF by this evidence, never
    by closeness to a remembered value.
+
+On a nonlinear (test-scored) task the linear `solve` is a fast proxy only: set it up like the frozen
+scoring setup the task states (here displacement-driven, so equilibrium reports the reactions per
+support without a balance check), use its error estimate to place refinement, and use
+`nonlinear_check` on the most promising meshes to see the scored error before submitting.
 
 None of these tools uses the reference solution, so they work the same on problems with no known
 answer.

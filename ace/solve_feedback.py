@@ -193,12 +193,19 @@ def _equilibrium(result) -> dict:
     loads = {bc.group: group_sum(f, bc, False) for bc in case.bcs if bc.type in LOADS and bc.group}
     F = np.array([f[md.split[k]].sum() for k in range(nc)])
     Rt = np.array([R[md.split[k][constrained[md.split[k]]]].sum() for k in range(nc)])
+    out = {"applied_total": [_sig(v, 4) for v in F], "reaction_total": [_sig(v, 4) for v in Rt],
+           "reactions_by_support": supports, "applied_by_load_group": loads}
+    if not loads and not any(l.type == "body_force" for l in case.loads):
+        # Driven by prescribed displacements only (e.g. a platen ramp): no applied force to balance, and
+        # the supports' reactions cancel among themselves, so residual = |~0| / |~0| would mean nothing.
+        out["residual"] = None
+        out["note"] = "no applied force or pressure (displacement-driven): reactions per support shown, no balance check"
+        return out
     # Axisymmetric: the radial component never balances (hoop forces), only the axial one does.
     ks = [1] if md.axi else list(range(nc))
     scale = max(np.linalg.norm(F[ks]), np.linalg.norm(Rt[ks]), 1e-300)
-    return {"applied_total": [_sig(v, 4) for v in F], "reaction_total": [_sig(v, 4) for v in Rt],
-            "residual": _sig(np.linalg.norm((F + Rt)[ks]) / scale, 2),
-            "reactions_by_support": supports, "applied_by_load_group": loads}
+    out["residual"] = _sig(np.linalg.norm((F + Rt)[ks]) / scale, 2)
+    return out
 
 
 def _extreme(problem, result, part: _Part, field: str) -> dict:

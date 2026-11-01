@@ -17,8 +17,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ace.config import MAX_SOLVES
-from ace.deep_teacher import (PROCESS_BRIEF, MeshCall, NoteItem, agent_name, report_as_text, report_images,
-                              trace_excerpt)
+from ace.deep_teacher import (NL_SCORING, PROCESS_BRIEF, MeshCall, NoteItem, agent_name, is_nonlinear,
+                              report_as_text, report_images, trace_excerpt)
 from ace.llm import image_block, text_block
 from ace.run_report import report_text
 
@@ -74,12 +74,16 @@ How to reflect:
 
 def build_user(report: dict, run: dict, own_notes_text: str) -> list[dict]:
     rid = run["run_id"]
+    # A nonlinear task (ace.nonlinear) is scored by its force curve against a test, not by a field
+    # reference: say so (it overrides the field-error wording above) and show the curve and PEEQ.
+    nl = is_nonlinear(run.get("problem_id") or "")
     blocks = [text_block(
         f"MY RUN {rid} (I am agent {agent_name(rid)}, task {run.get('problem_id')})\n"
-        f"--- my final results and whole mesh ---\n{_safe_text(report)}\n"
+        + (f"--- how this task is scored ---\n{NL_SCORING}\n" if nl else "")
+        + f"--- my final results and whole mesh ---\n{_safe_text(report)}\n"
         f"--- the notes I had ---\n{own_notes_text or '(none)'}\n"
         f"--- my steps ---\n{trace_excerpt(run, TRACE_CHARS)}\n")]
-    for kind, path in report_images(report, ("mesh", "error", "stress")):
+    for kind, path in report_images(report, ("curve", "peeq") if nl else ("mesh", "error", "stress")):
         try:
             blocks += [text_block(f"my {kind}"), image_block(path)]
         except OSError:
