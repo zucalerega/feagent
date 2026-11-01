@@ -244,11 +244,11 @@ bash scripts/setup_gpu_box.sh && uv pip install --python .venv/bin/python -e ".[
 
 # build the gold field references once (needs the gold study meshes in benchmarks/gold/_meshes/,
 # from the goldgen archive, and a GPU or plenty of RAM)
-.venv/bin/python -m ace.gold_reference abc_00000003_bc7,abc_00000065_bc0
+.venv/bin/python -m ace.gold_reference abc_00000065_bc0
 
-# train an 8-agent swarm on two gold tasks (the Result 2 run)
+# train an 8-agent swarm on the gold part abc_00000065_bc0 (the Result 2 setup)
 ACE_SCORE=field .venv/bin/python -m ace.run_loop --deep --split \
-  --problems abc_00000003_bc7,abc_00000065_bc0 --holdout "" --memory shared+private \
+  --problems abc_00000065_bc0 --holdout "" --memory shared+private \
   --agents 8 --concurrency 8 --persona-count 4 --generations 8 --budget-usd 45 --out ace_runs/div_s8
 
 # post-train it on the real compression test (the Result 3 run; needs CalculiX)
