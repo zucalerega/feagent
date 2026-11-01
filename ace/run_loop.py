@@ -211,6 +211,49 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
     return rows
 
 
+# --------------------------------------------------------------------------- run config
+
+
+SETUP_KEYS = ("problems", "holdout", "models", "max_tokens", "effort", "tasks", "max_solves", "max_turns",
+              "min_quality", "top_n", "reflector_mode", "diagnoser", "memory_margins", "code_sha256", "mock")
+
+
+def write_run_config(out: Path, args, train: list[str], holdout: list[str]) -> dict:
+    """Everything that defines the experiment's setup, so ace.compare can check that two runs
+    (e.g. the swarm and a single-agent baseline) differ only in the treatment
+    (memory / agents / attempts) and not in tasks, models, limits or code."""
+    import hashlib
+    import subprocess
+
+    code = hashlib.sha256()
+    for f in sorted(Path(__file__).parent.glob("*.py")):
+        if f.name not in ("baselines.py", "compare.py", "watch.py", "report.py", "ui_bridge.py"):
+            code.update(f.name.encode() + f.read_bytes())
+    try:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                                cwd=Path(__file__).parent).stdout.strip() or None
+    except OSError:
+        commit = None
+    cfg = {
+        "problems": train, "holdout": holdout, "models": config.MODELS, "max_tokens": config.MAX_TOKENS,
+        "effort": config.EFFORT, "tasks": {p: config.TASKS[p] for p in train + holdout if p in config.TASKS},
+        "max_solves": config.MAX_SOLVES, "max_turns": config.MAX_TURNS, "min_quality": config.MIN_QUALITY,
+        "top_n": args.top_n, "reflector_mode": config.REFLECTOR_MODE,
+        "diagnoser": {"max_tool_calls": config.DIAGNOSER_MAX_TOOL_CALLS, "max_reruns": config.DIAGNOSER_MAX_RERUNS},
+        "memory_margins": {"private": config.PRIVATE_PRUNE_MARGIN, "shared": config.SHARED_PRUNE_MARGIN,
+                           "promote_min_agents": config.PROMOTE_MIN_AGENTS, "prune": config.PRUNE_MARGIN},
+        "code_sha256": code.hexdigest(), "mock": args.mock,
+        # the treatment and run size (allowed to differ between compared runs)
+        "memory": args.memory, "agents": args.agents if args.memory == "shared+private" else None,
+        "attempts": args.attempts if args.memory == "shared+private" else None,
+        "runs_per_problem": args.runs_per_problem if args.memory == "shared" else None,
+        "generations": args.generations, "budget_usd": args.budget_usd, "playbook": str(args.playbook or ""),
+        "git_commit": commit, "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    (out / "run_config.json").write_text(json.dumps(cfg, indent=1, default=str))
+    return cfg
+
+
 # --------------------------------------------------------------------------- main loop
 
 
@@ -229,6 +272,9 @@ def main(argv=None) -> int:
     ap.add_argument("--memory", choices=["shared", "shared+private"], default=config.MEMORY,
                     help="one shared playbook, or shared + one private playbook per persistent agent")
     ap.add_argument("--agents", type=int, default=config.AGENTS, help="persistent agents (shared+private mode)")
+    ap.add_argument("--attempts", type=int, default=1, help="attempts per agent per problem per generation "
+                    "(shared+private mode). 1 = the swarm's setting; a single agent with --attempts N makes as "
+                    "many runs per generation as an N-agent swarm (see ace/baselines.py)")
     ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
                     "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
@@ -246,6 +292,8 @@ def main(argv=None) -> int:
     rows, gen_notes = [], []
     print(f"output: {out}")
     ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
+    write_run_config(out, args, train, holdout)
+    t_start = time.time()
 
     try:
         for gen in range(args.generations):
@@ -261,9 +309,13 @@ def main(argv=None) -> int:
             # Interleaved (run 0 of every problem, then run 1, ...) so that if the budget stops a
             # generation early, every problem still has a similar number of runs.
             if private:   # persistent agents a0..: each sees the shared playbook + its own notes
-                jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
-                         "playbook_text": mem.prompt_text(k, args.top_n), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
-                         "mock": args.mock} for k in range(args.agents) for pid in train + holdout]
+                # With --attempts > 1 each agent tries each problem several times; ids keep the
+                # "-a<k>" suffix that ace.memory uses to route lessons to the agent's notes.
+                tag = (lambda i: "") if args.attempts == 1 else (lambda i: f"r{i}-")
+                jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-{tag(i)}a{k}", "generation": gen,
+                         "playbook_text": mem.prompt_text(k, args.top_n),
+                         "workdir": str(gdir / "work" / f"{pid}-{tag(i)}a{k}"), "mock": args.mock}
+                        for i in range(args.attempts) for k in range(args.agents) for pid in train + holdout]
             else:
                 jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-{i}", "generation": gen,
                          "playbook_text": text, "workdir": str(gdir / "work" / f"{pid}-{i}"), "mock": args.mock}
@@ -386,6 +438,12 @@ def main(argv=None) -> int:
             gruns = [r for prs in all_runs.values() for r in prs if r["generation"] == g]
             rows += score_rows(g, gruns, {r["run_id"]: r["checks"] for r in gruns}, holdout)
         (out / "summary.md").write_text(summarize(rows, gen_notes, cost))
+        n_runs = {g: sum(r["generation"] == g for prs in all_runs.values() for r in prs)
+                  for g in sorted({r["generation"] for prs in all_runs.values() for r in prs})}
+        (out / "progress.json").write_text(json.dumps({
+            "generations": [{**n, "runs": n_runs.get(n["gen"], 0)} for n in gen_notes],
+            "total_usd": cost.total, "by_role_usd": cost.by_role(), "wall_s": round(time.time() - t_start, 1)},
+            indent=1, default=str))
         if rows:
             plot_scores(rows, out / "scores.png")
         print("\n" + (out / "summary.md").read_text())
