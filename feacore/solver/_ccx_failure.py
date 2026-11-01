@@ -20,14 +20,17 @@ the end of the ramp.
 Options (``failure`` dict; all but criterion / limit optional):
   criterion         which cells fail (default behaviour: "peeq"):
                     "peeq"          PEEQ >= limit, whatever the stress state;
-                    "peeq_tension"  PEEQ >= limit where the cell is in tension (stress triaxiality
-                                    sigma_m / sigma_vm > triaxiality_min, default 0), PEEQ >=
-                                    compression_factor x limit elsewhere (a brittle resin breaks in tension;
-                                    crushed material in compression keeps carrying load);
+                    "peeq_tension"  tensile PEEQ >= limit: the PEEQ a cell gains while it is in tension
+                                    (stress triaxiality sigma_m / sigma_vm > triaxiality_min, default 0),
+                                    summed over the output increments, so plastic flow under compression
+                                    (crushing) does not count towards a tensile break; or the total PEEQ >=
+                                    compression_factor x limit (a brittle resin breaks in tension, crushed
+                                    material in compression keeps carrying load);
                     "principal"     max principal stress >= stress_limit (Pa), or PEEQ >= compression_factor x
                                     limit in any state.
                     The stress of a cell is the mean of the nodal (extrapolated, averaged) Cauchy stress at its
-                    corner nodes at the end of the block. compression_factor default 5 (null: never).
+                    corner nodes (at every output increment for peeq_tension, at the block end for
+                    principal). compression_factor default 5 (null: never).
                     Candidates are released in order of their damage index (PEEQ / its threshold, or
                     sigma_1 / stress_limit), highest first.
   limit             PEEQ at which a cell fails
@@ -246,13 +249,18 @@ def cell_stress_measures(model, S: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return sm / np.maximum(vm, 1e-30 + 1e-12 * np.abs(sm)), np.linalg.eigvalsh(T)[:, -1]
 
 
-def damage_index(fo: dict, agg_peeq: np.ndarray, model=None, S: np.ndarray | None = None) -> np.ndarray:
-    """Per cell: >= 1 means failed under ``fo["criterion"]`` (see the module doc)."""
+def damage_index(fo: dict, agg_peeq: np.ndarray, model=None, S: np.ndarray | None = None,
+                 peeq_t: np.ndarray | None = None) -> np.ndarray:
+    """Per cell: >= 1 means failed under ``fo["criterion"]`` (see the module doc). peeq_tension: ``peeq_t`` is
+    the tensile PEEQ (accumulated by the driver); without it the current stress state decides (PEEQ / limit
+    where in tension)."""
     crit, limit = fo.get("criterion", "peeq"), float(fo["limit"])
     if crit == "peeq":
         return agg_peeq / limit
     kc = fo.get("compression_factor", 5.0)
     d_any = agg_peeq / (float(kc) * limit) if kc is not None else np.zeros_like(agg_peeq)
+    if crit == "peeq_tension" and peeq_t is not None:
+        return np.maximum(peeq_t / limit, d_any)
     if S is None:
         return d_any
     eta, s1 = cell_stress_measures(model, S)
@@ -264,7 +272,7 @@ def damage_index(fo: dict, agg_peeq: np.ndarray, model=None, S: np.ndarray | Non
 
 
 CKPT_ARRAYS = ("state", "removed_at", "agg_peeq", "frozen_U")
-CKPT_OPTIONAL = ("damage",)
+CKPT_OPTIONAL = ("damage", "peeq_t")
 
 
 def save_checkpoint(d, ck: dict) -> None:
@@ -327,6 +335,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     removed_at = np.full(model.n_elems, -1)
     agg_peeq = np.zeros(model.n_elems)
     damage = np.zeros(model.n_elems)                # criterion's damage index (crit != "peeq")
+    peeq_t = np.zeros(model.n_elems)                # tensile PEEQ (peeq_tension)
+    eta_min = float(fo.get("triaxiality_min", 0.0))
     frozen_U = np.zeros((model.n_nodes, 3))
     history, stuck, prev_cap = [], {}, None
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
@@ -341,6 +351,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         crit_now = {c: fo.get(c) for c in CRIT_KEYS}
         if "damage" in ck and ck.get("criterion_options") == crit_now:
             damage = np.array(ck["damage"], float)
+            if "peeq_t" in ck:
+                peeq_t = np.array(ck["peeq_t"], float)
         else:       # criterion changed on resume: no stress at hand; the next block end recomputes it
             damage = damage_index(fo, agg_peeq) if crit == "peeq" else np.zeros(model.n_elems)
         t, k, peak, rate = float(ck["t"]), int(ck["block"]), float(ck["peak"]), float(ck.get("rate", 0.0))
@@ -410,7 +422,13 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         res = CcxNonlinearResult(case, model, deck, series, dat, run)
         res.converged = True
         res.info.warnings = [w for w in res.info.warnings if not w.startswith("nonlinear run stopped")]
+        agg_prev = agg_peeq
         for i, inc in enumerate(res.increments):
+            if crit == "peeq_tension" and inc.peeq_ip is not None:
+                agg_i = inc.peeq_ip.mean(axis=1) if agg == "mean" else inc.peeq_ip.max(axis=1)
+                tens = cell_stress_measures(model, inc.S)[0] > eta_min
+                peeq_t = peeq_t + np.maximum(agg_i - agg_prev, 0.0) * tens
+                agg_prev = agg_i
             rec = _record(res, i, inc, k, attempt, state, agg, limit, driven, frozen_U,
                           (history[-1]["step"] if history else step0) + 1)
             rec["removed_in_block"], rec["deferred"] = int(len(removal)), int(deferred)
@@ -418,7 +436,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             rec["stuck"] = int(sum(1 for c, u in stuck.items() if u > k and state[c] == ALIVE))
             if series_dir:
                 _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg,
-                           fo=fo if crit != "peeq" else None)
+                           fo=fo if crit != "peeq" else None, peeq_t=peeq_t if crit == "peeq_tension" else None)
             peak = max(peak, rec["force"])
             low = low + 1 if state.any() and rec["force"] < stop_ratio * peak else 0
             rec["tail"] = tail
@@ -430,7 +448,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         if last.peeq_ip is not None:
             agg_peeq = last.peeq_ip.mean(axis=1) if agg == "mean" else last.peeq_ip.max(axis=1)
         if crit != "peeq":
-            damage = damage_index(fo, agg_peeq, model, last.S)
+            damage = damage_index(fo, agg_peeq, model, last.S, peeq_t if crit == "peeq_tension" else None)
         rate = max(0.0, (agg_peeq[state == ALIVE].max(initial=0.0) - pk_before) / max(last.time - t, 1e-300))
         if tail_ratio is not None and state.any() and history[-1]["force"] < float(tail_ratio) * peak:
             tail = True             # crack established: the tail bounds apply from the next block on
@@ -440,7 +458,7 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
                 "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "tail": tail,
                 "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "release_cap": rel_cap, "rout": str(prev_rout.resolve()),
                 "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U}
-                | ({"damage": damage, "criterion_options": {c: fo.get(c) for c in CRIT_KEYS}}
+                | ({"damage": damage, "peeq_t": peeq_t, "criterion_options": {c: fo.get(c) for c in CRIT_KEYS}}
                    if crit != "peeq" else {}))
         if not options.get("keep_files"):
             for suf in (".frd", ".dat"):
@@ -486,7 +504,7 @@ def _record(res, i, inc, block, attempt, state, agg, limit, driven, frozen_U, st
             "imbalance_rel": bal.get("imbalance_rel")}
 
 
-def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None, fo=None):
+def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None, fo=None, peeq_t=None):
     import meshio
 
     m = res.model
@@ -500,7 +518,9 @@ def _write_vtu(res, i, path, state, rec, frozen_U, agg, peeq=None, fo=None):
     cd = {"PEEQ": [peeq], "failed": [(state != ALIVE).astype(np.int32)], "state": [state.astype(np.int32)]}
     if fo is not None:              # criterion fields of this increment (not only at block ends)
         eta, s1 = cell_stress_measures(m, inc.S)
-        cd |= {"triaxiality": [eta], "s1_cell": [s1], "damage": [damage_index(fo, peeq, m, inc.S)]}
+        cd |= {"triaxiality": [eta], "s1_cell": [s1], "damage": [damage_index(fo, peeq, m, inc.S, peeq_t)]}
+        if peeq_t is not None:
+            cd["PEEQ_tension"] = [peeq_t.copy()]
     meshio.Mesh(m.X.copy(), [(m.cell_type, m.conn.astype(np.int64))], point_data=pd,
                 cell_data=cd, field_data={"lambda": np.array([inc.lam]), "step": np.array([rec["step"]])}
                 ).write(str(path))

@@ -498,6 +498,10 @@ def test_failure_criteria_damage_index():
     assert np.allclose(d, [1.25, 0.25, 0.25])
     d = damage_index({"criterion": "peeq_tension", "limit": 0.04, "compression_factor": None}, peeq, m, S)
     assert np.allclose(d, [1.25, 0.0, 0.0])
+    # tensile PEEQ accumulated by the driver: PEEQ gained in compression does not count
+    d = damage_index({"criterion": "peeq_tension", "limit": 0.04, "compression_factor": 5.0}, peeq, m, S,
+                     peeq_t=np.array([0.01, 0.0, 0.05]))
+    assert np.allclose(d, [0.25, 0.25, 1.25])
     d = damage_index({"criterion": "principal", "limit": 0.04, "stress_limit": 40.0, "compression_factor": 5.0},
                      peeq, m, S)
     assert np.allclose(d, [1.25, 0.25, 0.75])
