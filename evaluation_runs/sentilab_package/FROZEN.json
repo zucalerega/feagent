@@ -1,0 +1,14 @@
+{
+  "frozen_utc": "2026-10-31T23:45:43.503484+00:00",
+  "statement": "Published paper targets were known; peer SentiLab solver numbers have not been read before this freeze.",
+  "result_sha256": {
+    "evaluation_runs/sentilab_package/A_r1/result.json": "42803995094ed7c7215c6f1038804d2d20fb9e02dc18a76ca2000784493a4c7b",
+    "evaluation_runs/sentilab_package/A_r2/result.json": "d15333cbe49807aedfff2d586f04a33555f635bfabac740562c87f75e745a4cd",
+    "evaluation_runs/sentilab_package/A_r3/result.json": "8984cec3bf50372cbffa4814c35d6033661f37de87672ce2a2275b0459dd58e1",
+    "evaluation_runs/sentilab_package/A_surface_r3/result.json": "cf155e906927b27a8067971f56b4049b14ccd516a9bfe5c85f8b671e8a51d409",
+    "evaluation_runs/sentilab_package/B_r1/result.json": "13a7bcb4fc72ff2a41caf322afad974c0d224710febdc82828e8f9c5990e0b42",
+    "evaluation_runs/sentilab_package/B_r2/result.json": "09efa96bd78d02d7eeef3895da4b240281aaf8df85606fc943497a700a7a8e5e",
+    "evaluation_runs/sentilab_package/B_r3/result.json": "f42fe8222098deece71f66122584dc3772677385cc7ee99e6395fa88710e1389",
+    "evaluation_runs/sentilab_package/B_surface_r3/result.json": "6226ab1dfac0bcfe2d2c4f8f08f04326c0276699e5fe351151f8e35d248602db"
+  }
+}

@@ -1,0 +1,1440 @@
+{
+  "mesh": "mesh.msh",
+  "analysis": {
+    "physics": "heat",
+    "formulation": "3d",
+    "order": 2,
+    "thickness": 1.0,
+    "T_ref": 0.0,
+    "options": {
+      "linear_solver": "pardiso"
+    }
+  },
+  "materials": {
+    "L0_Substrate": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 0.3003003003003003,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L1_C4Layer": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 70.76666666666667,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L2_Interposer": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 111.99999999999999,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Edge_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Edge_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Edge_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Edge_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Chiplet_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_4": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_5": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_6": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_7": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Chiplet_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_8": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_9": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_10": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_11": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Chiplet_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_12": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_13": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_14": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_15": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Chiplet_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_16": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_17": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_18": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_19": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Chiplet_4": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_20": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_21": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_22": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Ubump_23": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_Chiplet_5": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_4": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_5": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_6": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_7": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_8": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_9": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_10": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_11": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_12": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_13": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_14": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_15": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_16": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_WS_17": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L3_A4_underfill": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Edge_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Edge_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Edge_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Edge_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 124.56296296296296,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Chiplet_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_4": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_5": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_6": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_7": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Chiplet_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_8": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_9": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_10": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_11": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Chiplet_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_12": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_13": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_14": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_15": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Chiplet_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_16": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_17": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_18": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_19": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Chiplet_4": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_20": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_21": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_22": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Ubump_23": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_Chiplet_5": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 100.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_0": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_1": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_2": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_3": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_4": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_5": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_6": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_7": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_8": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_9": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_10": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_11": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_12": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_13": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_14": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_15": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_16": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_WS_17": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L4_A4_underfill": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 1.6,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L5_TIM": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 4.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L6_heat_spreader_(copper)": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 400.0,
+      "rho": 1.0,
+      "mu": 0.0
+    },
+    "L7_heat_sink_base_(copper__fins_not_modelled,_lumped_into_h)": {
+      "E": 0.0,
+      "nu": 0.0,
+      "alpha": 0.0,
+      "k": 400.0,
+      "rho": 1.0,
+      "mu": 0.0
+    }
+  },
+  "bcs": [
+    {
+      "type": "convection",
+      "group": "sink_top",
+      "point": null,
+      "components": null,
+      "value": null,
+      "where": null,
+      "h": 2777.777777777778,
+      "T_inf": 0.0
+    },
+    {
+      "type": "flux",
+      "group": "source_Chiplet_0",
+      "point": null,
+      "components": null,
+      "value": 562266.637381946,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    },
+    {
+      "type": "flux",
+      "group": "source_Chiplet_1",
+      "point": null,
+      "components": null,
+      "value": 83333.33333333333,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    },
+    {
+      "type": "flux",
+      "group": "source_Chiplet_2",
+      "point": null,
+      "components": null,
+      "value": 217409.02790988397,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    },
+    {
+      "type": "flux",
+      "group": "source_Chiplet_3",
+      "point": null,
+      "components": null,
+      "value": 217409.02790988397,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    },
+    {
+      "type": "flux",
+      "group": "source_Chiplet_4",
+      "point": null,
+      "components": null,
+      "value": 217409.02790988397,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    },
+    {
+      "type": "flux",
+      "group": "source_Chiplet_5",
+      "point": null,
+      "components": null,
+      "value": 217409.02790988397,
+      "where": null,
+      "h": null,
+      "T_inf": null
+    }
+  ],
+  "loads": [],
+  "regions": [
+    {
+      "group": "L0_Substrate",
+      "material": "L0_Substrate"
+    },
+    {
+      "group": "L1_C4Layer",
+      "material": "L1_C4Layer"
+    },
+    {
+      "group": "L2_Interposer",
+      "material": "L2_Interposer"
+    },
+    {
+      "group": "L3_Edge_0",
+      "material": "L3_Edge_0"
+    },
+    {
+      "group": "L3_Edge_1",
+      "material": "L3_Edge_1"
+    },
+    {
+      "group": "L3_Edge_2",
+      "material": "L3_Edge_2"
+    },
+    {
+      "group": "L3_Edge_3",
+      "material": "L3_Edge_3"
+    },
+    {
+      "group": "L3_Ubump_0",
+      "material": "L3_Ubump_0"
+    },
+    {
+      "group": "L3_Ubump_1",
+      "material": "L3_Ubump_1"
+    },
+    {
+      "group": "L3_Ubump_2",
+      "material": "L3_Ubump_2"
+    },
+    {
+      "group": "L3_Ubump_3",
+      "material": "L3_Ubump_3"
+    },
+    {
+      "group": "L3_Chiplet_0",
+      "material": "L3_Chiplet_0"
+    },
+    {
+      "group": "L3_Ubump_4",
+      "material": "L3_Ubump_4"
+    },
+    {
+      "group": "L3_Ubump_5",
+      "material": "L3_Ubump_5"
+    },
+    {
+      "group": "L3_Ubump_6",
+      "material": "L3_Ubump_6"
+    },
+    {
+      "group": "L3_Ubump_7",
+      "material": "L3_Ubump_7"
+    },
+    {
+      "group": "L3_Chiplet_1",
+      "material": "L3_Chiplet_1"
+    },
+    {
+      "group": "L3_Ubump_8",
+      "material": "L3_Ubump_8"
+    },
+    {
+      "group": "L3_Ubump_9",
+      "material": "L3_Ubump_9"
+    },
+    {
+      "group": "L3_Ubump_10",
+      "material": "L3_Ubump_10"
+    },
+    {
+      "group": "L3_Ubump_11",
+      "material": "L3_Ubump_11"
+    },
+    {
+      "group": "L3_Chiplet_2",
+      "material": "L3_Chiplet_2"
+    },
+    {
+      "group": "L3_Ubump_12",
+      "material": "L3_Ubump_12"
+    },
+    {
+      "group": "L3_Ubump_13",
+      "material": "L3_Ubump_13"
+    },
+    {
+      "group": "L3_Ubump_14",
+      "material": "L3_Ubump_14"
+    },
+    {
+      "group": "L3_Ubump_15",
+      "material": "L3_Ubump_15"
+    },
+    {
+      "group": "L3_Chiplet_3",
+      "material": "L3_Chiplet_3"
+    },
+    {
+      "group": "L3_Ubump_16",
+      "material": "L3_Ubump_16"
+    },
+    {
+      "group": "L3_Ubump_17",
+      "material": "L3_Ubump_17"
+    },
+    {
+      "group": "L3_Ubump_18",
+      "material": "L3_Ubump_18"
+    },
+    {
+      "group": "L3_Ubump_19",
+      "material": "L3_Ubump_19"
+    },
+    {
+      "group": "L3_Chiplet_4",
+      "material": "L3_Chiplet_4"
+    },
+    {
+      "group": "L3_Ubump_20",
+      "material": "L3_Ubump_20"
+    },
+    {
+      "group": "L3_Ubump_21",
+      "material": "L3_Ubump_21"
+    },
+    {
+      "group": "L3_Ubump_22",
+      "material": "L3_Ubump_22"
+    },
+    {
+      "group": "L3_Ubump_23",
+      "material": "L3_Ubump_23"
+    },
+    {
+      "group": "L3_Chiplet_5",
+      "material": "L3_Chiplet_5"
+    },
+    {
+      "group": "L3_WS_0",
+      "material": "L3_WS_0"
+    },
+    {
+      "group": "L3_WS_1",
+      "material": "L3_WS_1"
+    },
+    {
+      "group": "L3_WS_2",
+      "material": "L3_WS_2"
+    },
+    {
+      "group": "L3_WS_3",
+      "material": "L3_WS_3"
+    },
+    {
+      "group": "L3_WS_4",
+      "material": "L3_WS_4"
+    },
+    {
+      "group": "L3_WS_5",
+      "material": "L3_WS_5"
+    },
+    {
+      "group": "L3_WS_6",
+      "material": "L3_WS_6"
+    },
+    {
+      "group": "L3_WS_7",
+      "material": "L3_WS_7"
+    },
+    {
+      "group": "L3_WS_8",
+      "material": "L3_WS_8"
+    },
+    {
+      "group": "L3_WS_9",
+      "material": "L3_WS_9"
+    },
+    {
+      "group": "L3_WS_10",
+      "material": "L3_WS_10"
+    },
+    {
+      "group": "L3_WS_11",
+      "material": "L3_WS_11"
+    },
+    {
+      "group": "L3_WS_12",
+      "material": "L3_WS_12"
+    },
+    {
+      "group": "L3_WS_13",
+      "material": "L3_WS_13"
+    },
+    {
+      "group": "L3_WS_14",
+      "material": "L3_WS_14"
+    },
+    {
+      "group": "L3_WS_15",
+      "material": "L3_WS_15"
+    },
+    {
+      "group": "L3_WS_16",
+      "material": "L3_WS_16"
+    },
+    {
+      "group": "L3_WS_17",
+      "material": "L3_WS_17"
+    },
+    {
+      "group": "L3_A4_underfill",
+      "material": "L3_A4_underfill"
+    },
+    {
+      "group": "L4_Edge_0",
+      "material": "L4_Edge_0"
+    },
+    {
+      "group": "L4_Edge_1",
+      "material": "L4_Edge_1"
+    },
+    {
+      "group": "L4_Edge_2",
+      "material": "L4_Edge_2"
+    },
+    {
+      "group": "L4_Edge_3",
+      "material": "L4_Edge_3"
+    },
+    {
+      "group": "L4_Ubump_0",
+      "material": "L4_Ubump_0"
+    },
+    {
+      "group": "L4_Ubump_1",
+      "material": "L4_Ubump_1"
+    },
+    {
+      "group": "L4_Ubump_2",
+      "material": "L4_Ubump_2"
+    },
+    {
+      "group": "L4_Ubump_3",
+      "material": "L4_Ubump_3"
+    },
+    {
+      "group": "L4_Chiplet_0",
+      "material": "L4_Chiplet_0"
+    },
+    {
+      "group": "L4_Ubump_4",
+      "material": "L4_Ubump_4"
+    },
+    {
+      "group": "L4_Ubump_5",
+      "material": "L4_Ubump_5"
+    },
+    {
+      "group": "L4_Ubump_6",
+      "material": "L4_Ubump_6"
+    },
+    {
+      "group": "L4_Ubump_7",
+      "material": "L4_Ubump_7"
+    },
+    {
+      "group": "L4_Chiplet_1",
+      "material": "L4_Chiplet_1"
+    },
+    {
+      "group": "L4_Ubump_8",
+      "material": "L4_Ubump_8"
+    },
+    {
+      "group": "L4_Ubump_9",
+      "material": "L4_Ubump_9"
+    },
+    {
+      "group": "L4_Ubump_10",
+      "material": "L4_Ubump_10"
+    },
+    {
+      "group": "L4_Ubump_11",
+      "material": "L4_Ubump_11"
+    },
+    {
+      "group": "L4_Chiplet_2",
+      "material": "L4_Chiplet_2"
+    },
+    {
+      "group": "L4_Ubump_12",
+      "material": "L4_Ubump_12"
+    },
+    {
+      "group": "L4_Ubump_13",
+      "material": "L4_Ubump_13"
+    },
+    {
+      "group": "L4_Ubump_14",
+      "material": "L4_Ubump_14"
+    },
+    {
+      "group": "L4_Ubump_15",
+      "material": "L4_Ubump_15"
+    },
+    {
+      "group": "L4_Chiplet_3",
+      "material": "L4_Chiplet_3"
+    },
+    {
+      "group": "L4_Ubump_16",
+      "material": "L4_Ubump_16"
+    },
+    {
+      "group": "L4_Ubump_17",
+      "material": "L4_Ubump_17"
+    },
+    {
+      "group": "L4_Ubump_18",
+      "material": "L4_Ubump_18"
+    },
+    {
+      "group": "L4_Ubump_19",
+      "material": "L4_Ubump_19"
+    },
+    {
+      "group": "L4_Chiplet_4",
+      "material": "L4_Chiplet_4"
+    },
+    {
+      "group": "L4_Ubump_20",
+      "material": "L4_Ubump_20"
+    },
+    {
+      "group": "L4_Ubump_21",
+      "material": "L4_Ubump_21"
+    },
+    {
+      "group": "L4_Ubump_22",
+      "material": "L4_Ubump_22"
+    },
+    {
+      "group": "L4_Ubump_23",
+      "material": "L4_Ubump_23"
+    },
+    {
+      "group": "L4_Chiplet_5",
+      "material": "L4_Chiplet_5"
+    },
+    {
+      "group": "L4_WS_0",
+      "material": "L4_WS_0"
+    },
+    {
+      "group": "L4_WS_1",
+      "material": "L4_WS_1"
+    },
+    {
+      "group": "L4_WS_2",
+      "material": "L4_WS_2"
+    },
+    {
+      "group": "L4_WS_3",
+      "material": "L4_WS_3"
+    },
+    {
+      "group": "L4_WS_4",
+      "material": "L4_WS_4"
+    },
+    {
+      "group": "L4_WS_5",
+      "material": "L4_WS_5"
+    },
+    {
+      "group": "L4_WS_6",
+      "material": "L4_WS_6"
+    },
+    {
+      "group": "L4_WS_7",
+      "material": "L4_WS_7"
+    },
+    {
+      "group": "L4_WS_8",
+      "material": "L4_WS_8"
+    },
+    {
+      "group": "L4_WS_9",
+      "material": "L4_WS_9"
+    },
+    {
+      "group": "L4_WS_10",
+      "material": "L4_WS_10"
+    },
+    {
+      "group": "L4_WS_11",
+      "material": "L4_WS_11"
+    },
+    {
+      "group": "L4_WS_12",
+      "material": "L4_WS_12"
+    },
+    {
+      "group": "L4_WS_13",
+      "material": "L4_WS_13"
+    },
+    {
+      "group": "L4_WS_14",
+      "material": "L4_WS_14"
+    },
+    {
+      "group": "L4_WS_15",
+      "material": "L4_WS_15"
+    },
+    {
+      "group": "L4_WS_16",
+      "material": "L4_WS_16"
+    },
+    {
+      "group": "L4_WS_17",
+      "material": "L4_WS_17"
+    },
+    {
+      "group": "L4_A4_underfill",
+      "material": "L4_A4_underfill"
+    },
+    {
+      "group": "L5_TIM",
+      "material": "L5_TIM"
+    },
+    {
+      "group": "L6_heat_spreader_(copper)",
+      "material": "L6_heat_spreader_(copper)"
+    },
+    {
+      "group": "L7_heat_sink_base_(copper__fins_not_modelled,_lumped_into_h)",
+      "material": "L7_heat_sink_base_(copper__fins_not_modelled,_lumped_into_h)"
+    }
+  ],
+  "qois": [],
+  "meta": {
+    "unknown": "temperature excess above ambient",
+    "ambient_K": 318.15
+  },
+  "schema_version": 1
+}

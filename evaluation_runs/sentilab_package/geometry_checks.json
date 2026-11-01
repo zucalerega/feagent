@@ -1,0 +1,30 @@
+{
+  "A": {
+    "convective_m2": 0.0324,
+    "adiabatic_total_m2": 0.037828799999999996,
+    "surface_sources_are_internal": true,
+    "source_areas_m2": {
+      "source_Chiplet_0": 0.00045529999999999995,
+      "source_Chiplet_1": 0.0001679999999999999,
+      "source_Chiplet_2": 9.199249999999999e-05,
+      "source_Chiplet_3": 9.199249999999998e-05,
+      "source_Chiplet_4": 9.199250000000004e-05,
+      "source_Chiplet_5": 9.199250000000003e-05
+    }
+  },
+  "B": {
+    "convective_m2": 0.0324,
+    "adiabatic_total_m2": 0.03782880000000001,
+    "surface_sources_are_internal": true,
+    "source_areas_m2": {
+      "source_Chiplet_0": 7.425000000000002e-05,
+      "source_Chiplet_1": 7.425000000000002e-05,
+      "source_Chiplet_2": 7.424999999999999e-05,
+      "source_Chiplet_3": 7.424999999999999e-05,
+      "source_Chiplet_4": 7.656250000000001e-05,
+      "source_Chiplet_5": 7.656249999999996e-05,
+      "source_Chiplet_6": 7.656249999999993e-05,
+      "source_Chiplet_7": 7.656249999999998e-05
+    }
+  }
+}
