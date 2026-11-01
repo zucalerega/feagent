@@ -1,0 +1,56 @@
+{
+ "problem_id": "abc_00000065_compression",
+ "description": "Frozen nonlinear scoring setup (ace/nonlinear.py): base_bottom f33 held in x, y, z; prong tops f17 and f34 moved by a sticking platen, displacement [0, -u_part, 0], ramped to u_part_max_mm in equal increments with NLGEOM (retried with adaptive increments if a run does not converge); J2 isotropic hardening from material_file. Force F = -(Ry on f17 + Ry on f34). Crosshead travel u_cross = u_part + delta_mm + compliance_mm_per_N * F, with (0, 0) prepended. Error = mean over checkpoints_mm of |F_sim - F_meas| / F_meas, F_meas from the test's loading branch up to its peak.",
+ "material_file": "experiments/material/alpha_fast_dogbone1.json",
+ "test_csv": "physical_tests/abc_00000065_compression/cload_compression.csv",
+ "u_part_max_mm": 2.4,
+ "increments": 20,
+ "nlgeom": true,
+ "checkpoints_mm": [
+  0.5,
+  1.0,
+  1.5,
+  2.0,
+  2.5
+ ],
+ "delta_mm": 0.2335,
+ "compliance_mm_per_N": 2.898e-05,
+ "calibration": {
+  "mesh": "uniform h=2 mm P2, 41186 nodes",
+  "note": "delta_mm and compliance_mm_per_N fitted once on the finest mesh against the measured curve, then frozen for every mesh.",
+  "fitted_error": 0.01071
+ },
+ "reference_errors": {
+  "auto": {
+   "label": "automesher",
+   "nodes": 2937,
+   "dofs": 8811,
+   "mean_rel_err": 0.07838,
+   "note": "curved P2 (gmsh default sizes), only the midside nodes CalculiX rejects straightened; the earlier 16.6 % straightened every midside node, which facets the curved faces"
+  },
+  "swarm_bc0": {
+   "label": "swarm bc0 mesh",
+   "nodes": 6430,
+   "dofs": 19290,
+   "mean_rel_err": 0.04567
+  },
+  "h4": {
+   "label": "uniform 4 mm",
+   "nodes": 9506,
+   "dofs": 28518,
+   "mean_rel_err": 0.01982
+  },
+  "h25": {
+   "label": "uniform 2.5 mm",
+   "nodes": 24194,
+   "dofs": 72582,
+   "mean_rel_err": 0.01194
+  },
+  "h20": {
+   "label": "uniform 2 mm",
+   "nodes": 41186,
+   "dofs": 123558,
+   "mean_rel_err": 0.01071
+  }
+ }
+}

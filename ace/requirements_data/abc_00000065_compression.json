@@ -1,0 +1,30 @@
+{
+  "problem_id": "abc_00000065_compression",
+  "requirements": "Component: a printed plastic clamp body, a block with a bore and two prongs above it, tested in compression on a universal testing machine.\n\nGeometry (CAD): geometry.step, in metres; the part is 60.7 x 77.8 x 16.2 mm. Faces are named f<tag> by their face tag in this STEP file. The block has a bore of radius 19.67 mm along z; the two prongs stand above it, and their top faces f17 and f34 lie on the plane y = 33.84 mm. The bottom face f33 lies on the plane y = -43.96 mm.\n\nMaterial: Formlabs Alpha Fast resin, printed on a Form Studio 1 and post-cured 2 min; linear elastic and isotropic, E = 2.23 GPa (datasheet tensile modulus, default post-cure), Poisson's ratio 0.35 (not on the datasheet: assumed).\n\nService loads (the test): the machine's upper compression platen presses down (along -y) on the two prong tops, f17 and f34, with a total force of 1000 N, shared evenly over both faces by area.\n\nInstallation and supports (the test machine): the bottom face f33 stands on the lower compression platen, which does not move, and is held on it without slipping or lifting. Nothing else touches the part.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity; a solid (three-dimensional) model of the whole part. There is no reference solution: the physical test of this part is the only check.\n\nRequired result: u_top, the mean y-displacement of the two prong tops, in m (negative: they move down).",
+  "group_aliases": {},
+  "mapping": [
+    {
+      "reference": "fixed on base_bottom",
+      "implied_by": "f33 stands on the immovable lower platen, held without slipping or lifting."
+    },
+    {
+      "reference": "force [0, -1000, 0] on prong_tops",
+      "implied_by": "1000 N total along -y on f17 and f34, shared evenly by area."
+    },
+    {
+      "reference": "3d",
+      "implied_by": "A solid model of the whole part."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "7025d753a523f4b2244dddac148818df6bdca3162728e0f0d02c204d977d4d24"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

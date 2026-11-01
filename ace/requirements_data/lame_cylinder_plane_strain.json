@@ -1,0 +1,37 @@
+{
+  "problem_id": "lame_cylinder_plane_strain",
+  "requirements": "Component: a long thick-walled steel pipe under internal pressure.\n\nGeometry (CAD): metres. The pipe has bore radius a = 0.1 m and outer radius b = 0.2 m. The CAD file holds one quarter of its cross-section, the part with x >= 0 and y >= 0, as a planar face in the xy-plane: the straight edge on y = 0 from (a, 0) to (b, 0), the outer arc r = b, the straight edge on x = 0 from (0, b) to (0, a), and the bore arc r = a. The two straight edges are cuts through the full cross-section, not surfaces of the pipe.\n\nMaterial: linear elastic; E = 2e+11 Pa (200 GPa), Poisson's ratio 0.3.\n\nService loads: a uniform internal pressure of 100 MPa acts on the bore. The outer surface is unloaded.\n\nInstallation and supports: the pipe is long, and rigid anchors at its ends keep its length from changing, so every cross-section deforms only in its own plane and no cross-section moves along the pipe's axis. The pipe, its anchors and its pressure are the same at every angle around the pipe's axis, so in particular the cross-section and its loading are mirror-symmetric about the planes x = 0 and y = 0, which is why only the quarter is modelled. Nothing else holds the pipe. Results are wanted for a slice of the pipe 1.0 m long.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity.\n\nRequired result: hoop_bore, the hoop stress at the bore: sigma_yy at (a, 0) = (0.1, 0), in Pa.",
+  "group_aliases": {
+    "sym_x0": "edge_x0",
+    "sym_y0": "edge_y0"
+  },
+  "mapping": [
+    {
+      "reference": "symmetry on sym_x0 (shown as edge_x0)",
+      "implied_by": "Mirror symmetry about x = 0; that edge is the cut on x = 0."
+    },
+    {
+      "reference": "symmetry on sym_y0 (shown as edge_y0)",
+      "implied_by": "Mirror symmetry about y = 0; that edge is the cut on y = 0."
+    },
+    {
+      "reference": "pressure 1e8 on bore",
+      "implied_by": "Uniform internal pressure of 100 MPa on the bore."
+    },
+    {
+      "reference": "plane_strain, thickness 1.0",
+      "implied_by": "Long pipe whose length cannot change: sections deform in their own plane; a 1.0 m slice."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "60feb32282e113fd252d2bb0e68845e2836482cb5ef8075eb669c2773580f25d"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

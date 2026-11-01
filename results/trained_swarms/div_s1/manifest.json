@@ -1,0 +1,25 @@
+{
+ "run": "div_s1",
+ "source": "/Users/aryan/Documents/Aryan/CS/scienceclawhack/feagent/ace_runs/div_s1",
+ "kind": "single",
+ "generation": 7,
+ "tasks": [
+  "abc_00000003_bc7",
+  "abc_00000065_bc0"
+ ],
+ "agents": [
+  "big"
+ ],
+ "models": {
+  "generator": "claude-sonnet-5-5",
+  "reflector": "claude-sonnet-5-5",
+  "diagnoser": "claude-sonnet-5-5",
+  "curator": "claude-sonnet-5-5",
+  "teacher": "claude-opus-5-5",
+  "reflect": "claude-sonnet-5-5",
+  "organizer": "claude-sonnet-5-5",
+  "big_generator": "claude-sonnet-5-5"
+ },
+ "git_commit": "df93e0f7d04a887e3e0e02028d46aee5e140919e",
+ "exported_at": "2026-10-31 17:24:55"
+}

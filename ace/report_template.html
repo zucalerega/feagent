@@ -1,0 +1,426 @@
+<title>ACE Run Inspector</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column of stages in run order (overview -> loop -> each generation -> cost -> config),
+   with a sticky stage bar; dense tables and traces scroll inside their own boxes. */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --sunk: #eef1f4; --ink: #15191e; --ink-2: #49515b; --muted: #77808a;
+  --line: #d9dee3; --accent: #2a78d6; --accent-soft: #e3eefb;
+  --good: #1d7f48; --good-soft: #e1f3e8; --warn: #9a6200; --warn-soft: #fbf0d9;
+  --bad: #b42318; --bad-soft: #fbe5e2; --neutral-soft: #eceff2;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111316; --panel: #191c20; --sunk: #14171a; --ink: #eceef0; --ink-2: #b9bfc6; --muted: #8b939c;
+  --line: #2c3137; --accent: #4b93ea; --accent-soft: #1b2a3d;
+  --good: #4cc286; --good-soft: #163324; --warn: #e0a83a; --warn-soft: #3a2c11;
+  --bad: #f2806a; --bad-soft: #3d1a15; --neutral-soft: #23272c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #111316; --panel: #191c20; --sunk: #14171a; --ink: #eceef0; --ink-2: #b9bfc6; --muted: #8b939c;
+  --line: #2c3137; --accent: #4b93ea; --accent-soft: #1b2a3d;
+  --good: #4cc286; --good-soft: #163324; --warn: #e0a83a; --warn-soft: #3a2c11;
+  --bad: #f2806a; --bad-soft: #3d1a15; --neutral-soft: #23272c;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body); margin: 0; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header.top { background: var(--panel); border-bottom: 1px solid var(--line); }
+header.top .wrap { padding-block: 28px 20px; display: grid; gap: 14px; }
+h1, h2, h3, h4 { font-family: var(--display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: .005em; }
+h1 { font-size: 30px; line-height: 1.15; }
+h2 { font-size: 23px; }
+h3 { font-size: 18px; }
+h4 { font-size: 15px; }
+.eyebrow { font: 500 12px var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+p { margin: 0; max-width: 72ch; }
+.lede { color: var(--ink-2); }
+code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+.num { font-variant-numeric: tabular-nums; }
+nav.stages { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+nav.stages .wrap { display: flex; gap: 6px; overflow-x: auto; padding-block: 8px; scrollbar-width: thin; }
+nav.stages a { flex: none; font: 500 13px var(--body); color: var(--ink-2); text-decoration: none; padding: 5px 10px; border-radius: 6px; }
+nav.stages a:hover, nav.stages a:focus-visible { background: var(--accent-soft); color: var(--ink); outline: none; }
+main .wrap { display: grid; gap: 40px; padding-block: 32px 64px; }
+section { display: grid; gap: 16px; scroll-margin-top: 56px; }
+.sub { display: grid; gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.grid { display: grid; gap: 12px; }
+.cols-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.kpi { display: grid; gap: 2px; }
+.kpi .v { font: 600 26px var(--display); font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 13px; color: var(--muted); }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; counter-reset: step; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 6px; align-content: start; }
+.step .who { font: 500 12px var(--mono); color: var(--muted); }
+.step .what { font-size: 13.5px; color: var(--ink-2); }
+.step .did { font: 500 13px var(--body); color: var(--ink); border-top: 1px dashed var(--line); padding-top: 6px; }
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 12px var(--body); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; background: var(--sunk); }
+tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill { display: inline-block; font: 500 12px var(--mono); padding: 1px 7px; border-radius: 999px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.p-good { background: var(--good-soft); color: var(--good); }
+.p-mid { background: var(--neutral-soft); color: var(--ink-2); }
+.p-warn { background: var(--warn-soft); color: var(--warn); }
+.p-bad { background: var(--bad-soft); color: var(--bad); }
+.chip { display: inline-block; font: 500 11.5px var(--body); padding: 1px 7px; border-radius: 4px; background: var(--neutral-soft); color: var(--ink-2); white-space: nowrap; }
+.chip.acc { background: var(--accent-soft); color: var(--accent); }
+details { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); min-width: 0; }
+details > summary { cursor: pointer; padding: 10px 14px; font-weight: 500; list-style: none; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "▸"; color: var(--muted); font-size: 12px; transition: transform .15s; }
+details[open] > summary::before { transform: rotate(90deg); }
+details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+details > .body { padding: 0 14px 14px; display: grid; gap: 10px; min-width: 0; }
+pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; max-height: 420px; overflow: auto; color: var(--ink); }
+.trace { display: grid; gap: 6px; }
+.ev { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: start; }
+.ev .t { font: 500 12px var(--mono); color: var(--muted); padding-top: 9px; }
+.ev .c { display: grid; gap: 4px; min-width: 0; }
+.ev .k { font: 500 12px var(--body); }
+.k-said { color: var(--ink-2); } .k-call { color: var(--accent); } .k-result { color: var(--good); } .k-error { color: var(--bad); }
+.say { background: var(--panel); border-left: 3px solid var(--line); padding: 6px 10px; white-space: pre-wrap; font-size: 14px; }
+.bullet { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.bullet:last-child { border-bottom: 0; }
+.bullet .id { font: 500 12.5px var(--mono); color: var(--accent); }
+.bullet .votes { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.lesson { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.lesson:last-child { border-bottom: 0; }
+.lesson .meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+.empty { color: var(--muted); font-style: italic; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--ink-2); font: 12px var(--body); }
+.chart .axis { stroke: var(--line); }
+.chart .zero { stroke: var(--muted); stroke-dasharray: 3 3; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.legend i { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+.legend i.dash { border-top-style: dashed; }
+.note { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; font-size: 14px; color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top"><div class="wrap" id="hdr"></div></header>
+<nav class="stages" aria-label="Stages"><div class="wrap" id="nav"></div></nav>
+<main><div class="wrap" id="main"></div></main>
+
+<script id="ace-data" type="application/json">/*__DATA__*/null</script>
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById("ace-data").textContent);
+  const $hdr = document.getElementById("hdr"), $nav = document.getElementById("nav"), $main = document.getElementById("main");
+  if (!D) { $main.textContent = "No run data embedded."; return; }
+  const C = D.config, FLOOR = C.score_floor;
+
+  // ---------- tiny DOM helper: h("div", {class: "x"}, child, "text", ...)
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v; else if (k === "html") el.innerHTML = v; else el.setAttribute(k, v);
+    }
+    for (const k of kids.flat()) if (k != null && k !== false) el.append(k instanceof Node ? k : String(k));
+    return el;
+  }
+  const S = (tag, attrs, ...kids) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v); for (const k of kids) el.append(k); return el; };
+  const fmtSci = x => x == null ? "–" : Number(x).toExponential(2);
+  const fmtUsd = x => "$" + Number(x || 0).toFixed(x >= 1 ? 2 : 3);
+  const fmtInt = x => Number(x || 0).toLocaleString("en-US");
+  const fmtScore = s => (s >= 0 ? "+" : "") + Number(s).toFixed(2);
+  const pretty = o => typeof o === "string" ? o : JSON.stringify(o, null, 2);
+  function scorePill(s) {
+    if (s == null) return h("span", {class: "pill p-mid"}, "–");
+    const cls = s <= FLOOR + 1e-9 ? "p-bad" : s < 0 ? "p-warn" : s < 0.5 ? "p-mid" : "p-good";
+    return h("span", {class: "pill " + cls, title: "log10(e_uniform / e_agent)"}, fmtScore(s));
+  }
+  const isHold = pid => C.holdout.includes(pid);
+  const splitChip = pid => h("span", {class: "chip" + (isHold(pid) ? "" : " acc")}, isHold(pid) ? "held out" : "train");
+  const mean = a => a.reduce((x, y) => x + y, 0) / (a.length || 1);
+  const runCost = run => (run.usage || []).reduce((s, u) => s + (u.usd || 0), 0);
+  const pre = text => h("pre", {}, text);
+  const det = (summary, body, open) => h("details", open ? {open: ""} : {}, h("summary", {}, summary), h("div", {class: "body"}, body));
+
+  const gens = D.generations;
+  const pids = [...new Set(gens.flatMap(g => g.runs.map(r => r.problem_id)))].sort((a, b) => isHold(a) - isHold(b) || a.localeCompare(b));
+  const colorOf = pid => `var(--s${pids.indexOf(pid) % 4 + 1})`;
+  // Crashed runs (API/code errors) say nothing about the agent; like summary.md, leave them out of scores.
+  const scoresBy = (g, pid) => g.runs.filter(r => r.problem_id === pid && !r.error).map(r => r.checks.score);
+  const totalUsd = D.cost.reduce((s, r) => s + r.usd, 0);
+  const lastGen = gens[gens.length - 1];
+
+  // ---------- header
+  $hdr.append(
+    h("div", {class: "eyebrow"}, "ACE · agentic context engineering · " + D.run_dir),
+    h("h1", {}, "What happened in this run"),
+    h("p", {class: "lede"}, `${gens.length} generation${gens.length === 1 ? "" : "s"}, ${gens.reduce((s, g) => s + g.runs.length, 0)} agent runs on ${pids.length} problems. ` +
+      "Each generation, agents try the problems with the current playbook; their results are scored by code, an LLM reflects on the best vs worst runs, and the lessons update the playbook the next generation sees."),
+    h("div", {class: "grid cols-4"},
+      kpi(gens.length, "generations (gen 0 = empty playbook)"),
+      kpi(gens.reduce((s, g) => s + g.runs.length, 0), "agent runs"),
+      kpi(fmtUsd(totalUsd), "estimated API spend"),
+      kpi(lastGen.playbook.length + (lastGen.next_diff ? "" : ""), "bullets in the last playbook")
+    )
+  );
+  function kpi(v, l) { return h("div", {class: "kpi"}, h("div", {class: "v"}, String(v)), h("div", {class: "l"}, l)); }
+
+  // ---------- nav
+  const navItems = [["overview", "Result"], ["loop", "The loop"]].concat(D.audit ? [["audit", "Audit"]] : [],gens.map(g => ["gen" + g.gen, "Generation " + g.gen]), [["cost", "Cost"], ["config", "Setup & prompts"]]);
+  for (const [id, label] of navItems) $nav.append(h("a", {href: "#" + id}, label));
+
+  // ---------- overview: score per problem per generation
+  const ov = h("section", {id: "overview"}, h("h2", {}, "Result"),
+    h("p", {class: "lede"}, "Score = log10(e_uniform / e_agent): 0 means as accurate as the best uniform mesh (linear or quadratic) with the same node budget, +1 means 10× more accurate, " + FLOOR + " means the run failed a gate (no solve, over the node cap, or a degenerate mesh). Runs that crashed (API or code errors) are left out of the scores."));
+  const tbl = h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "problem"), h("th", {}, "split"),
+    gens.map(g => h("th", {class: "n"}, "gen " + g.gen + " mean")), h("th", {class: "n"}, "change"))));
+  const tb = h("tbody");
+  for (const pid of pids) {
+    const ms = gens.map(g => scoresBy(g, pid)).map(a => a.length ? mean(a) : null);
+    const d = ms[ms.length - 1] != null && ms[0] != null ? ms[ms.length - 1] - ms[0] : null;
+    tb.append(h("tr", {}, h("td", {class: "mono"}, pid), h("td", {}, splitChip(pid)),
+      ms.map(m => h("td", {class: "n"}, m == null ? "–" : scorePill(m))),
+      h("td", {class: "n mono"}, d == null ? "–" : fmtScore(d))));
+  }
+  tbl.append(tb);
+  ov.append(h("div", {class: "tablebox"}, tbl), chart());
+  if (gens.length > 0 && gens.reduce((s, g) => s + g.runs.length, 0) < 10)
+    ov.append(h("div", {class: "note"}, "This is a small run: with this few runs per problem, a change in mean score can be noise. Read the traces and the reflections below to see whether the playbook actually changed what the agents did."));
+  $main.append(ov);
+
+  function chart() {
+    const W = 760, H = 300, L = 48, R = 150, T = 16, B = 36;
+    const all = gens.flatMap(g => g.runs.filter(r => !r.error).map(r => r.checks.score));
+    const yMin = Math.min(FLOOR, ...all), yMax = Math.max(1, ...all);
+    const x = i => L + (gens.length === 1 ? (W - L - R) / 2 : i * (W - L - R) / (gens.length - 1));
+    const y = v => T + (yMax - v) / (yMax - yMin) * (H - T - B);
+    const svg = S("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Mean score per generation, one line per problem"});
+    for (let v = Math.ceil(yMin); v <= Math.floor(yMax); v++) {
+      svg.append(S("line", {x1: L, x2: W - R, y1: y(v), y2: y(v), class: v === 0 ? "zero" : "axis"}));
+      svg.append(S("text", {x: L - 8, y: y(v) + 4, "text-anchor": "end"}, (v > 0 ? "+" : "") + v));
+    }
+    svg.append(S("text", {x: W - R + 6, y: y(0) + 4}, "naive mesh"));
+    gens.forEach((g, i) => svg.append(S("text", {x: x(i), y: H - 12, "text-anchor": "middle"}, "gen " + g.gen)));
+    for (const pid of pids) {
+      const pts = gens.map((g, i) => { const s = scoresBy(g, pid); return s.length ? [x(i), y(mean(s)), mean(s), s] : null; }).filter(Boolean);
+      if (!pts.length) continue;
+      svg.append(S("polyline", {points: pts.map(p => p[0] + "," + p[1]).join(" "), fill: "none", stroke: colorOf(pid), "stroke-width": 2, "stroke-dasharray": isHold(pid) ? "6 4" : "none"}));
+      pts.forEach((p, i) => {
+        // individual runs as small dots, the mean as a ringed marker
+        p[3].forEach(s => svg.append(S("circle", {cx: p[0], cy: y(s), r: 3, fill: colorOf(pid), opacity: .35})));
+        const c = S("circle", {cx: p[0], cy: p[1], r: 5, fill: colorOf(pid), stroke: "var(--panel)", "stroke-width": 2});
+        c.append(S("title", {}, `${pid}, gen ${gens[i].gen}: mean ${fmtScore(p[2])} (runs: ${p[3].map(fmtScore).join(", ")})`));
+        svg.append(c);
+      });
+      const last = pts[pts.length - 1];
+      svg.append(S("text", {x: last[0] + 10, y: last[1] + 4}, fmtScore(last[2]) + " " + pid.replace("_plane_strain", "").replace("_cylinder", "")));
+    }
+    const legend = h("div", {class: "legend"}, pids.map(pid => h("span", {}, h("i", {class: isHold(pid) ? "dash" : "", style: `border-color:${colorOf(pid)}`}), pid + (isHold(pid) ? " (held out)" : ""))),
+      h("span", {class: "muted"}, "small dots = individual runs, big dots = mean"));
+    return h("div", {class: "panel chart grid"}, legend, svg);
+  }
+
+  // ---------- the loop, with what each step did in this run
+  const nRuns = gens.reduce((s, g) => s + g.runs.length, 0);
+  const genCalls = D.cost.filter(c => c.role === "generator").length;
+  const failed = gens.flatMap(g => g.runs).filter(r => r.checks.failed_gate).length;
+  const nRefl = gens.reduce((s, g) => s + Object.values(g.reflections).filter(r => r.output).length, 0);
+  const nOps = gens.reduce((s, g) => s + (g.curator_ops ? g.curator_ops.length : 0), 0);
+  const added = gens.reduce((s, g) => s + (g.merge_changes ? g.merge_changes.added.length : 0), 0);
+  const step = (n, title, who, what, did) => h("div", {class: "step"}, h("div", {class: "eyebrow"}, "step " + n), h("h4", {}, title), h("div", {class: "who"}, who), h("div", {class: "what"}, what), h("div", {class: "did"}, did));
+  $main.append(h("section", {id: "loop"}, h("h2", {}, "The loop, step by step"),
+    h("p", {class: "lede"}, "One generation runs these five steps in order. Only steps 1, 3 and 4 call an LLM; steps 2 and 5 are plain code, so their numbers are ground truth."),
+    h("div", {class: "steps"},
+      step(1, "Generator", C.models.generator, "Each agent reads the problem, inspects the geometry, meshes under the node cap and solves (at most " + C.max_solves + " solves).", `${nRuns} runs, ${genCalls} model calls`),
+      step(2, "Checks", "code (no LLM)", "Solve the agent's final mesh + setup, read the scored quantity, compare with the reference, apply the gates, compute the score.", `${failed} of ${nRuns} runs failed a gate`),
+      step(3, "Reflector", C.models.reflector, "One call per training problem: all runs ranked best to worst, with checks and traces. Returns root causes, 1–3 lessons, and votes on cited bullets.", `${nRefl} reflections`),
+      step(4, "Curator", C.models.curator, "Turns lessons into ADD / VOTE operations, comparing each lesson with existing bullets so duplicates become votes. Drops one-off lessons.", `${nOps} operations proposed`),
+      step(5, "Merge", "code (no LLM)", "Applies the operations, removes near-duplicates by text similarity (≥ " + C.dedup_threshold + "), prunes bullets voted harmful, saves the next playbook.", `${added} bullets added overall`)
+    )));
+
+  // ---------- independent audit (optional audit.json: [{stage, title, audit: {narrative, findings}, verdicts}])
+  if (D.audit) {
+    const sev = {bug: "p-bad", risk: "p-warn", observation: "p-mid"};
+    const order = {bug: 0, risk: 1, observation: 2};
+    const sec = h("section", {id: "audit"}, h("h2", {}, "What an independent audit found"),
+      h("p", {class: "lede"}, "Separate reviewer agents read the code and every run record for one stage each and recomputed the numbers; a second agent per stage then tried to refute each finding. Only findings that survived are listed as confirmed."));
+    for (const st of D.audit) {
+      const vmap = Object.fromEntries((st.verdicts || []).map(v => [v.title, v]));
+      const fs = (st.audit ? st.audit.findings : []).slice().sort((a, b) => order[a.severity] - order[b.severity]);
+      const kept = fs.filter(f => !vmap[f.title] || vmap[f.title].holds), dropped = fs.filter(f => vmap[f.title] && !vmap[f.title].holds);
+      const item = f => h("li", {}, h("span", {class: "pill " + sev[f.severity]}, f.severity), " ", h("strong", {}, f.title),
+        h("div", {class: "muted"}, "evidence: " + f.evidence), f.suggested_fix ? h("div", {}, "fix: " + f.suggested_fix) : null,
+        vmap[f.title] ? h("div", {class: "muted"}, (vmap[f.title].holds ? "verifier: confirmed. " : "verifier: refuted. ") + vmap[f.title].reason) : null);
+      sec.append(h("div", {class: "panel grid"}, h("h3", {}, st.title || st.stage),
+        h("p", {}, st.audit ? st.audit.narrative : "The auditor for this stage did not return."),
+        h("h4", {}, `Confirmed findings (${kept.length})`), kept.length ? h("ul", {class: "plain"}, kept.map(item)) : h("p", {class: "empty"}, "none"),
+        dropped.length ? det(`Refuted by the verifier (${dropped.length})`, h("ul", {class: "plain"}, dropped.map(item))) : null));
+    }
+    $main.append(sec);
+  }
+
+  // ---------- each generation
+  for (const g of gens) $main.append(genSection(g));
+
+  function genSection(g) {
+    const sec = h("section", {id: "gen" + g.gen}, h("div", {class: "eyebrow"}, g.gen === 0 ? "baseline" : "after " + g.gen + " update" + (g.gen > 1 ? "s" : "")),
+      h("h2", {}, "Generation " + g.gen));
+
+    // 1. playbook
+    const pb = h("div", {class: "panel"});
+    if (!g.playbook.length) pb.append(h("p", {class: "empty"}, "Empty. This generation is the baseline: the agents only had the short base prompt."));
+    else for (const b of g.playbook.slice().sort((a, b) => b.net - a.net))
+      pb.append(h("div", {class: "bullet"}, h("span", {class: "id"}, b.id), h("span", {}, b.content),
+        h("span", {class: "votes", title: "helpful / harmful votes"}, `+${b.helpful} / −${b.harmful}`)));
+    sec.append(h("div", {class: "sub"}, h("h3", {}, "1 · Playbook the agents saw"), pb,
+      det("Exact system prompt sent to every agent in this generation", pre(g.system_prompt))));
+
+    // 2. runs + checks
+    const t = h("table", {}, h("thead", {}, h("tr", {}, ["run", "split", "score", "rel. error", "QoI value", "nodes / cap", "order", "min quality", "solves", "turns", "cited", "cost"].map((c, i) => h("th", {class: i > 1 && i !== 10 ? "n" : ""}, c)))));
+    const tbody = h("tbody");
+    for (const r of g.runs) {
+      const c = r.checks;
+      tbody.append(h("tr", {}, h("td", {class: "mono"}, r.run_id), h("td", {}, splitChip(r.problem_id)), h("td", {class: "n"}, scorePill(c.score)),
+        h("td", {class: "n mono"}, fmtSci(c.rel_error)), h("td", {class: "n mono"}, c.qoi_value == null ? "–" : fmtSci(c.qoi_value)),
+        h("td", {class: "n mono"}, c.nodes == null ? "–" : `${c.nodes} / ${c.node_cap}`), h("td", {class: "n"}, c.order ?? "–"),
+        h("td", {class: "n mono"}, c.min_quality ?? "–"), h("td", {class: "n"}, c.n_solves), h("td", {class: "n"}, r.turns),
+        h("td", {class: "mono"}, r.cited.length ? r.cited.join(" ") : "–"), h("td", {class: "n mono"}, fmtUsd(runCost(r)))));
+    }
+    t.append(tbody);
+    const runsSub = h("div", {class: "sub"}, h("h3", {}, "2 · Agent runs and their checks"),
+      h("p", {class: "lede"}, "Every run's final solve is re-checked by code. Expand a run to see its full trace: what the agent said, each tool call it made, and what the tool returned."),
+      h("div", {class: "tablebox"}, t));
+    for (const r of g.runs) runsSub.append(runDetails(r));
+    sec.append(runsSub);
+
+    // 3. reflector
+    const rs = h("div", {class: "sub"}, h("h3", {}, "3 · Reflector"));
+    const refl = Object.entries(g.reflections);
+    if (!refl.length) rs.append(h("p", {class: "empty"}, g.gen === gens.length - 1 ? "Last generation: evaluated only, no reflection." : "No reflection was saved for this generation."));
+    for (const [pid, rf] of refl) rs.append(reflectionCard(pid, rf));
+    sec.append(rs);
+
+    // 4 + 5. curator and merge
+    const cm = h("div", {class: "sub"}, h("h3", {}, "4–5 · Curator operations and merge"));
+    if (g.curator_ops == null) cm.append(h("p", {class: "empty"}, g.gen === gens.length - 1 ? "Last generation: no update." : "Operations were not saved for this run (older run format); the diff below is what changed."));
+    else if (!g.curator_ops.length) cm.append(h("p", {class: "empty"}, "The curator proposed no operations."));
+    else {
+      const ot = h("table", {}, h("thead", {}, h("tr", {}, ["op", "section / bullet", "content or vote", "from runs"].map(c => h("th", {}, c)))));
+      ot.append(h("tbody", {}, g.curator_ops.map(o => h("tr", {}, h("td", {}, h("span", {class: "chip" + (o.kind === "ADD" ? " acc" : "")}, o.kind)),
+        h("td", {class: "mono"}, o.kind === "ADD" ? o.section : o.bullet_id), h("td", {}, o.kind === "ADD" ? o.content : o.vote), h("td", {class: "mono muted"}, (o.source_runs || []).join(" "))))));
+      cm.append(h("div", {class: "tablebox"}, ot));
+    }
+    if (g.merge_changes) {
+      const mc = g.merge_changes;
+      cm.append(h("div", {class: "grid cols-2"},
+        listPanel("Added", mc.added.map(([id, c]) => [id, c])), listPanel("Votes", mc.voted.map(([id, v]) => [id, "+1 " + v])),
+        listPanel("Near-duplicates (became a helpful vote)", mc.deduped.map(([c, id, s]) => [id, `similarity ${s}: ${c}`])),
+        listPanel("Pruned", mc.pruned.map(([id, c, hp, hm]) => [id, `(+${hp} / −${hm}) ${c}`]))));
+    }
+    if (g.next_diff) cm.append(det("Diff file written for generation " + (g.gen + 1), pre(g.next_diff)));
+    sec.append(cm);
+    return sec;
+  }
+
+  function listPanel(title, items) {
+    return h("div", {class: "panel grid"}, h("h4", {}, title), items.length ? h("ul", {class: "plain"}, items.map(([id, t]) => h("li", {}, h("span", {class: "mono", style: "color:var(--accent)"}, id), " ", t))) : h("p", {class: "empty"}, "none"));
+  }
+
+  function runDetails(r) {
+    const c = r.checks, s = c.setup || {};
+    const issues = [];
+    (s.missing || []).forEach(x => issues.push("missing " + x));
+    (s.unexpected || []).forEach(x => issues.push("unexpected " + x));
+    (s.sign_flips || []).forEach(x => issues.push("sign flip: " + x));
+    if (s.formulation_ok === false) issues.push("wrong formulation");
+    if (s.thickness_ok === false) issues.push("wrong thickness");
+    if (s.material_ok === false) issues.push("wrong material");
+    const body = [];
+    body.push(h("div", {class: "grid cols-2"},
+      h("div", {class: "panel grid"}, h("h4", {}, "Checks"),
+        h("div", {}, "Gate: ", c.failed_gate ? h("span", {class: "pill p-bad"}, c.failed_gate) : h("span", {class: "pill p-good"}, "passed")),
+        h("div", {class: "mono"}, `rel. error ${fmtSci(c.rel_error)} vs naive ${fmtSci(c.e_uniform)} → score ${c.score.toFixed(2)}`),
+        h("div", {}, "Setup vs reference: ", issues.length ? h("span", {class: "pill p-warn"}, issues.join("; ")) : (c.solved ? h("span", {class: "pill p-good"}, "matches") : "–"))),
+      h("div", {class: "panel grid"}, h("h4", {}, "Run"),
+        h("div", {class: "mono"}, `stop: ${r.stop} · turns: ${r.turns} · meshes: ${c.n_meshes} · solves: ${c.n_solves}`),
+        h("div", {class: "mono"}, r.error ? "crashed: not scored" : r.submitted != null ? `scored: solve ${r.submitted + 1} (submitted by the agent)` : "scored: last successful solve (the agent did not submit)"),
+        h("div", {class: "mono"}, `tokens: ${fmtInt((r.usage || []).reduce((a, u) => a + u.input + u.cache_write + u.cache_read, 0))} in (${fmtInt((r.usage || []).reduce((a, u) => a + u.cache_read, 0))} from cache), ${fmtInt((r.usage || []).reduce((a, u) => a + u.output, 0))} out · ${fmtUsd(runCost(r))}`),
+        r.error ? pre(r.error) : null)));
+    body.push(det("Task prompt this agent received", pre(D.prompts.tasks[r.problem_id] || "")));
+    const tr = h("div", {class: "trace"});
+    for (const e of r.trace) {
+      let kind, content;
+      if (e.type === "text") { kind = h("span", {class: "k k-said"}, "agent said"); content = h("div", {class: "say"}, e.text); }
+      else if (e.type === "thinking") { kind = h("span", {class: "k k-said"}, "agent's reasoning (summary)"); content = h("div", {class: "say muted"}, e.text); }
+      else if (e.type === "tool_call") { kind = h("span", {class: "k k-call"}, "call " + e.name); content = pre(pretty(e.input)); }
+      else { kind = h("span", {class: "k " + (e.is_error ? "k-error" : "k-result")}, (e.is_error ? "error from " : "result of ") + e.name); content = pre(pretty(e.result)); }
+      tr.append(h("div", {class: "ev"}, h("div", {class: "t"}, "turn " + e.turn), h("div", {class: "c"}, kind, content)));
+    }
+    body.push(h("h4", {}, "Trace"), r.trace.length ? tr : h("p", {class: "empty"}, "No trace (the run errored before the first model call)."));
+    return det([h("span", {class: "mono"}, r.run_id), scorePill(c.score), c.failed_gate ? h("span", {class: "chip"}, c.failed_gate) : null,
+      r.cited.length ? h("span", {class: "chip acc"}, "cited " + r.cited.join(", ")) : null], body);
+  }
+
+  function reflectionCard(pid, rf) {
+    const o = rf.output;
+    const body = [];
+    if (!o) body.push(h("p", {class: "empty"}, "The reflector's output was invalid twice, so this problem was skipped."));
+    else {
+      body.push(h("div", {class: "panel grid"}, h("h4", {}, "Where the best and worst runs diverged"), h("p", {}, o.divergence)));
+      body.push(h("div", {class: "panel grid"}, h("h4", {}, "Root causes"), o.root_causes.length ? h("ul", {class: "plain"},
+        o.root_causes.map(rc => h("li", {}, h("span", {class: "mono"}, rc.run_id), ": ", rc.cause, h("div", {class: "muted"}, "evidence: " + rc.evidence)))) : h("p", {class: "empty"}, "none given")));
+      body.push(h("div", {class: "panel"}, h("h4", {}, "Lessons"), o.lessons.map(l => h("div", {class: "lesson"},
+        h("div", {class: "meta"}, h("span", {class: "chip acc"}, l.section), h("span", {class: "chip"}, l.scope + (l.scope === "one_off" ? " (dropped by curator)" : ""))),
+        h("div", {}, l.content), h("div", {class: "muted"}, "evidence: " + l.evidence)))));
+      body.push(h("div", {class: "panel grid"}, h("h4", {}, "Votes on cited bullets"), o.bullet_votes.length ? h("ul", {class: "plain"},
+        o.bullet_votes.map(v => h("li", {}, h("span", {class: "mono"}, v.bullet_id), " ", h("span", {class: "pill " + (v.vote === "helpful" ? "p-good" : v.vote === "harmful" ? "p-bad" : "p-mid")}, v.vote), " ", v.reason))) : h("p", {class: "empty"}, "no bullets were cited")));
+    }
+    if (rf.prompt) body.push(det("Exact input the reflector received", pre(rf.prompt)));
+    return det([h("span", {class: "mono"}, pid), o ? h("span", {class: "chip"}, o.lessons.length + " lessons") : h("span", {class: "pill p-bad"}, "skipped")], body, true);
+  }
+
+  // ---------- cost
+  const roles = {};
+  for (const c of D.cost) {
+    const k = c.role + " · " + c.model;
+    const r = roles[k] ||= {calls: 0, input: 0, cache_write: 0, cache_read: 0, output: 0, usd: 0};
+    r.calls++; for (const f of ["input", "cache_write", "cache_read", "output", "usd"]) r[f] += c[f] || 0;
+  }
+  const ct = h("table", {}, h("thead", {}, h("tr", {}, ["role · model", "calls", "input", "cache write", "cache read", "output", "cost"].map((c, i) => h("th", {class: i ? "n" : ""}, c)))));
+  ct.append(h("tbody", {}, Object.entries(roles).map(([k, r]) => h("tr", {}, h("td", {class: "mono"}, k), h("td", {class: "n"}, r.calls),
+    ["input", "cache_write", "cache_read", "output"].map(f => h("td", {class: "n"}, fmtInt(r[f]))), h("td", {class: "n mono"}, fmtUsd(r.usd))))));
+  $main.append(h("section", {id: "cost"}, h("h2", {}, "Cost"),
+    h("p", {class: "lede"}, "Token counts come from the API's usage field on every call; dollars are estimates from the prices in ace/config.py. Cache reads are the prompt-caching savings: the same system prompt and conversation prefix billed at about a tenth of the input price."),
+    h("div", {class: "tablebox"}, ct)));
+
+  // ---------- config and fixed prompts
+  const calRows = Object.entries(D.calibration).map(([pid, c]) => h("tr", {}, h("td", {class: "mono"}, pid), h("td", {class: "mono"}, (C.tasks[pid] || {}).qoi || "–"),
+    h("td", {class: "n"}, c.node_cap), h("td", {class: "n mono"}, c.h.toPrecision(3)), h("td", {class: "n mono"}, c.errors.map(fmtSci).join(", ")), h("td", {class: "n mono"}, fmtSci(c.e_uniform))));
+  $main.append(h("section", {id: "config"}, h("h2", {}, "Setup and fixed prompts"),
+    h("div", {class: "grid cols-2"},
+      h("div", {class: "panel grid"}, h("h4", {}, "Models and limits"), h("ul", {class: "plain"},
+        Object.keys(C.models).map(r => h("li", {}, `${r}: `, h("span", {class: "mono"}, C.models[r]), ` · effort ${C.effort[r]} · max_tokens ${C.max_tokens[r]}`)),
+        h("li", {}, `per run: ≤ ${C.max_solves} solves, ≤ ${C.max_turns} model calls; gate: min element quality ≥ ${C.min_quality}`),
+        h("li", {}, `playbook: top ${C.top_n} bullets shown; dedup at similarity ≥ ${C.dedup_threshold}; prune when harmful ≥ helpful + ${C.prune_margin}`))),
+      h("div", {class: "panel grid"}, h("h4", {}, "Node-cap calibration (naive uniform linear mesh, correct setup)"),
+        h("div", {class: "tablebox"}, h("table", {}, h("thead", {}, h("tr", {}, ["problem", "QoI", "cap", "h", "errors at 3 sizes", "e_uniform"].map((c, i) => h("th", {class: i > 1 ? "n" : ""}, c)))), h("tbody", {}, calRows))))),
+    det("Generator base prompt (the playbook is appended after it)", pre(D.prompts.generator_base)),
+    det("Generator tools (JSON schemas)", pre(pretty(D.prompts.tools))),
+    det("Reflector system prompt", pre(D.prompts.reflector_system)),
+    det("Curator system prompt", pre(D.prompts.curator_system)),
+    det("summary.md", pre(D.summary_md))));
+})();
+</script>

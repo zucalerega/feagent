@@ -1,0 +1,1644 @@
+{
+ "agents": {
+  "a0": {
+   "feedback": {
+    "agent": "a0",
+    "run_id": "g6-abc_00000003_bc7-a0",
+    "diagnosis": "Valid run, but the base score of 0.189 is BELOW the automesher's 0.25. Rank 1 of 1 only because no other agent ran this task, so the 0.25 best bonus was uncontested. Field error 18.6% binds; check-point RMS is 13.3%. Gain 1.71, so A = 0.731. The real killer is cost: c = 23388/6057 = 3.86.\n\nWhere the error is:\n- Clamp band z ~0.056 (four grid cells at x \u00b10.0058, y \u00b10.0129): 19.4% of error energy (5.82+5.04+4.41+4.09). Mean h there is 0.0041-0.0042, about 1.7 elements across the 2.5 mm wall. Hotspots #1, #2, #6 (3.5/3.4/2.7%, vM error ~30%) sit 0.8-1 mm from f20, next to re-entrant edge 40. f2 touching h is 0.00518 because nothing was refined there.\n- Junction-height flanks z ~0.0255, x \u00b10.0174: ~26% (3.78+3.62+3.48+3.36+3.29+3.17+2.59+2.55). Mean h there is 0.0045-0.0054. Hotspots #3, #4, #5 are near f3/f20/f16.\n- Requested vs realised sizes were never fixed:\n  - f16: 0.0028 requested, touching 0.00455 (1.6x).\n  - f19: 0.0032 requested, 0.0045 (1.4x).\n  - f20: 0.0036 requested, 0.00397.\n\nThe check-point term is dominated by disclosed P1 (-43%, a low-stress 4.2 MPa point just under the clamp). The other points mostly read 0.5-7% low (one hidden point in a low-stress region near a boss reads ~+10%).\n\nWhere the DOFs went: f20 (3199 touching elements) plus f23 (2452) make up nearly the whole 3933-element mesh. The group refinements on the two big tube faces turned the wall into a uniform ~0.004 mesh: 23.4k DOFs bought only 31.9% \u2192 18.6%.\n\nScore arithmetic (estimate):\n- The playbook scaling error ~N^-0.4 means score ~N^-0.2, so a blanket finer wall LOSES score.\n- A 12k-DOF mesh at 22% would score ~0.27. A 15k mesh needs only e < 23% to tie your 0.189.\n- Your whole family of meshes (21.9-26.7k DOFs) cannot win. Only DOFs concentrated at the clamp band (edge 40) and the junction rims (edges 8/39, f16/f19), on a coarser base, can.",
+    "step_critique": [
+     {
+      "step": "inspect_geometry",
+      "what_it_did": "Inspected geometry first.",
+      "verdict": "good",
+      "correction": "Keep it. Next time also log the tags of re-entrant edges 8/39/40 and the clamp edge next to f2 before the first mesh."
+     },
+     {
+      "step": "mesh call 1 (h 0.0095, clamp box 0.003 r0.008, wall box 0.0042 r0.008, f16, edge 8)",
+      "what_it_did": "Gave 8411 nodes and min quality 0.076 (invalid). Not solved.",
+      "verdict": "mistake",
+      "correction": "Not solving was right. But a full-wall box at h 0.0095 was never going to fit a \u226416k-DOF budget. First probe the free floor with mesh(h=0.016, order=2, refinements=[]) and log nodes. Then add edges 40/8/39 one at a time and log the node delta for each."
+     },
+     {
+      "step": "mesh call 2 + solve 1 (h 0.013, f20 0.0032, f23 0.0034, f16 0.0028, edge 8 0.003)",
+      "what_it_did": "8694 nodes / 26.1k DOFs, quality 0.18. Solved anyway; energy 0.03335 J.",
+      "verdict": "mistake",
+      "correction": "Your own note said 'target \u226416k DOFs'. At 26k you must re-mesh, not solve. Group refinements on f20/f23 (the whole bore and outer tube) are what blow DOFs up. Replace them with edge refinements (edge 40 / 8 / 39) on h 0.016 and re-mesh until nodes \u22645000."
+     },
+     {
+      "step": "view(solve 1, error, y)",
+      "what_it_did": "Saw the error at the junction and the clamp ring, low at the bottom and mid-tube.",
+      "verdict": "good",
+      "correction": "Correct reading. Act on it by REMOVING refinement from the low-error bottom/mid tube (drop f23 to \u22650.0045), not only by adding more at the junction/clamp."
+     },
+     {
+      "step": "mesh call 3 (junction box x \u00b10.021, z 0.018-0.043, 0.0036 r0.007 + clamp box 0.003 r0.007)",
+      "what_it_did": "10105 nodes, quality 0.066 (invalid).",
+      "verdict": "mistake",
+      "correction": "A box spanning x \u00b10.021 cuts through the boss junctions and wrecks quality on this part. Refine the rims with {edge:8} / {edge:39} at 0.0024 r 0.007 plus {group:f19, 0.003, r 0.005} instead. Boxes here only for the clamp ring, with r \u2265 3.2x size."
+     },
+     {
+      "step": "mesh call 4 + solve 2 (submitted): h 0.014, f20 0.0036, f23 0.004, f16 0.0028, f19 0.0032, edges 8/39 0.0028, edge 40 0.0025",
+      "what_it_did": "23.4k DOFs, quality 0.199. Changed h, f20, f23, f19, edge 39 and edge 40 all at once versus solve 1.",
+      "verdict": "mistake",
+      "correction": "Six simultaneous changes make compare(1,2) unattributable (playbook tool-0004, repeated). Change ONE factor per solve. Also the realised f16 was 0.00455 vs 0.0028 requested: re-request f16 at 0.002 (0.7x target) before solving."
+     },
+     {
+      "step": "compare(1,2) interpretation",
+      "what_it_did": "Read the 14.3% diff as 'estimated error ~14.3%' and later treated solves 1/2/4 as ~14.3-14.7%.",
+      "verdict": "mistake",
+      "correction": "A diff between two meshes of nearly equal resolution (26k vs 23k) measures neither one's error; the true error was 18.6%. Only a diff to a mesh \u22651.3x finer IN THE HOTSPOT REGIONS approximates the coarse mesh's error. With a diff >16% (solve 2 vs 4 gave 16.6%), assume the 15.9% target is missed and do score arithmetic."
+     },
+     {
+      "step": "solve 3 (drop f23, f20 0.0029, edges 0.0026, f19 0.003)",
+      "what_it_did": "21.9k DOFs; diff to solve 2 was 18.3%.",
+      "verdict": "missed_opportunity",
+      "correction": "It saved only 1.4k DOFs because f20 was tightened at the same time; again several changes. The useful experiment was a structurally cheaper mesh, h 0.016 with edge-only refinements, about 12k DOFs. That would have told you whether score rises with fewer DOFs."
+     },
+     {
+      "step": "solve 4 (solve 2 + edge 40 0.002 + clamp box 0.0032 r0.006)",
+      "what_it_did": "26.7k DOFs, quality 0.2175; diff to solve 2 was 16.6%.",
+      "verdict": "missed_opportunity",
+      "correction": "It targeted the right region (the clamp band holds 19%) but only added DOFs. Pair it with a removal: f23 to 0.005, or h 0.016. This break-even condition was never checked: 26.7k DOFs needed e < 18.6%\u00b7sqrt(26.7/23.4) \u2248 19.9% to tie. If you had estimated e for solve 4, it might have scored higher; you never did that arithmetic."
+     },
+     {
+      "step": "submit(solve 2)",
+      "what_it_did": "Submitted the cheaper of the similar-accuracy meshes.",
+      "verdict": "missed_opportunity",
+      "correction": "The logic 'cheapest of similar accuracy' was right. But every candidate (22-27k DOFs) scored below the automesher's 0.25 base. Reserve at least one solve for a 10-14k DOF candidate, and submit by estimated score = (0.1593/e)\u00b2/(DOFs/6057), not by DOFs alone."
+     }
+    ],
+    "promised_items_check": [
+     {
+      "item": "Cost term was the weak part last run (21k DOFs): keep DOFs within a budget (own plan this run: \u226416k DOFs, quality \u22650.12)",
+      "status": "not_done",
+      "comment": "REPEATED MISTAKE: submitted 23.4k DOFs (c = 3.86) after explicitly planning \u226416k. Same pattern as the previous task (promised \u226416k, submitted 21k)."
+     },
+     {
+      "item": "Request ~0.7x the target size and re-mesh until the touching-h table is within 1.1-1.2x (a0-mesh-0016, mesh-0015)",
+      "status": "not_done",
+      "comment": "f16 realised 1.6x and f19 1.4x the request; it solved without re-meshing."
+     },
+     {
+      "item": "Cover stress bands with boxes/strips at target size, edges only for the singular line (feedback from the last task)",
+      "status": "partly",
+      "comment": "Tried a junction box and a clamp box: the junction box failed quality (0.066). The clamp box in solve 4 worked (quality 0.2175) but was not submitted."
+     },
+     {
+      "item": "Quality \u22650.12 before solving",
+      "status": "done",
+      "comment": "Never solved an invalid mesh (rejected 0.076 and 0.066); the submitted mesh had 0.199."
+     },
+     {
+      "item": "Answer every feedback item in the first message",
+      "status": "not_done",
+      "comment": "There was no first message addressing the previous feedback."
+     }
+    ],
+    "strengths": [
+     "Never solved an invalid mesh: rejected quality 0.076 and 0.066 without wasting solves.",
+     "Used view(error) and compare after every solve, and correctly located the error at the clamp band (z ~0.056) and the junction flanks.",
+     "Kept the correct setup (fixed f2, 4 MPa on f23, 2.1 MPa on f16) with no wasted setup solves.",
+     "Kept f16 refined (playbook mesh-0018): the f16-adjacent disclosed point P0 read +1.5%."
+    ],
+    "mistakes": [
+     "Base score 0.189 is below the automesher's 0.25: 23.4k DOFs bought 18.6% error, and the cost term c = 3.86 kills the score.",
+     "REPEATED: broke its own \u226416k DOF budget, solving 26.1k, 23.4k, 22.0k and 26.7k meshes.",
+     "Group refinements on f20 and f23 (the two largest tube faces) turned the whole wall into ~0.004 elements instead of concentrating DOFs at edge 40 and edges 8/39.",
+     "Multiple changes per solve (solves 2 and 3), so the diffs were unattributable.",
+     "Misread compare diffs between equal-resolution meshes as error estimates (thought ~14.3%; true 18.6%).",
+     "Did not re-request when realised sizes were 1.4-1.6x the request (f16, f19).",
+     "Never ran score arithmetic, never tried a cheap mesh."
+    ],
+    "next_mesh_call": {
+     "h": 0.016,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": 40,
+       "point": null,
+       "box": null,
+       "size": 0.002,
+       "radius": 0.007
+      },
+      {
+       "group": null,
+       "edge": 8,
+       "point": null,
+       "box": null,
+       "size": 0.0022,
+       "radius": 0.007
+      },
+      {
+       "group": null,
+       "edge": 39,
+       "point": null,
+       "box": null,
+       "size": 0.0022,
+       "radius": 0.007
+      },
+      {
+       "group": "f16",
+       "edge": null,
+       "point": null,
+       "box": null,
+       "size": 0.0022,
+       "radius": 0.006
+      },
+      {
+       "group": "f19",
+       "edge": null,
+       "point": null,
+       "box": null,
+       "size": 0.0026,
+       "radius": 0.006
+      },
+      {
+       "group": "f20",
+       "edge": null,
+       "point": null,
+       "box": null,
+       "size": 0.0045,
+       "radius": 0.004
+      }
+     ]
+    },
+    "notes": [
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Group refinements on f20 (3199 touching elements) plus f23 (2452) at 0.0036/0.004 made almost the whole 3933-element mesh: 23.4k DOFs, 18.6%, base 0.189, below the automesher's 0.25. Never refine f23 below 0.0045. Put the DOFs on edge 40 (clamp band, 19% of error) and edges 8/39 (junction, ~26%) instead.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Clamp band z 0.052-0.06 near f20/edge 40 holds 19.4% of error energy at mean h 0.0041 (hotspots #1/#2/#6, vM error ~30%). Use {edge:40,size:0.002,r:0.007}; target touching f2/f20 \u22640.0032 there. Expect this band's share to roughly halve (estimate).",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Junction flanks z 0.02-0.03, |x| 0.012-0.02 hold ~26% at mean h 0.0045-0.0054. Use {edge:8,0.0022,r 0.007}, {edge:39,0.0022,r 0.007}, {group f19,0.0026,r 0.006}, {group f16,0.0022,r 0.006}; target realised f16/f19 \u22640.0033 (asking 0.0028 gave 0.00455).",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Boxes spanning the boss junctions fail quality on this part: the x \u00b10.021 junction box at 0.0036 r0.007 gave 0.066, and the wall box 0.0042 r0.008 at h 0.0095 gave 0.076. A clamp-only ring box [-0.0185,-0.0185,0.052,0.0185,0.0185,0.0605] at 0.0032 r0.006 gave 0.2175. Refine rims by edges/groups, never by boxes.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "postprocessing",
+      "content": "compare diffs between near-equal meshes under-read: 26k vs 23.4k gave 14.3% while solve 2's true error was 18.6%. Treat any diff >14% as 'target missed'. Only a diff to a mesh \u22651.3x finer in the hotspot regions approximates the coarse mesh's error.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "postprocessing",
+      "content": "Before every solve compute the break-even: below target, score = (0.1593/e)\u00b2/(DOFs/6057) for this task. Here 12k DOFs needs e<26% and 15k needs e<23% to beat 0.189. Write that number down and re-mesh if DOFs exceed what the expected e can pay for.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "REPEATED twice (21k on the previous task, 23.4k here): you promise a DOF cap, then solve above it. Hard rule: after each mesh, if nodes > your cap (here 5000 nodes \u2248 15k DOFs), re-mesh (free) before solving. Tick the cap off explicitly in your reasoning before each solve.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "meshing",
+      "content": "Realised size \u22481.4-1.6x the request on small groups (f16 0.0028\u21920.00455, f19 0.0032\u21920.0045). Request 0.7x the target. Re-mesh until the touching-h table is within 1.2x of the target before any solve.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "tool_use",
+      "content": "Plan for 4 solves:\n1) h 0.016 edge-only recipe (edges 40/8/39 + f16/f19), \u226415k DOFs.\n2) same + f20 0.0038 r0.004 only, then compare(1,2).\n3) the better of the two at h 0.02, then compare.\n4) best plus a hotspot fix.\nSubmit by estimated score, not DOFs alone.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Probe the free DOF floor first: mesh(h=0.016,order=2,refinements=[]) and mesh(h=0.02,...). Log nodes, then the node delta for each added edge/group. Without this you cannot tell which refinement ate the 23k DOFs.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Keep f16 refined in every recipe: P0 near f16 read +1.5%. Caps f15 (h 0.0089) and f25 (0.0066) carried near-zero error; leave them coarse.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "postprocessing",
+      "content": "The check-point term (13.3%) is set almost entirely by P1 (-43%, a low-stress 4.2 MPa point just below the clamp at z 0.0574). The edge-40/clamp-band refinement fixes both P1 and the 19% field share. Field error still binds, so judge by the field first.",
+      "kind": "highlight"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "solver_setup",
+      "content": "Setup verified again: 3d, E 2.1e11, nu 0.3, fixed f2, 4e6 on f23, 2.1e6 on f16; strain energy 0.0328-0.0334 J across 22-27k DOFs. Spend no solves on setup.",
+      "kind": "keep"
+     }
+    ],
+    "assignment": null,
+    "task": "abc_00000003_bc7"
+   },
+   "reflection": {
+    "what_happened": "I meshed the tube with two side bosses at h 0.014, order 2, with group refinements on f20, f23, f16 and f19, and submitted solve 2 (23.4k DOFs). Field error was 18.6% and check-point error 13.3%, a gain of 1.71x against the 2x target; cost term 0.259, score 0.439 including the 0.25 bonus. The error is spread over the whole tube wall: the top band near the clamp (z 0.056, f20, 30% local error at local h 0.004), the junction wall at z 0.026-0.030, and f3 on the boss (local h 0.0054). Disclosed P1 sat at -43% near the clamp end. I paid 23k DOFs, 3.9x the automesher, but only halved its error. I never got a cheap mesh near 16k DOFs, and the other solves did not beat solve 2.",
+    "what_i_learned": [
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Hotspots #1, #2 and #6 and four grid cells at z 0.056 (|y| 0.013, 20-30% of error) are on bore wall f20 near the clamp, with local h 0.0040-0.0042 despite a 0.0036 request. Next time I will add the ring box [-0.018,-0.018,0.050,0.018,0.018,0.0605] at size 0.0028, r 0.006, and require hotspot h <=0.003.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Boss face f3 near (0.02,-0.007,0.030) has local h 0.0054 and holds the worst hidden check point (10.5%) plus hotspot #3. Add a f3 group refinement of 0.0035, r 0.005, or a box around the x 0.017-0.03 boss root. Expected: hotspot #3 and the hidden worst point fall.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Refining whole groups f20 and f23 (3199 and 2452 touching elements) at 0.0036-0.004 spent most of the DOFs, yet touching h stayed about 0.004, equal to the median. Using f20 and f23 as group targets is wasteful. Replace them with boxes over the clamp ring and the junction wall only, and expect to save about 5k DOFs.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "meshing",
+      "content": "Quality: h 0.014 with radius 0.005-0.006 and sizes down to 0.0025 gave min quality 0.199 and 0.2175. That is safe. By contrast, h 0.0095 with a 0.003 box at r 0.008 gave 0.076 (invalid). Keep h around 0.014 with r 0.005-0.006.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "postprocessing",
+      "content": "P1 at (-0.0077,0.0064,0.0574), on the f23 top face next to the clamp, had -43% error, because top-face elements there are too coarse. Add a point refinement at P1 of 0.003, r 0.006. Expect the check-point RMS to drop from 13.3%.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "tool_use",
+      "content": "My 4 solves ended at 23-27k DOFs with 14-17% compare differences, never reaching the target 15.9% field error. Spend solve 1 on a cheaper recipe (<=17k DOFs) and use compare to decide, rather than starting at 23k.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000003_bc7",
+      "section": "solver_setup",
+      "content": "Setup verified: fixed f2, pressure 4e6 on f23, 2.1e6 on f16, E 210e9, nu 0.3, 3d. Reuse unchanged.",
+      "kind": "keep"
+     }
+    ],
+    "plan_next": "I will drop the group refinements on f20 and f23 and use boxes instead: the clamp ring at 0.0028 and the junction wall at z 0.020-0.032 at 0.0035. I will also add f3 at 0.0035 and a point at P1. The experiment in solve 2 is f3 and P1 refinement versus none, with all else fixed.",
+    "next_mesh_call": {
+     "h": 0.014,
+     "order": 2,
+     "refinements": [
+      {
+       "group": "f16",
+       "edge": null,
+       "point": null,
+       "box": null,
+       "size": 0.0028,
+       "radius": 0.006
+      },
+      {
+       "group": "f19",
+       "edge": null,
+       "point": null,
+       "box": null,
+       "size": 0.0032,
+       "radius": 0.005
+      },
+      {
+       "group": "f3",
+       "edge": null,
+       "point": null,
+       "box": null,
+       "size": 0.0035,
+       "radius": 0.005
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.018,
+        -0.018,
+        0.05,
+        0.018,
+        0.018,
+        0.0605
+       ],
+       "size": 0.0028,
+       "radius": 0.006
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.018,
+        -0.018,
+        0.02,
+        0.018,
+        0.018,
+        0.034
+       ],
+       "size": 0.0035,
+       "radius": 0.006
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": [
+        -0.0077,
+        0.0064,
+        0.0574
+       ],
+       "box": null,
+       "size": 0.003,
+       "radius": 0.006
+      }
+     ]
+    },
+    "run_id": "g6-abc_00000003_bc7-a0",
+    "task": "abc_00000003_bc7"
+   },
+   "last_run": {
+    "run_id": "g6-abc_00000003_bc7-a0",
+    "task": "abc_00000003_bc7",
+    "mesh_call": {
+     "h": 0.014,
+     "order": 2,
+     "refinements": [
+      {
+       "group": "f20",
+       "size": 0.0036,
+       "radius": 0.005
+      },
+      {
+       "group": "f23",
+       "size": 0.004,
+       "radius": 0.005
+      },
+      {
+       "group": "f16",
+       "size": 0.0028,
+       "radius": 0.006
+      },
+      {
+       "group": "f19",
+       "size": 0.0032,
+       "radius": 0.005
+      },
+      {
+       "edge": 8,
+       "size": 0.0028,
+       "radius": 0.006
+      },
+      {
+       "edge": 39,
+       "size": 0.0028,
+       "radius": 0.006
+      },
+      {
+       "edge": 40,
+       "size": 0.0025,
+       "radius": 0.006
+      }
+     ]
+    },
+    "score": 0.4393217300719193,
+    "field_error": 0.18629366666604447,
+    "probe_error": 0.1327243457618579,
+    "dofs": 23388,
+    "rank": 1,
+    "group_size": 1,
+    "failed_gate": null,
+    "error": null
+   }
+  },
+  "a1": {
+   "feedback": {
+    "agent": "a1",
+    "run_id": "g6-abc_00000065_bc0-a1",
+    "diagnosis": "Setup is correct: 3d, E 2.1e11, nu 0.3, f12 fixed, 2.1e6 Pa on f7. Energy ranged 2.07-2.12e-4 J. The error is all mesh.\n\nBINDING TERM: field error, 11.3%. Check-point RMS is 7.1% and does not bind. You beat the target (g 2.13), but the cost term is 2.13 (18,771 DOFs vs 8,811), so the base score is only 0.501. The rest came from the solo-run bonus.\n\nWHERE THE ERROR IS: the clamp-foot band at z -0.0072..-0.0070 between f5 and f7.\n- Hotspots #1, #2, #3, #5 and #6 hold 31% of the error energy at local h 0.0029-0.0031.\n- Your strip requested 0.0022 but realised about 0.003, failing your own touching-h <=0.0025 promise.\n- #4 (5.5%) sits mid-wall near f5 at z about 0, at h 0.0058. f5 touching h is 0.0061 (1.5x median), so the 0.0048 upper-wall box never reached the inner f5 wall.\n\nHOW DOFs WERE SPENT: about 14.4k of the 18.8k DOFs are the curvature floor on tiny curved faces f26-f32, f34, f10 and f11 (touching h 0.0022-0.0029, essentially zero error). Only about 4.4k DOFs went to the error zone.\n\nYOUR BIGGEST FINDING: you showed the floor is not fixed. The same refinements at h 0.045 gave 4,506 nodes (13.5k DOFs, quality 0.134), versus 6,193 at h 0.03. Rough estimate: at a similar ~11.5% error, base would be about 1.05/1.53 = 0.69.\n\nYOU LOST IT: you fired mesh h 0.045 and h 0.1 in parallel. The last mesh (h 0.1, 5,825 nodes, quality 0.088, invalid) became current, and you spent solve 4 on it.\n\nCOMPARE DIFFS: compare(1,2) was 12.7% and compare(2,3) was 10.6%, close to the true 11.3%. Neither mesh is converged in the foot band.",
+    "step_critique": [
+     {
+      "step": "inspect_geometry + plan",
+      "what_it_did": "Inspected; set aside the other task's feedback; kept order 2 and listed the playbook items.",
+      "verdict": "good",
+      "correction": "Keep order 2. Also map edge 18 (the second clamp-end edge named in mesh-0009/mesh-0013) and confirm which face f5 is (inner wall facing f7) before meshing."
+     },
+     {
+      "step": "mesh probe h 0.03, no refinements",
+      "what_it_did": "Measured the floor: 4,808 nodes.",
+      "verdict": "good",
+      "correction": "Keep this free probe, but also probe mesh(h=0.045,[]) and mesh(h=0.06,[]) at once, sequentially. The floor depends on h, as your later meshes showed."
+     },
+     {
+      "step": "mesh calls 2-3 (edge 22 0.0016 + slab 0.0022 + capped buffer 0.0045)",
+      "what_it_did": "Got 5,994 nodes at quality 0.117 after widening radii from 0.1009.",
+      "verdict": "good",
+      "correction": "Widening r to 0.009 to fix quality was right. Before solving, read the size table for f5 and f7 and the slab region. The slab realised about 0.003 against the <=0.0025 you promised; re-request at 0.0016-0.0018 before solving."
+     },
+     {
+      "step": "solve 1",
+      "what_it_did": "Baseline at 18.0k DOFs, energy 2.0714e-4.",
+      "verdict": "missed_opportunity",
+      "correction": "Follow every solve with view(solve, kind=error) and read the 5 hotspots. You never called view this run, although you promised to."
+     },
+     {
+      "step": "mesh calls 4-6 (full-thickness box z to 0.0081)",
+      "what_it_did": "Size 0.005 gave quality 0.060, 0.0042 gave 7,822 nodes and quality 0.084, and 0.0048 r 0.015 gave 6,257 nodes and quality 0.122.",
+      "verdict": "good",
+      "correction": "Iterating free meshes until quality >=0.12 and nodes are sane was correct. Note that this broke your own 'cap z<=0.003' promise, but at 0.0048 it cost only +263 nodes, so the playbook avoid rule (mesh-0011) does not hold at this size; record that."
+     },
+     {
+      "step": "solve 2 + compare(1,2)",
+      "what_it_did": "One-factor change (upper box full-thickness); diff 12.7%, energy up to 2.1162e-4.",
+      "verdict": "good",
+      "correction": "This was a clean controlled experiment. Next, view the error to see that #4 sits on f5 at z about 0 with h 0.0058."
+     },
+     {
+      "step": "mesh 7 + solve 3",
+      "what_it_did": "Changed edge 22 0.0016\u21920.0018, slab 0.0022\u21920.003 and box y-extent to 0.03 all at once; got 18.6k DOFs.",
+      "verdict": "mistake",
+      "correction": "Three changes in one solve make compare(2,3)=10.6% unattributable. Coarsening the slab also moved DOFs AWAY from the band holding 31% of the error. One factor per solve: the solve that mattered was h 0.03\u21920.045 with identical refinements."
+     },
+     {
+      "step": "meshes h 0.08/0.06/0.045/0.1",
+      "what_it_did": "Found h 0.045 gave 4,506 nodes at quality 0.134, but called meshes in parallel so h 0.1 (quality 0.088) became current.",
+      "verdict": "mistake",
+      "correction": "Never issue mesh calls in parallel. The solver uses the LAST mesh built. After probing, re-issue the chosen mesh call alone, check that the returned nodes and min_quality match (4,506 / 0.134), and only then solve."
+     },
+     {
+      "step": "solve 4",
+      "what_it_did": "Solved the invalid h 0.1 mesh (quality 0.088); wasted the last solve.",
+      "verdict": "mistake",
+      "correction": "Re-run mesh(h=0.045, ...) alone and solve it, then compare(2,4). If the diff is <~8%, submit it: about 13.5k DOFs vs 18.8k, worth roughly +0.15-0.2 base score (estimate)."
+     },
+     {
+      "step": "submit solve 2",
+      "what_it_did": "Chose solve 2 over solve 3 by its higher strain energy.",
+      "verdict": "good",
+      "correction": "This was reasonable given the evidence: solve 2 had the finer slab and the highest energy from below. Next time decide with compare against the finest solve plus hotspot local h, not energy alone."
+     }
+    ],
+    "promised_items_check": [
+     {
+      "item": "Check realised h on every refined group before solving",
+      "status": "partly",
+      "comment": "Read nodes and quality every time, but never verified slab/f5 touching h. The slab realised about 0.003 vs 0.0025 promised. REPEATED MISTAKE from abc_00000003 (f16 0.0035\u21920.0055 unchecked)."
+     },
+     {
+      "item": "Change one factor per solve",
+      "status": "partly",
+      "comment": "Solve 2 changed one factor; solve 3 changed three (edge 22 size, slab size, box y-extent). REPEATED MISTAKE (tool-0004)."
+     },
+     {
+      "item": "View the error map after each solve",
+      "status": "not_done",
+      "comment": "Zero view calls in the run."
+     },
+     {
+      "item": "Clamp-foot strip with touching h <=0.0025",
+      "status": "not_done",
+      "comment": "Hotspots #1/#2/#3/#5 in the strip at local h 0.0030-0.0031; edge 18 never refined."
+     },
+     {
+      "item": "Upper-wall buffer capped at z<=0.003, no full-thickness boxes",
+      "status": "not_done",
+      "comment": "Solves 2-4 used z to 0.0081. It cost only +263 nodes at size 0.0048, so the deviation was defensible, but you did not state it as a deliberate test."
+     },
+     {
+      "item": "Avoid copying a0's recipe and uniform DOFs",
+      "status": "done",
+      "comment": "Recipe differs (h 0.03 + edge 22 + two boxes)."
+     }
+    ],
+    "strengths": [
+     "Probed free meshes until quality was >=0.12 and never solved below 0.1 knowingly (solves 1-3 valid).",
+     "Discovered that raising global h from 0.03 to 0.045 cuts the curvature DOF floor (6,193\u21924,506 nodes, same refinements, quality 0.134): the most valuable finding on this task.",
+     "Solve 2 was a clean one-factor experiment, and its full-thickness 0.0048 box was cheap and helped (field change 12.7%).",
+     "Hit the target (11.3% < 12.07%) on the first attempt at this task."
+    ],
+    "mistakes": [
+     "Parallel mesh calls left the invalid h 0.1 mesh current; solve 4 was wasted and the cheap h 0.045 candidate was never solved.",
+     "Solve 3 changed three factors and coarsened the slab that held 31% of the error.",
+     "Never viewed the error map; hotspot #4 on f5 (h 0.0058) went unaddressed.",
+     "Slab requested 0.0022 but realised about 0.003; did not re-request smaller before solving.",
+     "Edge 18 (second clamp-end edge) never refined, despite mesh-0009/mesh-0013."
+    ],
+    "next_mesh_call": {
+     "h": 0.045,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": 22,
+       "point": null,
+       "box": null,
+       "size": 0.0016,
+       "radius": 0.006
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0175,
+        -0.013,
+        -0.0081,
+        0.0285,
+        0.011,
+        -0.0055
+       ],
+       "size": 0.0018,
+       "radius": 0.009
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.014,
+        -0.025,
+        -0.006,
+        0.03,
+        0.03,
+        0.0081
+       ],
+       "size": 0.0042,
+       "radius": 0.016
+      }
+     ]
+    },
+    "notes": [
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "Never call mesh in parallel or leave a probe as the last mesh. The solver uses the LAST mesh built: a1's solve 4 ran on h 0.1 (quality 0.088, invalid) instead of h 0.045 (4,506 nodes, 0.134). Re-issue the chosen call alone and confirm nodes and min_quality before every solve.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Global h 0.045 lowers the DOF floor: the same refinements gave 4,506 nodes (q 0.134) vs 6,193 at h 0.03. Small curved faces f26-f32/f34/f10/f11 are curvature-sized off h and carry ~0 error. Use h 0.045 as base; h 0.06 (q 0.058) and 0.08/0.1 (q 0.083/0.088) fail quality.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Clamp-foot band z -0.0081..-0.0055 between f5 and f7 holds 31% of field error (hotspots #1,#2,#3,#5,#6) at realised h 0.003. Request the slab box [0.0175,-0.013,-0.0081,0.0285,0.011,-0.0055] at 0.0018 r 0.009 (0.0022 realised ~0.003). Never coarsen it to 0.003 again.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Mid-wall near f5 at z\u22480 (hotspot #4, 5.5%) sits at h 0.0058; f5 touching h is 0.0061 even inside the 0.0048 box. If still a top-3 hotspot, add box [0.016,-0.014,-0.004,0.022,0.012,0.004] size 0.0032 r 0.01 and check that f5 touching h drops <=0.0045.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Full-thickness upper-wall box [0.014,-0.025,-0.006,0.03,0.014,0.0081] at 0.0048 r 0.015 cost only +263 nodes over the z-capped 0.0045 box and changed the field 12.7% (solve 1\u21922). mesh-0011's 'no full-thickness box' does not hold at size >=0.0045 with h >=0.03.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Quality is erratic with the upper box: 0.005 r 0.012 gave 0.060, 0.0042 r 0.013 gave 0.084, 0.0048 r 0.015 gave 0.122, 0.0042 r 0.016 gave 0.116-0.134. Keep r >=3.3x size for that box; probe free and re-mesh until quality >=0.12.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "postprocessing",
+      "content": "compare diffs approximated the true error well here: compare(2,3)=10.6% vs true 11.3%, compare(1,2)=12.7%. Use compare(candidate, finest) <~8% to justify submitting a cheaper mesh; energy differences of 0.1-1% are not decisive.",
+      "kind": "keep"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "One factor per solve: solve 3 changed edge 22 size, slab size and box extent together, so its 10.6% diff is unattributable. Plan the 4 solves: 1) baseline, 2) one refinement change, 3) h change only with the same refinements, 4) best plus hotspot fix.",
+      "kind": "fix"
+     },
+     {
+      "task": "general",
+      "section": "postprocessing",
+      "content": "Call view(solve, kind=error) after every solve and map each top-5 hotspot to its nearest group's touching h. a1 skipped all views and missed that #4 sat on f5 at h 0.0058, 1.5x median.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Edge 18 (second clamp-end edge) was never refined in a1's run. If the foot band still holds >20% after the 0.0018 slab, test {edge 18, 0.0018, r 0.005} as a one-factor solve and compare.",
+      "kind": "idea"
+     },
+     {
+      "task": "general",
+      "section": "meshing",
+      "content": "Score arithmetic for this task: at ~11.3% error, cutting 18.8k\u219213.5k DOFs raises base about 0.50\u21920.70 (estimate). Cutting floor DOFs on zero-error curved faces is worth more than further local refinement once the target is met.",
+      "kind": "highlight"
+     }
+    ],
+    "assignment": null,
+    "task": "abc_00000065_bc0"
+   },
+   "reflection": {
+    "what_happened": "I meshed at h 0.03, order 2, with three buffered refinements (sizes 0.0016, 0.0022, 0.0048) around the clamp f5/f7/f12 band. I got 18.8k DOFs, field error 11.3% and check-point error 7.1%. Score was 0.751 (base 0.501 plus 0.25 bonus) and target 2x was met. Cost term was 0.469 because I used 2.1x the automesher DOFs. Error is still spread along the f5/f7 clamp band at z about -0.007, with local h around 0.003. The worst hidden point is near f13 at y about -0.0375, where I refined nothing.",
+    "what_i_learned": [
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Top hotspots #1-#6 (about 37% of error) lie at z about -0.007 along f5/f7 with h 0.003 and 4-7% error. Next time I keep this recipe but widen the slab along y to about +/-0.014, since cells at y 0.0144 and -0.0115 hold 7-8% each.",
+      "kind": "keep"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "The worst hidden check point is near f13 (y about -0.0375, h about 0.005) and P1 has -11.5% error. Try one small box there at 0.0035, radius 0.006, to cut check-point RMS (7.7% hidden).",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Cost term 0.469 at 18.8k DOFs. To raise the score, cut DOFs to about 14k by raising the buffer size 0.0048 to 0.006 while keeping slab 0.0022 and edge 22 at 0.0016. Expect the error to stay around 12%.",
+      "kind": "idea"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "meshing",
+      "content": "Cells at y 0.0274 (x 0.025) show 430-1400% local error but hold only about 2% share each, with h about 0.007. Leave them coarse and don't chase them.",
+      "kind": "avoid"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "postprocessing",
+      "content": "compare(2,4) gave 10.4% against true error 11.3%. A compare of about 10% means the mesh is not converged, so the estimate is roughly honest this time. Use it only to rank solves, not to certify.",
+      "kind": "keep"
+     },
+     {
+      "task": "general",
+      "section": "tool_use",
+      "content": "I submitted the highest-energy solve (18.8k DOFs) when a slightly cheaper one was within 1 point of error. Next time I will submit by score arithmetic (error and DOFs), not by energy.",
+      "kind": "fix"
+     },
+     {
+      "task": "abc_00000065_bc0",
+      "section": "solver_setup",
+      "content": "Setup 3d, E 2.1e11, nu 0.3, f12 fixed, 2.1e6 on f7 is confirmed again. Don't spend solves on it.",
+      "kind": "keep"
+     }
+    ],
+    "plan_next": "I will change one factor: raise the buffer size from 0.0048 to 0.006 to cut DOFs to about 14-15k, and add a small f13 box at 0.0035. I will use one solve to compare error per DOF against this run.",
+    "next_mesh_call": {
+     "h": 0.03,
+     "order": 2,
+     "refinements": [
+      {
+       "group": null,
+       "edge": 22,
+       "point": null,
+       "box": null,
+       "size": 0.0016,
+       "radius": 0.006
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.0175,
+        -0.013,
+        -0.0081,
+        0.0285,
+        0.014,
+        -0.0055
+       ],
+       "size": 0.0022,
+       "radius": 0.009
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        0.017,
+        -0.008,
+        -0.0045,
+        0.0235,
+        0.008,
+        0.0015
+       ],
+       "size": 0.006,
+       "radius": 0.015
+      },
+      {
+       "group": null,
+       "edge": null,
+       "point": null,
+       "box": [
+        -0.01,
+        -0.04,
+        0.002,
+        0.0,
+        -0.035,
+        0.008
+       ],
+       "size": 0.0035,
+       "radius": 0.006
+      }
+     ]
+    },
+    "run_id": "g6-abc_00000065_bc0-a1",
+    "task": "abc_00000065_bc0"
+   },
+   "last_run": {
+    "run_id": "g6-abc_00000065_bc0-a1",
+    "task": "abc_00000065_bc0",
+    "mesh_call": {
+     "h": 0.03,
+     "order": 2,
+     "refinements": [
+      {
+       "edge": 22,
+       "size": 0.0016,
+       "radius": 0.006
+      },
+      {
+       "box": [
+        0.0175,
+        -0.013,
+        -0.0081,
+        0.0285,
+        0.011,
+        -0.0055
+       ],
+       "size": 0.0022,
+       "radius": 0.009
+      },
+      {
+       "box": [
+        0.014,
+        -0.025,
+        -0.006,
+        0.03,
+        0.014,
+        0.0081
+       ],
+       "size": 0.0048,
+       "radius": 0.015
+      }
+     ]
+    },
+    "score": 0.7506234138306085,
+    "field_error": 0.11316106365927509,
+    "probe_error": 0.0709819642786037,
+    "dofs": 18771,
+    "rank": 1,
+    "group_size": 1,
+    "failed_gate": null,
+    "error": null
+   }
+  }
+ },
+ "teacher": {
+  "abc_00000003_bc7": {
+   "task_summary": "Only one run (a0): score 0.439 = base 0.189 + 0.25 best-point bonus. Field error 18.6% is the binding term; check-point RMS is 13.3%. The target of 15.9% was missed at 23,388 DOFs (c = 3.86). The run is limited by two things. (1) The clamp band: the region-grid cells at z 0.051-0.061 hold about 19% of the error energy (5.8 + 5.0 + 4.4 + 4.1%). Hotspots #1, #2 and #6 sit on the bore f20, 4-5 mm below the clamp face f2, at local h 0.0040-0.0042. Touching h on f2 is 0.00518 even with {edge 40, 0.0025}. Disclosed point P1 near the clamp reads -43%, and that one point accounts for almost all of the 13.3% point RMS. (2) Junction rims at z 0.025-0.030, |x| 0.017-0.020: each grid cell there holds 2.5-3.8% at h 0.0045-0.0054. The flanks and mid-tube check points are already within about 1-7%. The submitted solve 2 dropped the clamp-ring box that the playbook (mesh-0005/0021) prescribes. Solve 4 added a 0.0032 clamp box, but a0 never decided between solves 2 and 4 by evidence: it picked by the solver's own error estimate. What separates a good run here: realised wall size of 0.0025-0.003 only in the clamp band and on the junction rims, everything else at 0.004 or coarser, and DOFs kept around 14-18k. Whole-face f20/f23 refinement puts more than 5,600 touching elements over the entire tube, which spends DOFs on low-error mid-tube wall.",
+   "setup_warnings": [
+    "g6-abc_00000003_bc7-a0: setup matches the statement term by term (3d, E=2.1e11, nu=0.3, fixed f2, pressure 4.0e6 on f23, 2.1e6 on f16, no gravity; strain energy 0.0328-0.0334 J across 4 meshes). The error is concentrated at the clamp band and junction rims, not spread uniformly, so it is discretisation error. Spend no solves on setup."
+   ],
+   "contested_regions": [
+    {
+     "region": "Clamp band: tube wall z 0.050-0.0605 next to f2/f20 (edge 40 bore-side clamp edge, edge 3 clamp end edge), all four quadrants",
+     "why_contested": "No disagreement map was available, so this is inferred from a0's own compares and its error map. This band holds about 19% of the error energy and the top hotspots #1/#2/#6 (3.5/3.4/2.7%, local error up to 390%). It sits where the clamp meets the 2.5 mm wall, at realised h 0.0040-0.0052: one to two quadratic tets through the wall at a near-singular clamp line. P1 reads -43% there. The compare(2,3) top region lies 0.6 mm from edge 40.",
+     "which_agents_differ": [
+      "a0 (solve 2 vs solve 4 with a clamp box)"
+     ],
+     "what_to_do": "Add the ring box [-0.0185,-0.0185,0.049,0.0185,0.0185,0.0605] size 0.0026 radius 0.009 (r >= 3.3x size), plus {edge 40, 0.002, r 0.006} and {edge 3, 0.0025, r 0.006}. Before solving, require f2/f20 touching h <= 0.0032 near z 0.056 and quality.min >= 0.12. Expect a field-error drop of several points (estimate) and P1 within about 10-15%."
+    },
+    {
+     "region": "Junction rims around the side bosses at z 0.020-0.031, |x| 0.013-0.021 (f16/f19 rims, re-entrant edges 8 and 39, outer wall f3 near x +0.020)",
+     "why_contested": "Grid cells here hold 2.5-3.8% each (about 26% in total over 8 cells) at h 0.0045-0.0054. These are re-entrant intersection rims with stress concentration. compare(1,2) and compare(2,4) both put their top region here (x -0.014/-0.016, y 0.007-0.010, z 0.021-0.026, 3-6 mm from edge 39). Hotspot #3 sits on the +x side near f3 at h 0.0054, so the rim on the +x boss is under-refined too.",
+     "which_agents_differ": [
+      "a0 (solves 1-4 change here by 4-6% share)"
+     ],
+     "what_to_do": "Use {edge 8, 0.0022, r 0.007} and {edge 39, 0.0022, r 0.007}, and the same on the +x boss rim edge (find its tag with inspect_geometry: RE-ENTRANT edge near x +0.019, z 0.03). Add {group f19, 0.0026, r 0.006}. Require f16/f19 touching h <= 0.0035."
+    },
+    {
+     "region": "Mid-tube wall z 0.005-0.020 and boss caps f15/f17/f25",
+     "why_contested": "Error is low here: the check points in this zone are within 0.5-3%, and caps f15/f25 sit at 2.3x and 1.6x median h with almost no error. Whole-face {group f20}/{group f23} refinement still puts 0.0038-0.0040 elements over it.",
+     "which_agents_differ": [
+      "a0"
+     ],
+     "what_to_do": "Do not refine f20/f23 as whole faces below z 0.02. Restrict wall refinement to bands (clamp box plus junction box z 0.017-0.035 at about 0.0036, r 0.012). Leave the rest at h 0.012-0.014 to cut about 5-8k DOFs (estimate). Verify with compare that the mid-tube field changes by less than about 3%."
+    }
+   ],
+   "highlights": [
+    {
+     "agent": "a0",
+     "run_id": "g6-abc_00000003_bc7-a0",
+     "what": "Group-based wall refinement: f20 0.0036 r 0.005, f23 0.004 r 0.005, f16 0.0028 r 0.006, f19 0.0032 r 0.005, edges 8/39 0.0028 r 0.006, edge 40 0.0025 r 0.006, at h 0.014 order 2. It gave quality.min 0.199 and won the best-point bonus.",
+     "why_it_works": "Group/edge size fields follow the curved wall, so the mesh avoids the badly shaped transition tets that box fields produced (box versions gave quality 0.066-0.076). Two quadratic tets through the 2.5 mm wall resolve the flank bending: most check points on the flanks and junction faces are within 1-7%.",
+     "how_to_copy": "Start from mesh(h=0.014, order=2, [f16 0.0028 r 0.006, f19 0.0032 r 0.005, edge 8 0.0028 r 0.006, edge 39 0.0028 r 0.006, edge 40 0.0025 r 0.006]). Then add the clamp ring box at 0.0026 r 0.009 rather than refining f20/f23 everywhere. Check quality.min >= 0.12 before solving."
+    },
+    {
+     "agent": "a0",
+     "run_id": "g6-abc_00000003_bc7-a0",
+     "what": "Re-meshed instead of solving whenever quality fell below 0.1 (0.0761 and 0.0657 meshes were discarded), and used view(error) after solve 1 to locate the clamp and junction bands.",
+     "why_it_works": "No solve was wasted on an invalid mesh. The error view correctly identified the two bands that the region grid confirms hold most of the error.",
+     "how_to_copy": "Mesh calls are free: iterate the mesh until quality.min >= 0.12 and the touching-h table meets the targets, then solve. After each solve, call view(kind=error, view=y) and view(kind=error, view=x)."
+    }
+   ],
+   "shared_lessons": [
+    {
+     "task": "abc_00000003_bc7",
+     "section": "meshing",
+     "content": "The clamp band z 0.050-0.0605 is the top error source (about 19% of energy; hotspots on bore f20 4-5 mm below f2 at h 0.0040-0.0042; P1 -43%). Use box [-0.0185,-0.0185,0.049,0.0185,0.0185,0.0605] size 0.0026 r 0.009 with {edge 40,0.002,r 0.006} and {edge 3,0.0025,r 0.006}. Target f2/f20 touching h <= 0.0032.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000003_bc7",
+     "section": "meshing",
+     "content": "Junction rims z 0.020-0.031, |x| 0.013-0.021 hold about 26% of error at h 0.0045-0.0054. Refine re-entrant edges 8/39 AND the +x boss rim edge (tag from inspect_geometry) at 0.0022 r 0.007, plus f19 0.0026 r 0.006. Need f16/f19 touching h <= 0.0035.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000003_bc7",
+     "section": "meshing",
+     "content": "Whole-face {group f20}/{group f23} refinement puts over 5,600 touching elements over the whole tube, including the mid-tube z 0.005-0.02 where check points are already within 3%. Replace it with bands (clamp ring box plus junction band) to bring DOFs from 23k toward 14-18k at similar accuracy (estimate).",
+     "kind": "avoid"
+    },
+    {
+     "task": "general",
+     "section": "meshing",
+     "content": "Box refinements around a thin curved wall gave quality 0.066-0.076 at size 0.003-0.0036 with r 0.007-0.008. Group/edge fields at the same sizes gave 0.17-0.22. For boxes use r >= 3.3x size (0.0026 needs r >= 0.009) and re-mesh, without solving, until quality.min >= 0.12.",
+     "kind": "fix"
+    },
+    {
+     "task": "general",
+     "section": "tool_use",
+     "content": "Pick the submission by compare between solves of materially different meshes, never by the reference-free error estimate. a0 submitted solve 2 because its estimate read 14.3%; the true error was 18.6%. compare(2,4) = 16.6% meant the clamp change mattered, so the next step should have been a finer clamp check, not submitting the coarser solve.",
+     "kind": "fix"
+    },
+    {
+     "task": "general",
+     "section": "postprocessing",
+     "content": "A compare diff between near-identical meshes (26k vs 23.4k DOFs, diff 14.3%) under-read the true error (18.6%) by about 1.3x. Treat any diff above 12% as a missed target and spend the remaining solves on the hotspot bands.",
+     "kind": "fix"
+    },
+    {
+     "task": "general",
+     "section": "tool_use",
+     "content": "Change one thing per solve. a0's solve 2 changed h (0.013 to 0.014), four sizes and added f19/edge 39/edge 40 at once, so compare(1,2) told it nothing attributable. Plan: 1) baseline; 2) plus clamp ring only; 3) swap whole-face f20/f23 for band boxes; 4) best plus a hotspot fix.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000003_bc7",
+     "section": "postprocessing",
+     "content": "Point RMS is dominated by one low-stress point near the clamp (P1, 4.2 MPa reference, -43%). Under-resolution next to the clamp line shows up as large relative errors on low-stress points. Fix the clamp band before tuning flank points, which are already within 1-7%.",
+     "kind": "keep"
+    },
+    {
+     "task": "abc_00000003_bc7",
+     "section": "solver_setup",
+     "content": "Setup is verified (fixed f2, 4.0e6 on f23, 2.1e6 on f16, E 210e9, nu 0.3; energy 0.0328-0.0334 J across meshes). Spend no solves on setup.",
+     "kind": "keep"
+    },
+    {
+     "task": "general",
+     "section": "meshing",
+     "content": "Score arithmetic before buying DOFs: at c = 3.86 (23.4k DOFs) even hitting the 15.9% target scores only about 0.26 base. Cut DOFs by coarsening zero-error regions (caps f15/f25, mid-tube) before adding refinement; aim for 14-18k DOFs and test that in one solve.",
+     "kind": "idea"
+    },
+    {
+     "task": "abc_00000003_bc7",
+     "section": "meshing",
+     "content": "Diversity experiment worth one solve: no f20/f23 group refinement at all. Use h 0.012 with the clamp ring box 0.0026 r 0.009, a junction band box [-0.022,-0.0185,0.017,0.022,0.0185,0.035] size 0.0034 r 0.012, and edges 8/39/40 at 0.0022. Compare against the group recipe and submit whichever has the better error per DOF.",
+     "kind": "idea"
+    }
+   ],
+   "bullet_ratings": [
+    {
+     "bullet_id": "mesh-0005",
+     "rating": "useful",
+     "why": "Correctly names the clamp band as the main error source (about 19% this run). a0 cited it but omitted the ring box from its submitted solve."
+    },
+    {
+     "bullet_id": "mesh-0004",
+     "rating": "useful",
+     "why": "Junction rims still hold about 26% of the error at h 0.0045-0.0054. The prescribed 0.0022 edges were requested only at 0.0028, which is too coarse."
+    },
+    {
+     "bullet_id": "mesh-0017",
+     "rating": "useful",
+     "why": "f20/f23 group refinement gave good quality (0.199) and accurate flank points, but it is DOF-expensive. Restrict it to bands next time."
+    },
+    {
+     "bullet_id": "mesh-0021",
+     "rating": "useful",
+     "why": "The peer recipe is the right structure; a0 deviated (no clamp box, coarser edges) and missed the target."
+    },
+    {
+     "bullet_id": "mesh-0020",
+     "rating": "not_useful",
+     "why": "Cited, but the continuous wall-box approach produced quality 0.066-0.076. The bottom-end region showed little error in this run."
+    },
+    {
+     "bullet_id": "mesh-0008",
+     "rating": "not_useful",
+     "why": "Cited but not tested as stated: solve 3 dropped f23 yet kept whole-face f20, so the no-clamp-box diversity idea remains untested."
+    },
+    {
+     "bullet_id": "post-0007",
+     "rating": "useful",
+     "why": "Compare diff gave a rough error level, but here it under-read by about 1.3x (14.3% vs 18.6%) because the meshes compared were nearly identical. The bullet should warn about this."
+    },
+    {
+     "bullet_id": "solv-0001",
+     "rating": "useful",
+     "why": "Setup was again correct and no solves were wasted on it."
+    },
+    {
+     "bullet_id": "a0-tool-0004",
+     "rating": "useful",
+     "why": "It prompted the view(error) call that located the clamp and junction bands. a0 still violated its one-change-per-solve part."
+    }
+   ],
+   "task": "abc_00000003_bc7",
+   "per_agent": [
+    {
+     "agent": "a0",
+     "run_id": "g6-abc_00000003_bc7-a0",
+     "diagnosis": "Valid run, but the base score of 0.189 is BELOW the automesher's 0.25. Rank 1 of 1 only because no other agent ran this task, so the 0.25 best bonus was uncontested. Field error 18.6% binds; check-point RMS is 13.3%. Gain 1.71, so A = 0.731. The real killer is cost: c = 23388/6057 = 3.86.\n\nWhere the error is:\n- Clamp band z ~0.056 (four grid cells at x \u00b10.0058, y \u00b10.0129): 19.4% of error energy (5.82+5.04+4.41+4.09). Mean h there is 0.0041-0.0042, about 1.7 elements across the 2.5 mm wall. Hotspots #1, #2, #6 (3.5/3.4/2.7%, vM error ~30%) sit 0.8-1 mm from f20, next to re-entrant edge 40. f2 touching h is 0.00518 because nothing was refined there.\n- Junction-height flanks z ~0.0255, x \u00b10.0174: ~26% (3.78+3.62+3.48+3.36+3.29+3.17+2.59+2.55). Mean h there is 0.0045-0.0054. Hotspots #3, #4, #5 are near f3/f20/f16.\n- Requested vs realised sizes were never fixed:\n  - f16: 0.0028 requested, touching 0.00455 (1.6x).\n  - f19: 0.0032 requested, 0.0045 (1.4x).\n  - f20: 0.0036 requested, 0.00397.\n\nThe check-point term is dominated by disclosed P1 (-43%, a low-stress 4.2 MPa point just under the clamp). The other points mostly read 0.5-7% low (one hidden point in a low-stress region near a boss reads ~+10%).\n\nWhere the DOFs went: f20 (3199 touching elements) plus f23 (2452) make up nearly the whole 3933-element mesh. The group refinements on the two big tube faces turned the wall into a uniform ~0.004 mesh: 23.4k DOFs bought only 31.9% \u2192 18.6%.\n\nScore arithmetic (estimate):\n- The playbook scaling error ~N^-0.4 means score ~N^-0.2, so a blanket finer wall LOSES score.\n- A 12k-DOF mesh at 22% would score ~0.27. A 15k mesh needs only e < 23% to tie your 0.189.\n- Your whole family of meshes (21.9-26.7k DOFs) cannot win. Only DOFs concentrated at the clamp band (edge 40) and the junction rims (edges 8/39, f16/f19), on a coarser base, can.",
+     "step_critique": [
+      {
+       "step": "inspect_geometry",
+       "what_it_did": "Inspected geometry first.",
+       "verdict": "good",
+       "correction": "Keep it. Next time also log the tags of re-entrant edges 8/39/40 and the clamp edge next to f2 before the first mesh."
+      },
+      {
+       "step": "mesh call 1 (h 0.0095, clamp box 0.003 r0.008, wall box 0.0042 r0.008, f16, edge 8)",
+       "what_it_did": "Gave 8411 nodes and min quality 0.076 (invalid). Not solved.",
+       "verdict": "mistake",
+       "correction": "Not solving was right. But a full-wall box at h 0.0095 was never going to fit a \u226416k-DOF budget. First probe the free floor with mesh(h=0.016, order=2, refinements=[]) and log nodes. Then add edges 40/8/39 one at a time and log the node delta for each."
+      },
+      {
+       "step": "mesh call 2 + solve 1 (h 0.013, f20 0.0032, f23 0.0034, f16 0.0028, edge 8 0.003)",
+       "what_it_did": "8694 nodes / 26.1k DOFs, quality 0.18. Solved anyway; energy 0.03335 J.",
+       "verdict": "mistake",
+       "correction": "Your own note said 'target \u226416k DOFs'. At 26k you must re-mesh, not solve. Group refinements on f20/f23 (the whole bore and outer tube) are what blow DOFs up. Replace them with edge refinements (edge 40 / 8 / 39) on h 0.016 and re-mesh until nodes \u22645000."
+      },
+      {
+       "step": "view(solve 1, error, y)",
+       "what_it_did": "Saw the error at the junction and the clamp ring, low at the bottom and mid-tube.",
+       "verdict": "good",
+       "correction": "Correct reading. Act on it by REMOVING refinement from the low-error bottom/mid tube (drop f23 to \u22650.0045), not only by adding more at the junction/clamp."
+      },
+      {
+       "step": "mesh call 3 (junction box x \u00b10.021, z 0.018-0.043, 0.0036 r0.007 + clamp box 0.003 r0.007)",
+       "what_it_did": "10105 nodes, quality 0.066 (invalid).",
+       "verdict": "mistake",
+       "correction": "A box spanning x \u00b10.021 cuts through the boss junctions and wrecks quality on this part. Refine the rims with {edge:8} / {edge:39} at 0.0024 r 0.007 plus {group:f19, 0.003, r 0.005} instead. Boxes here only for the clamp ring, with r \u2265 3.2x size."
+      },
+      {
+       "step": "mesh call 4 + solve 2 (submitted): h 0.014, f20 0.0036, f23 0.004, f16 0.0028, f19 0.0032, edges 8/39 0.0028, edge 40 0.0025",
+       "what_it_did": "23.4k DOFs, quality 0.199. Changed h, f20, f23, f19, edge 39 and edge 40 all at once versus solve 1.",
+       "verdict": "mistake",
+       "correction": "Six simultaneous changes make compare(1,2) unattributable (playbook tool-0004, repeated). Change ONE factor per solve. Also the realised f16 was 0.00455 vs 0.0028 requested: re-request f16 at 0.002 (0.7x target) before solving."
+      },
+      {
+       "step": "compare(1,2) interpretation",
+       "what_it_did": "Read the 14.3% diff as 'estimated error ~14.3%' and later treated solves 1/2/4 as ~14.3-14.7%.",
+       "verdict": "mistake",
+       "correction": "A diff between two meshes of nearly equal resolution (26k vs 23k) measures neither one's error; the true error was 18.6%. Only a diff to a mesh \u22651.3x finer IN THE HOTSPOT REGIONS approximates the coarse mesh's error. With a diff >16% (solve 2 vs 4 gave 16.6%), assume the 15.9% target is missed and do score arithmetic."
+      },
+      {
+       "step": "solve 3 (drop f23, f20 0.0029, edges 0.0026, f19 0.003)",
+       "what_it_did": "21.9k DOFs; diff to solve 2 was 18.3%.",
+       "verdict": "missed_opportunity",
+       "correction": "It saved only 1.4k DOFs because f20 was tightened at the same time; again several changes. The useful experiment was a structurally cheaper mesh, h 0.016 with edge-only refinements, about 12k DOFs. That would have told you whether score rises with fewer DOFs."
+      },
+      {
+       "step": "solve 4 (solve 2 + edge 40 0.002 + clamp box 0.0032 r0.006)",
+       "what_it_did": "26.7k DOFs, quality 0.2175; diff to solve 2 was 16.6%.",
+       "verdict": "missed_opportunity",
+       "correction": "It targeted the right region (the clamp band holds 19%) but only added DOFs. Pair it with a removal: f23 to 0.005, or h 0.016. This break-even condition was never checked: 26.7k DOFs needed e < 18.6%\u00b7sqrt(26.7/23.4) \u2248 19.9% to tie. If you had estimated e for solve 4, it might have scored higher; you never did that arithmetic."
+      },
+      {
+       "step": "submit(solve 2)",
+       "what_it_did": "Submitted the cheaper of the similar-accuracy meshes.",
+       "verdict": "missed_opportunity",
+       "correction": "The logic 'cheapest of similar accuracy' was right. But every candidate (22-27k DOFs) scored below the automesher's 0.25 base. Reserve at least one solve for a 10-14k DOF candidate, and submit by estimated score = (0.1593/e)\u00b2/(DOFs/6057), not by DOFs alone."
+      }
+     ],
+     "promised_items_check": [
+      {
+       "item": "Cost term was the weak part last run (21k DOFs): keep DOFs within a budget (own plan this run: \u226416k DOFs, quality \u22650.12)",
+       "status": "not_done",
+       "comment": "REPEATED MISTAKE: submitted 23.4k DOFs (c = 3.86) after explicitly planning \u226416k. Same pattern as the previous task (promised \u226416k, submitted 21k)."
+      },
+      {
+       "item": "Request ~0.7x the target size and re-mesh until the touching-h table is within 1.1-1.2x (a0-mesh-0016, mesh-0015)",
+       "status": "not_done",
+       "comment": "f16 realised 1.6x and f19 1.4x the request; it solved without re-meshing."
+      },
+      {
+       "item": "Cover stress bands with boxes/strips at target size, edges only for the singular line (feedback from the last task)",
+       "status": "partly",
+       "comment": "Tried a junction box and a clamp box: the junction box failed quality (0.066). The clamp box in solve 4 worked (quality 0.2175) but was not submitted."
+      },
+      {
+       "item": "Quality \u22650.12 before solving",
+       "status": "done",
+       "comment": "Never solved an invalid mesh (rejected 0.076 and 0.066); the submitted mesh had 0.199."
+      },
+      {
+       "item": "Answer every feedback item in the first message",
+       "status": "not_done",
+       "comment": "There was no first message addressing the previous feedback."
+      }
+     ],
+     "strengths": [
+      "Never solved an invalid mesh: rejected quality 0.076 and 0.066 without wasting solves.",
+      "Used view(error) and compare after every solve, and correctly located the error at the clamp band (z ~0.056) and the junction flanks.",
+      "Kept the correct setup (fixed f2, 4 MPa on f23, 2.1 MPa on f16) with no wasted setup solves.",
+      "Kept f16 refined (playbook mesh-0018): the f16-adjacent disclosed point P0 read +1.5%."
+     ],
+     "mistakes": [
+      "Base score 0.189 is below the automesher's 0.25: 23.4k DOFs bought 18.6% error, and the cost term c = 3.86 kills the score.",
+      "REPEATED: broke its own \u226416k DOF budget, solving 26.1k, 23.4k, 22.0k and 26.7k meshes.",
+      "Group refinements on f20 and f23 (the two largest tube faces) turned the whole wall into ~0.004 elements instead of concentrating DOFs at edge 40 and edges 8/39.",
+      "Multiple changes per solve (solves 2 and 3), so the diffs were unattributable.",
+      "Misread compare diffs between equal-resolution meshes as error estimates (thought ~14.3%; true 18.6%).",
+      "Did not re-request when realised sizes were 1.4-1.6x the request (f16, f19).",
+      "Never ran score arithmetic, never tried a cheap mesh."
+     ],
+     "next_mesh_call": {
+      "h": 0.016,
+      "order": 2,
+      "refinements": [
+       {
+        "group": null,
+        "edge": 40,
+        "point": null,
+        "box": null,
+        "size": 0.002,
+        "radius": 0.007
+       },
+       {
+        "group": null,
+        "edge": 8,
+        "point": null,
+        "box": null,
+        "size": 0.0022,
+        "radius": 0.007
+       },
+       {
+        "group": null,
+        "edge": 39,
+        "point": null,
+        "box": null,
+        "size": 0.0022,
+        "radius": 0.007
+       },
+       {
+        "group": "f16",
+        "edge": null,
+        "point": null,
+        "box": null,
+        "size": 0.0022,
+        "radius": 0.006
+       },
+       {
+        "group": "f19",
+        "edge": null,
+        "point": null,
+        "box": null,
+        "size": 0.0026,
+        "radius": 0.006
+       },
+       {
+        "group": "f20",
+        "edge": null,
+        "point": null,
+        "box": null,
+        "size": 0.0045,
+        "radius": 0.004
+       }
+      ]
+     },
+     "notes": [
+      {
+       "task": "abc_00000003_bc7",
+       "section": "meshing",
+       "content": "Group refinements on f20 (3199 touching elements) plus f23 (2452) at 0.0036/0.004 made almost the whole 3933-element mesh: 23.4k DOFs, 18.6%, base 0.189, below the automesher's 0.25. Never refine f23 below 0.0045. Put the DOFs on edge 40 (clamp band, 19% of error) and edges 8/39 (junction, ~26%) instead.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "meshing",
+       "content": "Clamp band z 0.052-0.06 near f20/edge 40 holds 19.4% of error energy at mean h 0.0041 (hotspots #1/#2/#6, vM error ~30%). Use {edge:40,size:0.002,r:0.007}; target touching f2/f20 \u22640.0032 there. Expect this band's share to roughly halve (estimate).",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "meshing",
+       "content": "Junction flanks z 0.02-0.03, |x| 0.012-0.02 hold ~26% at mean h 0.0045-0.0054. Use {edge:8,0.0022,r 0.007}, {edge:39,0.0022,r 0.007}, {group f19,0.0026,r 0.006}, {group f16,0.0022,r 0.006}; target realised f16/f19 \u22640.0033 (asking 0.0028 gave 0.00455).",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "meshing",
+       "content": "Boxes spanning the boss junctions fail quality on this part: the x \u00b10.021 junction box at 0.0036 r0.007 gave 0.066, and the wall box 0.0042 r0.008 at h 0.0095 gave 0.076. A clamp-only ring box [-0.0185,-0.0185,0.052,0.0185,0.0185,0.0605] at 0.0032 r0.006 gave 0.2175. Refine rims by edges/groups, never by boxes.",
+       "kind": "avoid"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "postprocessing",
+       "content": "compare diffs between near-equal meshes under-read: 26k vs 23.4k gave 14.3% while solve 2's true error was 18.6%. Treat any diff >14% as 'target missed'. Only a diff to a mesh \u22651.3x finer in the hotspot regions approximates the coarse mesh's error.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "postprocessing",
+       "content": "Before every solve compute the break-even: below target, score = (0.1593/e)\u00b2/(DOFs/6057) for this task. Here 12k DOFs needs e<26% and 15k needs e<23% to beat 0.189. Write that number down and re-mesh if DOFs exceed what the expected e can pay for.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "REPEATED twice (21k on the previous task, 23.4k here): you promise a DOF cap, then solve above it. Hard rule: after each mesh, if nodes > your cap (here 5000 nodes \u2248 15k DOFs), re-mesh (free) before solving. Tick the cap off explicitly in your reasoning before each solve.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "meshing",
+       "content": "Realised size \u22481.4-1.6x the request on small groups (f16 0.0028\u21920.00455, f19 0.0032\u21920.0045). Request 0.7x the target. Re-mesh until the touching-h table is within 1.2x of the target before any solve.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "tool_use",
+       "content": "Plan for 4 solves:\n1) h 0.016 edge-only recipe (edges 40/8/39 + f16/f19), \u226415k DOFs.\n2) same + f20 0.0038 r0.004 only, then compare(1,2).\n3) the better of the two at h 0.02, then compare.\n4) best plus a hotspot fix.\nSubmit by estimated score, not DOFs alone.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "meshing",
+       "content": "Probe the free DOF floor first: mesh(h=0.016,order=2,refinements=[]) and mesh(h=0.02,...). Log nodes, then the node delta for each added edge/group. Without this you cannot tell which refinement ate the 23k DOFs.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "meshing",
+       "content": "Keep f16 refined in every recipe: P0 near f16 read +1.5%. Caps f15 (h 0.0089) and f25 (0.0066) carried near-zero error; leave them coarse.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "postprocessing",
+       "content": "The check-point term (13.3%) is set almost entirely by P1 (-43%, a low-stress 4.2 MPa point just below the clamp at z 0.0574). The edge-40/clamp-band refinement fixes both P1 and the 19% field share. Field error still binds, so judge by the field first.",
+       "kind": "highlight"
+      },
+      {
+       "task": "abc_00000003_bc7",
+       "section": "solver_setup",
+       "content": "Setup verified again: 3d, E 2.1e11, nu 0.3, fixed f2, 4e6 on f23, 2.1e6 on f16; strain energy 0.0328-0.0334 J across 22-27k DOFs. Spend no solves on setup.",
+       "kind": "keep"
+      }
+     ],
+     "assignment": null
+    }
+   ],
+   "assignments": []
+  },
+  "abc_00000065_bc0": {
+   "task_summary": "Only one run (a1): score 0.751 (base 0.501 plus the 0.25 best-run bonus for running alone). Field error 11.3% binds; check-point RMS is 7.1%. That gives gain 2.13 at 18,771 DOFs, so c = 2.13. The target was met; cost now limits the score. The setup is correct. The error is mesh-only and concentrated in three places. (1) The bottom clamp-foot band between f5 and f7, z -0.0081..-0.0055, x 0.019-0.027: hotspots #1, #2, #3, #5 and #6 hold ~31% of the error energy at local h 0.0029-0.0031, although the strip box requested 0.0022. (2) The f5 inner wall at mid-height: #4 holds 5.5% at h 0.0058; f5 touching h is 0.0061, 1.5x the median. (3) The upper wall near f13/f7 around y -0.017, z 0.006: the compare regions moved most there between solves. About 77% of the DOFs (4,808 of 6,257 nodes) are the curvature-driven floor on small curved faces (f26-f32, f10, f11, f34 at 0.0022-0.0029, finer than the median). Those faces carry almost no error. a1's best discovery was that global h 0.045 with the same refinements gave 4,506 nodes at quality 0.134, versus 6,193 at h 0.03. If the error held at ~11-12%, base score would rise from ~0.50 to ~0.6-0.7 (estimate). It never solved that mesh: it issued two parallel mesh calls, and solve 4 ran on the last one (h 0.1, quality 0.088, invalid). What separates a good run from a great one here: same local refinement, much lower DOF floor via the global-h sweep, a solve on exactly the mesh intended, plus a sharper clamp-foot strip.",
+   "setup_warnings": [
+    "g6-abc_00000065_bc0-a1: setup matches the statement term by term (3d, E 2.1e11, nu 0.3, fixed f12, pressure 2.1e6 on f7, no gravity; energy 2.07-2.12e-4 J). No setup warning. The error is concentrated at the clamp foot and the f5/f7 wall, consistent with a mesh, not setup, cause."
+   ],
+   "contested_regions": [
+    {
+     "region": "Bottom clamp-foot band between inner face f5 and loaded face f7, x 0.019-0.027, y -0.009..0.009, z -0.0081..-0.0055 (next to clamp f12 and edge 22)",
+     "why_contested": "Bending of the loaded wall concentrates at its clamped root. Strip box [0.0175,-0.013,-0.0081,0.0285,0.011,-0.0055] at 0.0022 realised only 0.0029-0.0031 (1.4x the request). Hotspots #1, #2, #3, #5 and #6 still hold ~31% of the error. In solve 3 a1 coarsened the strip to 0.003, the wrong direction.",
+     "which_agents_differ": [
+      "a1"
+     ],
+     "what_to_do": "Request strip size 0.0016 with r 0.006-0.007 (realised ~0.0022-0.0025). Re-mesh, without solving, until hotspot-adjacent touching h is <=0.0025 and quality.min >=0.12. Keep edge 22 at 0.0016-0.0018 r 0.006. Expect this band's share to fall from ~31% toward ~15% (estimate)."
+    },
+    {
+     "region": "Inner wall face f5 at mid-height (z ~0, x ~0.019, y -0.01..0.005)",
+     "why_contested": "f5 is a large inner face with touching h 0.0061 (1.5x the median). The wall box only partly overlaps it. Hotspot #4 holds 5.5% at h 0.0058, and #1/#5 lie within 0.6 mm of f5 at the bottom.",
+     "which_agents_differ": [
+      "a1"
+     ],
+     "what_to_do": "Add {group: f5, size: 0.0035, radius: 0.01}, or shift the wall box xmin to 0.012 so it covers f5. Target f5 touching h <=0.0042. Spend one solve on this as a single change and compare against the previous solve."
+    },
+    {
+     "region": "Upper wall / arm near f13 and f7, around x 0.011-0.023, y -0.017..-0.006, z 0.004-0.006 (toward clamp-end edge 18)",
+     "why_contested": "In every compare (1-2, 2-3, 2-4) the largest-change region (11-13% share) sat here or near f7 at z 0.006. The field there keeps moving with mesh changes, so it is not converged. f13 touching h is 0.0059.",
+     "which_agents_differ": [
+      "a1"
+     ],
+     "what_to_do": "Extend the wall box down to ymin -0.025 (as in solves 2-4). Add {edge: 18, size: 0.0022, radius: 0.007}, or a box over f13 near y -0.017 at 0.004 r 0.012. Confirm with compare that this region's share drops below ~5%."
+    }
+   ],
+   "highlights": [
+    {
+     "agent": "a1",
+     "run_id": "g6-abc_00000065_bc0-a1",
+     "what": "A free global-h sweep with fixed refinements (meshing only, no solves) exposed a DOF-floor trick. h 0.045 gave 4,506 nodes at quality 0.134, versus 6,193 nodes at h 0.03 with identical local refinements (-27%). Other values were invalid: h 0.06 had 4,254 nodes at quality 0.058, h 0.08 had 0.083, h 0.1 had 0.088.",
+     "why_it_works": "The node floor comes from curvature-based sizing on small curved faces (f26-f32, f10, f11, f34), not from the refinements. A larger global h changes how that sizing plays out and lowers the floor, while the local sizes at the error zones stay the same. At 18.8k DOFs and 11.3% the base is ~0.50; at ~13.5k with similar error it would be ~0.70 (estimate).",
+     "how_to_copy": "mesh(h=0.045, order=2, refinements=[{edge:22,size:0.0016,radius:0.006},{box:[0.0175,-0.013,-0.0081,0.0285,0.011,-0.0055],size:0.0018,radius:0.008},{box:[0.014,-0.025,-0.006,0.03,0.03,0.0081],size:0.0042,radius:0.016}]). Sweep h in {0.04, 0.045, 0.05} one call at a time, keep the one with the fewest nodes and quality >=0.12, re-issue that exact call, then solve."
+    },
+    {
+     "agent": "a1",
+     "run_id": "g6-abc_00000065_bc0-a1",
+     "what": "A full-thickness upper-wall buffer box [0.014,-0.025,-0.006,0.03,0.014,0.0081] at 0.0048 r 0.015 was cheap and well placed.",
+     "why_it_works": "It cost only +263 nodes over solve 1 (5,994 to 6,257) at quality 0.122. It covered the upper-wall error that solve 1's hotspots showed at z 0.005-0.008. Solve 1 to 2 changed the field 12.7%. Large r (>=3x size) kept quality valid, where 0.005 r 0.012 gave 0.060 and 0.0042 r 0.013 gave 0.084.",
+     "how_to_copy": "Keep a wall buffer at 0.0042-0.0048 with r 0.015-0.016 spanning z -0.006..0.0081. Always use r >=3.2x size. Re-mesh, without solving, if quality.min <0.12."
+    }
+   ],
+   "shared_lessons": [
+    {
+     "task": "general",
+     "section": "tool_use",
+     "content": "solve() runs on the LAST mesh() call. Never issue several mesh probes in parallel or in sequence right before a solve. a1's solve 4 landed on the h 0.1 mesh (quality 0.088, invalid) instead of the h 0.045 mesh (quality 0.134) and wasted the final solve. Re-issue the chosen mesh call immediately before solve and check that the solve's node count equals that mesh's node count.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000065_bc0",
+     "section": "meshing",
+     "content": "Lower the DOF floor by global h, not by refinements: identical refinements gave 6,193 nodes at h 0.03 and 4,506 nodes (quality 0.134) at h 0.045. Run solve 1 on h 0.045 with edge 22 at 0.0016 r 0.006, the strip at 0.0018 r 0.008 and the wall box at 0.0042 r 0.016. Expect ~13.5k DOFs, and base ~0.6-0.7 if the error stays near 11-12% (estimate).",
+     "kind": "keep"
+    },
+    {
+     "task": "general",
+     "section": "meshing",
+     "content": "Node count and quality.min are non-monotone in global h: h 0.045 gave quality 0.134, 0.06 gave 0.058, 0.08 gave 0.083, 0.1 gave 0.088. Mesh calls are free, so sweep 3-4 h values one at a time. Log nodes and quality for each, then solve only a mesh with quality >=0.12 and the fewest nodes.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000065_bc0",
+     "section": "meshing",
+     "content": "The clamp-foot band between f5 and f7 (z -0.0081..-0.0055, x 0.019-0.027) still holds ~31% of the error at realised h 0.003, although 0.0022 was requested. Request 0.0016-0.0018 on the strip box with r >=0.006, and verify touching h <=0.0025. Never coarsen it to 0.003, as a1's solve 3 did.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000065_bc0",
+     "section": "meshing",
+     "content": "Inner face f5 touching h is 0.0061 (1.5x median) and sits next to hotspots #1, #4 and #5 (~20% of the error together). Test {group: f5, size: 0.0035, radius: 0.01} as a one-change solve and compare with the baseline. Expect f5 touching h <=0.0042 and #4 halved (estimate).",
+     "kind": "idea"
+    },
+    {
+     "task": "general",
+     "section": "postprocessing",
+     "content": "Name the binding term first. Here the field error (11.3%) binds and the check-point RMS (7.1%) does not, so only energy-norm error at the f5/f7 root pays. Compare diffs to a slightly finer mesh (10.6-12.7%) tracked the true 11.3% well. Use the compare diff as the error estimate; the hotspot estimate read 8.4%.",
+     "kind": "keep"
+    },
+    {
+     "task": "general",
+     "section": "tool_use",
+     "content": "Make one change per solve. a1's solve 3 changed the strip size 0.0022\u21920.003, edge 22 0.0016\u21920.0018, and the wall box (extent to y 0.03, size 0.0042) all at once, so the 10.6% diff could not be attributed. Spend solve 2 on exactly one target, e.g. f5 or the strip size.",
+     "kind": "avoid"
+    },
+    {
+     "task": "general",
+     "section": "postprocessing",
+     "content": "Do not pick the submission by higher strain energy when energies differ <2.5% (2.07-2.12e-4 J here). Score arithmetic decides: above target, score ~ g/(2c). At equal error, a 13.5k-DOF solve beats an 18.8k one by ~1.4x (estimate). Submit the cheapest valid solve whose compare diff to the finest is within ~1.5 points.",
+     "kind": "fix"
+    },
+    {
+     "task": "abc_00000065_bc0",
+     "section": "meshing",
+     "content": "A full-thickness wall box is fine when it is coarse and wide. 0.0048 r 0.015 over z -0.006..0.0081 cost only +263 nodes at quality 0.122 and covered the upper-wall error. The old 'never full-thickness' cost penalty applied to finer boxes. Judge each box by its node delta from a free mesh call, not by shape.",
+     "kind": "keep"
+    },
+    {
+     "task": "abc_00000065_bc0",
+     "section": "solver_setup",
+     "content": "The setup is verified again (3d, E 2.1e11, nu 0.3, fixed f12, pressure 2.1e6 on f7; energy 2.07-2.12e-4 J). Spend no solve on setup checks; spend all 4 on the mesh: h-swept baseline, strip at 0.0016, f5 group, then the best.",
+     "kind": "keep"
+    },
+    {
+     "task": "general",
+     "section": "meshing",
+     "content": "For diversity on a shared task, vary the structure deliberately. Options: global h 0.045 versus peers' 0.03; group f5 and edge 18 targets versus box-only. Keep base >=90% of the best. Identical recipes tie on hidden points and earn nothing.",
+     "kind": "idea"
+    }
+   ],
+   "bullet_ratings": [
+    {
+     "bullet_id": "mesh-0002",
+     "rating": "useful",
+     "why": "r >=3x size rescued quality: 0.0048 r 0.015 gave 0.122, while 0.005 r 0.012 gave 0.060 and 0.0042 r 0.013 gave 0.084."
+    },
+    {
+     "bullet_id": "mesh-0009",
+     "rating": "useful",
+     "why": "The strip box targeted the band that still holds ~31% of the error. Its requested 0.0016 is right; a1 requested 0.0022 and realised 0.003."
+    },
+    {
+     "bullet_id": "mesh-0014",
+     "rating": "useful",
+     "why": "The wider upper-wall buffer was cheap (+263 nodes). a1 extended it to full thickness, which moved the field 12.7%."
+    },
+    {
+     "bullet_id": "mesh-0022",
+     "rating": "useful",
+     "why": "The floor probe at h 0.03 (4,808 nodes) led a1 to sweep global h and find h 0.045 at 4,506 nodes with all refinements."
+    },
+    {
+     "bullet_id": "post-0001",
+     "rating": "not_useful",
+     "why": "a1 read the hotspots but never called view(kind=error) and did not refine f5, the face nearest #1, #4 and #5."
+    },
+    {
+     "bullet_id": "post-0003",
+     "rating": "not_useful",
+     "why": "Misapplied: a1 chose by an energy difference of ~0.8% instead of compare plus cost, and passed over the cheaper-mesh option."
+    },
+    {
+     "bullet_id": "post-0007",
+     "rating": "useful",
+     "why": "Compare diffs of 10.6-12.7% closely matched the true field error of 11.3%."
+    },
+    {
+     "bullet_id": "solv-0002",
+     "rating": "useful",
+     "why": "The setup was correct first time and no solve was wasted on setup checks."
+    }
+   ],
+   "task": "abc_00000065_bc0",
+   "per_agent": [
+    {
+     "agent": "a1",
+     "run_id": "g6-abc_00000065_bc0-a1",
+     "diagnosis": "Setup is correct: 3d, E 2.1e11, nu 0.3, f12 fixed, 2.1e6 Pa on f7. Energy ranged 2.07-2.12e-4 J. The error is all mesh.\n\nBINDING TERM: field error, 11.3%. Check-point RMS is 7.1% and does not bind. You beat the target (g 2.13), but the cost term is 2.13 (18,771 DOFs vs 8,811), so the base score is only 0.501. The rest came from the solo-run bonus.\n\nWHERE THE ERROR IS: the clamp-foot band at z -0.0072..-0.0070 between f5 and f7.\n- Hotspots #1, #2, #3, #5 and #6 hold 31% of the error energy at local h 0.0029-0.0031.\n- Your strip requested 0.0022 but realised about 0.003, failing your own touching-h <=0.0025 promise.\n- #4 (5.5%) sits mid-wall near f5 at z about 0, at h 0.0058. f5 touching h is 0.0061 (1.5x median), so the 0.0048 upper-wall box never reached the inner f5 wall.\n\nHOW DOFs WERE SPENT: about 14.4k of the 18.8k DOFs are the curvature floor on tiny curved faces f26-f32, f34, f10 and f11 (touching h 0.0022-0.0029, essentially zero error). Only about 4.4k DOFs went to the error zone.\n\nYOUR BIGGEST FINDING: you showed the floor is not fixed. The same refinements at h 0.045 gave 4,506 nodes (13.5k DOFs, quality 0.134), versus 6,193 at h 0.03. Rough estimate: at a similar ~11.5% error, base would be about 1.05/1.53 = 0.69.\n\nYOU LOST IT: you fired mesh h 0.045 and h 0.1 in parallel. The last mesh (h 0.1, 5,825 nodes, quality 0.088, invalid) became current, and you spent solve 4 on it.\n\nCOMPARE DIFFS: compare(1,2) was 12.7% and compare(2,3) was 10.6%, close to the true 11.3%. Neither mesh is converged in the foot band.",
+     "step_critique": [
+      {
+       "step": "inspect_geometry + plan",
+       "what_it_did": "Inspected; set aside the other task's feedback; kept order 2 and listed the playbook items.",
+       "verdict": "good",
+       "correction": "Keep order 2. Also map edge 18 (the second clamp-end edge named in mesh-0009/mesh-0013) and confirm which face f5 is (inner wall facing f7) before meshing."
+      },
+      {
+       "step": "mesh probe h 0.03, no refinements",
+       "what_it_did": "Measured the floor: 4,808 nodes.",
+       "verdict": "good",
+       "correction": "Keep this free probe, but also probe mesh(h=0.045,[]) and mesh(h=0.06,[]) at once, sequentially. The floor depends on h, as your later meshes showed."
+      },
+      {
+       "step": "mesh calls 2-3 (edge 22 0.0016 + slab 0.0022 + capped buffer 0.0045)",
+       "what_it_did": "Got 5,994 nodes at quality 0.117 after widening radii from 0.1009.",
+       "verdict": "good",
+       "correction": "Widening r to 0.009 to fix quality was right. Before solving, read the size table for f5 and f7 and the slab region. The slab realised about 0.003 against the <=0.0025 you promised; re-request at 0.0016-0.0018 before solving."
+      },
+      {
+       "step": "solve 1",
+       "what_it_did": "Baseline at 18.0k DOFs, energy 2.0714e-4.",
+       "verdict": "missed_opportunity",
+       "correction": "Follow every solve with view(solve, kind=error) and read the 5 hotspots. You never called view this run, although you promised to."
+      },
+      {
+       "step": "mesh calls 4-6 (full-thickness box z to 0.0081)",
+       "what_it_did": "Size 0.005 gave quality 0.060, 0.0042 gave 7,822 nodes and quality 0.084, and 0.0048 r 0.015 gave 6,257 nodes and quality 0.122.",
+       "verdict": "good",
+       "correction": "Iterating free meshes until quality >=0.12 and nodes are sane was correct. Note that this broke your own 'cap z<=0.003' promise, but at 0.0048 it cost only +263 nodes, so the playbook avoid rule (mesh-0011) does not hold at this size; record that."
+      },
+      {
+       "step": "solve 2 + compare(1,2)",
+       "what_it_did": "One-factor change (upper box full-thickness); diff 12.7%, energy up to 2.1162e-4.",
+       "verdict": "good",
+       "correction": "This was a clean controlled experiment. Next, view the error to see that #4 sits on f5 at z about 0 with h 0.0058."
+      },
+      {
+       "step": "mesh 7 + solve 3",
+       "what_it_did": "Changed edge 22 0.0016\u21920.0018, slab 0.0022\u21920.003 and box y-extent to 0.03 all at once; got 18.6k DOFs.",
+       "verdict": "mistake",
+       "correction": "Three changes in one solve make compare(2,3)=10.6% unattributable. Coarsening the slab also moved DOFs AWAY from the band holding 31% of the error. One factor per solve: the solve that mattered was h 0.03\u21920.045 with identical refinements."
+      },
+      {
+       "step": "meshes h 0.08/0.06/0.045/0.1",
+       "what_it_did": "Found h 0.045 gave 4,506 nodes at quality 0.134, but called meshes in parallel so h 0.1 (quality 0.088) became current.",
+       "verdict": "mistake",
+       "correction": "Never issue mesh calls in parallel. The solver uses the LAST mesh built. After probing, re-issue the chosen mesh call alone, check that the returned nodes and min_quality match (4,506 / 0.134), and only then solve."
+      },
+      {
+       "step": "solve 4",
+       "what_it_did": "Solved the invalid h 0.1 mesh (quality 0.088); wasted the last solve.",
+       "verdict": "mistake",
+       "correction": "Re-run mesh(h=0.045, ...) alone and solve it, then compare(2,4). If the diff is <~8%, submit it: about 13.5k DOFs vs 18.8k, worth roughly +0.15-0.2 base score (estimate)."
+      },
+      {
+       "step": "submit solve 2",
+       "what_it_did": "Chose solve 2 over solve 3 by its higher strain energy.",
+       "verdict": "good",
+       "correction": "This was reasonable given the evidence: solve 2 had the finer slab and the highest energy from below. Next time decide with compare against the finest solve plus hotspot local h, not energy alone."
+      }
+     ],
+     "promised_items_check": [
+      {
+       "item": "Check realised h on every refined group before solving",
+       "status": "partly",
+       "comment": "Read nodes and quality every time, but never verified slab/f5 touching h. The slab realised about 0.003 vs 0.0025 promised. REPEATED MISTAKE from abc_00000003 (f16 0.0035\u21920.0055 unchecked)."
+      },
+      {
+       "item": "Change one factor per solve",
+       "status": "partly",
+       "comment": "Solve 2 changed one factor; solve 3 changed three (edge 22 size, slab size, box y-extent). REPEATED MISTAKE (tool-0004)."
+      },
+      {
+       "item": "View the error map after each solve",
+       "status": "not_done",
+       "comment": "Zero view calls in the run."
+      },
+      {
+       "item": "Clamp-foot strip with touching h <=0.0025",
+       "status": "not_done",
+       "comment": "Hotspots #1/#2/#3/#5 in the strip at local h 0.0030-0.0031; edge 18 never refined."
+      },
+      {
+       "item": "Upper-wall buffer capped at z<=0.003, no full-thickness boxes",
+       "status": "not_done",
+       "comment": "Solves 2-4 used z to 0.0081. It cost only +263 nodes at size 0.0048, so the deviation was defensible, but you did not state it as a deliberate test."
+      },
+      {
+       "item": "Avoid copying a0's recipe and uniform DOFs",
+       "status": "done",
+       "comment": "Recipe differs (h 0.03 + edge 22 + two boxes)."
+      }
+     ],
+     "strengths": [
+      "Probed free meshes until quality was >=0.12 and never solved below 0.1 knowingly (solves 1-3 valid).",
+      "Discovered that raising global h from 0.03 to 0.045 cuts the curvature DOF floor (6,193\u21924,506 nodes, same refinements, quality 0.134): the most valuable finding on this task.",
+      "Solve 2 was a clean one-factor experiment, and its full-thickness 0.0048 box was cheap and helped (field change 12.7%).",
+      "Hit the target (11.3% < 12.07%) on the first attempt at this task."
+     ],
+     "mistakes": [
+      "Parallel mesh calls left the invalid h 0.1 mesh current; solve 4 was wasted and the cheap h 0.045 candidate was never solved.",
+      "Solve 3 changed three factors and coarsened the slab that held 31% of the error.",
+      "Never viewed the error map; hotspot #4 on f5 (h 0.0058) went unaddressed.",
+      "Slab requested 0.0022 but realised about 0.003; did not re-request smaller before solving.",
+      "Edge 18 (second clamp-end edge) never refined, despite mesh-0009/mesh-0013."
+     ],
+     "next_mesh_call": {
+      "h": 0.045,
+      "order": 2,
+      "refinements": [
+       {
+        "group": null,
+        "edge": 22,
+        "point": null,
+        "box": null,
+        "size": 0.0016,
+        "radius": 0.006
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.0175,
+         -0.013,
+         -0.0081,
+         0.0285,
+         0.011,
+         -0.0055
+        ],
+        "size": 0.0018,
+        "radius": 0.009
+       },
+       {
+        "group": null,
+        "edge": null,
+        "point": null,
+        "box": [
+         0.014,
+         -0.025,
+         -0.006,
+         0.03,
+         0.03,
+         0.0081
+        ],
+        "size": 0.0042,
+        "radius": 0.016
+       }
+      ]
+     },
+     "notes": [
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "Never call mesh in parallel or leave a probe as the last mesh. The solver uses the LAST mesh built: a1's solve 4 ran on h 0.1 (quality 0.088, invalid) instead of h 0.045 (4,506 nodes, 0.134). Re-issue the chosen call alone and confirm nodes and min_quality before every solve.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_bc0",
+       "section": "meshing",
+       "content": "Global h 0.045 lowers the DOF floor: the same refinements gave 4,506 nodes (q 0.134) vs 6,193 at h 0.03. Small curved faces f26-f32/f34/f10/f11 are curvature-sized off h and carry ~0 error. Use h 0.045 as base; h 0.06 (q 0.058) and 0.08/0.1 (q 0.083/0.088) fail quality.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000065_bc0",
+       "section": "meshing",
+       "content": "Clamp-foot band z -0.0081..-0.0055 between f5 and f7 holds 31% of field error (hotspots #1,#2,#3,#5,#6) at realised h 0.003. Request the slab box [0.0175,-0.013,-0.0081,0.0285,0.011,-0.0055] at 0.0018 r 0.009 (0.0022 realised ~0.003). Never coarsen it to 0.003 again.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_bc0",
+       "section": "meshing",
+       "content": "Mid-wall near f5 at z\u22480 (hotspot #4, 5.5%) sits at h 0.0058; f5 touching h is 0.0061 even inside the 0.0048 box. If still a top-3 hotspot, add box [0.016,-0.014,-0.004,0.022,0.012,0.004] size 0.0032 r 0.01 and check that f5 touching h drops <=0.0045.",
+       "kind": "idea"
+      },
+      {
+       "task": "abc_00000065_bc0",
+       "section": "meshing",
+       "content": "Full-thickness upper-wall box [0.014,-0.025,-0.006,0.03,0.014,0.0081] at 0.0048 r 0.015 cost only +263 nodes over the z-capped 0.0045 box and changed the field 12.7% (solve 1\u21922). mesh-0011's 'no full-thickness box' does not hold at size >=0.0045 with h >=0.03.",
+       "kind": "keep"
+      },
+      {
+       "task": "abc_00000065_bc0",
+       "section": "meshing",
+       "content": "Quality is erratic with the upper box: 0.005 r 0.012 gave 0.060, 0.0042 r 0.013 gave 0.084, 0.0048 r 0.015 gave 0.122, 0.0042 r 0.016 gave 0.116-0.134. Keep r >=3.3x size for that box; probe free and re-mesh until quality >=0.12.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_bc0",
+       "section": "postprocessing",
+       "content": "compare diffs approximated the true error well here: compare(2,3)=10.6% vs true 11.3%, compare(1,2)=12.7%. Use compare(candidate, finest) <~8% to justify submitting a cheaper mesh; energy differences of 0.1-1% are not decisive.",
+       "kind": "keep"
+      },
+      {
+       "task": "general",
+       "section": "tool_use",
+       "content": "One factor per solve: solve 3 changed edge 22 size, slab size and box extent together, so its 10.6% diff is unattributable. Plan the 4 solves: 1) baseline, 2) one refinement change, 3) h change only with the same refinements, 4) best plus hotspot fix.",
+       "kind": "fix"
+      },
+      {
+       "task": "general",
+       "section": "postprocessing",
+       "content": "Call view(solve, kind=error) after every solve and map each top-5 hotspot to its nearest group's touching h. a1 skipped all views and missed that #4 sat on f5 at h 0.0058, 1.5x median.",
+       "kind": "fix"
+      },
+      {
+       "task": "abc_00000065_bc0",
+       "section": "meshing",
+       "content": "Edge 18 (second clamp-end edge) was never refined in a1's run. If the foot band still holds >20% after the 0.0018 slab, test {edge 18, 0.0018, r 0.005} as a one-factor solve and compare.",
+       "kind": "idea"
+      },
+      {
+       "task": "general",
+       "section": "meshing",
+       "content": "Score arithmetic for this task: at ~11.3% error, cutting 18.8k\u219213.5k DOFs raises base about 0.50\u21920.70 (estimate). Cutting floor DOFs on zero-error curved faces is worth more than further local refinement once the target is met.",
+       "kind": "highlight"
+      }
+     ],
+     "assignment": null
+    }
+   ],
+   "assignments": []
+  }
+ },
+ "highlights": [
+  {
+   "agent": "a0",
+   "run_id": "g6-abc_00000003_bc7-a0",
+   "what": "Group-based wall refinement: f20 0.0036 r 0.005, f23 0.004 r 0.005, f16 0.0028 r 0.006, f19 0.0032 r 0.005, edges 8/39 0.0028 r 0.006, edge 40 0.0025 r 0.006, at h 0.014 order 2. It gave quality.min 0.199 and won the best-point bonus.",
+   "why_it_works": "Group/edge size fields follow the curved wall, so the mesh avoids the badly shaped transition tets that box fields produced (box versions gave quality 0.066-0.076). Two quadratic tets through the 2.5 mm wall resolve the flank bending: most check points on the flanks and junction faces are within 1-7%.",
+   "how_to_copy": "Start from mesh(h=0.014, order=2, [f16 0.0028 r 0.006, f19 0.0032 r 0.005, edge 8 0.0028 r 0.006, edge 39 0.0028 r 0.006, edge 40 0.0025 r 0.006]). Then add the clamp ring box at 0.0026 r 0.009 rather than refining f20/f23 everywhere. Check quality.min >= 0.12 before solving.",
+   "task": "abc_00000003_bc7"
+  },
+  {
+   "agent": "a0",
+   "run_id": "g6-abc_00000003_bc7-a0",
+   "what": "Re-meshed instead of solving whenever quality fell below 0.1 (0.0761 and 0.0657 meshes were discarded), and used view(error) after solve 1 to locate the clamp and junction bands.",
+   "why_it_works": "No solve was wasted on an invalid mesh. The error view correctly identified the two bands that the region grid confirms hold most of the error.",
+   "how_to_copy": "Mesh calls are free: iterate the mesh until quality.min >= 0.12 and the touching-h table meets the targets, then solve. After each solve, call view(kind=error, view=y) and view(kind=error, view=x).",
+   "task": "abc_00000003_bc7"
+  },
+  {
+   "agent": "a1",
+   "run_id": "g6-abc_00000065_bc0-a1",
+   "what": "A free global-h sweep with fixed refinements (meshing only, no solves) exposed a DOF-floor trick. h 0.045 gave 4,506 nodes at quality 0.134, versus 6,193 nodes at h 0.03 with identical local refinements (-27%). Other values were invalid: h 0.06 had 4,254 nodes at quality 0.058, h 0.08 had 0.083, h 0.1 had 0.088.",
+   "why_it_works": "The node floor comes from curvature-based sizing on small curved faces (f26-f32, f10, f11, f34), not from the refinements. A larger global h changes how that sizing plays out and lowers the floor, while the local sizes at the error zones stay the same. At 18.8k DOFs and 11.3% the base is ~0.50; at ~13.5k with similar error it would be ~0.70 (estimate).",
+   "how_to_copy": "mesh(h=0.045, order=2, refinements=[{edge:22,size:0.0016,radius:0.006},{box:[0.0175,-0.013,-0.0081,0.0285,0.011,-0.0055],size:0.0018,radius:0.008},{box:[0.014,-0.025,-0.006,0.03,0.03,0.0081],size:0.0042,radius:0.016}]). Sweep h in {0.04, 0.045, 0.05} one call at a time, keep the one with the fewest nodes and quality >=0.12, re-issue that exact call, then solve.",
+   "task": "abc_00000065_bc0"
+  },
+  {
+   "agent": "a1",
+   "run_id": "g6-abc_00000065_bc0-a1",
+   "what": "A full-thickness upper-wall buffer box [0.014,-0.025,-0.006,0.03,0.014,0.0081] at 0.0048 r 0.015 was cheap and well placed.",
+   "why_it_works": "It cost only +263 nodes over solve 1 (5,994 to 6,257) at quality 0.122. It covered the upper-wall error that solve 1's hotspots showed at z 0.005-0.008. Solve 1 to 2 changed the field 12.7%. Large r (>=3x size) kept quality valid, where 0.005 r 0.012 gave 0.060 and 0.0042 r 0.013 gave 0.084.",
+   "how_to_copy": "Keep a wall buffer at 0.0042-0.0048 with r 0.015-0.016 spanning z -0.006..0.0081. Always use r >=3.2x size. Re-mesh, without solving, if quality.min <0.12.",
+   "task": "abc_00000065_bc0"
+  }
+ ]
+}

@@ -1,0 +1,250 @@
+"""Physical test data in the loop (ace/evidence.py): a machine export becomes a measured compliance
+that every run is compared with, that agents and teachers read, and that can replace the reference
+in the score. Everything runs without an API key (mock LLM)."""
+
+import csv
+import json
+import math
+
+import numpy as np
+import pytest
+
+from ace import config
+from ace import evidence as EV
+from ace import fea
+
+
+def write_export(path, compliance, cycles=3, peak=300.0, noise=2e-7, seating=10e-6, disp_unit="mm",
+                 load_unit="N", delim=",", decimal_comma=False, units_in_header=False):
+    """A Bluehill-like export: a title block, a header row, a units row, then Time, Load, Extension.
+    The first loading has a seating toe (grips settling); later cycles start from the set it leaves."""
+    rng = np.random.default_rng(0)
+    rows, t = [], 0.0
+    for c in range(cycles):
+        for L in np.concatenate([np.linspace(0, peak, 80), np.linspace(peak, 0, 80)[1:]]):
+            toe = seating * (1 - math.exp(-L / 20)) if c == 0 else seating
+            d = compliance * L + toe + rng.normal(0, noise)
+            t += 0.5
+            rows.append((t, L / {"N": 1, "kN": 1e3}[load_unit], d / {"mm": 1e-3, "m": 1.0}[disp_unit]))
+    fmt = (lambda v: f"{v:.6f}".replace(".", ",")) if decimal_comma else (lambda v: f"{v:.6f}")
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f, delimiter=delim, quoting=csv.QUOTE_ALL)
+        w.writerow(["Specimen label", "printed part 1"])
+        w.writerow([])
+        if units_in_header:
+            w.writerow(["Time (s)", f"Load ({load_unit})", f"Extension (Video) ({disp_unit})"])
+        else:
+            w.writerow(["Time", "Load", "Extension (Video)"])
+            w.writerow(["(s)", f"({load_unit})", f"({disp_unit})"])
+        for r in rows:
+            w.writerow([fmt(v) for v in r])
+    return path
+
+
+def spec_file(tmp_path, problem_id, data_name, **extra):
+    spec = {"test_id": "t1", "problem_id": problem_id, "description": "printed part, wedge grips",
+            "data": {"file": data_name, "load": "Load", "displacement": "Extension (Video)"}, **extra}
+    p = tmp_path / "t1.json"
+    p.write_text(json.dumps(spec))
+    return p
+
+
+C_TRUE = 1.578e-7     # m per N: what the pull test of abc_00000003_pull should show
+
+
+def test_reads_an_export_and_fits_the_cycles(tmp_path):
+    write_export(tmp_path / "raw.csv", C_TRUE)
+    t = EV.process_test(EV.read_spec(spec_file(tmp_path, "abc_00000003_pull", "raw.csv")))
+    assert abs(t["compliance"] / C_TRUE - 1) < 0.005
+    assert t["cycles_dropped"] == [1] and t["cycles_used"] == [2, 3]          # the seating toe is left out
+    assert t["nominal_load"] == 300.0 and abs(t["value_at_nominal_load"] / (C_TRUE * 300) - 1) < 0.005
+    assert 0.06 < t["u_rel_total"] < 0.09          # instrument 1 %, material 5 % (no modulus given), geometry 5 %
+    assert t["measurement"]["name"] == "ext_marks" and not t["nonlinearity_significant"]
+
+
+@pytest.mark.parametrize("kw", [dict(delim=";", decimal_comma=True, load_unit="kN", units_in_header=True),
+                                dict(disp_unit="m", delim="\t")])
+def test_reads_other_export_formats(tmp_path, kw):
+    write_export(tmp_path / "raw.csv", C_TRUE, **kw)
+    t = EV.process_test(EV.read_spec(spec_file(tmp_path, "abc_00000003_pull", "raw.csv")))
+    assert abs(t["compliance"] / C_TRUE - 1) < 0.005
+
+
+def test_strain_channel_with_a_gauge_length(tmp_path):
+    write_export(tmp_path / "raw.csv", C_TRUE / 0.054, disp_unit="m")      # "extension" column holds strain
+    spec = spec_file(tmp_path, "abc_00000003_pull", "raw.csv")
+    s = json.loads(spec.read_text())
+    s["data"] = {"file": "raw.csv", "load": "Load", "strain": "Extension (Video)", "strain_unit": "",
+                 "gauge_length_mm": 54}
+    spec.write_text(json.dumps(s))
+    assert abs(EV.process_test(EV.read_spec(spec))["compliance"] / C_TRUE - 1) < 0.005
+
+
+def test_measured_modulus_rescales_predictions():
+    ev = {"compliance": 2.0, "nominal_load": 10.0, "u_rel_total": 0.05, "e_scale": 10e9 / 8e9}
+    c = EV.compare_value(16.0, ev)          # 1.6 per N with E = 10 GPa -> 2.0 per N with the measured 8 GPa
+    assert abs(c["predicted_compliance"] - 2.0) < 1e-12 and c["consistent"]
+    assert not EV.compare_value(10.0, ev)["consistent"]      # 1.25 per N: -37.5 %, 7.5 sigma
+
+
+def test_pull_test_problem_builds_and_solves(tmp_path):
+    from ace.checks import reference_setup
+    from ace.field_error import _solve
+    from feacore.case import QoI
+    p = fea.get_problem("abc_00000003_pull")
+    names = {g["name"] for g in fea.geometry_summary(p)["groups"]}
+    assert {"stub_neg_grip", "stub_pos_grip", "stub_neg_end", "stub_pos_end", "solid"} <= names
+    mesh = fea.make_mesh(p, tmp_path / "m.msh", h=0.005, order=2)
+    res = _solve(p, mesh, reference_setup(p), "ext_marks")
+    ref = fea.reference_value(p, "ext_marks")
+    assert abs(res.evaluate_all()["ext_marks"] / ref - 1) < 0.12           # coarse mesh: about -9 %
+    reaction = res.evaluate_qoi(QoI(name="r", type="reaction", group="stub_neg_grip", component=0))
+    assert abs(reaction + 300.0) < 1e-6 * 300
+
+
+def test_loop_uses_test_data_that_arrives_mid_run(tmp_path, monkeypatch):
+    """Generation 0 runs without data; the test arrives before generation 1 (after the population
+    has settled). The settled consensus is compared with it, earlier runs are re-scored against it,
+    and generation 1's agents get a test_check in every solve."""
+    from ace.run_loop import main
+    for k, v in (("ACE_STATEMENT", "bcs"), (EV.ACTIVE_ENV, ""), (EV.SCORE_ENV, "0")):
+        monkeypatch.setenv(k, v)                      # main sets them; restored after the test
+    monkeypatch.setattr(config, "STATEMENT", "bcs")
+    data_dir = tmp_path / "lab"
+    data_dir.mkdir()
+    # Cook's membrane: uy_C = 23.96 per unit load in the FEA; the "real panel" is 10 % softer.
+    write_export(data_dir / "raw.csv", 1.10 * 23.96, peak=1.0, noise=1e-3, seating=0.0, disp_unit="m")
+    spec = spec_file(data_dir, "cooks_membrane", "raw.csv", model_load=1.0)
+    out = tmp_path / "run"
+    original = EV.refresh
+
+    def refresh(out_dir, sources, all_runs, generation):    # the lab sends its file during generation 0
+        if generation == 1:
+            (out_dir / "evidence" / "lab").mkdir(parents=True, exist_ok=True)
+            for f in data_dir.iterdir():
+                (out_dir / "evidence" / "lab" / f.name).write_bytes(f.read_bytes())
+        return original(out_dir, sources, all_runs, generation)
+
+    monkeypatch.setattr(EV, "refresh", refresh)
+    main(["--mock", "--memory", "shared", "--problems", "cooks_membrane", "--holdout", "", "--runs-per-problem", "2",
+          "--generations", "2", "--concurrency", "1", "--evidence-score", "--out", str(out)])
+    active = json.loads((out / "evidence_active" / "cooks_membrane.json").read_text())
+    assert active["since_generation"] == 1
+    cons = active["consensus"]
+    assert cons["generation"] == 0 and -0.15 < cons["rel_err"] < -0.03     # settled FEA vs the softer part
+    g0 = json.loads((out / "gen0" / "runs" / "g0-cooks_membrane-0.json").read_text())
+    assert g0["checks"]["evidence"]["rel_err"] < 0 and "reference_rel_error" in g0["checks"]
+    g1 = json.loads((out / "gen1" / "runs" / "g1-cooks_membrane-0.json").read_text())
+    assert any("test_check" in s for s in g1["solves"]) and g1["checks"]["evidence"] is not None
+    assert g1["checks"]["tolerance"] >= 2 * active["combined"]["u_rel_total"]   # scored against the test
+    monkeypatch.setenv(EV.ACTIVE_ENV, str(out / "evidence_active"))
+    section = EV.teacher_section("cooks_membrane", [g0, g1])
+    assert "PHYSICAL TEST DATA" in section and "Each run's prediction against the test" in section
+    assert spec.exists()
+
+
+def test_summarize_cli(tmp_path, capsys):
+    write_export(tmp_path / "raw.csv", C_TRUE)
+    assert EV.main(["summarize", str(spec_file(tmp_path, "abc_00000003_pull", "raw.csv"))]) == 0
+    assert '"compliance"' in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- no ground truth: the test is the judge
+
+COMPRESSION = "physical_tests/abc_00000065_compression"
+
+
+def _linear_compression(monkeypatch):
+    """The C-bracket task is now scored by its nonlinear force curve (ace.nonlinear); these tests
+    exercise the linear test-scoring path on it, so they drop that score mode."""
+    monkeypatch.setitem(config.TASKS, "abc_00000065_compression",
+                        {k: v for k, v in config.TASKS["abc_00000065_compression"].items() if k != "score"})
+
+
+def _active_compression(tmp_path, monkeypatch):
+    """The C-bracket compression test made active, as run_loop does at a generation start."""
+    import shutil
+    _linear_compression(monkeypatch)
+    from pathlib import Path
+    lab = tmp_path / "lab"
+    lab.mkdir()
+    for f in ("cload_compression.json", "cload_compression.csv"):
+        shutil.copy(Path(COMPRESSION) / f, lab / f)
+    monkeypatch.setenv(EV.ACTIVE_ENV, str(tmp_path / "out" / "evidence_active"))
+    monkeypatch.setenv(EV.SCORE_ENV, "0")             # no --evidence-score: no reference makes it the judge
+    EV.refresh(tmp_path / "out", [lab], {"abc_00000065_compression": []}, 0)
+    return EV.load_active("abc_00000065_compression")["combined"]
+
+
+def _run_with_value(value):
+    from ace.checks import reference_setup
+    p = fea.get_problem("abc_00000065_compression")
+    mesh = {"ok": True, "nodes": 9506, "order": 2, "min_quality": 0.3, "path": "/nonexistent.msh"}
+    return {"problem_id": "abc_00000065_compression", "meshes": [mesh], "submitted": 0,
+            "solves": [{"mesh": mesh, "mesh_index": 0, "setup": reference_setup(p),
+                        "result": {"ok": True, "value": value, "info": {"n_dofs": 28518}}}]}
+
+
+def test_compression_test_reads_and_fits():
+    t = EV.process_test(EV.read_spec(__import__("pathlib").Path(COMPRESSION) / "cload_compression.json"))
+    assert abs(1e-3 / t["compliance"] - 2696) < 30                  # N/mm, the straight part after the kink
+    assert t["sign"] == -1.0 and t["cycles_used"] == [1] and 0.10 < t["u_rel_total"] < 0.13
+
+
+def test_problem_without_reference_is_scored_against_its_test(tmp_path, monkeypatch):
+    from ace.checks import check_run
+    ev = _active_compression(tmp_path, monkeypatch)
+    assert not EV.has_reference("abc_00000065_compression") and EV.scored_by_test("abc_00000065_compression")
+    c = check_run("abc_00000065_compression", _run_with_value(-0.31031e-3))    # the FEA at 1000 N, h = 1.6 mm
+    assert c["scored_by"] == "test" and c["reference_rel_error"] is None
+    assert abs(c["rel_error"] - abs(0.31031e-3 / 1000 / ev["compliance"] - 1)) < 1e-9   # about 16 % too stiff
+    assert abs(c["tolerance"] - 2 * ev["u_rel_total"]) < 1e-12 and c["meets_tol"]
+    assert c["evidence"]["rel_err"] < 0                              # FEA stiffer than the part
+
+
+def test_field_mode_gain_is_measured_from_the_automesher_against_the_test(tmp_path, monkeypatch):
+    from ace import checks, config, field_error
+    ev = _active_compression(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "SCORE", "field")
+    monkeypatch.setattr(checks, "SCORE", "field")
+    auto = {"error": 0.05, "dofs": 20000, "value": -0.3056e-3, "field": 0.05, "points": 0.05}
+    monkeypatch.setattr(field_error, "automesher", lambda pid, need_value=False: auto)
+    monkeypatch.setattr(checks, "_diagonal", lambda pid: 0.1)      # the diversity grid; skips the fine reference
+    auto_err = EV.automesher_test_error("abc_00000065_compression")
+    assert abs(auto_err - abs(0.3056e-3 / 1000 / ev["compliance"] - 1)) < 1e-9
+    assert EV.test_tolerance("abc_00000065_compression") == max(auto_err / config.AUTO_GAIN_TARGET, 2 * ev["u_rel_total"])
+    runs = [{"problem_id": "abc_00000065_compression", "generation": 0,
+             "checks": {"rel_error": e, "dofs": 20000, "point_errors": [0.1] * 12}} for e in (0.05, 0.20)]
+    checks._score_vs_automesher(runs, [{"valid": True, "flags": []}] * 2)
+    assert abs(runs[0]["checks"]["gain"] - auto_err / 0.05) < 1e-9 and runs[0]["checks"]["auto_error"] == auto_err
+    assert all(r["checks"]["best_bonus"] == 0.0 for r in runs)      # probe points judge the stated setup, not the test
+
+
+def test_loop_refuses_a_problem_with_neither_reference_nor_test(tmp_path, monkeypatch):
+    from ace.run_loop import main
+    _linear_compression(monkeypatch)
+    for k, v in (("ACE_STATEMENT", "bcs"), (EV.ACTIVE_ENV, ""), (EV.SCORE_ENV, "0")):
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(config, "STATEMENT", "bcs")
+    with pytest.raises(SystemExit, match="no reference value"):
+        main(["--mock", "--memory", "shared", "--problems", "abc_00000065_compression", "--holdout", "",
+              "--generations", "1", "--out", str(tmp_path / "run")])
+
+
+@pytest.mark.skip(reason="abc_00000065_compression is now scored by its nonlinear curve (needs CalculiX); "
+                         "the loop runs agents in spawned processes, which _linear_compression cannot reach")
+def test_loop_scores_the_compression_case_against_the_test(tmp_path, monkeypatch):
+    """The swarm on the C-bracket with its Instron data: no reference anywhere, every run judged by
+    the test, and the agents told about it."""
+    from ace.run_loop import main
+    _linear_compression(monkeypatch)
+    for k, v in (("ACE_STATEMENT", "bcs"), (EV.ACTIVE_ENV, ""), (EV.SCORE_ENV, "0")):
+        monkeypatch.setenv(k, v)
+    monkeypatch.setattr(config, "STATEMENT", "bcs")
+    main(["--mock", "--memory", "shared", "--problems", "abc_00000065_compression", "--holdout", "",
+          "--runs-per-problem", "1", "--generations", "1", "--concurrency", "1",
+          "--evidence", COMPRESSION, "--out", str(tmp_path / "run")])
+    r = json.loads((tmp_path / "run" / "gen0" / "runs" / "g0-abc_00000065_compression-0.json").read_text())
+    c = r["checks"]
+    assert c["scored_by"] == "test" and c["evidence"] is not None and c["score"] is not None
+    assert any("test_check" in s for s in r["solves"])

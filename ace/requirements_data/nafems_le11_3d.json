@@ -1,0 +1,41 @@
+{
+  "problem_id": "nafems_le11_3d",
+  "requirements": "Component: a hollow body of revolution about the z axis (a thick sleeve with a spherical inner seat, a spherical and conical outer profile and a cylindrical neck), heated non-uniformly while held between two rigid platens.\n\nGeometry (CAD): metres. A solid of revolution about the z axis. The CAD file holds the quarter with x >= 0 and y >= 0 as a solid; its faces on the planes x = 0 and y = 0 are cuts through the full body, not surfaces of it. The meridian section (r = distance from the z axis, z = position along the axis) is bounded by: the bottom face z = 0 from A = (r 1.0, z 0) to B = (r 1.4, z 0); an outer spherical surface of radius 1.4 centred at the origin from B up to D = (r 1.2124, z 0.7); an outer conical taper (straight in the section) from D to G = (r 1.0, z 1.39); an outer cylinder r = 1.0 from G to I = (r 1.0, z 1.79); the top face z = 1.79 from I to H = (r 0.70711, z 1.79); an inner cylinder r = 0.70711 from H down to E = (r 0.70711, z 0.70711); and an inner spherical surface of radius 1.0 centred at the origin from E back to A. The body does not reach the axis.\n\nMaterial: isotropic, linear elastic; E = 210 GPa, Poisson's ratio 0.3, coefficient of thermal expansion 2.3e-4 per degC.\n\nService loads: in service the body is at the steady temperature field T = sqrt(x^2 + y^2) + z (degC, coordinates in metres), i.e. T = r + z. The field is given, so no heat-transfer analysis is needed. The body is stress-free at 0 degC. There are no mechanical loads.\n\nInstallation and supports: the body stands between two rigid, parallel platens that touch its whole bottom face (z = 0) and its whole top face (z = 1.79). The platens are held a constant distance apart, so neither end face can move along the axis, in either direction. The contact is frictionless, so the end faces slide freely in the radial direction. Nothing else touches the body. The full body, its platens and its temperature field are the same at every angle around the z axis, so in particular they are mirror-symmetric about the planes x = 0 and y = 0, which is why only the quarter is modelled.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity; a solid (three-dimensional) model of the quarter.\n\nRequired result: szz_A, the direct stress sigma_zz at point A = (0, 1.0, 0) (the inner edge of the bottom face, on the y axis), in Pa.",
+  "group_aliases": {
+    "face_sym_xz": "face_y0",
+    "face_sym_yz": "face_x0"
+  },
+  "mapping": [
+    {
+      "reference": "symmetry on face_sym_xz (shown as face_y0)",
+      "implied_by": "Mirror symmetry about y = 0; that face is the cut on y = 0."
+    },
+    {
+      "reference": "symmetry on face_sym_yz (shown as face_x0)",
+      "implied_by": "Mirror symmetry about x = 0; that face is the cut on x = 0."
+    },
+    {
+      "reference": "displacement z = 0 on face_bottom and face_top",
+      "implied_by": "Platens a constant distance apart: the end faces cannot move axially and slide freely radially."
+    },
+    {
+      "reference": "temperature sqrt(x**2 + y**2) + z, alpha 2.3e-4, T_ref 0",
+      "implied_by": "T = sqrt(x^2 + y^2) + z, stress-free at 0 degC."
+    },
+    {
+      "reference": "3d",
+      "implied_by": "A solid model of the quarter."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "cad1fb8bf34bb6303e2ad5124a189b7b910e09ad326f87ce15d21c006bf25eb8"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}

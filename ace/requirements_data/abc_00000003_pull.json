@@ -1,0 +1,34 @@
+{
+  "problem_id": "abc_00000003_pull",
+  "requirements": "Component: a printed plastic part, a tube closed at its top with two opposed stubs on bosses, tested in tension on a universal testing machine by its stubs.\n\nGeometry (CAD): metres. The part in the STEP file is a tube along z, closed at its top, with two opposed stubs of diameter 15.3 mm on bosses along x, axis at y = 0, z = 30.59 mm. Both stubs were lengthened by 40 mm for gripping (same diameter and axis), so the part spans x from -74.85 to 74.85 mm; the added lengths run from x = -74.85 to -34.85 mm and from x = 34.85 to 74.85 mm.\n\nMaterial: Formlabs Rigid 10K resin, printed and post-cured; linear elastic and isotropic, E = 10 GPa, Poisson's ratio 0.35.\n\nService loads (the test): the machine's moving grip pulls the +x stub along +x with a total force of 300 N. The pull reaches the part through the grip's jaws, which hold the whole added length of the +x stub (x from 34.85 to 74.85 mm) all round and spread the pull evenly over that surface.\n\nInstallation and supports (the test machine): both grips are wedge grips aligned on the machine's axis, which is the stubs' axis. The jaws of the stationary grip hold the whole added length of the -x stub (x from -74.85 to -34.85 mm) all round and do not move at all. The jaws of the moving grip hold the added length of the +x stub; they travel only along the machine's axis, so that surface is pulled along x but cannot move sideways (in y or z). The stub end faces and the rest of the part touch nothing.\n\nAnalysis scope: static, linear elastic, small deformations, no gravity; a solid (three-dimensional) model of the whole part.\n\nRequired result: ext_marks = ux(B) - ux(A), the x-elongation between the video-extensometer marks A = (-27, 7.656, 30.588) mm and B = (27, 7.656, 30.588) mm on the front of the original stubs, in m.",
+  "group_aliases": {},
+  "mapping": [
+    {
+      "reference": "fixed on stub_neg_grip",
+      "implied_by": "The stationary grip's jaws hold the -x stub's added length all round and do not move."
+    },
+    {
+      "reference": "displacement y, z = 0 on stub_pos_grip",
+      "implied_by": "The moving grip travels only along the machine's axis: that surface cannot move sideways."
+    },
+    {
+      "reference": "force [300, 0, 0] on stub_pos_grip",
+      "implied_by": "A total pull of 300 N along +x, spread evenly over the +x stub's added length."
+    },
+    {
+      "reference": "3d",
+      "implied_by": "A solid model of the whole part."
+    }
+  ],
+  "source": {
+    "method": "written in a Claude Code session from the statement and reference setup, following TRANSLATOR_SYSTEM (ace.requirements generate needs an API key, which that session did not have)",
+    "model": null,
+    "created": "2026-10-31",
+    "fingerprint": "a8016a4d243aef0ed243cf83e0d0f9e15b84ccc8de6d5308c14afd13d2954d77"
+  },
+  "validation": {
+    "lint": [],
+    "round_trip": null,
+    "drafts": 1
+  }
+}
