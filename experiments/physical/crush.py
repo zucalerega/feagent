@@ -116,16 +116,17 @@ def criterion_options(failure: str, compression_factor: float | None, uts_pa: fl
     return out
 
 
-CONTACT = {"slope_per_E_h": 20.0, "stick_slope_per_E_h": 10.0}    # penalty: x E / mean cell size
+CONTACT = {"slope_per_E_h": 20.0, "stick_slope_per_E_h": 10.0, "type": "surface"}   # penalty: x E / mean cell size
 
 
-def friction_deck(inp: str, model, k: int, D: float, mu: float, E: float) -> str:
+def friction_deck(inp: str, model, k: int, D: float, mu: float, E: float, contact: dict | None = None) -> str:
     """Add a rigid moving platen with Coulomb friction to the deck of a case whose top has no BC: one rigid C3D8
     slab on the top face (its lower face = the master surface; REF node driven by -D along the axis, the other
     5 DOFs held), the top group's element faces as the slave surface, penalty contact (surface to surface,
     linear pressure-overclosure) and *FRICTION mu."""
     if k != 1:
         raise SystemExit("--platen friction: only the y load axis (abc_00000065) is implemented")
+    cp = {**CONTACT, **(contact or {})}
     X, nn, ne = model.X, model.n_nodes, model.n_elems
     el, fc = model.facets_of("top")
     top = model.nodes_of("top")
@@ -146,10 +147,11 @@ def friction_deck(inp: str, model, k: int, D: float, mu: float, E: float) -> str
             f"*RIGID BODY, NSET=PLATN, REF NODE={ref}", "*SURFACE, NAME=PMASTER", f"{ne + 1}, S3",
             "*SURFACE, NAME=PSLAVE"] + [f"{e + 1}, S{f + 1}" for e, f in zip(el, fc)]
     add += ["*SURFACE INTERACTION, NAME=PSI", "*SURFACE BEHAVIOR, PRESSURE-OVERCLOSURE=LINEAR",
-            fmt(CONTACT["slope_per_E_h"] * E / h)]
+            fmt(cp["slope_per_E_h"] * E / h)]
     if mu > 0:                                  # ccx refuses a zero friction coefficient: frictionless contact
-        add += ["*FRICTION", f"{fmt(mu)}, {fmt(CONTACT['stick_slope_per_E_h'] * E / h)}"]
-    add += ["*CONTACT PAIR, INTERACTION=PSI, TYPE=SURFACE TO SURFACE", "PSLAVE, PMASTER"]
+        add += ["*FRICTION", f"{fmt(mu)}, {fmt(cp['stick_slope_per_E_h'] * E / h)}"]
+    ctype = {"surface": "SURFACE TO SURFACE", "node": "NODE TO SURFACE"}[cp["type"]]
+    add += [f"*CONTACT PAIR, INTERACTION=PSI, TYPE={ctype}", "PSLAVE, PMASTER"]
     i = inp.index("\n*STEP")
     model_txt, step = inp[: i + 1], inp[i + 1:]
     j = step.index("*BOUNDARY\n") + len("*BOUNDARY\n")
@@ -279,6 +281,8 @@ def main():
                     help="platen contact: bonded (default), frictionless top, frictionless both, or a rigid top "
                          "platen in Coulomb-friction contact (--mu; bonded base)")
     ap.add_argument("--mu", type=float, default=0.3, help="--platen friction: Coulomb friction coefficient")
+    ap.add_argument("--contact", default=None, help="--platen friction: penalty / type overrides, e.g. "
+                    "'slope_per_E_h=5,stick_slope_per_E_h=1,type=node' (defaults in CONTACT)")
     ap.add_argument("--failure", choices=["peeq", "peeq_tension", "principal"], default="peeq",
                     help="erosion criterion (default peeq: PEEQ >= failure_peeq in any stress state)")
     ap.add_argument("--compression-factor", type=float, default=None,
@@ -344,14 +348,16 @@ def main():
                         "failure": failure_options(D, limit, 1.0, a.release, crit)}),
                     materials={"resin": mat}, bcs=bcs)
         if a.platen == "friction":
-            case.analysis.options["platen_contact"] = {"mu": a.mu, "travel_m": D, "axis": k, **CONTACT}
+            over = dict(kv.split("=") for kv in a.contact.split(",")) if a.contact else {}
+            over = {kk: (vv if kk == "type" else float(vv)) for kk, vv in over.items()}
+            case.analysis.options["platen_contact"] = {"mu": a.mu, "travel_m": D, "axis": k, **CONTACT, **over}
             case.analysis.options["failure"]["force_groups"] = ["bottom"]
     pc = case.analysis.options.get("platen_contact")
     if pc:                                      # rigid friction platen: added to every deck the backend builds
         from feacore.solver import ccx_backend
         _build = ccx_backend._Deck.build
         ccx_backend._Deck.build = lambda self: friction_deck(_build(self), self.m, k, pc["travel_m"], pc["mu"],
-                                                             mat.E)
+                                                             mat.E, {c: pc[c] for c in CONTACT if c in pc})
     fsign = 1.0 if pc else -1.0                 # the base reaction (friction) points up, the top's down
     out.mkdir(parents=True, exist_ok=True)
     case.save(out / "case.json")
