@@ -39,7 +39,7 @@ for bc in ['bonded','frictionless']:
 
 with (out/'row_outputs.csv').open('w',newline='') as f:
     fields=['run','bc','nu','E_MPa','h_mm','row','side','x_mm','y_mm','outward_mm_1p5pct','outward_mm_3pct']
-    w=csv.DictWriter(f,fieldnames=fields);w.writeheader()
+    w=csv.DictWriter(f,fieldnames=fields,lineterminator="\n");w.writeheader()
     for r in runs:
         for row in r['rows']:
             w.writerow({**{k:r[k] for k in fields[:5]},**{k:row[k] for k in ['row','side','outward_mm_1p5pct','outward_mm_3pct']},
