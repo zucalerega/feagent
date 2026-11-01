@@ -186,8 +186,8 @@ solver in `docs/benchmarks_cfd.md`. The suites can be mixed with `--problems` / 
 
 Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mesh for each, and
 `tests/test_diagnosis.py` checks that it passes every oracle. For example, the cylinder drag is
-0.25 % off at 5605 nodes with refinement at the cylinder alone, and 0.48 % off at 3155 nodes with a
-boundary layer on the cylinder and the walls. With lighter refinement (3277 nodes, no boundary layer)
+0.60 % off at 6345 nodes with refinement at the cylinder alone (2 mm there, 15 mm elsewhere), and
+0.34 % off at 3229 nodes with a boundary layer on the cylinder and the walls. With lighter refinement (3277 nodes, no boundary layer)
 it was 1.71 % off (measured before the wall-distance fix in the force evaluation) and fails the 1 %
 tolerance, so local refinement is what the agents have to learn.
 The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with
@@ -276,6 +276,10 @@ with the flow in long ducts, and faces the finite-volume method likes. The flow 
     graded so the last is `r` x the first. The result is hexahedra (with `quads`) or prisms.
   - Its size floor comes from the face, not the whole duct, with a node-count guard. The 3D floor
     (bounding-box diagonal / 100) is 1 mm on the square duct, only 10 cells across.
+- **Size floors:** h keeps the global floor (bounding-box diagonal / 400 in 2D, / 100 in 3D), but on
+  flow tasks local refinement sizes may go 5x (2D) or 3x (3D) below it. Flow domains are long and
+  their features small: the DFG cylinder is 1/22 of the channel, and the floor (5.6 mm) used to clamp
+  every refinement there, gmsh's `Mesh.MeshSizeMin` included.
 - **Finite-volume quality** (`feacore/geometry/fv_quality.py`): OpenFOAM's own formulas.
   - It reports non-orthogonality (max, and the mean as `checkMesh` gives it), skewness, aspect
     ratio, the cell volume ratio across faces, and per boundary group the wall-normal distance of
@@ -303,8 +307,8 @@ What it buys, on the reference setups (linearUpwind; error in the scored QoI):
 | `pipe_poiseuille_3d` | swept quads, h = 1 mm, 10 layers | 1309 | 1020 hex | +0.32 % |
 | `square_duct_3d` | uniform tets, h = 1.4 mm | 4234 | 17 754 tet | -0.81 % |
 | `square_duct_3d` | swept quads, h = 0.7 mm, 10 layers graded 6:1 | 3168 | 2550 hex | -1.25 % |
-| `cylinder_channel_dfg_2d1` | quads, 2 mm at the cylinder | 5605 | 5397 | +0.25 % |
-| `cylinder_channel_dfg_2d1` | quads, 4 mm at the cylinder + 4-layer boundary layer | 3155 | 3011 | +0.48 % |
+| `cylinder_channel_dfg_2d1` | quads, 2 mm at the cylinder | 6345 | 6089 | +0.60 % |
+| `cylinder_channel_dfg_2d1` | quads, 4 mm at the cylinder + 4-layer boundary layer | 3229 | ~3100 | +0.34 % |
 
 The score counts DOFs as cells x unknowns, so a swept mesh is about 5x cheaper than tets for the
 same nodes. A boundary layer is not always worth it: on the fully developed pipe it made the error

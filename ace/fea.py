@@ -366,7 +366,7 @@ def _mesh_once(problem: Problem, path: Path, h: float, order: int, refinements: 
             m = gmsh.model.mesh.field.add("Min")
             gmsh.model.mesh.field.setNumbers(m, "FieldsList", fields)
             gmsh.model.mesh.field.setAsBackgroundMesh(m)
-        gmsh.option.setNumber("Mesh.MeshSizeMin", floor)
+        gmsh.option.setNumber("Mesh.MeshSizeMin", local_floor)   # = floor except for flow (_local_floor)
         gmsh.option.setNumber("Mesh.MeshSizeMax", h)
         for opt in ("MeshSizeFromPoints", "MeshSizeExtendFromBoundary"):   # curvature: see MESHERS
             gmsh.option.setNumber(f"Mesh.{opt}", 0)

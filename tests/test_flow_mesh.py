@@ -194,3 +194,14 @@ def test_closed_curves_are_split_into_arcs():
         gmsh.model.occ.synchronize()
         assert flow_mesh._split_closed_curves(2) == 3
         assert len(gmsh.model.getEntities(1)) == 4 and len(gmsh.model.getEntities(2)) == 1
+
+
+def test_local_refinement_goes_below_the_global_floor(tmp_path):
+    """Flow: h keeps the global floor (diagonal / 400 = 5.6 mm on the DFG channel) but a refinement
+    may go 5x below it; gmsh's Mesh.MeshSizeMin used to clamp it back to the floor."""
+    p = fea.get_problem("cylinder_channel_dfg_2d1")
+    m = fea.make_mesh(p, tmp_path / "m.msh", h=0.03, refinements=[{"group": "cylinder", "size": 0.002, "radius": 0.05}])
+    assert m["ok"] and m["sizes_used"] == [0.002]
+    assert m["size_by_group"]["cylinder"] < 0.003            # the floor would leave it at >= 5.6 mm
+    coarse = fea.make_mesh(p, tmp_path / "c.msh", h=0.001)    # h itself is still floored
+    assert coarse["h_used"] == pytest.approx(math.dist([0, 0], [2.2, 0.41]) / 400, rel=1e-3)

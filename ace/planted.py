@@ -37,8 +37,8 @@ GOOD_MESH = {
     "poiseuille_channel": {"h": 0.0008, "quads": True, "refinements": []},                 # 1026/1200 nodes, 0.60%
     "lid_driven_cavity_re100": {"h": 0.025, "quads": True, "refinements": []},             # 1913/2500 nodes, 0.19%
     "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1849/2500 nodes, 0.64%
-    # a boundary layer at the cylinder: 0.48 % at 3155 nodes (refinement alone: 0.25 % at 5605 nodes)
-    "cylinder_channel_dfg_2d1": {"h": 0.025, "quads": True,                               # 3155/12000 nodes, 0.48%
+    # a boundary layer at the cylinder: 0.34 % at 3229 nodes (refinement alone, 2 mm: 0.60 % at 6345 nodes)
+    "cylinder_channel_dfg_2d1": {"h": 0.025, "quads": True,                               # 3229/12000 nodes, 0.34%
                                  "refinements": [{"group": "cylinder", "size": 0.004, "radius": 0.12}],
                                  "boundary_layer": {"groups": ["cylinder", "walls"], "first": 0.001, "ratio": 1.3,
                                                     "layers": 4}},
