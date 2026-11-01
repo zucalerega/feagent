@@ -1,0 +1,37 @@
+# GCI coarse mesh: copy of ../assembly/mesh.yaml with every size (global, min, refine sizes) x 1.3
+# (refine distances unchanged, as `feagent mesh --scale` does).
+# Wingbox assembly (10 solids, fragmented conformally by the harness on load: 28 bonded interfaces).
+# Order 2 tets, sized for the ~400 k DOF budget (DOFs = 3 x nodes).
+# Per-part sizing at full thin-wall resolution (>= 2 quadratic elements through each wall,
+# runs/.../parts/*) would need ~1.0 M nodes (~3 M DOFs), so the assembly uses about ONE quadratic
+# element (or less) through each wall. The thin_walls gate (warn-only) therefore warns here; that is a
+# known, budget-driven choice (see README.md).
+# Element size per part family by refine fields on that family's faces (smallest wins at shared faces):
+# skins = global 34 (thickness-limited: mean edge ~20 on the outer skin faces), spar webs 19, ribs 14.
+# Size sweep (nodes): 20/15/10 -> 236 k; 28/18/12 -> 159 k; 34/18/13 -> 135 k; 34/19/14 -> 123 k (chosen).
+name: wingbox_c1
+geometry: ../geometry/wingbox.step
+analysis: fea
+groups:
+  root: {select: {at: ymin}, expect: 5}          # 2 skin ends + 2 spar ends + rib_0 outer face
+  # LC1 load face, as in the ICD: the tip rib's (rib_5) outer face at y = 2000 only.
+  tip: {select: {at: ymax, box: [[100, 1999, 30], [500, 2001, 120]]}, expect: 1}
+  # The other 4 faces at y = 2000 (skin and spar ends): unloaded, named so the solver can report the
+  # mean deflection of the whole tip section.
+  tip_ends: {select: {at: ymax, not: {box: [[100, 1999, 30], [500, 2001, 120]]}}, expect: 4}
+  lower_outer: {select: {at: zmin}, expect: 1}   # lower skin z = 0 (LC2 lift pressure face)
+size: {global: 44.2, min: 0.65, curvature: 12, thin_wall_layers: 0}
+refine:
+  # spar webs (12 faces each: outer web, 5 inner bays, 6 rib interfaces), t = 15
+  - {select: {any: [{normal: [1, 0, 0]}, {normal: [-1, 0, 0]}], box: [[-1, -1, 21], [601, 2001, 129]]},
+     size: 24.7, distance: 6}
+  # rib webs (both faces of each of the 6 ribs), t = 10
+  - {select: {any: [{normal: [0, 1, 0]}, {normal: [0, -1, 0]}], area_min: 60000}, size: 18.2, distance: 4}
+element: {order: 2, optimize: netgen}
+export: [msh, inp]
+bcs:
+  fea:
+    fixed: [root]
+    loads: [{group: tip, force: [0.0, 0.0, 20000.0]}]   # LC1: 20 kN +z total, N
+    E: 71700.0
+    nu: 0.33

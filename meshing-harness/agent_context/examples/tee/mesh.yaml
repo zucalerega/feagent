@@ -1,0 +1,20 @@
+# Pipe tee (internal flow): main pipe r=10 along x, branch r=6 along +y.
+# Pattern: cfd internal = the solid IS the fluid; name the inlet/outlet caps by `at:`, every other
+# face goes to default_group (walls).
+name: tee
+geometry: ../parts/tee.step
+analysis: cfd
+domain: {type: internal}
+groups:
+  inlet: {select: {at: xmin, kind: plane}, expect: 1}
+  outlet_main: {select: {at: xmax, kind: plane}, expect: 1}
+  outlet_branch: {select: {at: ymax, kind: plane}, expect: 1}
+default_group: walls
+size: {global: 2.5, curvature: 24}
+element: {order: 1}
+export: [msh, su2]
+bcs:
+  cfd:
+    inlet: [inlet]
+    outlet: [outlet_main, outlet_branch]
+    velocity: 1.0

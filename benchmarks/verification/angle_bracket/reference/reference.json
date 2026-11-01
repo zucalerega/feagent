@@ -1,0 +1,149 @@
+{
+ "id": "verification/angle_bracket",
+ "volume": 157462.16890053704,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -1e-07,
+  -1e-07,
+  -1e-07,
+  100.0000001,
+  80.0000001,
+  90.0000001
+ ],
+ "n_cad_faces": 12,
+ "qois": [
+  {
+   "id": "pin_disp_y",
+   "kind": "region",
+   "field": "U",
+   "component": "y",
+   "stat": "mean",
+   "region": {
+    "type": "cylinder",
+    "point": [
+     50.0,
+     0.0,
+     65.0
+    ],
+    "axis": [
+     0,
+     1,
+     0
+    ],
+    "radius": 8.0,
+    "range": [
+     0.0,
+     10.0
+    ],
+    "label": "pin hole (diameter 16 mm, axis along y through (50, *, 65))"
+   },
+   "reference": -0.35885024270763044,
+   "tolerance": {
+    "rel": 0.01
+   },
+   "reference_type": "numerical",
+   "provenance": "Richardson extrapolation of the reference pipeline",
+   "description": "mean y-displacement of the pin-hole surface",
+   "weight": 1.0,
+   "gate": false,
+   "uncertainty": 0.00035274333780833207,
+   "richardson": {
+    "q_fine": -0.3585680480373838,
+    "monotone": true,
+    "order": 3.207355364017662,
+    "uncertainty": 0.00035274333780833207,
+    "method": "richardson"
+   }
+  },
+  {
+   "id": "fillet_mises_max",
+   "kind": "max",
+   "field": "S",
+   "component": "mises",
+   "within": {
+    "type": "box",
+    "min": [
+     10.0,
+     9.0,
+     9.0
+    ],
+    "max": [
+     90.0,
+     22.0,
+     22.0
+    ]
+   },
+   "reference": 135.56166425783567,
+   "tolerance": {
+    "rel": 0.035
+   },
+   "reference_type": "numerical",
+   "provenance": "Richardson extrapolation of the reference pipeline",
+   "note": "3.5 %: the peak converges erratically under local refinement (finest value used, conservative GCI 1.1 %), and the tolerance must stay >= 3x the reference uncertainty",
+   "description": "peak von Mises stress in the fillet, 10 <= x <= 90 (away from the side faces)",
+   "weight": 1.0,
+   "gate": false,
+   "uncertainty": 1.439047146499195,
+   "richardson": {
+    "q_fine": 135.56166425783567,
+    "monotone": true,
+    "order": null,
+    "uncertainty": 1.439047146499195,
+    "method": "finest value (implausible order 7.32); GCI Fs=3"
+   }
+  },
+  {
+   "id": "reaction_y",
+   "kind": "reaction",
+   "within": {
+    "type": "or",
+    "regions": [
+     {
+      "type": "cylinder_solid",
+      "point": [
+       25.0,
+       55.0,
+       0.0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "radius": 5.6
+     },
+     {
+      "type": "cylinder_solid",
+      "point": [
+       75.0,
+       55.0,
+       0.0
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "radius": 5.6
+     }
+    ]
+   },
+   "component": "y",
+   "reference": 3000.0,
+   "tolerance": {
+    "rel": 0.005
+   },
+   "gate": true,
+   "reference_type": "analytical",
+   "provenance": "statics",
+   "description": "total y-reaction at the bolts",
+   "weight": 1.0
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 2,
+  "reference_n_dof": 40983,
+  "reference_solver_cpu_s": 3.540773
+ }
+}

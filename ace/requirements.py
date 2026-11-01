@@ -153,7 +153,12 @@ def fingerprint(problem_id: str) -> str:
     """Hash of what the requirements were written from: the statement and the reference setup."""
     from ace.checks import reference_setup
     raw = raw_problem(problem_id)
-    blob = json.dumps({"statement": raw.description(), "setup": reference_setup(raw)}, sort_keys=True, default=str)
+    setup = reference_setup(raw)
+    mat = setup.get("material") if isinstance(setup, dict) else None
+    if isinstance(mat, dict):   # flow-only material fields (rho, mu) at their defaults don't change an elasticity setup
+        setup = {**setup, "material": {k: v for k, v in mat.items()
+                                       if not (k == "rho" and v == 1.0 or k == "mu" and v == 0.0)}}
+    blob = json.dumps({"statement": raw.description(), "setup": setup}, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()
 
 

@@ -1,0 +1,191 @@
+{
+  "id": "poiseuille_channel",
+  "expected_behavior": "smooth",
+  "expectations": {},
+  "references": [
+    {
+      "qoi": "dp_AB",
+      "value": 0.29999999999999993,
+      "kind": "analytical",
+      "source": "Exact solution of the steady Navier-Stokes equations for fully developed plane channel flow (plane Poiseuille flow), derived in feacore/problems/cfd/poiseuille.py; textbook form in F.M. White, Viscous Fluid Flow, 3rd ed., McGraw-Hill (2006), Sec. 3-3 'Poiseuille flow between parallel plates' (section title from memory); p(A) - p(B) = 12 mu U (x_B - x_A) / H^2",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "u_centreline",
+      "value": 0.015,
+      "kind": "analytical",
+      "source": "Exact solution of the steady Navier-Stokes equations for fully developed plane channel flow (plane Poiseuille flow), derived in feacore/problems/cfd/poiseuille.py; textbook form in F.M. White, Viscous Fluid Flow, 3rd ed., McGraw-Hill (2006), Sec. 3-3 'Poiseuille flow between parallel plates' (section title from memory); u(H/2) = 1.5 U",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "wall_force_bottom",
+      "value": 0.0029999999999999996,
+      "kind": "analytical",
+      "source": "Exact solution of the steady Navier-Stokes equations for fully developed plane channel flow (plane Poiseuille flow), derived in feacore/problems/cfd/poiseuille.py; textbook form in F.M. White, Viscous Fluid Flow, 3rd ed., McGraw-Hill (2006), Sec. 3-3 'Poiseuille flow between parallel plates' (section title from memory); tau_w = 6 mu U / H, F = tau_w L t per wall",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "wall_force_top",
+      "value": 0.0029999999999999996,
+      "kind": "analytical",
+      "source": "Exact solution of the steady Navier-Stokes equations for fully developed plane channel flow (plane Poiseuille flow), derived in feacore/problems/cfd/poiseuille.py; textbook form in F.M. White, Viscous Fluid Flow, 3rd ed., McGraw-Hill (2006), Sec. 3-3 'Poiseuille flow between parallel plates' (section title from memory); tau_w = 6 mu U / H, F = tau_w L t per wall",
+      "tolerance": 0.01,
+      "notes": ""
+    },
+    {
+      "qoi": "flow_rate_outlet",
+      "value": 0.0001,
+      "kind": "analytical",
+      "source": "Exact solution of the steady Navier-Stokes equations for fully developed plane channel flow (plane Poiseuille flow), derived in feacore/problems/cfd/poiseuille.py; textbook form in F.M. White, Viscous Fluid Flow, 3rd ed., McGraw-Hill (2006), Sec. 3-3 'Poiseuille flow between parallel plates' (section title from memory); mass conservation Q = U H t",
+      "tolerance": 0.01,
+      "notes": ""
+    }
+  ],
+  "reference_case": {
+    "mesh": "MESH.msh",
+    "analysis": {
+      "physics": "flow",
+      "formulation": "2d",
+      "order": 2,
+      "thickness": 1.0,
+      "T_ref": 0.0,
+      "options": {
+        "turbulence": "laminar",
+        "max_iterations": 3000,
+        "residual_tol": 1e-08
+      }
+    },
+    "materials": {
+      "fluid": {
+        "E": 0.0,
+        "nu": 0.0,
+        "alpha": 0.0,
+        "k": 1.0,
+        "rho": 1000.0,
+        "mu": 0.01
+      }
+    },
+    "bcs": [
+      {
+        "type": "velocity_inlet",
+        "group": "inlet",
+        "point": null,
+        "components": null,
+        "value": [
+          "600.0*y*(0.01 - y)",
+          0.0
+        ],
+        "where": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "pressure_outlet",
+        "group": "outlet",
+        "point": null,
+        "components": null,
+        "value": 0.0,
+        "where": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "wall",
+        "group": "wall_bottom",
+        "point": null,
+        "components": null,
+        "value": null,
+        "where": null,
+        "h": null,
+        "T_inf": null
+      },
+      {
+        "type": "wall",
+        "group": "wall_top",
+        "point": null,
+        "components": null,
+        "value": null,
+        "where": null,
+        "h": null,
+        "T_inf": null
+      }
+    ],
+    "loads": [],
+    "regions": [
+      {
+        "group": "fluid",
+        "material": "fluid"
+      }
+    ],
+    "qois": [
+      {
+        "name": "dp_AB",
+        "type": "point_difference",
+        "field": "p",
+        "point": [
+          0.0125,
+          0.005
+        ],
+        "group": null,
+        "component": null,
+        "point2": [
+          0.0375,
+          0.005
+        ]
+      },
+      {
+        "name": "u_centreline",
+        "type": "point",
+        "field": "ux",
+        "point": [
+          0.025,
+          0.005
+        ],
+        "group": null,
+        "component": null,
+        "point2": null
+      },
+      {
+        "name": "wall_force_bottom",
+        "type": "force",
+        "field": null,
+        "point": null,
+        "group": "wall_bottom",
+        "component": 0,
+        "point2": null
+      },
+      {
+        "name": "wall_force_top",
+        "type": "force",
+        "field": null,
+        "point": null,
+        "group": "wall_top",
+        "component": 0,
+        "point2": null
+      },
+      {
+        "name": "flow_rate_outlet",
+        "type": "flow_rate",
+        "field": null,
+        "point": null,
+        "group": "outlet",
+        "component": null,
+        "point2": null
+      }
+    ],
+    "meta": {
+      "problem": "poiseuille_channel",
+      "setup": "reference"
+    },
+    "schema_version": 1
+  },
+  "study_sizes": [
+    0.00125,
+    0.000625,
+    0.0003125,
+    0.00015625
+  ]
+}

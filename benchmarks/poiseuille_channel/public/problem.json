@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "id": "poiseuille_channel",
+  "title": "Plane Poiseuille flow in a 2D channel, fully developed inflow (laminar, exact)",
+  "family": "poiseuille_channel",
+  "tags": [
+    "cfd",
+    "2d",
+    "flow",
+    "laminar",
+    "analytical",
+    "internal_flow",
+    "expression_bc"
+  ],
+  "dim": 2,
+  "physics": "flow",
+  "formulation": "2d",
+  "units": "SI (m, s, kg, Pa, N)",
+  "params": {
+    "H": 0.01,
+    "L": 0.05,
+    "U": 0.01,
+    "rho": 1000.0,
+    "mu": 0.01,
+    "h0": 0.00125
+  },
+  "description": "Steady laminar flow of an incompressible Newtonian fluid in a straight 2D channel (plane Poiseuille flow).\nGeometry (STEP, planar face in the xy-plane): rectangle 0 <= x <= L, 0 <= y <= H with L = 0.05 m (flow direction) and H = 0.01 m (gap between the walls). Model it as 2D; report forces and flow rates per metre of depth (out-of-plane thickness 1 m).\nFluid: density rho = 1000.0 kg/m^3, dynamic viscosity mu = 0.01 Pa s.\nBoundary conditions:\n  inlet x = 0: fully developed parabolic velocity profile with mean velocity U = 0.01 m/s,\n    u_x(y) = 6 U (y/H)(1 - y/H) = 600.0*y*(0.01 - y)  [m/s, y in m],  u_y = 0\n  outlet x = L: static pressure p = 0 Pa\n  walls y = 0 and y = H: no slip (stationary)\nReport (SI units):\n  dp_AB             static pressure difference p(A) - p(B) between the centreline points A = (0.0125, 0.005) and B = (0.0375, 0.005) [Pa]\n  u_centreline      u_x on the centreline at C = (0.025, 0.005) [m/s]\n  wall_force_bottom x-component of the force of the fluid (pressure + viscous) on the wall y = 0 [N per m depth]\n  wall_force_top    the same on the wall y = H [N per m depth]\n  flow_rate_outlet  volumetric flow rate through the outlet, positive out of the channel [m^3/s per m depth]\nThe force and flow-rate QoIs refer to the boundary groups wall_bottom, wall_top and outlet: use these names for the corresponding mesh groups.",
+  "qois": [
+    {
+      "name": "dp_AB",
+      "type": "point_difference",
+      "field": "p",
+      "point": [
+        0.0125,
+        0.005
+      ],
+      "group": null,
+      "component": null,
+      "point2": [
+        0.0375,
+        0.005
+      ]
+    },
+    {
+      "name": "u_centreline",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.025,
+        0.005
+      ],
+      "group": null,
+      "component": null,
+      "point2": null
+    },
+    {
+      "name": "wall_force_bottom",
+      "type": "force",
+      "field": null,
+      "point": null,
+      "group": "wall_bottom",
+      "component": 0,
+      "point2": null
+    },
+    {
+      "name": "wall_force_top",
+      "type": "force",
+      "field": null,
+      "point": null,
+      "group": "wall_top",
+      "component": 0,
+      "point2": null
+    },
+    {
+      "name": "flow_rate_outlet",
+      "type": "flow_rate",
+      "field": null,
+      "point": null,
+      "group": "outlet",
+      "component": null,
+      "point2": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

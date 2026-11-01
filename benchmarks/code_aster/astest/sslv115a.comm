@@ -1,0 +1,443 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="OUI"))
+
+# <CALCULEL3_47> AVEC CALC_PRECONT, ON PASSE CONSCIEMMENT DE LA LDC 'SANS'
+# A UNE AUTRE LOI DE COMPORTEMENT
+
+MAILLAGE = LIRE_MAILLAGE(FORMAT="ASTER", UNITE=20)
+
+MA2 = CREA_MAILLAGE(MAILLAGE=MAILLAGE, LINE_QUAD=_F(GROUP_MA="GXXXXXX_CABLE001"))
+
+MAILLAGE = DEFI_GROUP(reuse=MAILLAGE, MAILLAGE=MAILLAGE, CREA_GROUP_NO=_F(TOUT_GROUP_MA="OUI"))
+
+MAILLAGE = DEFI_GROUP(
+    reuse=MAILLAGE,
+    MAILLAGE=MAILLAGE,
+    INFO=1,
+    CREA_GROUP_MA=_F(NOM="GXXXXXX_TOUT", TOUT="OUI"),
+    CREA_GROUP_NO=(
+        _F(
+            NOM="GXXXXXX_GRNO1",
+            OPTION="TUNNEL",
+            GROUP_MA="GXXXXXX_VOILE",
+            GROUP_MA_AXE="GXXXXXX_CABLE001",
+            #                                   GROUP_NO_ORIG = 'NC001001',
+            RAYON=3.0,
+        ),
+        _F(
+            NOM="GXXXXXX_GRNO2",
+            OPTION="TUNNEL",
+            GROUP_MA="toto1",
+            GROUP_MA_AXE=("SG001001", "SG001002"),
+            GROUP_NO_ORIG="NC1",
+            LONGUEUR=0.75,
+            RAYON=3.0,
+        ),
+        _F(NOM="GXXXXXX_TOUT", GROUP_MA="GXXXXXX_TOUT"),
+    ),
+)
+
+MODELE = AFFE_MODELE(
+    AFFE=(
+        _F(GROUP_MA="GXXXXXX_VOILE", PHENOMENE="MECANIQUE", MODELISATION="3D"),
+        _F(GROUP_MA="GXXXXXX_CABLE001", PHENOMENE="MECANIQUE", MODELISATION="BARRE"),
+    ),
+    MAILLAGE=MAILLAGE,
+)
+
+CARAELEM = AFFE_CARA_ELEM(
+    MODELE=MODELE,
+    BARRE=_F(SECTION="GENERALE", GROUP_MA="GXXXXXX_CABLE001", CARA=("A"), VALE=(0.00015)),
+)
+
+BETON = DEFI_MATERIAU(
+    BPEL_BETON=_F(),
+    THER=_F(LAMBDA=1.00, RHO_CP=1),
+    ELAS=_F(NU=0.0, ALPHA=1.0e-05, RHO=3.0, E=3.0e10),
+)
+
+ACIER = DEFI_MATERIAU(
+    BPEL_ACIER=_F(),
+    CABLE_GAINE_FROT=_F(TYPE="ADHERENT", PENA_LAGR=1.0e4),
+    ELAS=_F(NU=0.0, RHO=2.0e4, ALPHA=1.0e-05, E=2.1e11),
+)
+
+CHMATER = AFFE_MATERIAU(
+    AFFE=(_F(MATER=BETON, GROUP_MA="GXXXXXX_VOILE"), _F(MATER=ACIER, GROUP_MA="GXXXXXX_CABLE001")),
+    MAILLAGE=MAILLAGE,
+)
+
+CABLEPR = DEFI_CABLE_BP(
+    CHAM_MATER=CHMATER,
+    MODELE=MODELE,
+    DEFI_CABLE=_F(GROUP_NO_ANCRAGE=("NC1", "NC5"), GROUP_MA="GXXXXXX_CABLE001"),
+    TYPE_ANCRAGE=("ACTIF", "ACTIF"),
+    GROUP_MA_BETON="GXXXXXX_VOILE",
+    TENSION_INIT=2.0e5,
+    RECUL_ANCRAGE=0.0,
+    CARA_ELEM=CARAELEM,
+    INFO=1,
+)
+
+CHARMECA = AFFE_CHAR_MECA(
+    MODELE=MODELE,
+    DDL_IMPO=(
+        _F(GROUP_NO="NB001001", DY=0.0),
+        _F(DX=0.0, GROUP_NO="GXXXXXX_VGAUCH"),
+        _F(DZ=0.0, GROUP_NO="GXXXXXX_VINF"),
+    ),
+)
+
+CHARMEZ = AFFE_CHAR_MECA(MODELE=MODELE, PESANTEUR=_F(GRAVITE=10.0, DIRECTION=(0.0, 0.0, -1.0)))
+
+CHARMEX = AFFE_CHAR_MECA(MODELE=MODELE, PESANTEUR=_F(GRAVITE=10.0, DIRECTION=(-1.0, 0.0, 0.0)))
+
+LINSTa = DEFI_LIST_REEL(VALE=(0.0, 0.5, 0.6, 1.0))
+LINST = DEFI_LIST_REEL(VALE=(0.0, 1.0))
+
+EVOLNOLI = CALC_PRECONT(
+    CHAM_MATER=CHMATER,
+    MODELE=MODELE,
+    CONVERGENCE=_F(ITER_GLOB_MAXI=10, RESI_GLOB_RELA=1.0e-05),
+    COMPORTEMENT=_F(TOUT="OUI", RELATION="ELAS", DEFORMATION="PETIT"),
+    INCREMENT=_F(LIST_INST=LINSTa),
+    ARCHIVAGE=_F(LIST_INST=LINST),
+    CARA_ELEM=CARAELEM,
+    SOLVEUR=_F(METHODE="MULT_FRONT"),
+    EXCIT=(_F(CHARGE=CHARMECA), _F(CHARGE=CHARMEZ)),
+    CABLE_BP=(CABLEPR,),
+    INFO=1,
+)
+
+EVOLNOLI = CALC_CHAMP(reuse=EVOLNOLI, FORCE="REAC_NODA", RESULTAT=EVOLNOLI)
+
+
+EVOLNO2 = CALC_PRECONT(
+    CHAM_MATER=CHMATER,
+    MODELE=MODELE,
+    CONVERGENCE=_F(ITER_GLOB_MAXI=10, RESI_GLOB_RELA=1.0e-05),
+    COMPORTEMENT=_F(TOUT="OUI", RELATION="ELAS", DEFORMATION="PETIT"),
+    INCREMENT=_F(LIST_INST=LINST),
+    CARA_ELEM=CARAELEM,
+    SOLVEUR=_F(METHODE="MULT_FRONT"),
+    EXCIT=(_F(CHARGE=CHARMECA), _F(CHARGE=CHARMEX)),
+    CABLE_BP=(CABLEPR,),
+    INFO=1,
+)
+
+
+EVOLNO2 = CALC_CHAMP(reuse=EVOLNO2, FORCE="REAC_NODA", RESULTAT=EVOLNO2)
+
+FORC_DZ = POST_RELEVE_T(
+    ACTION=_F(
+        OPERATION="EXTRACTION",
+        INTITULE="FORCDZ",
+        GROUP_NO=("GXXXXXX_VOILE", "GXXXXXX_CABLE001"),
+        RESULTANTE="DZ",
+        NUME_ORDRE=2,
+        RESULTAT=EVOLNOLI,
+        NOM_CHAM="REAC_NODA",
+    )
+)
+
+
+FORC2_DX = POST_RELEVE_T(
+    ACTION=_F(
+        OPERATION="EXTRACTION",
+        INTITULE="FORCDX",
+        GROUP_NO=("GXXXXXX_VOILE", "GXXXXXX_CABLE001"),
+        RESULTANTE="DX",
+        RESULTAT=EVOLNO2,
+        NUME_ORDRE=2,
+        NOM_CHAM="REAC_NODA",
+    )
+)
+
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-10,
+    VALE_CALC=132.0,
+    VALE_REFE=132.0,
+    NOM_PARA="DZ",
+    TABLE=FORC_DZ,
+)
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-10,
+    VALE_CALC=132.0,
+    VALE_REFE=132.0,
+    NOM_PARA="DX",
+    TABLE=FORC2_DX,
+)
+
+# CONTRAINTES
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=2,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=EVOLNOLI,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXX",
+            VALE_CALC=-1.66666667e05,
+            VALE_REFE=-1.6666666666700001e5,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+            GROUP_MA="toto1",
+        ),
+        _F(
+            NUME_ORDRE=2,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=EVOLNOLI,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="N",
+            VALE_CALC=2.00000000e05,
+            VALE_REFE=2.0e5,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+            GROUP_MA="SG001001",
+        ),
+    )
+)
+
+# DEFORMATION DANS LE BETON
+
+EVOLNOLI = CALC_CHAMP(reuse=EVOLNOLI, RESULTAT=EVOLNOLI, DEFORMATION=("EPSI_ELNO"))
+
+TEST_RESU(
+    RESU=_F(
+        NUME_ORDRE=1,
+        REFERENCE="ANALYTIQUE",
+        RESULTAT=EVOLNOLI,
+        NOM_CHAM="EPSI_ELNO",
+        GROUP_NO="NB001001",
+        NOM_CMP="EPXX",
+        VALE_CALC=-5.55555556e-06,
+        VALE_REFE=-5.5555555555999996e-06,
+        CRITERE="RELATIF",
+        PRECISION=1.0e-05,
+        GROUP_MA="toto1",
+    )
+)
+
+# -----------------------------------------------------------------------------------------------
+# TEST EN CABLE_GAINE
+# -----------------------------------------------------------------------------------------------
+
+MA2 = DEFI_GROUP(reuse=MA2, MAILLAGE=MA2, CREA_GROUP_NO=_F(TOUT_GROUP_MA="OUI"))
+
+
+MO2 = AFFE_MODELE(
+    AFFE=(
+        _F(GROUP_MA="GXXXXXX_VOILE", PHENOMENE="MECANIQUE", MODELISATION="3D"),
+        _F(GROUP_MA="GXXXXXX_CABLE001", PHENOMENE="MECANIQUE", MODELISATION="CABLE_GAINE"),
+    ),
+    MAILLAGE=MA2,
+)
+
+CA2 = AFFE_CARA_ELEM(
+    MODELE=MO2,
+    BARRE=_F(SECTION="GENERALE", GROUP_MA="GXXXXXX_CABLE001", CARA=("A"), VALE=(0.00015)),
+)
+
+
+CH2 = AFFE_MATERIAU(
+    AFFE=(_F(MATER=BETON, GROUP_MA="GXXXXXX_VOILE"), _F(MATER=ACIER, GROUP_MA="GXXXXXX_CABLE001")),
+    MAILLAGE=MA2,
+)
+
+CAB2 = DEFI_CABLE_BP(
+    CHAM_MATER=CH2,
+    MODELE=MO2,
+    DEFI_CABLE=_F(GROUP_NO_ANCRAGE=("NC1", "NC5"), GROUP_MA="GXXXXXX_CABLE001"),
+    TYPE_ANCRAGE=("ACTIF", "ACTIF"),
+    GROUP_MA_BETON="GXXXXXX_VOILE",
+    TENSION_INIT=2.0e5,
+    RECUL_ANCRAGE=0.0,
+    CARA_ELEM=CA2,
+    INFO=2,
+)
+
+CHAR2 = AFFE_CHAR_MECA(
+    MODELE=MO2,
+    DDL_IMPO=(
+        _F(GROUP_NO="NB001001", DY=0.0),
+        _F(DX=0.0, GROUP_NO="GXXXXXX_VGAUCH"),
+        _F(DZ=0.0, GROUP_NO="GXXXXXX_VINF"),
+        _F(GLIS=0.0, GROUP_NO=("NC001001", "NC001005")),
+    ),
+)
+
+CHAR2Z = AFFE_CHAR_MECA(MODELE=MO2, PESANTEUR=_F(GRAVITE=10.0, DIRECTION=(0.0, 0.0, -1.0)))
+
+CHAR2X = AFFE_CHAR_MECA(MODELE=MO2, PESANTEUR=_F(GRAVITE=10.0, DIRECTION=(-1.0, 0.0, 0.0)))
+
+EVOL2 = CALC_PRECONT(
+    CHAM_MATER=CH2,
+    MODELE=MO2,
+    CONVERGENCE=_F(ITER_GLOB_MAXI=10, RESI_GLOB_RELA=1.0e-05),
+    COMPORTEMENT=(
+        _F(GROUP_MA="GXXXXXX_VOILE", RELATION="ELAS", DEFORMATION="PETIT"),
+        _F(
+            RELATION="KIT_CG",
+            RELATION_KIT=("ELAS", "CABLE_GAINE_FROT"),
+            GROUP_MA="GXXXXXX_CABLE001",
+        ),
+    ),
+    INCREMENT=_F(LIST_INST=LINST),
+    CARA_ELEM=CA2,
+    SOLVEUR=_F(METHODE="MUMPS"),
+    EXCIT=(_F(CHARGE=CHAR2), _F(CHARGE=CHAR2Z)),
+    CABLE_BP=(CAB2,),
+    INFO=1,
+)
+
+EVOL2 = CALC_CHAMP(reuse=EVOL2, FORCE="REAC_NODA", RESULTAT=EVOL2)
+
+
+EVOL22 = CALC_PRECONT(
+    CHAM_MATER=CH2,
+    MODELE=MO2,
+    CONVERGENCE=_F(ITER_GLOB_MAXI=10, RESI_GLOB_RELA=1.0e-05),
+    COMPORTEMENT=(
+        _F(TOUT="OUI", RELATION="ELAS", DEFORMATION="PETIT"),
+        _F(
+            RELATION="KIT_CG",
+            RELATION_KIT=("ELAS", "CABLE_GAINE_FROT"),
+            GROUP_MA="GXXXXXX_CABLE001",
+        ),
+    ),
+    INCREMENT=_F(LIST_INST=LINST),
+    CARA_ELEM=CA2,
+    SOLVEUR=_F(METHODE="MUMPS"),
+    EXCIT=(_F(CHARGE=CHAR2), _F(CHARGE=CHAR2X)),
+    CABLE_BP=(CAB2,),
+    INFO=1,
+)
+
+EVOL22 = CALC_CHAMP(reuse=EVOL22, FORCE="REAC_NODA", RESULTAT=EVOL22)
+
+FORC2DZ = POST_RELEVE_T(
+    ACTION=_F(
+        OPERATION="EXTRACTION",
+        INTITULE="FORCDZ",
+        GROUP_NO=("GXXXXXX_VOILE", "GXXXXXX_CABLE001"),
+        RESULTANTE="DZ",
+        NUME_ORDRE=2,
+        RESULTAT=EVOL2,
+        NOM_CHAM="REAC_NODA",
+    )
+)
+
+
+FORC22DX = POST_RELEVE_T(
+    ACTION=_F(
+        OPERATION="EXTRACTION",
+        INTITULE="FORCDX",
+        GROUP_NO=("GXXXXXX_VOILE", "GXXXXXX_CABLE001"),
+        RESULTANTE="DX",
+        RESULTAT=EVOL22,
+        NUME_ORDRE=2,
+        NOM_CHAM="REAC_NODA",
+    )
+)
+
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-10,
+    VALE_CALC=132.00000000000,
+    VALE_REFE=132.0,
+    NOM_PARA="DZ",
+    TABLE=FORC2DZ,
+)
+
+TEST_TABLE(
+    CRITERE="RELATIF",
+    REFERENCE="ANALYTIQUE",
+    PRECISION=1.0e-10,
+    VALE_CALC=132.00000000000,
+    VALE_REFE=132.0,
+    NOM_PARA="DX",
+    TABLE=FORC22DX,
+)
+
+# CONTRAINTES
+TEST_RESU(
+    RESU=(
+        _F(
+            NUME_ORDRE=2,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=EVOL2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="SIXX",
+            VALE_CALC=-1.6665670423982e05,
+            VALE_REFE=-1.6666666666700001e5,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+            GROUP_MA="toto1",
+        ),
+        _F(
+            NUME_ORDRE=2,
+            REFERENCE="ANALYTIQUE",
+            POINT=1,
+            RESULTAT=EVOL2,
+            NOM_CHAM="SIEF_ELGA",
+            NOM_CMP="N",
+            VALE_CALC=1.9998804508778e05,
+            VALE_REFE=2.0e5,
+            CRITERE="RELATIF",
+            PRECISION=1.0e-3,
+            GROUP_MA="SG001001",
+        ),
+    )
+)
+
+# DEFORMATION DANS LE BETON
+
+EVOL2 = CALC_CHAMP(reuse=EVOL2, RESULTAT=EVOL2, DEFORMATION=("EPSI_ELNO"))
+
+TEST_RESU(
+    RESU=_F(
+        NUME_ORDRE=2,
+        REFERENCE="ANALYTIQUE",
+        RESULTAT=EVOL2,
+        NOM_CHAM="EPSI_ELNO",
+        GROUP_NO="NB001001",
+        NOM_CMP="EPXX",
+        VALE_CALC=-5.5552234746606e-06,
+        VALE_REFE=-5.5555555555999996e-06,
+        CRITERE="RELATIF",
+        PRECISION=1.0000000000000001e-04,
+        GROUP_MA="toto1",
+    )
+)
+IMPR_RESU(FORMAT="RESULTAT", RESU=_F(RESULTAT=EVOL2))
+#
+FIN()

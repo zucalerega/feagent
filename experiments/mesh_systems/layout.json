@@ -1,0 +1,46 @@
+{
+ "about": "Where each mesh system's build.py output lives under a mesh-systems root (MESHSYS_OUT). Paths are relative to that root. experiments/physical/meshsys.py builds the canonical index <root>/_canon/<system>/<part>/<purpose> (symlinks) from this file, and run_all.py --build calls each system's build.py with these paths as OUT_DIR.",
+ "parts": {
+  "abc_00000003": {"axis": "z", "step": "benchmarks/gold/abc_00000003_bc0/public/geometry.step"},
+  "abc_00000065": {"axis": "y", "step": "benchmarks/gold/abc_00000065_bc0/public/geometry.step"}
+ },
+ "systems": {
+  "harness_auto": {
+   "label": "harness auto (feagent automesh)",
+   "dirs": {"abc_00000003": {"linear": "harness_auto/abc_00000003/linear", "nonlinear": "harness_auto/abc_00000003/nonlinear"},
+            "abc_00000065": {"linear": "harness_auto/abc_00000065/linear", "nonlinear": "harness_auto/abc_00000065/nonlinear"}},
+   "ccx_inp": "mesh.inp"
+  },
+  "harness_expert": {
+   "label": "harness expert (digest, local refinement, thin-wall layers)",
+   "dirs": {"abc_00000003": {"linear": "harness_expert/p3_linear", "nonlinear": "harness_expert/p3_nonlinear"},
+            "abc_00000065": {"linear": "harness_expert/p65_linear", "nonlinear": "harness_expert/p65_nonlinear"}},
+   "ccx_inp": "mesh.inp"
+  },
+  "ace_sizing": {
+   "label": "ACE sizing (global h + hotspot refinement)",
+   "dirs": {"abc_00000003": {"linear": "ace_sizing/abc_00000003/linear", "nonlinear": "ace_sizing/abc_00000003/nonlinear"},
+            "abc_00000065": {"linear": "ace_sizing/abc_00000065/linear", "nonlinear": "ace_sizing/abc_00000065/nonlinear"}},
+   "ccx_inp": "mesh.inp"
+  },
+  "gold_nested": {
+   "label": "gold nested (uniform split refinement, L1)",
+   "dirs": {"abc_00000003": {"linear": "gold_nested/abc3_lin", "nonlinear": "gold_nested/abc3_nl"},
+            "abc_00000065": {"linear": "gold_nested/abc65_lin", "nonlinear": "gold_nested/abc65_nl"}},
+   "ccx_inp": "mesh.inp"
+  },
+  "netgen": {
+   "label": "Netgen (OCC geometry)",
+   "dirs": {"abc_00000003": {"linear": "netgen/abc_00000003/linear", "nonlinear": "netgen/abc_00000003/nonlinear"},
+            "abc_00000065": {"linear": "netgen/abc_00000065/linear", "nonlinear": "netgen/abc_00000065/nonlinear"}},
+   "ccx_inp": "mesh_ccx.inp",
+   "pythonpath": ["netgen/site"]
+  },
+  "harness_hex": {
+   "label": "harness hex (tet10 linear, all-hex C3D8 nonlinear)",
+   "dirs": {"abc_00000003": {"linear": "harness_hex/p3_linear", "nonlinear": "harness_hex/p3_nonlinear"},
+            "abc_00000065": {"linear": "harness_hex/p65_linear", "nonlinear": "harness_hex/p65_nonlinear"}},
+   "ccx_inp": "mesh.inp"
+  }
+ }
+}

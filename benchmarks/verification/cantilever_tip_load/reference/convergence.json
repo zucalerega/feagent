@@ -1,0 +1,249 @@
+{
+ "case": "verification/cantilever_tip_load",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 10.0,
+   "n_nodes": 955,
+   "n_dof": 2865,
+   "solver_cpu_s": 0.09925,
+   "solver_wall_s": 0.08160248500007583,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "tip_deflection": {
+     "value": -1.9064237499999996,
+     "error": 0.002544101574566126,
+     "passed": true,
+     "failure": null
+    },
+    "bending_stress_mid": {
+     "value": 150.0,
+     "error": 0.0,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 999.9989600000004,
+     "error": 1.0399999996479892e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 2,
+   "h": 6.0,
+   "n_nodes": 2843,
+   "n_dof": 8529,
+   "solver_cpu_s": 0.387186,
+   "solver_wall_s": 0.3032382310002504,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "tip_deflection": {
+     "value": -1.908906244280151,
+     "error": 0.0012452410444534663,
+     "passed": true,
+     "failure": null
+    },
+    "bending_stress_mid": {
+     "value": 149.89500000031634,
+     "error": 0.0006999999978910409,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 1000.0007599999999,
+     "error": 7.599999999001739e-07,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 4.0,
+   "n_nodes": 6418,
+   "n_dof": 19254,
+   "solver_cpu_s": 0.921708,
+   "solver_wall_s": 0.7275170919992888,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "tip_deflection": {
+     "value": -1.9097641935595642,
+     "error": 0.0007963552344122668,
+     "passed": true,
+     "failure": null
+    },
+    "bending_stress_mid": {
+     "value": 150.103,
+     "error": 0.0006866666666667243,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 1000.0014272999999,
+     "error": 1.4272999999320746e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 3.0,
+   "n_nodes": 14351,
+   "n_dof": 43053,
+   "solver_cpu_s": 3.098773,
+   "solver_wall_s": 2.242733353999938,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "tip_deflection": {
+     "value": -1.9103137921291162,
+     "error": 0.0005088009406903805,
+     "passed": true,
+     "failure": null
+    },
+    "bending_stress_mid": {
+     "value": 150.03599999969808,
+     "error": 0.00023999999798718363,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 999.9986690000001,
+     "error": 1.3309999999364664e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 2.2,
+   "n_nodes": 32433,
+   "n_dof": 97299,
+   "solver_cpu_s": 10.563137999999999,
+   "solver_wall_s": 7.212682916000631,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "tip_deflection": {
+     "value": -1.9106686079570587,
+     "error": 0.0003231585091816715,
+     "passed": true,
+     "failure": null
+    },
+    "bending_stress_mid": {
+     "value": 149.9898403696248,
+     "error": 6.773086916799305e-05,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 1000.0000888999998,
+     "error": 8.889999980965512e-08,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "tip_deflection": {
+   "q_fine": -1.9106686079570587,
+   "monotone": true,
+   "value": -1.911286256374288,
+   "order": 1.6701176195609073,
+   "uncertainty": 0.0007720605215367368,
+   "method": "richardson"
+  },
+  "bending_stress_mid": {
+   "q_fine": 149.9898403696248,
+   "monotone": true,
+   "value": 149.89259183145842,
+   "order": 1.4291593764351163,
+   "uncertainty": 0.12156067270797843,
+   "method": "richardson"
+  },
+  "reaction_z": {
+   "q_fine": 1000.0000888999998,
+   "monotone": false,
+   "value": 1000.0000888999998,
+   "order": null,
+   "uncertainty": 0.005898668544111067,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   2865,
+   8529,
+   19254,
+   43053,
+   97299
+  ],
+  "accuracy": [
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   true,
+   true,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.1,
+   0.39,
+   0.92,
+   3.1,
+   10.56
+  ]
+ }
+}

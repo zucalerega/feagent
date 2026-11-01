@@ -1,0 +1,47 @@
+{
+ "id": "verification/euler_buckling",
+ "volume": 39999.99999999999,
+ "volume_tolerance": 0.02,
+ "bbox": [
+  -5.0000001,
+  -5.0000001,
+  -1e-07,
+  5.0000001,
+  5.0000001,
+  400.0000001
+ ],
+ "n_cad_faces": 6,
+ "qois": [
+  {
+   "id": "lambda1",
+   "kind": "buckling",
+   "mode": 1,
+   "reference": 2.7005930542404366,
+   "tolerance": {
+    "rel": 0.01
+   },
+   "reference_type": "numerical",
+   "provenance": "Richardson extrapolation of the reference pipeline",
+   "closed_form": {
+    "euler": 2.698719953422871
+   },
+   "description": "lowest buckling load factor",
+   "weight": 1.0,
+   "gate": false,
+   "uncertainty": 0.00018493219945396407,
+   "richardson": {
+    "q_fine": 2.700741,
+    "monotone": true,
+    "order": 2.7180066065072293,
+    "uncertainty": 0.00018493219945396407,
+    "method": "richardson"
+   }
+  }
+ ],
+ "notes": [],
+ "budget": {
+  "reference_level": 1,
+  "reference_n_dof": 5412,
+  "reference_solver_cpu_s": 0.285362
+ }
+}

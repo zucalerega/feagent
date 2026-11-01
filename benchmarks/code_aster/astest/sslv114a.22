@@ -1,0 +1,80 @@
+ TITRE
+JE-01-JUIL-2021 13:04:47                                                        
+ FINSF
+ %
+ COOR_2D
+ A         0.00000000000000E+00  0.00000000000000E+00
+ B         1.00000000000000E+00  0.00000000000000E+00
+ C         1.00000000000000E+00  1.00000000000000E+00
+ D         0.00000000000000E+00  1.00000000000000E+00
+ E1        2.00000000000000E+00  0.00000000000000E+00
+ E2        2.00000000000000E+00  0.00000000000000E+00
+ E3        2.00000000000000E+00  0.00000000000000E+00
+ FINSF
+ %
+ QUAD4   
+ ABCD     A        B        C        D       
+ FINSF
+ %
+ SEG2    
+ BE1      B        E1      
+ BE2      B        E2      
+ BE3      B        E3      
+ FINSF
+ %
+ GROUP_NO
+ E3                      
+ E3      
+ FINSF
+ %
+ GROUP_NO
+ C                       
+ C       
+ FINSF
+ %
+ GROUP_NO
+ A                       
+ A       
+ FINSF
+ %
+ GROUP_NO
+ E2                      
+ E2      
+ FINSF
+ %
+ GROUP_NO
+ B                       
+ B       
+ FINSF
+ %
+ GROUP_NO
+ E1                      
+ E1      
+ FINSF
+ %
+ GROUP_NO
+ D                       
+ D       
+ FINSF
+ %
+ GROUP_MA
+ BE2                     
+ BE2     
+ FINSF
+ %
+ GROUP_MA
+ BE3                     
+ BE3     
+ FINSF
+ %
+ GROUP_MA
+ BE1                     
+ BE1     
+ FINSF
+ %
+ GROUP_MA
+ ABCD                    
+ ABCD    
+ FINSF
+ %
+ FIN

@@ -1,0 +1,211 @@
+{
+ "case": "verification/nafems_le10",
+ "pipeline": "gmsh 2nd-order tets (C3D10) -> ccx",
+ "runs": [
+  {
+   "level": 1,
+   "h": 600.0,
+   "n_nodes": 816,
+   "n_dof": 2448,
+   "solver_cpu_s": 0.11621599999999999,
+   "solver_wall_s": 0.10145642899988161,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": -5.602589999999999,
+     "error": 0.04137360594795528,
+     "passed": false,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 5448694.0,
+     "error": 1.0568704558264203e-06,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 0.684306621854469,
+   "all_within_tolerance": false
+  },
+  {
+   "level": 2,
+   "h": 350.0,
+   "n_nodes": 2517,
+   "n_dof": 7551,
+   "solver_cpu_s": 0.361758,
+   "solver_wall_s": 0.30337035499997,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": -5.471579999999995,
+     "error": 0.017022304832712845,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 5448702.8,
+     "error": 5.581937594430965e-07,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 3,
+   "h": 220.0,
+   "n_nodes": 7204,
+   "n_dof": 21612,
+   "solver_cpu_s": 2.03323,
+   "solver_wall_s": 1.4789427519999663,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": -5.437350000000005,
+     "error": 0.010659851301116153,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 5448699.9,
+     "error": 2.595668859329558e-08,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 4,
+   "h": 150.0,
+   "n_nodes": 19307,
+   "n_dof": 57921,
+   "solver_cpu_s": 11.885162,
+   "solver_wall_s": 7.663265491999482,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": -5.39799,
+     "error": 0.00334386617100375,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 5448701.2,
+     "error": 2.6454572036533914e-07,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  },
+  {
+   "level": 5,
+   "h": 110.0,
+   "n_nodes": 45708,
+   "n_dof": 137124,
+   "solver_cpu_s": 60.382578,
+   "solver_wall_s": 37.129856978000134,
+   "gates": {
+    "analysis_type": true,
+    "material_properties": true,
+    "solver_ok": true,
+    "geometry_volume": true
+   },
+   "qois": {
+    "syy_D": {
+     "value": -5.393079999999999,
+     "error": 0.0024312267657991705,
+     "passed": true,
+     "failure": null
+    },
+    "reaction_z": {
+     "value": 5448699.699999999,
+     "error": 1.0749316505081156e-08,
+     "passed": true,
+     "failure": null
+    }
+   },
+   "accuracy": 1.0,
+   "all_within_tolerance": true
+  }
+ ],
+ "richardson": {
+  "syy_D": {
+   "q_fine": -5.393079999999999,
+   "monotone": true,
+   "value": -5.393079999999999,
+   "order": null,
+   "uncertainty": 0.01897442670902866,
+   "method": "finest value (implausible order 6.20); GCI Fs=3"
+  },
+  "reaction_z": {
+   "q_fine": 5448699.699999999,
+   "monotone": false,
+   "value": 5448699.699999999,
+   "order": null,
+   "uncertainty": 5.7966680409797595,
+   "method": "finest value (oscillatory); GCI Fs=3"
+  }
+ },
+ "summary": {
+  "levels": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "n_dof": [
+   2448,
+   7551,
+   21612,
+   57921,
+   137124
+  ],
+  "accuracy": [
+   0.6843,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "all_within_tolerance": [
+   false,
+   true,
+   true,
+   true,
+   true
+  ],
+  "cpu_s": [
+   0.12,
+   0.36,
+   2.03,
+   11.89,
+   60.38
+  ]
+ }
+}

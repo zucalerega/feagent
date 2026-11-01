@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "lid_driven_cavity_re100",
+  "title": "Lid-driven square cavity, Re = 100 (Ghia, Ghia & Shin 1982)",
+  "family": "lid_driven_cavity",
+  "tags": [
+    "cfd",
+    "2d",
+    "flow",
+    "laminar",
+    "published_benchmark",
+    "closed_cavity",
+    "moving_wall"
+  ],
+  "dim": 2,
+  "physics": "flow",
+  "formulation": "2d",
+  "units": "SI (m, s, kg, Pa, N)",
+  "params": {
+    "L": 1.0,
+    "U": 1.0,
+    "rho": 1.0,
+    "mu": 0.01,
+    "h0": 0.03125
+  },
+  "description": "Steady laminar flow of an incompressible Newtonian fluid in a lid-driven square cavity (2D).\nGeometry (STEP, planar face in the xy-plane): square 0 <= x <= 1.0, 0 <= y <= 1.0 m. Model it as 2D (out-of-plane thickness 1 m).\nFluid: density rho = 1.0 kg/m^3, dynamic viscosity mu = 0.01 Pa s.\nBoundary conditions:\n  lid y = 1.0: wall moving tangentially with velocity (u_x, u_y) = (1.0, 0) m/s (no slip relative to the lid)\n  bottom y = 0 and side walls x = 0, x = 1.0: stationary no-slip walls\nThe cavity is closed (no inlet or outlet), so only velocities are reported.\nReport (SI units), velocities at points on the two centrelines:\n  u_vcl_min  u_x (horizontal velocity) at (0.5, 0.453125) [m/s]\n  v_hcl_max  u_y (vertical velocity) at (0.234375, 0.5) [m/s]\n  v_hcl_min  u_y (vertical velocity) at (0.8046875, 0.5) [m/s]\n  u_centre   u_x (horizontal velocity) at (0.5, 0.5) [m/s]",
+  "qois": [
+    {
+      "name": "u_vcl_min",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.5,
+        0.453125
+      ],
+      "group": null,
+      "component": null,
+      "point2": null
+    },
+    {
+      "name": "v_hcl_max",
+      "type": "point",
+      "field": "uy",
+      "point": [
+        0.234375,
+        0.5
+      ],
+      "group": null,
+      "component": null,
+      "point2": null
+    },
+    {
+      "name": "v_hcl_min",
+      "type": "point",
+      "field": "uy",
+      "point": [
+        0.8046875,
+        0.5
+      ],
+      "group": null,
+      "component": null,
+      "point2": null
+    },
+    {
+      "name": "u_centre",
+      "type": "point",
+      "field": "ux",
+      "point": [
+        0.5,
+        0.5
+      ],
+      "group": null,
+      "component": null,
+      "point2": null
+    }
+  ],
+  "geometry_file": "geometry.step"
+}

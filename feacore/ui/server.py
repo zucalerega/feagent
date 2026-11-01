@@ -33,7 +33,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 import feacore
-from feacore.runstore import RunStore, check_id, jsonable, read_json
+from feacore.runstore import RunStore, check_id, jsonable, now_iso, read_json
 from feacore.ui import analysis
 from feacore.ui.jobs import JobRunner, finalize_run, finalize_study
 from feacore.ui.viewdata import encode_array
@@ -112,6 +112,18 @@ class StudyRequest(BaseModel):
     levels: int | None = Field(None, ge=2, le=8, description="number of levels from the coarsest default size")
     ratio: float | None = Field(None, gt=1.0, le=4.0, description="refinement ratio between levels (with levels)")
     geom_order: int | None = None
+    nested: bool = Field(False, description="mesh once at the coarsest size and split it (ratio 2 per level)")
+    meta: dict = Field(default_factory=dict)
+
+
+class BatchRequest(BaseModel):
+    problem_ids: list[str] = Field(..., min_length=1, description="problems to run, one convergence study each")
+    backend: str = "skfem"
+    order: int = 2
+    nested: bool = False
+    levels: int | None = Field(None, ge=2, le=8, description="meshes per study (default: the problem's own sequence)")
+    ratio: float | None = Field(None, gt=1.0, le=4.0, description="refinement ratio with levels (default 2 in 2D, 1.5 in 3D)")
+    name: str = ""
     meta: dict = Field(default_factory=dict)
 
 
@@ -263,6 +275,7 @@ def _study_summary(s: dict) -> dict:
         "study_id": s.get("study_id"), "created_at": s.get("created_at"), "finished_at": s.get("finished_at"),
         "status": s.get("status"), "problem_id": s.get("problem_id"), "backend": s.get("backend"),
         "order": s.get("order"), "sizes": s.get("sizes"), "source": s.get("source"),
+        "nested": s.get("nested", False), "batch_id": s.get("batch_id"), "elapsed": s.get("elapsed"),
         "progress": {k: prog.get(k) for k in ("done", "total", "stage", "message")},
         "passed": res.get("passed"), "error": s.get("error"),
         "verdicts": {k: {"label": v.get("label"), "status": v.get("status"), "verdict": v.get("verdict")}
@@ -312,8 +325,23 @@ class _NpzCache:
 # --------------------------------------------------------------------------- app
 
 
+AUTH_HELP = ("this server requires a token: send 'Authorization: Bearer <token>', an 'X-Feacore-Token: <token>' "
+             "header, or '?token=<token>' (open the UI once as /?token=<token> to store it in the browser)")
+
+
+def _request_token(request: Request) -> str | None:
+    auth = request.headers.get("authorization", "")
+    if auth[:7].lower() == "bearer ":
+        return auth[7:].strip()
+    return request.headers.get("x-feacore-token") or request.query_params.get("token")
+
+
 def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = None,
-               study_workers: int | None = None) -> FastAPI:
+               study_workers: int | None = None, token: str | None = None) -> FastAPI:
+    """``token`` (or env FEACORE_UI_TOKEN): if set, every /api/* request must carry it."""
+    import hmac
+
+    token = token if token is not None else (os.environ.get("FEACORE_UI_TOKEN") or None)
     store = RunStore(runs_dir)
     runner = JobRunner(store, quick_workers=quick_workers, study_workers=study_workers)
     backend_check = _BackendCheck()
@@ -335,6 +363,26 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
                   description="Fixed FEA solver service, solution verification (Richardson / GCI), "
                               "benchmark library and multi-agent consensus. See docs/ui.md.")
     app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=3)
+
+    def _token_ok(request: Request) -> bool:
+        given = _request_token(request)
+        return bool(given) and hmac.compare_digest(given.encode("utf-8"), token.encode("utf-8"))
+
+    @app.middleware("http")
+    async def require_token(request: Request, call_next):
+        # the page shell and static files stay open (the UI must load to accept ?token=)
+        # /api/auth and /api/health stay open; health answers only {ok, active_jobs} without a token
+        if token and request.url.path.startswith("/api/") and request.url.path not in ("/api/auth", "/api/health"):
+            if not _token_ok(request):
+                return SafeJSONResponse({"detail": AUTH_HELP}, status_code=401,
+                                        headers={"WWW-Authenticate": "Bearer"})
+        return await call_next(request)
+
+    @app.get("/api/auth")
+    def auth_status(request: Request):
+        """Whether this server needs a token, and whether the one sent (if any) is valid."""
+        return {"required": bool(token), "valid": (_token_ok(request) if token else True),
+                "methods": ["Authorization: Bearer <token>", "X-Feacore-Token: <token>", "?token=<token>"]}
     app.state.store = store
     app.state.runner = runner
 
@@ -374,12 +422,20 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
 
     # ------------------------------------------------------------------ health
     @app.get("/api/health")
-    def health(wait: bool = False, refresh: bool = False):
+    def health(request: Request, wait: bool = False, refresh: bool = False):
+        """Service health. ``active_jobs`` = queued + running solve / study (incl. batch) jobs, so a
+        deploy script can wait for 0 before restarting. Reachable without the token, but then it
+        returns only ``{ok, active_jobs, auth_required}``."""
+        active = runner.active_count()
+        if token and not _token_ok(request):
+            return {"ok": True, "active_jobs": active, "auth_required": True}
         reg = _problems_api()
         errors = reg.discover()
         bc = backend_check.get(wait=wait, refresh=refresh)
         return {
             "ok": True,
+            "active_jobs": active,
+            "auth_required": bool(token),
             "feacore": feacore.__version__,
             "python": sys.version.split()[0],
             "platform": platform.platform(),
@@ -630,40 +686,156 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
         return PlainTextResponse(p.read_text(errors="replace")[-20000:] if p.exists() else "")
 
     # ------------------------------------------------------------------ studies
-    @app.post("/api/studies", status_code=202)
-    def create_study(req: StudyRequest):
-        from feacore.solver import BACKENDS
-
-        p = _problem_or_404(req.problem_id)
-        if req.backend not in BACKENDS:
-            raise HTTPException(422, f"unknown backend {req.backend!r}; available: {sorted(BACKENDS)}")
-        if req.order not in (1, 2):
-            raise HTTPException(422, "order must be 1 or 2")
-        sizes = req.sizes
-        if sizes is None and req.levels:
+    def _sizes_for(p, order: int, sizes=None, levels=None, ratio=None) -> list[float]:
+        if sizes is None and levels:
             try:
-                h0 = max(p.study_sizes(req.order))
+                h0 = max(p.study_sizes(order))
             except Exception as e:  # noqa: BLE001
-                raise HTTPException(422, f"problem has no default sizes ({e}); pass sizes") from None
-            r = req.ratio or (2.0 if p.dim == 2 else 1.5)
-            sizes = [h0 / r**k for k in range(req.levels)]
+                raise HTTPException(422, f"{p.id}: no default sizes ({e}); pass sizes") from None
+            r = ratio or (2.0 if p.dim == 2 else 1.5)
+            sizes = [h0 / r**k for k in range(levels)]
         if sizes is not None:
             if not sizes or any((not np.isfinite(h)) or h <= 0 for h in sizes):
                 raise HTTPException(422, "sizes must be positive numbers")
             if len(set(sizes)) != len(sizes):
                 raise HTTPException(422, "sizes must be distinct")
-            sizes = sorted(sizes, reverse=True)
-        else:
-            try:
-                sizes = sorted(p.study_sizes(req.order), reverse=True)
-            except Exception as e:  # noqa: BLE001
-                raise HTTPException(422, f"problem has no default study sizes ({e}); pass sizes") from None
-        rec = store.create_study(req.problem_id, backend=req.backend, order=req.order, sizes=sizes,
-                                 geom_order=req.geom_order, meta=req.meta, source="ui")
+            return sorted(sizes, reverse=True)
+        try:
+            return sorted(p.study_sizes(order), reverse=True)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(422, f"{p.id}: no default study sizes ({e}); pass sizes") from None
+
+    def _check_backend(backend: str, order: int) -> None:
+        from feacore.solver import BACKENDS
+
+        if backend not in BACKENDS:
+            raise HTTPException(422, f"unknown backend {backend!r}; available: {sorted(BACKENDS)}")
+        if order not in (1, 2):
+            raise HTTPException(422, "order must be 1 or 2")
+
+    def _start_study(problem_id: str, backend: str, order: int, sizes: list[float], geom_order=None,
+                     nested: bool = False, meta: dict | None = None, batch_id: str | None = None) -> dict:
+        rec = store.create_study(problem_id, backend=backend, order=order, sizes=sizes, geom_order=geom_order,
+                                 meta=meta or {}, source="ui", nested=nested, batch_id=batch_id)
         sid = rec["study_id"]
         runner.submit("study", {"root": str(store.root), "study_id": sid},
                       log=store.study_dir(sid) / "worker.log", on_exit=finalize_study(store))
         return rec
+
+    @app.post("/api/studies", status_code=202)
+    def create_study(req: StudyRequest):
+        p = _problem_or_404(req.problem_id)
+        _check_backend(req.backend, req.order)
+        sizes = _sizes_for(p, req.order, req.sizes, req.levels, req.ratio)
+        return _start_study(req.problem_id, req.backend, req.order, sizes, req.geom_order, req.nested, req.meta)
+
+    # ------------------------------------------------------------------ benchmark batches
+    def _batch_view(b: dict, with_rows: bool = True) -> dict:
+        reg = _problems_api()
+        items, rows = [], []
+        counts = {"queued": 0, "running": 0, "succeeded": 0, "failed": 0, "cancelled": 0, "interrupted": 0}
+        for it in b["items"]:
+            try:
+                st = store.get_study(it["study_id"])
+            except KeyError:
+                st = {"study_id": it["study_id"], "status": "failed", "error": "study record missing"}
+            status = st.get("status", "failed")
+            counts[status] = counts.get(status, 0) + 1
+            try:
+                title = reg.get(it["problem_id"]).title
+            except KeyError:
+                title = it["problem_id"]
+            prog = st.get("progress") or {}
+            elapsed = st.get("elapsed")
+            if elapsed is None and prog.get("started_at") and status == "running":
+                elapsed = time.time() - prog["started_at"]
+            run_ids = st.get("run_ids") or []
+            item = {"problem_id": it["problem_id"], "title": title, "study_id": it["study_id"], "status": status,
+                    "progress": {k: prog.get(k) for k in ("done", "total", "stage", "message", "stage_started_at")},
+                    "levels": [{k: l.get(k) for k in ("index", "h", "status", "n_dofs", "wall_time", "run_id")}
+                               for l in prog.get("levels") or []],
+                    "elapsed": elapsed, "error": st.get("error"), "finest_run_id": run_ids[-1] if run_ids else None,
+                    "passed": (st.get("result") or {}).get("passed")}
+            items.append(item)
+            if with_rows and status == "succeeded" and st.get("result"):
+                rows.extend(analysis.batch_rows(st, title, item["finest_run_id"], elapsed))
+        outcomes: dict[str, int] = {}
+        for r in rows:
+            outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
+        done = counts["succeeded"] + counts["failed"] + counts["cancelled"] + counts["interrupted"]
+        status = ("running" if counts["running"] else "queued" if counts["queued"] else
+                  "succeeded" if counts["succeeded"] == len(items) else "finished")
+        out = {k: b.get(k) for k in ("batch_id", "created_at", "name", "settings", "meta")}
+        out.update(status=status, n_problems=len(items), n_done=done, counts=counts, outcomes=outcomes, items=items,
+                   server_time=time.time())
+        if with_rows:
+            out["rows"] = rows
+        return out
+
+    def _batch_or_404(batch_id: str) -> dict:
+        try:
+            return store.get_batch(batch_id)
+        except KeyError as e:
+            raise HTTPException(404, str(e).strip('"')) from None
+
+    @app.post("/api/batches", status_code=202)
+    def create_batch(req: BatchRequest):
+        _check_backend(req.backend, req.order)
+        reg = _problems_api()
+        missing = [pid for pid in req.problem_ids if pid not in {p.id for p in reg.all_problems()}]
+        if missing:
+            raise HTTPException(404, f"unknown problems: {missing}")
+        pids = list(dict.fromkeys(req.problem_ids))
+        plan = [(pid, _sizes_for(reg.get(pid), req.order, None, req.levels, req.ratio)) for pid in pids]
+        from feacore.runstore import new_id
+
+        batch_id = new_id("batch")
+        items = []
+        for pid, sizes in plan:
+            st = _start_study(pid, req.backend, req.order, sizes, None, req.nested,
+                              {"batch_id": batch_id, **req.meta}, batch_id=batch_id)
+            items.append({"problem_id": pid, "study_id": st["study_id"]})
+        settings = {"backend": req.backend, "order": req.order, "nested": req.nested, "levels": req.levels,
+                    "ratio": req.ratio, "study_workers": runner.workers["study"]}
+        b = store.create_batch(items, settings, name=req.name, meta=req.meta, batch_id=batch_id)
+        return _batch_view(b)
+
+    @app.get("/api/batches")
+    def batches(limit: int = 50):
+        return {"batches": [_batch_view(b, with_rows=False) for b in store.list_batches(limit=limit)],
+                "study_workers": runner.workers["study"]}
+
+    @app.get("/api/batches/{batch_id}")
+    def batch_detail(batch_id: str):
+        return _batch_view(_batch_or_404(batch_id))
+
+    @app.get("/api/batches/{batch_id}/results.{fmt}")
+    def batch_results(batch_id: str, fmt: str):
+        view = _batch_view(_batch_or_404(batch_id))
+        if fmt == "json":
+            body = json.dumps(jsonable({k: view[k] for k in ("batch_id", "created_at", "settings", "rows")}), indent=1)
+            return PlainTextResponse(body, media_type="application/json",
+                                     headers={"Content-Disposition": f'attachment; filename="{batch_id}.json"'})
+        if fmt == "csv":
+            return PlainTextResponse(analysis.rows_to_csv(view["rows"]), media_type="text/csv",
+                                     headers={"Content-Disposition": f'attachment; filename="{batch_id}.csv"'})
+        raise HTTPException(404, "format must be csv or json")
+
+    @app.post("/api/batches/{batch_id}/cancel")
+    def cancel_batch(batch_id: str):
+        b = _batch_or_404(batch_id)
+        n = 0
+        for it in b["items"]:
+            try:
+                st = store.get_study(it["study_id"])
+            except KeyError:
+                continue
+            if st.get("status") in ("queued", "running"):
+                store.update_study(it["study_id"], status="cancelled", error="cancelled by the user",
+                                   finished_at=now_iso())
+                runner.cancel(lambda j, sid=it["study_id"]: j.payload.get("study_id") == sid)
+                n += 1
+        return {"cancelled": n, **_batch_view(store.get_batch(batch_id), with_rows=False)}
 
     @app.get("/api/studies")
     def studies(problem_id: str | None = None, status: str | None = None, limit: int = 100):
@@ -683,6 +855,7 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
             except KeyError:
                 pass
         st["runs"] = runs_
+        st["server_time"] = time.time()
         if st.get("result"):  # always with the current interpretation rules
             st["interpretation"] = analysis.interpret_study(st["result"])
         try:
@@ -725,6 +898,16 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
             return store.get_submission(submission_id)
         except KeyError as e:
             raise HTTPException(404, str(e).strip('"')) from None
+
+    @app.get("/api/swarm")
+    def swarm(loop_id: str | None = None, generation: str | None = None):
+        """ACE agent swarm: loops, per-generation score distribution, per-problem leaderboards of one
+        generation (run-store records written by the ACE bridge; contract in feacore/ui/swarm.py)."""
+        from feacore.ui.swarm import swarm_view
+
+        out = swarm_view(store, _problems_api(), loop_id=loop_id, generation=generation)
+        out["store_root"] = str(store.root.resolve())
+        return out
 
     @app.get("/api/consensus/{problem_id}")
     def consensus_view(problem_id: str):

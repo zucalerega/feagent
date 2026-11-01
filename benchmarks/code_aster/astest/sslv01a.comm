@@ -1,0 +1,216 @@
+# coding=utf-8
+# --------------------------------------------------------------------
+# Copyright (C) 1991 - 2026 - EDF - www.code-aster.org
+# This file is part of code_aster.
+#
+# code_aster is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# code_aster is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with code_aster.  If not, see <http://www.gnu.org/licenses/>.
+# --------------------------------------------------------------------
+
+DEBUT(CODE="OUI", DEBUG=_F(SDVERI="NON"))
+
+
+import numpy as np
+
+# unites: MPa, mm
+MPa = 1.0
+mm = 1.0
+
+
+# Parametres du probleme
+E = 3.0e4 * MPa
+nu = 0.2
+kn = 20.0 * MPa / mm
+kt = 40.0 * MPa / mm
+L = 1000.0 * mm
+
+
+# Chargement
+s0 = 2.0 * MPa
+
+
+# Conditions d'adherence possibles
+cas_adh_nor = ("ELAS", "UNILATER", "PARFAITE")
+cas_adh_tan = ("ELAS", "PARFAITE")
+
+
+# Solution analytique
+def Solution(sig, adh_nor, adh_tan):
+    assert adh_nor in cas_adh_nor
+    assert adh_tan in cas_adh_tan
+
+    exx = sig / E
+    eyy = -nu * exx
+    ezz = -nu * exx
+    sn = 0.5 * sig
+    st = -0.5 * sig
+
+    dn = dict(ELAS=sn / kn, UNILATER=0.5 * (sn + abs(sn)) / kn, PARFAITE=0.0 * sn)[adh_nor]
+
+    dt = dict(ELAS=st / kt, PARFAITE=0.0 * st)[adh_tan]
+
+    dx = (dn - dt) / 2**0.5
+    dy = (dn + dt) / 2**0.5
+    dz = 0 * dn
+
+    ux = exx * L + dx
+    uy = eyy * L + dy
+    uz = ezz * L + dz
+
+    return dict(ux=ux, uy=uy, uz=uz, dn=dn, dt=dt)
+
+
+# Valeurs de non-regression telles que calculees (ordre chronologique du calcul)
+non_reg = [
+    0.11969967525565837,
+    0.004344336196329924,
+    -0.01333333333333375,
+    -0.11969967525565924,
+    -0.004344336196329583,
+    0.013333333333334174,
+    0.10202200572599437,
+    0.02202200572599386,
+    -0.01333333333333365,
+    -0.10202200572599507,
+    -0.022022005725993762,
+    0.013333333333334025,
+    0.11969967525565837,
+    0.004344336196329924,
+    -0.01333333333333375,
+    -0.08434433619632993,
+    0.031011002862996864,
+    0.013333333333333192,
+    0.10202200572599437,
+    0.02202200572599386,
+    -0.01333333333333365,
+    -0.06666666666666624,
+    0.013333333333333273,
+    0.013333333333333326,
+    0.08434433619633047,
+    -0.031011002862996906,
+    -0.01333333333333346,
+    -0.0843443361963308,
+    0.031011002862996878,
+    0.013333333333333676,
+    0.06666666666666679,
+    -0.013333333333332925,
+    -0.013333333333333669,
+    -0.06666666666666726,
+    0.013333333333332498,
+    0.013333333333334092,
+]
+
+
+ma = LIRE_MAILLAGE()
+
+
+MODI_MAILLAGE(reuse=ma, MAILLAGE=ma, ORIE_FISSURE=_F(GROUP_MA="ITF"))
+
+
+mo = AFFE_MODELE(
+    MAILLAGE=ma,
+    AFFE=(
+        _F(GROUP_MA=("SOLIDE", "DROITE"), PHENOMENE="MECANIQUE", MODELISATION="3D"),
+        _F(GROUP_MA="ITF", PHENOMENE="MECANIQUE", MODELISATION="3D_INTERFACE_S"),
+    ),
+)
+
+
+orie = AFFE_CARA_ELEM(MODELE=mo, MASSIF=_F(GROUP_MA="ITF", ANGL_REP=(45, 0, 0)))
+
+
+effort = AFFE_CHAR_MECA(MODELE=mo, FORCE_FACE=_F(GROUP_MA="DROITE", FX=1))
+
+
+blocage = AFFE_CHAR_MECA(
+    MODELE=mo,
+    FACE_IMPO=(_F(GROUP_MA="GAUCHE", DX=0), _F(GROUP_MA="AVANT", DY=0), _F(GROUP_MA="BAS", DZ=0)),
+)
+
+
+temps = DEFI_LIST_INST(DEFI_LIST=_F(VALE=(0, 1, 2)))
+
+
+rampe = DEFI_FONCTION(NOM_PARA="INST", VALE=(0, 0, 1, s0, 2, -s0))
+
+
+for adh_nor in cas_adh_nor:
+    for adh_tan in cas_adh_tan:
+
+        mat = DEFI_MATERIAU(
+            ELAS=_F(E=E, NU=nu),
+            CZM_ELAS=_F(
+                ADHE_NOR=adh_nor,
+                ADHE_TAN=adh_tan,
+                RIGI_NOR=kn,
+                RIGI_TAN=kt,
+                PENA_LAGR_ABSO=10 * (kn + kt),
+            ),
+        )
+
+        cm = AFFE_MATERIAU(MAILLAGE=ma, AFFE=_F(GROUP_MA=("SOLIDE", "ITF"), MATER=mat))
+
+        evol = STAT_NON_LINE(
+            MODELE=mo,
+            CHAM_MATER=cm,
+            CARA_ELEM=orie,
+            EXCIT=(_F(CHARGE=effort, FONC_MULT=rampe), _F(CHARGE=blocage)),
+            INCREMENT=_F(LIST_INST=temps),
+            COMPORTEMENT=(
+                _F(GROUP_MA="SOLIDE", RELATION="ELAS"),
+                _F(GROUP_MA="ITF", RELATION="CZM_ELAS_MIX"),
+            ),
+        )
+
+        for inst in (1, 2):
+
+            sig = rampe(inst)
+            resu = Solution(sig, adh_nor, adh_tan)
+
+            TEST_RESU(
+                RESU=(
+                    _F(
+                        RESULTAT=evol,
+                        INST=inst,
+                        NOM_CHAM="DEPL",
+                        NOM_CMP="DX",
+                        GROUP_NO="PROBE",
+                        REFERENCE="ANALYTIQUE",
+                        VALE_REFE=resu["ux"],
+                        VALE_CALC=non_reg.pop(0),
+                    ),
+                    _F(
+                        RESULTAT=evol,
+                        INST=inst,
+                        NOM_CHAM="DEPL",
+                        NOM_CMP="DY",
+                        GROUP_NO="PROBE",
+                        REFERENCE="ANALYTIQUE",
+                        VALE_REFE=resu["uy"],
+                        VALE_CALC=non_reg.pop(0),
+                    ),
+                    _F(
+                        RESULTAT=evol,
+                        INST=inst,
+                        NOM_CHAM="DEPL",
+                        NOM_CMP="DZ",
+                        GROUP_NO="PROBE",
+                        REFERENCE="ANALYTIQUE",
+                        VALE_REFE=resu["uz"],
+                        VALE_CALC=non_reg.pop(0),
+                    ),
+                )
+            )
+
+
+FIN()
