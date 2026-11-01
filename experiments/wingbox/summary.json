@@ -1,0 +1,95 @@
+{
+  "dofs": {
+    "assembly_c2": 150213,
+    "assembly_c1": 237273,
+    "assembly": 370170,
+    "assembly_xf": 1150527
+  },
+  "solve_s": {
+    "assembly_c2": 3.2,
+    "assembly_c1": 4.8,
+    "assembly": 7.65,
+    "assembly_xf": 24.24
+  },
+  "linear_solve_s": {
+    "assembly_c2": 1.31,
+    "assembly_c1": 2.03,
+    "assembly": 3.27,
+    "assembly_xf": 9.79
+  },
+  "solver": "cudss on NVIDIA GB10 (DGX Spark)",
+  "tip_deflection_mm": {
+    "assembly_c2": 7.671101110089961,
+    "assembly_c1": 7.675644017247251,
+    "assembly": 7.678791003548293,
+    "assembly_xf": 7.683305079027068
+  },
+  "tip_deflection_extrapolated_mm": 7.6865941137472165,
+  "beam_theory_mm": 7.498464595108682,
+  "gci": {
+    "h_definition": "DOFs^(-1/3); 3-mesh GCI on c1/fine/xf (r21 = 1.46, r32 = 1.16), least-squares fit on all 4",
+    "note": "feacore gci3 labels both 'divergent' (R = e21/e32 = 1.44 > 1, an artefact of unequal r); p/phi_ext/GCI below are Celik's procedure with feacore's _observed_order; fit4 = feacore analyze() least-squares fit",
+    "mean_uz_tip": {
+      "p": 2.28549829835826,
+      "phi_ext": 7.6865941137472165,
+      "gci_fine": 0.0005350943842395297,
+      "gci_fine_conservative": 0.0012842265221748713,
+      "gci3_library": {
+        "convergence": "divergent",
+        "R": 1.434412179449647,
+        "flags": [
+          "refinement_ratio_below_1.3",
+          "divergent"
+        ]
+      },
+      "fit4": {
+        "phi0": 7.686619520871564,
+        "a": -130.8241867065883,
+        "p": 2.275084633361468,
+        "rms_residual": 2.064055408938863e-06,
+        "n": 4
+      }
+    },
+    "strain_energy": {
+      "p": 2.2854973565744032,
+      "phi_ext": 76865.94116555365,
+      "gci_fine": 0.000535094770344131,
+      "gci_fine_conservative": 0.0012842274488259143,
+      "gci3_library": {
+        "convergence": "divergent",
+        "R": 1.4344125042397509,
+        "flags": [
+          "refinement_ratio_below_1.3",
+          "divergent"
+        ]
+      },
+      "fit4": {
+        "phi0": 76866.18829752551,
+        "a": -1309146.7508582715,
+        "p": 2.2752723953808616,
+        "rms_residual": 0.020707117303800548,
+        "n": 4
+      }
+    }
+  },
+  "von_mises_max_mpa": 60.61015098125998,
+  "von_mises_max_at": [
+    600.0,
+    0.0,
+    150.0
+  ],
+  "von_mises_max_by_mesh_mpa": {
+    "assembly_c2": 43.77426395974706,
+    "assembly_c1": 48.18407946379828,
+    "assembly": 50.74896949030464,
+    "assembly_xf": 60.61015098125998
+  },
+  "reaction_z_n": -19999.99999986496,
+  "verdict": "pass",
+  "verdict_note": "equilibrium, beam theory (+2.5%, within 10%), convergence (monotone, p 2.29, GCI 0.05%) pass; peak von Mises is a clamped-root corner singularity (diverges 43.8->60.6 MPa), not a design value; stresses away from the root converge and match M c / I",
+  "memory_gib": {
+    "xf_cgroup_peak": 4.96,
+    "xf_MemAvailable_drop": 11.33,
+    "xf_min_MemAvailable": 105.58
+  }
+}

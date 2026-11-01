@@ -46,6 +46,29 @@ def quadrature(sdim: int, degree: int):
     return X.T.copy(), W.copy()
 
 
+# trilinear hexahedron on [-1, 1]^3, CalculiX C3D8 node order
+_HEX_SIGN = np.array([(-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+                      (-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1)], dtype=float)
+
+
+def hex_shape(xi: np.ndarray):
+    """Trilinear shape functions N (..., 8) and dN/dxi (..., 8, 3) at points xi (..., 3) of [-1, 1]^3."""
+    xi = np.asarray(xi, dtype=float)
+    f = 1.0 + xi[..., None, :] * _HEX_SIGN                     # (..., 8, 3)
+    N = 0.125 * f.prod(axis=-1)
+    dN = np.stack([0.125 * _HEX_SIGN[:, k] * np.prod(np.delete(f, k, axis=-1), axis=-1) for k in range(3)],
+                  axis=-1)
+    return N, dN
+
+
+def hex_quadrature(degree: int):
+    """Tensor Gauss-Legendre rule on [-1, 1]^3 exact for the given degree per direction."""
+    g, w = np.polynomial.legendre.leggauss(max(1, (int(degree) + 2) // 2))
+    X = np.stack(np.meshgrid(g, g, g, indexing="ij"), axis=-1).reshape(-1, 3)
+    W = np.einsum("i,j,k->ijk", w, w, w).ravel()
+    return X, W
+
+
 # ---------------------------------------------------------------------------- geometry at qps
 def map_points(Xe: np.ndarray, N: np.ndarray, dN: np.ndarray):
     """Element node coordinates Xe (ne, nen, 3) -> physical points (ne, nq, 3) and Jacobians

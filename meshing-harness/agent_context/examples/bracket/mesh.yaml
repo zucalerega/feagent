@@ -1,0 +1,19 @@
+# L-bracket: four r=3.25 bolt holes in the base, r=5 load hole in the upright, r=4 inner fillet.
+# Pattern: select repeated features by kind + radius + axis (not by tag); refine the stress raiser
+# (the fillet) with a `feature:` query.
+name: bracket
+geometry: ../parts/bracket.step
+analysis: fea
+groups:
+  bolt_holes: {select: {kind: cylinder, radius: 3.25, axis: [0, 0, 1]}, expect: 4}
+  load_hole: {select: {kind: cylinder, radius: 5, axis: [1, 0, 0]}, expect: 1}
+  fillet: {select: {feature: fillet}, expect: 1}
+size: {global: 2.5}
+refine:
+  - {group: fillet, size: 1.0, distance: 4}
+element: {order: 2}
+export: [msh, inp]
+bcs:
+  fea:
+    fixed: [bolt_holes]
+    loads: [{group: load_hole, force: [0.0, 0.0, -500.0]}]

@@ -132,6 +132,27 @@ peaks at 4,755 N.
 More: the [videos](talk_plots/act3_real_data/videos.html) and the [crack-prediction page](talk_plots/act3_real_data/break/index.html).
 Every figure has its caption and data in [`talk_plots/`](talk_plots/README.md), listed in [slide order](talk_plots/SLIDES.md).
 
+### 4. Six independent mesh systems, crushed to failure
+
+![The clamp abc_00000065 crushed to failure on six mesh systems, Omniverse RTX](docs/gallery/videos/all_systems_abc_00000065_crush_rtx.gif)
+
+*The same clamp, the same material (Alpha Fast resin calibrated from our dogbone test) and the same CalculiX crush:
+J2 plasticity, large displacements and element erosion, run until the part separates. The only difference between
+the six panels is the mesh system that built the mesh. Rendered with Omniverse RTX (Isaac Sim 6.2) on the DGX Spark.
+[MP4](docs/gallery/videos/all_systems_abc_00000065_crush_rtx.mp4).*
+
+- **Stiffness agrees across the six systems within 0.8-1.3 %.** That is a number a single agent can be trusted on.
+- **Crush peak force spreads 20-31 %, and single-point peak stress 42-88 %.** Only running several independent
+  systems shows that these numbers depend on the mesh.
+- **The printed clamp broke at an arm neck.** With tension-only erosion, a buckling imperfection and tips held by
+  the platens, all 7 meshes crack at the necks, at 0.60-0.63 of the part's height, instead of at the tips. All 7
+  meshes have about the same node count. Their predicted snap loads are 5.79-6.00 kN.
+
+Details are in [`experiments/mesh_systems/RESULTS.md`](experiments/mesh_systems/RESULTS.md) and
+[`experiments/physical/CRUSH_RUNS.md`](experiments/physical/CRUSH_RUNS.md). The
+[gallery](docs/gallery/README.md) has every mesh, a still of every crush video, and the printed part next to the
+simulation.
+
 ### Limitations and what's next
 
 - **One run per configuration.** This was a hackathon, so there are no repeats or confidence intervals. Run-to-run

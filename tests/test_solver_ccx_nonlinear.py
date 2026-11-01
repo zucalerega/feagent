@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -231,3 +232,461 @@ def test_thick_sphere_internal_pressure(meshes):
         assert abs(c_vol / c_ex - 1) < 1e-2, (p, c_vol, c_ex)
         assert q["max_von_mises"] < 1.02 * SY
     assert abs(np.mean(elastic) / pe - 1) < 3e-3          # nodal vM at the bore overshoots ~0.2 %
+
+
+# ----------------------------------------------------------------------------- progressive failure (erosion)
+def _notched(path, h=0.18):
+    """4 x 1 x 0.25 bar with two semicircular edge notches (r = 0.2) at x = 2."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
+    with gmsh_session("notch"):
+        b = gmsh.model.occ.addBox(0, 0, 0, 4.0, 1.0, 0.25)
+        cuts = [(3, gmsh.model.occ.addCylinder(2.0, y, -0.1, 0, 0, 0.45, 0.2)) for y in (0.0, 1.0)]
+        v, _ = gmsh.model.occ.cut([(3, b)], cuts)
+        gmsh.model.occ.synchronize()
+        add_group(3, [t for _, t in v], "body")
+        add_group(2, in_box(2, xmax=0), "left")
+        add_group(2, in_box(2, xmin=4.0), "right")
+        set_uniform_size(h)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.write(str(path))
+    return str(path)
+
+
+def _failure_case(mesh, limit, value, bcs_extra=(), **fo):
+    return Case(mesh=mesh, analysis=Analysis("elasticity", "3d", order=2, options={
+        "nonlinear": True, "nlgeom": True, "increments": 50,
+        "failure": {"criterion": "peeq", "limit": limit, "fine_increments": 400, **fo}}),
+        materials={"m": Material(E=1000.0, nu=0.3, plasticity={"model": "j2_isotropic", "yield_stress": 1.0,
+                                                              "hardening": [[0, 1.0], [1.0, 3.0]]})},
+        bcs=[BC("fixed", group="left"), BC("displacement", group="right", components=[0, 1, 2], value=value),
+             *bcs_extra])
+
+
+def test_failure_option_validated():
+    c = _failure_case("m.msh", 0.05, [0.1, 0, 0])
+    assert c.validate() == []
+    c.analysis.options["failure"] = {"criterion": "damage", "limit": 0.05}
+    assert any("criterion" in e for e in c.validate())
+    c.analysis.options["failure"] = {"criterion": "peeq", "limit": -1}
+    assert any("limit" in e for e in c.validate())
+    c.materials["m"].plasticity = None
+    c.analysis.options["failure"] = {"criterion": "peeq", "limit": 0.05}
+    assert any("plasticity" in e for e in c.validate())
+
+
+@needs_ccx
+def test_failure_restart_blocks_are_path_correct(meshes):
+    """A failure run whose limit is never reached runs the ramp in restart blocks; the bar must give the
+    closed-form hardening answer at every increment (small strain: NLGEOM off)."""
+    eps_max, H = 4.0 * SY / E, 2000.0
+    c = _bar(meshes["box"], BC("displacement", group="right", components=[0], value=eps_max * L), H=H, n=8,
+             failure={"criterion": "peeq", "limit": 10.0})
+    r = solve(c, backend="ccx")
+    assert r.stop_reason == "end of ramp" and r.history[-1]["block"] >= 7 and r.state.sum() == 0
+    for h in r.history:
+        eps = h["lambda"] * eps_max
+        ep = max(eps - SY / E, 0.0) / (1.0 + H / E)
+        sig = E * eps if ep == 0 else SY + H * ep
+        assert abs(h["force"] - sig * W * W) < 2e-5 * SY * W * W, h
+        assert abs(h["max_peeq_alive"] - ep) < 1e-6
+    with pytest.raises(NotImplementedError, match="FORCE|CLOAD"):
+        solve(_bar(meshes["box"], BC("force", group="right", value=[1.0, 0, 0]), failure={"criterion": "peeq",
+                                                                                          "limit": 1.0}),
+              backend="ccx")
+
+
+@needs_ccx
+def test_failure_notched_bar_separates(tmp_path):
+    """Notched bar pulled by bonded grips (NLGEOM): cells fail only at the notch, the bar separates and the
+    force falls to ~0; one .vtu per increment with the failed flag and cell PEEQ."""
+    import meshio
+
+    c = _failure_case(_notched(tmp_path / "notch.msh"), 0.05, [0.4, 0.0, 0.0])
+    r = solve(c, backend="ccx", series_dir=str(tmp_path / "series"))
+    assert r.separated and r.converged, r.stop_reason
+    F = np.array([h["force"] for h in r.history])
+    assert F[-1] < 0.02 * F.max() and F.argmax() < len(F) - 3
+    cen = r.model.X[r.model.conn[:, :4]].mean(axis=1)
+    failed = r.state == 1
+    assert failed.sum() > 10 and np.all(np.abs(cen[failed, 0] - 2.0) < 0.35)
+    assert np.all(np.diff([h["n_failed"] for h in r.history]) >= 0)
+    files = sorted((tmp_path / "series").glob("result_*.vtu"))
+    assert len(files) == len(r.history)
+    m = meshio.read(files[-1])
+    assert set(m.cell_data) >= {"PEEQ", "failed"} and {"displacement", "von_mises"} <= set(m.point_data)
+    assert int(m.cell_data["failed"][0].sum()) == int((r.state != 0).sum())
+
+
+@needs_ccx
+def test_failure_checkpoint_resume_continues_the_ramp(meshes, tmp_path):
+    """A failure run stopped at half the ramp (end_fraction) and resumed from its checkpoint in a new
+    workdir continues the restart chain: steps continue, the closed-form hardening answer holds at every
+    increment of both parts, and the first run's restart file is left in place."""
+    from feacore.solver._ccx_failure import load_checkpoint
+
+    eps_max, H = 4.0 * SY / E, 2000.0
+
+    def case(**fo):
+        return _bar(meshes["box"], BC("displacement", group="right", components=[0], value=eps_max * L), H=H,
+                    n=8, failure={"criterion": "peeq", "limit": 10.0, **fo})
+
+    r1 = solve(case(end_fraction=0.5), backend="ccx", workdir=str(tmp_path / "w1"),
+               checkpoint_dir=str(tmp_path / "c1"))
+    ck = load_checkpoint(tmp_path / "c1")
+    assert r1.stop_reason.startswith("end of ramp") and abs(ck["t"] - 0.5) < 1e-9
+    assert ck["step"] == r1.history[-1]["step"] and Path(ck["rout"]).exists()
+    r2 = solve(case(), backend="ccx", workdir=str(tmp_path / "w2"), resume=str(tmp_path / "c1"),
+               checkpoint_dir=str(tmp_path / "c2"))
+    assert r2.stop_reason == "end of ramp" and Path(ck["rout"]).exists()
+    assert r2.history[0]["step"] == ck["step"] + 1 and r2.history[0]["block"] == ck["block"]
+    hist = r1.history + r2.history
+    assert [h["step"] for h in hist] == list(range(1, len(hist) + 1)) and abs(hist[-1]["lambda"] - 1.0) < 1e-9
+    for h in hist:
+        eps = h["lambda"] * eps_max
+        ep = max(eps - SY / E, 0.0) / (1.0 + H / E)
+        sig = E * eps if ep == 0 else SY + H * ep
+        assert abs(h["force"] - sig * W * W) < 2e-5 * SY * W * W, h
+
+
+@needs_ccx
+def test_failure_step_policy_tail_and_sustained_stop(tmp_path):
+    """Notched bar with the crush step policy: increments <= max_increment_near from failure onset until the
+    force is below tail_force_ratio x peak, <= max_increment_tail after; tail flag latched; separates."""
+    c = _failure_case(_notched(tmp_path / "notch.msh"), 0.05, [0.4, 0.0, 0.0], max_increment=0.002,
+                      max_increment_near=0.0005, near_increments=500, tail_force_ratio=0.6,
+                      max_increment_tail=0.002, tail_increments=100, stop_force_count=3)
+    r = solve(c, backend="ccx")
+    assert r.separated and r.converged, r.stop_reason
+    lam = np.r_[0.0, [h["lambda"] for h in r.history]]
+    d = np.diff(lam)
+    tail = np.array([h["tail"] for h in r.history])
+    failed = np.array([h["n_failed"] for h in r.history]) > 0
+    assert np.all(d <= 0.002 + 1e-9)
+    pre = failed & ~tail
+    assert pre.any() and np.all(d[pre] <= 0.0005 + 1e-9)
+    assert np.all(np.diff(tail.astype(int)) >= 0)
+    F = np.array([h["force"] for h in r.history])
+    if tail.any():
+        assert F[np.argmax(tail) - 1] < 0.6 * F.max()
+
+
+def _hex_box(path, n=(4, 2, 2)):
+    """All-hex (C3D8) L x W x W box, transfinite + recombined."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box
+    with gmsh_session("hexbox"):
+        v = gmsh.model.occ.addBox(0, 0, 0, L, W, W)
+        gmsh.model.occ.synchronize()
+        add_group(3, [v], "body")
+        for name, kw in (("left", {"xmax": 0}), ("right", {"xmin": L}), ("y0", {"ymax": 0}), ("z0", {"zmax": 0})):
+            add_group(2, in_box(2, **kw), name)
+        for _, c in gmsh.model.getEntities(1):
+            a, b = gmsh.model.getBoundingBox(1, c)[:3], gmsh.model.getBoundingBox(1, c)[3:]
+            k = int(np.argmax(np.subtract(b, a)))
+            gmsh.model.mesh.setTransfiniteCurve(c, n[k] + 1)
+        for _, sf in gmsh.model.getEntities(2):
+            gmsh.model.mesh.setTransfiniteSurface(sf)
+            gmsh.model.mesh.setRecombine(2, sf)
+        gmsh.model.mesh.setTransfiniteVolume(v)
+        gmsh.model.mesh.generate(3)
+        gmsh.write(str(path))
+    return str(path)
+
+
+@needs_ccx
+def test_hex_c3d8_restart_blocks_closed_form(tmp_path):
+    """C3D8 (gmsh hexahedron) through the failure driver: 8 integration points per cell, closed-form
+    hardening force and PEEQ at every increment, hexahedron .vtu."""
+    import meshio
+
+    eps_max, H = 4.0 * SY / E, 2000.0
+    c = _bar(_hex_box(tmp_path / "hex.msh"), BC("displacement", group="right", components=[0], value=eps_max * L),
+             H=H, n=4, failure={"criterion": "peeq", "limit": 10.0})
+    c.analysis.order = 1
+    r = solve(c, backend="ccx", series_dir=str(tmp_path / "s"))
+    assert r.model.cell_type == "hexahedron" and r.deck.etype == "C3D8"
+    assert r.increments[-1].peeq_ip.shape == (r.model.n_elems, 8)
+    for h in r.history:
+        eps = h["lambda"] * eps_max
+        ep = max(eps - SY / E, 0.0) / (1.0 + H / E)
+        sig = E * eps if ep == 0 else SY + H * ep
+        assert abs(h["force"] - sig * W * W) < 2e-5 * SY * W * W, h
+        assert abs(h["max_peeq_alive"] - ep) < 1e-6
+    assert abs(r.info.measure - L * W * W) < 1e-9
+    assert meshio.read(sorted((tmp_path / "s").glob("*.vtu"))[-1]).cells[0].type == "hexahedron"
+
+
+@needs_ccx
+def test_hex_notched_bar_erodes_and_separates(tmp_path):
+    """All-hex notched bar (gmsh subdivision) pulled to separation: erosion and the fragment topology work
+    on quad faces; failed cells only at the notch."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
+    p = tmp_path / "hexnotch.msh"
+    with gmsh_session("notch"):
+        b = gmsh.model.occ.addBox(0, 0, 0, 4.0, 1.0, 0.25)
+        cuts = [(3, gmsh.model.occ.addCylinder(2.0, y, -0.1, 0, 0, 0.45, 0.2)) for y in (0.0, 1.0)]
+        v, _ = gmsh.model.occ.cut([(3, b)], cuts)
+        gmsh.model.occ.synchronize()
+        add_group(3, [t for _, t in v], "body")
+        add_group(2, in_box(2, xmax=0), "left")
+        add_group(2, in_box(2, xmin=4.0), "right")
+        set_uniform_size(0.3)
+        gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 2)
+        gmsh.model.mesh.generate(3)
+        gmsh.write(str(p))
+    c = _failure_case(str(p), 0.05, [0.4, 0.0, 0.0])
+    c.analysis.order = 1
+    r = solve(c, backend="ccx")
+    assert r.model.cell_type == "hexahedron" and r.separated and r.converged, r.stop_reason
+    F = np.array([h["force"] for h in r.history])
+    assert F[-1] < 0.02 * F.max()
+    cen = r.model.X[r.model.conn].mean(axis=1)
+    failed = r.state == 1
+    assert failed.sum() > 10 and np.all(np.abs(cen[failed, 0] - 2.0) < 0.35)
+
+
+@needs_ccx
+def test_failure_adaptive_release_matches_fixed(tmp_path):
+    """Adaptive release (cap 64, x2 / /2, platen held while a backlog is released) only changes how failed cells
+    are split into removals: the notched bar gives the same force-travel curve as a fixed cap of 8 with the platen
+    held the same way, and separates at about the same travel."""
+    mesh = _notched(tmp_path / "notch.msh")
+    runs = {}
+    for name, fo in (("fixed", {"max_remove": 8, "release_travel": 1e-3 / 400}),
+                     ("adaptive", {"max_remove": 64, "adaptive_release": True})):
+        r = solve(_failure_case(mesh, 0.05, [0.4, 0.0, 0.0], **fo), backend="ccx")
+        assert r.separated and r.converged, (name, r.stop_reason)
+        runs[name] = r
+    lam = {k: np.array([h["lambda"] for h in r.history]) for k, r in runs.items()}
+    F = {k: np.array([h["force"] for h in r.history]) for k, r in runs.items()}
+    peak = F["fixed"].max()
+    assert abs(F["adaptive"].max() - peak) < 1e-3 * peak
+    nf = {k: np.array([h["n_failed"] for h in r.history]) for k, r in runs.items()}
+    # before the first failure: the same curve
+    m = nf["adaptive"] == 0
+    assert np.allclose(F["adaptive"][m], np.interp(lam["adaptive"][m], lam["fixed"], F["fixed"]), rtol=1e-6)
+    # crack run (platen held): the force at the same number of failed cells (last increment with that count)
+    common = sorted(set(nf["fixed"][:-1]) & set(nf["adaptive"][:-1]) - {0})
+    assert len(common) >= 1
+    last = {k: {c: F[k][np.nonzero(nf[k] == c)[0][-1]] for c in common} for k in F}
+    diff = max(abs(last["adaptive"][c] - last["fixed"][c]) for c in common)
+    assert diff < 0.03 * peak, (diff / peak, common)
+    assert abs(lam["adaptive"][-1] - lam["fixed"][-1]) < 0.05 * lam["fixed"][-1]     # 1.5 % here
+
+
+# ----------------------------------------------------------------------------- tension-only failure, sliding platens
+def test_failure_criteria_damage_index():
+    """peeq: PEEQ / limit in any state; peeq_tension: PEEQ / limit only where the cell's triaxiality > 0,
+    PEEQ / (compression_factor x limit) elsewhere (never with None); principal: sigma_1 / stress_limit."""
+    from types import SimpleNamespace
+
+    from feacore.solver._ccx_failure import cell_stress_measures, damage_index
+
+    m = SimpleNamespace(conn=np.array([[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]), n_corners=4)
+    S = np.zeros((12, 7))
+    S[0:4, 0] = 50.0                  # cell 0: uniaxial tension 50
+    S[4:8, 1] = -50.0                 # cell 1: uniaxial compression
+    S[8:12, 3] = 30.0                 # cell 2: pure shear 30 (sigma_1 = 30, triaxiality 0)
+    eta, s1 = cell_stress_measures(m, S)
+    assert np.allclose(eta, [1 / 3, -1 / 3, 0.0]) and np.allclose(s1, [50.0, 0.0, 30.0])
+    peeq = np.array([0.05, 0.05, 0.05])
+    assert np.allclose(damage_index({"criterion": "peeq", "limit": 0.04}, peeq, m, S), 1.25)
+    d = damage_index({"criterion": "peeq_tension", "limit": 0.04, "compression_factor": 5.0}, peeq, m, S)
+    assert np.allclose(d, [1.25, 0.25, 0.25])
+    d = damage_index({"criterion": "peeq_tension", "limit": 0.04, "compression_factor": None}, peeq, m, S)
+    assert np.allclose(d, [1.25, 0.0, 0.0])
+    # tensile PEEQ accumulated by the driver: PEEQ gained in compression does not count
+    d = damage_index({"criterion": "peeq_tension", "limit": 0.04, "compression_factor": 5.0}, peeq, m, S,
+                     peeq_t=np.array([0.01, 0.0, 0.05]))
+    assert np.allclose(d, [0.25, 0.25, 1.25])
+    d = damage_index({"criterion": "principal", "limit": 0.04, "stress_limit": 40.0, "compression_factor": 5.0},
+                     peeq, m, S)
+    assert np.allclose(d, [1.25, 0.25, 0.75])
+    c = _failure_case("m.msh", 0.05, [0.1, 0, 0], criterion="principal")
+    assert any("stress_limit" in e for e in c.validate())
+    c.analysis.options["failure"]["stress_limit"] = 50e6
+    assert c.validate() == []
+    c.analysis.options["failure"]["criterion"] = "peeq_tension"
+    assert c.validate() == []
+
+
+@needs_ccx
+def test_failure_tension_criterion_spares_compression(meshes):
+    """Uniaxial compression past the failure PEEQ: criterion peeq erodes the bar, peeq_tension (no compressive
+    erosion) keeps every cell and gives the closed-form hardening force; pulled, peeq_tension erodes it."""
+    eps_max, H, lim = 4.0 * SY / E, 2000.0, 0.002
+
+    def run(sign, **fo):
+        c = _bar(meshes["box"], BC("displacement", group="right", components=[0], value=sign * eps_max * L), H=H,
+                 n=8, failure={"limit": lim, **fo})
+        return solve(c, backend="ccx")
+
+    assert run(-1.0, criterion="peeq").state.sum() > 0
+    r = run(-1.0, criterion="peeq_tension", compression_factor=None)
+    assert r.state.sum() == 0 and r.stop_reason == "end of ramp" and r.history[-1]["max_peeq_alive"] > 2 * lim
+    ep = (eps_max - SY / E) / (1.0 + H / E)
+    assert abs(r.history[-1]["force"] - (SY + H * ep) * W * W) < 2e-5 * SY * W * W
+    assert run(1.0, criterion="peeq_tension", compression_factor=None).state.sum() > 0
+
+
+def _platen_box(path, h=0.25, dims=(W, L, W)):
+    """W x L x W box along y (load axis; or dims) with groups bottom (y = 0), top (y = dims[1]), body."""
+    import gmsh
+    from feacore.geometry.gmsh_tools import add_group, gmsh_session, in_box, set_uniform_size
+    with gmsh_session("pbox"):
+        v = gmsh.model.occ.addBox(0, 0, 0, *dims)
+        gmsh.model.occ.synchronize()
+        add_group(3, [v], "body")
+        add_group(2, in_box(2, ymax=0), "bottom")
+        add_group(2, in_box(2, ymin=dims[1]), "top")
+        set_uniform_size(h)
+        gmsh.model.mesh.generate(3)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.write(str(path))
+    return str(path)
+
+
+def _crush_module():
+    import importlib.util
+    p = Path(__file__).resolve().parents[1] / "experiments" / "physical" / "crush.py"
+    spec = importlib.util.spec_from_file_location("crush_exp", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@needs_ccx
+def test_crush_platen_options(tmp_path):
+    """crush.py --platen: sliding (both frictionless + two rigid-body nodes on the bottom) gives the free
+    uniaxial answer (force E eps A, lateral strain nu eps at the top); bonded holds the top laterally."""
+    from feacore.solver._ccx_mesh import build_model, read_gmsh
+
+    crush = _crush_module()
+    mesh = _platen_box(tmp_path / "pbox.msh")
+    m = build_model(read_gmsh(mesh), 3, 2)
+    D = 1e-3 * L
+    out = {}
+    for platen in ("bonded", "sliding_top", "sliding"):
+        bcs, rb = crush.platen_bcs(m, 1, D, platen)
+        assert len(rb) == (2 if platen == "sliding" else 0)
+        c = Case(mesh=mesh, analysis=Analysis("elasticity", "3d", order=2),
+                 materials={"m": Material(E=E, nu=NU)}, bcs=bcs)
+        assert crush._platen_of(c) == platen and np.allclose(crush._driven_value(c), [0, -D, 0])
+        r = solve(c, backend="ccx")
+        top = m.nodes_of("top")
+        A = np.c_[m.X[top], np.ones(len(top))]             # ux on the top = a x + b y + c z + d
+        out[platen] = (-r.reaction("top", 1), np.linalg.lstsq(A, r.U[top, 0], rcond=None)[0][0] * W)
+    bot = m.nodes_of("bottom")
+    for p in rb:
+        assert np.isclose(p[1], 0.0) and np.min(np.linalg.norm(m.X[bot] - p, axis=1)) < 1e-12
+    F_free = E * 1e-3 * W * W
+    assert abs(out["sliding"][0] / F_free - 1) < 1e-6 and abs(out["sliding"][1] / (NU * 1e-3 * W) - 1) < 1e-6
+    assert abs(out["bonded"][1]) < 1e-12 and out["bonded"][0] > 1.01 * F_free
+    assert out["sliding"][0] < out["sliding_top"][0] < out["bonded"][0]
+
+
+@needs_ccx
+def test_crush_friction_platen_brackets(tmp_path):
+    """crush.py --platen friction (rigid C3D8 platen, penalty contact, Coulomb friction) on an elastic box:
+    sticking friction (mu 10) gives the bonded force, mu 0 the frictionless (sliding_top) one."""
+    from feacore.solver import ccx_backend
+    from feacore.solver._ccx_mesh import build_model, read_gmsh
+
+    crush = _crush_module()
+    mesh = _platen_box(tmp_path / "squat.msh", h=0.2, dims=(1.0, 0.4, 1.0))
+    m = build_model(read_gmsh(mesh), 3, 2)
+    D = 1e-3 * 0.4
+
+    def force(platen, mu=None):
+        bcs = crush.platen_bcs(m, 1, D, platen)[0]
+        c = Case(mesh=mesh, analysis=Analysis("elasticity", "3d", order=2), materials={"m": Material(E=E, nu=NU)},
+                 bcs=bcs)
+        if mu is None:
+            return -solve(c, backend="ccx").reaction("top", 1)
+        build = ccx_backend._Deck.build
+        try:
+            ccx_backend._Deck.build = lambda self: crush.friction_deck(build(self), self.m, 1, D, mu, E)
+            return solve(c, backend="ccx").reaction("bottom", 1)
+        finally:
+            ccx_backend._Deck.build = build
+
+    fb, fs = force("bonded"), force("sliding_top")
+    assert fb > 1.05 * fs
+    # the penalty (20 E / h normal, 10 E / h stick) is ~2 % compliant at this tiny strain (1e-3); at crush
+    # strains it is < 0.5 %
+    assert abs(force("friction", 10.0) / fb - 1) < 0.03
+    assert abs(force("friction", 0.0) / fs - 1) < 0.03
+
+
+def _imperfection_module():
+    import importlib.util
+    import sys
+    d = Path(__file__).resolve().parents[1] / "experiments" / "physical"
+    sys.path.insert(0, str(d))
+    spec = importlib.util.spec_from_file_location("imperfection_exp", d / "imperfection.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_imperfection_node_moves_tet10_and_hex(tmp_path):
+    """imperfection.node_moves: max move = amplitude; C3D10 mid-edge nodes stay at their corners' mean move
+    (interior edges stay straight); C3D8 nodes all move by the mode. lumped_cload sums to the total force."""
+    from feacore.solver._ccx_mesh import build_model, read_gmsh
+
+    imp = _imperfection_module()
+    for mesh, order in ((_platen_box(tmp_path / "t.msh"), 2), (_hex_box(tmp_path / "h.msh"), 1)):
+        m = build_model(read_gmsh(mesh), 3, order)
+        rng = np.random.default_rng(0)
+        U = np.sin(m.X * 3.0) + 0.1 * rng.standard_normal(m.X.shape)
+        Us, dX = imp.node_moves(m, U, 1e-3)
+        assert abs(np.linalg.norm(Us, axis=1).max() - 1e-3) < 1e-15
+        if m.cell_type == "tetra10":
+            for j, (p, q) in enumerate(imp.TET10_EDGES):
+                Y = m.X + dX
+                mid = 0.5 * (Y[m.conn[:, p]] + Y[m.conn[:, q]])
+                orig = m.X[m.conn[:, 4 + j]] - 0.5 * (m.X[m.conn[:, p]] + m.X[m.conn[:, q]])
+                assert np.allclose(Y[m.conn[:, 4 + j]] - mid, orig, atol=1e-15)
+        else:
+            assert m.cell_type == "hexahedron" and np.array_equal(dX, Us)
+    hm = build_model(read_gmsh(_hex_box(tmp_path / "h2.msh")), 3, 1)
+    lines = imp.lumped_cload(hm, "right", [-5.0, 0.0, 0.0])
+    tot = sum(float(ln.split(",")[2]) for ln in lines[1:])
+    assert lines[0] == "*CLOAD" and abs(tot + 5.0) < 1e-9
+
+
+@needs_ccx
+def test_failure_tension_criterion_hex_c3d8(tmp_path):
+    """peeq_tension on C3D8 (cell stress from the 8 corner nodes): a compressed hex bar is not eroded, the pulled
+    one is."""
+    eps_max, H, lim = 4.0 * SY / E, 2000.0, 0.002
+
+    def run(sign):
+        c = _bar(_hex_box(tmp_path / f"hex{sign:+.0f}.msh"), BC("displacement", group="right", components=[0],
+                 value=sign * eps_max * L), H=H, n=4,
+                 failure={"criterion": "peeq_tension", "limit": lim, "compression_factor": None})
+        c.analysis.order = 1
+        return solve(c, backend="ccx")
+
+    r = run(-1.0)
+    assert r.deck.etype == "C3D8" and r.state.sum() == 0 and r.history[-1]["max_peeq_alive"] > 2 * lim
+    assert run(1.0).state.sum() > 0
+
+
+@needs_ccx
+def test_failure_compression_switch(tmp_path):
+    """compression_switch: no compressive erosion until the force falls below force_ratio x peak after the first
+    failure; from that block end on the compression factor is the switch factor (in the records). The notched bar
+    separates in one block once the force really drops, so the ratio here is 0.99."""
+    c = _failure_case(_notched(tmp_path / "notch.msh"), 0.05, [0.4, 0.0, 0.0], criterion="peeq_tension",
+                      compression_factor=None, compression_switch={"force_ratio": 0.99, "factor": 5.0})
+    r = solve(c, backend="ccx")
+    cf = [h.get("compression_factor") for h in r.history]
+    F = np.array([h["force"] for h in r.history])
+    assert r.separated and cf[0] is None and 5.0 in cf
+    i = cf.index(5.0)
+    assert all(v == 5.0 for v in cf[i:]) and all(v is None for v in cf[:i])
+    assert r.history[i - 1]["n_failed"] > 0 and F[i - 1] < 0.99 * F[:i].max()
