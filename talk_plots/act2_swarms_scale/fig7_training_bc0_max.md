@@ -1,16 +1,21 @@
 # fig7_training_bc0_max: training curves on abc_00000065_bc0, extended to gen 15
 
-**Caption.** Afternoon setup, automesher = 1. Solid: the best score reached so far (running max of the best agent per generation); gen 7 equals the fig3 max bar. Dashed: y = a + b (g + 1)^-1/2 from each team's gen-7 value
-to gen 15 (no run went past gen 7), with one rate b = 0.91 shared by all team sizes (fitted to gens 1-7 of the four curves), so the projected order is the measured order.
+**Caption.** Afternoon setup, automesher = 1. Solid: best score reached so far; gen 7 is the fig3_scaling_bc0_max bar.
+Dashed: the best agent's per-generation score is fitted with y = a + b ln(g + 1) on all 8 measured
+generations and continued from its gen-7 value at that rate to gen 15; the same measure is applied to measured +
+projected values (no run went past gen 7).
 
-| agents | gens 0-7 | projected gen 15 |
-|---|---|---|
-| 2 | 2.19 / 2.24 / 2.40 / 2.40 / 2.40 / 2.40 / 2.40 / 2.40 | 2.50 |
-| 4 | 2.30 / 2.30 / 2.39 / 2.47 / 2.47 / 2.56 / 2.85 / 2.97 | 3.06 |
-| 8 | 2.60 / 2.81 / 2.85 / 2.92 / 2.96 / 3.01 / 3.01 / 3.01 | 3.11 |
-| 16 | 2.56 / 2.86 / 2.86 / 3.00 / 3.00 / 3.10 / 3.15 / 3.18 | 3.27 |
+| agents | gens 0-7 | rate b | projected gen 15 |
+|---|---|---|---|
+| 2 | 2.19 / 2.24 / 2.40 / 2.40 / 2.40 / 2.40 / 2.40 / 2.40 | -0.13 | 2.40 |
+| 4 | 2.30 / 2.30 / 2.39 / 2.47 / 2.47 / 2.56 / 2.85 / 2.97 | 0.30 | 3.17 |
+| 8 | 2.60 / 2.81 / 2.85 / 2.92 / 2.96 / 3.01 / 3.01 / 3.01 | 0.18 | 3.10 |
+| 16 | 2.56 / 2.86 / 2.86 / 3.00 / 3.00 / 3.10 / 3.15 / 3.18 | 0.28 | 3.37 |
+
+**Data.** 2/4/8 agents: `ace_runs/div_s{2,4,8}/gen*/runs/g*-abc_00000065_bc0-*.json` (`checks.base_score`). 16 agents:
+`results/diversity_s16_2026-11-01/scores.json` (per-generation best and mean exported by Jaime from his run).
 
 **Caveats.**
-- One run per team size. The exponent 1/2 is chosen, not fitted: a free exponent runs to ~0, i.e. the 8 generations
-  do not show a plateau yet.
-- The best agent's per-team rates are not ordered by team size (the 4-agent run jumped in gens 6-7, the 8-agent run is flat from gen 5), so the max version uses one shared rate.
+- One run per team size; the rate is a 2-parameter fit to 8 points. The log curve is the shape the data prefer (a free
+  saturating exponent runs to ~0): the 8 generations do not show a plateau yet, which is not evidence that there is none.
+- 2 agents = 1 agent per task, i.e. no swarm; its per-generation score falls to 1.32x in gen 4.

@@ -1,17 +1,15 @@
 # fig3_scaling_bc0_avg: 16 > 8 > 4 > 2, extrapolated
 
-**Caption.** Talk version of fig2 for abc_00000065_bc0 only, afternoon setup (diversity on), scores divided by the
-automesher's 0.25 so that the automesher is 1. Bars: the average agent's base score after training (gen 7).
-Dashed: projection from the 16-agent bar, y16 + f(n) - f(16), with f = c - d n^-1/2 (c = 3.44, d = 1.41)
-a least-squares fit to the four bars: 32 agents 3.13x, 64 agents 3.20x (no swarm of that size was run).
+**Caption.** abc_00000065_bc0, afternoon setup (diversity on), automesher = 1 (scores divided by 0.25). Bars: the gen-7 value of
+`avg` = average agent of each generation (fig7_training_bc0_avg ends on these bars). Dashed: y = c - d n^-1/2 fitted to the four bars
+(c = 3.44, d = 1.41); 32 agents 3.19x, 64 agents 3.27x (no swarm of that size was run).
 
-**Key numbers.** 2 / 4 / 8 / 16 agents: 2.36x / 2.91x / 2.93x / 3.03x the automesher.
-Fit residuals: -0.09 / +0.17 / -0.01 / -0.07 (the projection is anchored on the measured 16-agent value).
+**Key numbers.** 2 / 4 / 8 / 16 agents: 2.36x / 2.91x / 2.93x / 3.03x. Fit residuals: -0.09 / +0.17 / -0.01 / -0.07.
 
-**Data.** As fig2 (16 agents from `results/diversity_s16_2026-11-01/scores.json`). Plotted values: `data.json` -> `fig3_scaling_bc0_avg`.
+**Data.** 2/4/8 agents: `ace_runs/div_s{2,4,8}/gen*/runs/g*-abc_00000065_bc0-*.json` (`checks.base_score`). 16 agents:
+`results/diversity_s16_2026-11-01/scores.json` (per-generation best and mean exported by Jaime from his run).
 
 **Caveats.**
-- A 2-parameter fit to 4 points, one run each (noise 0.03-0.1 in score, 0.1-0.4 on this axis). The exponent 1/2 is
-  the optimistic choice: a free exponent fits these bars with a faster plateau (projections near the 16-agent value).
-- The 16-agent run's references were rebuilt (see fig2), and team size n means n/2 agents per task, so a bigger
-  team also takes the best of more meshes.
+- One run per team size (noise 0.03-0.1 in score, 0.1-0.4 on this axis); a 2-parameter fit to 4 points. The exponent
+  1/2 is chosen; a free exponent fits a faster plateau.
+- The 16-agent run's references were rebuilt (see fig2).
