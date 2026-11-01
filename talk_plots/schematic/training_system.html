@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Training system</title>
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  svg { display: block; font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .h { font-size: 30px; font-weight: 700; }
+  .t { font-size: 22px; fill: #1d1d1f; }
+  .s { font-size: 18px; fill: #5f6368; }
+  .b { font-weight: 700; }
+  .lbl { font-size: 18px; fill: #444; font-style: italic; }
+</style></head>
+<body>
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker>
+    <marker id="arp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b3fa0"/></marker>
+    <g id="notes"><rect x="0" y="0" width="22" height="28" rx="3" fill="#fff" stroke="#5b3fa0" stroke-width="2"/>
+      <line x1="5" y1="8" x2="17" y2="8" stroke="#5b3fa0" stroke-width="2"/><line x1="5" y1="14" x2="17" y2="14" stroke="#5b3fa0" stroke-width="2"/>
+      <line x1="5" y1="20" x2="13" y2="20" stroke="#5b3fa0" stroke-width="2"/></g>
+  </defs>
+
+  <text x="60" y="78" style="font-size:44px;font-weight:800" fill="#1d1d1f">How the swarm trains</text>
+
+  <!-- ============ 1. benchmarks ============ -->
+  <rect x="50" y="130" width="470" height="700" rx="18" fill="#eef4fc" stroke="#2a78d6" stroke-width="2.5"/>
+  <text x="80" y="182" class="h" fill="#2a78d6">Our own benchmarks</text>
+  <g>
+    <rect x="80" y="210" width="410" height="84" rx="12" fill="#fff" stroke="#2a78d6" stroke-width="2"/>
+    <text x="100" y="246" class="t b">Real CAD parts</text><text x="100" y="275" class="s">ABC dataset</text>
+    <line x1="285" y1="294" x2="285" y2="322" stroke="#333" stroke-width="2.5" marker-end="url(#ar)"/>
+    <rect x="80" y="326" width="410" height="84" rx="12" fill="#fff" stroke="#2a78d6" stroke-width="2"/>
+    <text x="100" y="362" class="t b">Generated supports + loads</text><text x="100" y="391" class="s">many load cases per part</text>
+    <line x1="285" y1="410" x2="285" y2="438" stroke="#333" stroke-width="2.5" marker-end="url(#ar)"/>
+    <rect x="80" y="442" width="410" height="84" rx="12" fill="#fff" stroke="#2a78d6" stroke-width="2"/>
+    <text x="100" y="478" class="t b">Nested meshes, solved on GPU</text><text x="100" y="507" class="s">H100, up to millions of unknowns</text>
+    <line x1="285" y1="526" x2="285" y2="554" stroke="#333" stroke-width="2.5" marker-end="url(#ar)"/>
+    <rect x="80" y="558" width="410" height="84" rx="12" fill="#fff" stroke="#2a78d6" stroke-width="2"/>
+    <text x="100" y="594" class="t b">Certified reference answers</text><text x="100" y="623" class="s">convergence-checked, hidden from agents</text>
+  </g>
+  <line x1="80" y1="690" x2="490" y2="690" stroke="#2a78d6" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text x="285" y="680" class="s" text-anchor="middle" fill="#2a78d6">+ real lab data</text>
+  <g>
+    <rect x="80" y="716" width="410" height="84" rx="12" fill="#fff" stroke="#2a78d6" stroke-width="2"/>
+    <text x="100" y="752" class="t b">3D-printed parts, crushed</text><text x="100" y="781" class="s">on an Instron: measured force curves</text>
+  </g>
+
+  <!-- ============ 2. decentralized swarm ============ -->
+  <rect x="590" y="130" width="740" height="700" rx="18" fill="#f4f1fb" stroke="#5b3fa0" stroke-width="2.5"/>
+  <text x="620" y="182" class="h" fill="#5b3fa0">Decentralized swarm</text>
+  <!-- shared playbook -->
+  <rect x="660" y="212" width="600" height="80" rx="12" fill="#fff" stroke="#5b3fa0" stroke-width="2.5"/>
+  <text x="960" y="246" class="t b" text-anchor="middle">Shared playbook</text>
+  <text x="960" y="275" class="s" text-anchor="middle">the teacher's lessons + the best runs' highlights</text>
+  <!-- promotion arrows -->
+  <g stroke="#5b3fa0" stroke-width="2" stroke-dasharray="5 5" fill="none" marker-end="url(#arp)">
+    <path d="M720,372 L760,298"/><path d="M880,372 L900,298"/><path d="M1040,372 L1020,298"/><path d="M1200,372 L1160,298"/>
+  </g>
+  <!-- agents -->
+  <g id="agents">
+    <!-- row 1 -->
+    <g transform="translate(720,430)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a0</text><use href="#notes" x="34" y="-60"/></g>
+    <g transform="translate(880,430)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a1</text><use href="#notes" x="34" y="-60"/></g>
+    <g transform="translate(1040,430)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a2</text><use href="#notes" x="34" y="-60"/></g>
+    <g transform="translate(1200,430)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a3</text><use href="#notes" x="34" y="-60"/></g>
+    <!-- row 2 -->
+    <g transform="translate(720,620)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a4</text><use href="#notes" x="34" y="-60"/></g>
+    <g transform="translate(880,620)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a5</text><use href="#notes" x="34" y="-60"/></g>
+    <g transform="translate(1040,620)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a6</text><use href="#notes" x="34" y="-60"/></g>
+    <g transform="translate(1200,620)"><circle r="46" fill="#5b3fa0"/><text y="9" class="t b" fill="#fff" text-anchor="middle" style="font-size:26px">a7</text><use href="#notes" x="34" y="-60"/></g>
+  </g>
+  <!-- role tags -->
+  <g class="s" text-anchor="middle" style="font-size:17px">
+    <text x="720" y="500" fill="#1d1d1f" class="b">control</text>
+    <text x="880" y="500">variant</text><text x="1040" y="500">variant</text><text x="1200" y="500">variant</text>
+    <text x="720" y="690">variant</text><text x="880" y="690">variant</text>
+    <text x="1040" y="690" fill="#c06a12" class="b">explorer</text><text x="1200" y="690" fill="#c06a12" class="b">explorer</text>
+  </g>
+  <!-- peer links -->
+  <g stroke="#9b8cc8" stroke-width="2" fill="none" stroke-dasharray="3 6">
+    <path d="M766,430 L834,430"/><path d="M926,430 L994,430"/><path d="M1086,430 L1154,430"/>
+    <path d="M766,620 L834,620"/><path d="M926,620 L994,620"/><path d="M1086,620 L1154,620"/>
+    <path d="M752,463 L848,587"/><path d="M1072,463 L1168,587"/><path d="M1008,463 L912,587"/>
+  </g>
+  <text x="620" y="752" class="s"><tspan class="b" fill="#5b3fa0">private notes</tspan> per agent · <tspan class="b" fill="#5b3fa0">peer highlights</tspan> between agents</text>
+  <text x="620" y="784" class="s"><tspan class="b" fill="#1d1d1f">control</tspan> re-runs the best recipe · <tspan class="b" fill="#1d1d1f">variant</tspan> changes one factor ·</text>
+  <text x="620" y="812" class="s"><tspan class="b" fill="#c06a12">explorer</tspan> (lowest-ranked) tries a new strategy</text>
+
+  <!-- ============ 3. competition ============ -->
+  <rect x="1400" y="130" width="470" height="700" rx="18" fill="#fcf0f4" stroke="#c23d6e" stroke-width="2.5"/>
+  <text x="1430" y="182" class="h" fill="#c23d6e">Competition</text>
+  <!-- leaderboard -->
+  <g class="t" style="font-size:19px">
+    <text x="1430" y="236" class="b" fill="#1d1d1f">a3</text><rect x="1470" y="218" width="330" height="24" rx="5" fill="#c23d6e"/>
+    <text x="1812" y="238" style="font-size:22px">🏆</text>
+    <text x="1430" y="274" class="b" fill="#1d1d1f">a0</text><rect x="1470" y="256" width="290" height="24" rx="5" fill="#c23d6e" opacity="0.8"/>
+    <text x="1430" y="312" class="b" fill="#1d1d1f">a6</text><rect x="1470" y="294" width="250" height="24" rx="5" fill="#c23d6e" opacity="0.65"/>
+    <text x="1430" y="350" class="b" fill="#1d1d1f">a1</text><rect x="1470" y="332" width="200" height="24" rx="5" fill="#c23d6e" opacity="0.5"/>
+    <text x="1430" y="388" class="b" fill="#1d1d1f">…</text>
+  </g>
+  <line x1="1430" y1="414" x2="1840" y2="414" stroke="#c23d6e" stroke-width="1" opacity="0.4"/>
+  <text x="1430" y="456" class="t b">Scored against the automesher</text>
+  <text x="1430" y="484" class="s">accuracy over the whole part, per unknown</text>
+  <text x="1430" y="540" class="t b">Be the best</text>
+  <text x="1430" y="568" class="s">each hidden probe point pays only the</text>
+  <text x="1430" y="592" class="s">single most accurate run; ties pay nobody,</text>
+  <text x="1430" y="616" class="s">so copying the leader earns nothing</text>
+  <text x="1430" y="672" class="t b">Be different</text>
+  <text x="1430" y="700" class="s">bonus for a new mesh recipe that scores</text>
+  <text x="1430" y="724" class="s">within 90 % of the best</text>
+
+  <!-- ============ 4. learning loop (runs right to left) ============ -->
+  <rect x="50" y="890" width="1820" height="130" rx="18" fill="#f6f6f7" stroke="#888" stroke-width="2"/>
+  <text x="80" y="947" class="h" fill="#333" style="font-size:26px">Every</text>
+  <text x="80" y="981" class="h" fill="#333" style="font-size:26px">generation</text>
+  <g>
+    <rect x="420" y="930" width="500" height="56" rx="10" fill="#fff" stroke="#888" stroke-width="1.5"/>
+    <text x="670" y="966" class="t" text-anchor="middle" style="font-size:21px">notes filed + <tspan class="b">next experiment</tspan> per agent</text>
+    <line x1="1000" y1="958" x2="924" y2="958" stroke="#333" stroke-width="2.5" marker-end="url(#ar)"/>
+    <rect x="1004" y="930" width="320" height="56" rx="10" fill="#fff" stroke="#888" stroke-width="1.5"/>
+    <text x="1164" y="966" class="t" text-anchor="middle" style="font-size:21px">each agent <tspan class="b">self-reflects</tspan></text>
+    <text x="1366" y="970" text-anchor="middle" style="font-size:34px;font-weight:700" fill="#333">+</text>
+    <rect x="1408" y="930" width="430" height="56" rx="10" fill="#fff" stroke="#888" stroke-width="1.5"/>
+    <text x="1623" y="966" class="t" text-anchor="middle" style="font-size:21px"><tspan class="b">Teacher</tspan> reviews every run</text>
+  </g>
+
+  <!-- ============ flows ============ -->
+  <!-- benchmarks -> swarm: the task -->
+  <path d="M520,252 C552,252 556,430 588,430" stroke="#333" stroke-width="2.5" fill="none" marker-end="url(#ar)"/>
+  <text x="555" y="206" class="lbl" text-anchor="middle">part</text>
+  <text x="555" y="228" class="lbl" text-anchor="middle">+ task</text>
+  <!-- swarm -> competition: meshes -->
+  <line x1="1330" y1="525" x2="1398" y2="525" stroke="#333" stroke-width="2.5" marker-end="url(#ar)"/>
+  <text x="1364" y="510" class="lbl" text-anchor="middle">meshes</text>
+  <!-- hidden reference -> competition -->
+  <path d="M520,600 L548,600 L548,858 L1450,858 L1450,832" stroke="#2a78d6" stroke-width="2.5" fill="none" stroke-dasharray="8 6" marker-end="url(#ar)"/>
+  <text x="1000" y="850" class="lbl" text-anchor="middle" fill="#2a78d6">hidden reference answers</text>
+  <!-- competition -> learning -->
+  <line x1="1790" y1="830" x2="1790" y2="926" stroke="#333" stroke-width="2.5" marker-end="url(#ar)"/>
+  <text x="1800" y="880" class="lbl">ranking</text>
+  <!-- learning -> swarm -->
+  <line x1="670" y1="928" x2="670" y2="834" stroke="#333" stroke-width="2.5" marker-end="url(#ar)"/>
+  <text x="658" y="920" class="lbl" text-anchor="end">notes + roles</text>
+</svg>
+</body></html>
