@@ -1,0 +1,414 @@
+{
+ "best_vs_mean": [
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000065_bc0",
+   "agents": 1,
+   "run": "div_s1",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 1,
+   "best": 0.5924564305070891,
+   "mean": 0.5924564305070891
+  },
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000065_bc0",
+   "agents": 2,
+   "run": "div_s2",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 1,
+   "best": 0.5048165547461373,
+   "mean": 0.5048165547461373
+  },
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000065_bc0",
+   "agents": 4,
+   "run": "div_s4",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 2,
+   "best": 0.641050171174954,
+   "mean": 0.6263529991844436
+  },
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000065_bc0",
+   "agents": 8,
+   "run": "div_s8",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 4,
+   "best": 0.7314417433203805,
+   "mean": 0.6845666666688022
+  },
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000003_bc7",
+   "agents": 1,
+   "run": "div_s1",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 1,
+   "best": 0.21790290875372254,
+   "mean": 0.21790290875372254
+  },
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000003_bc7",
+   "agents": 2,
+   "run": "div_s2",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 1,
+   "best": 0.19405614755143966,
+   "mean": 0.19405614755143966
+  },
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000003_bc7",
+   "agents": 4,
+   "run": "div_s4",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 2,
+   "best": 0.21283089094197033,
+   "mean": 0.20335631941394158
+  },
+  {
+   "study": "afternoon (div, diversity on)",
+   "task": "abc_00000003_bc7",
+   "agents": 8,
+   "run": "div_s8",
+   "gens": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "runs_per_gen": 4,
+   "best": 0.22959636006365894,
+   "mean": 0.22270246736221957
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000065_bc0",
+   "agents": 1,
+   "run": "scale_s1",
+   "gens": [
+    1,
+    2
+   ],
+   "runs_per_gen": 1,
+   "best": 0.6523216238780625,
+   "mean": 0.6523216238780625
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000065_bc0",
+   "agents": 2,
+   "run": "scale_s2",
+   "gens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "runs_per_gen": 1,
+   "best": 0.6416969297496953,
+   "mean": 0.6416969297496953
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000065_bc0",
+   "agents": 4,
+   "run": "scale_s4",
+   "gens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "runs_per_gen": 2,
+   "best": 0.6498514118140375,
+   "mean": 0.6306455875648074
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000065_bc0",
+   "agents": 8,
+   "run": "scale_s8",
+   "gens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "runs_per_gen": 4,
+   "best": 0.6683481616746986,
+   "mean": 0.6241458441970924
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000003_bc7",
+   "agents": 1,
+   "run": "scale_s1",
+   "gens": [
+    1,
+    2
+   ],
+   "runs_per_gen": 1,
+   "best": 0.18121132378484922,
+   "mean": 0.18121132378484922
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000003_bc7",
+   "agents": 2,
+   "run": "scale_s2",
+   "gens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "runs_per_gen": 1,
+   "best": 0.19769532560269867,
+   "mean": 0.19769532560269867
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000003_bc7",
+   "agents": 4,
+   "run": "scale_s4",
+   "gens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "runs_per_gen": 2,
+   "best": 0.21778879468105464,
+   "mean": 0.21318035349440292
+  },
+  {
+   "study": "morning (scale)",
+   "task": "abc_00000003_bc7",
+   "agents": 8,
+   "run": "scale_s8",
+   "gens": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "runs_per_gen": 4,
+   "best": 0.23117482768886782,
+   "mean": 0.22193180480665506
+  }
+ ],
+ "spend": {
+  "cook_auto": {
+   "generator": 1.8161954999999979,
+   "diagnoser": 0.27698229999999996
+  },
+  "cook_field": {
+   "generator": 1.9540599999999966,
+   "diagnoser": 0.24260169999999992
+  },
+  "deep1": {
+   "generator": 7.345210799999997,
+   "teacher": 30.900656400000024,
+   "reflect": 3.0077079999999996,
+   "organizer": 5.116079499999999
+  },
+  "div_s1": {
+   "big_generator": 3.9586724999999987,
+   "reflect": 0.561907,
+   "teacher": 8.327439599999998,
+   "organizer": 1.0904380000000002
+  },
+  "div_s1_bug": {
+   "big_generator": 0.4269055,
+   "reflect": 0.076417,
+   "teacher": 0.963762,
+   "organizer": 0.025463
+  },
+  "div_s2": {
+   "generator": 3.4740148000000004,
+   "reflect": 0.5436192000000001,
+   "teacher": 7.4864436,
+   "organizer": 1.2593994000000002
+  },
+  "div_s2_bug": {
+   "reflect": 0.0614336
+  },
+  "div_s4": {
+   "generator": 6.051974799999999,
+   "reflect": 1.0979812,
+   "teacher": 12.209283200000002,
+   "organizer": 1.9805693999999998
+  },
+  "div_s8": {
+   "generator": 12.511542600000006,
+   "reflect": 2.2292283999999998,
+   "teacher": 23.094929600000004,
+   "organizer": 3.613878199999999
+  },
+  "gold_single": {
+   "big_generator": 1.2110868000000001,
+   "teacher": 3.031166,
+   "reflect": 0.22602220000000003,
+   "organizer": 0.3715378
+  },
+  "gold_swarm": {
+   "generator": 1.7325749000000008,
+   "teacher": 6.3767846,
+   "reflect": 0.6173099999999999,
+   "organizer": 0.785588
+  },
+  "le11": {
+   "generator": 4.253393199999993,
+   "diagnoser": 0.9532091000000005
+  },
+  "mock2": {
+   "generator": 0.5200000000000004,
+   "reflector": 0.16,
+   "curator": 0.04
+  },
+  "mockd": {
+   "generator": 0.40000000000000024,
+   "diagnoser": 0.075,
+   "curator": 0.02
+  },
+  "mockm": {
+   "generator": 0.9000000000000007,
+   "diagnoser": 0.15000000000000005,
+   "curator": 0.04
+  },
+  "run1": {
+   "generator": 1.6815579000000005,
+   "reflector": 0.5853556,
+   "curator": 0.0176784
+  },
+  "scale_s1": {
+   "big_generator": 1.3484257999999998,
+   "reflect": 0.21856,
+   "teacher": 1.8990108,
+   "organizer": 0.256204
+  },
+  "scale_s1_opus": {
+   "big_generator": 1.7183517999999998,
+   "reflect": 0.19788,
+   "teacher": 1.4571022,
+   "organizer": 0.223232
+  },
+  "scale_s2": {
+   "generator": 2.2086829,
+   "reflect": 0.4485164,
+   "teacher": 5.165089999999999,
+   "organizer": 0.8641656999999999
+  },
+  "scale_s4": {
+   "generator": 3.8103458000000003,
+   "reflect": 0.7345079999999999,
+   "teacher": 9.5755108,
+   "organizer": 1.404409
+  },
+  "scale_s8": {
+   "generator": 7.5494859000000005,
+   "reflect": 1.5653424000000002,
+   "teacher": 15.783249200000004,
+   "organizer": 2.5133110000000007
+  },
+  "smoke1": {
+   "generator": 0.1475431,
+   "reflector": 0.069994
+  },
+  "smoke2": {
+   "generator": 0.1560881,
+   "reflector": 0.0669116,
+   "curator": 0.005994
+  },
+  "split1": {
+   "generator": 3.4138183999999985,
+   "diagnoser": 0.5630756999999996
+  },
+  "split1_aborted_gen0": {
+   "generator": 0.30561849999999996,
+   "diagnoser": 0.047399800000000006
+  },
+  "train1": {
+   "generator": 13.46626230000002,
+   "diagnoser": 1.2362403999999996,
+   "curator": 0.004088
+  },
+  "train1_aborted_gen0": {
+   "generator": 0.6079296
+  }
+ },
+ "spend_groups": {
+  "Act 1: field-mode benchmarks (deep1, cook_auto, split1, le11)": 57.64632890000001,
+  "Older point-mode benchmark runs (train1, cook_field)": 16.903252400000014,
+  "Act 2 afternoon: div_s1/s2/s4/s8": 89.49132150000001,
+  "Act 2 morning: scale_s1/s1_opus/s2/s4/s8": 58.9413837,
+  "First gold attempt (gold_swarm, gold_single)": 14.352070300000001,
+  "Aborted / buggy starts (div_s1_bug, div_s2_bug, *_aborted_gen0)": 2.514929,
+  "Development and smoke tests (mock2, mockd, mockm, run1, smoke1, smoke2)": 5.036122700000002
+ },
+ "spend_total": 244.88540850000004
+}

@@ -1,0 +1,142 @@
+{
+ "problem_id": "abc_00000065_compression",
+ "delta_mm": 0.2335,
+ "compliance_mm_per_N": 2.898e-05,
+ "checkpoints_mm": [
+  0.5,
+  1.0,
+  1.5,
+  2.0,
+  2.5
+ ],
+ "force_meas_N": [
+  859.6142857142858,
+  2164.365714285714,
+  3308.35,
+  4171.1,
+  4743.034285714286
+ ],
+ "baselines": {
+  "auto": {
+   "label": "automesher",
+   "nodes": 2937,
+   "dofs": 8811,
+   "mean_rel_err": 0.07837501521326243,
+   "rel_err": [
+    0.05893,
+    0.10507,
+    0.0717,
+    0.06987,
+    0.08631
+   ],
+   "force_sim_N": [
+    910.27,
+    2391.77,
+    3545.55,
+    4462.52,
+    5152.43
+   ],
+   "wall_s": 8.1,
+   "straightened": true,
+   "dir": "results/real_data_finetune/baselines/auto",
+   "score": 0.25
+  },
+  "swarm_bc0": {
+   "label": "swarm bc0 mesh",
+   "nodes": 6430,
+   "dofs": 19290,
+   "mean_rel_err": 0.04572804086809645,
+   "rel_err": [
+    0.03274,
+    0.07507,
+    0.03936,
+    0.03445,
+    0.04702
+   ],
+   "force_sim_N": [
+    887.76,
+    2326.84,
+    3438.57,
+    4314.81,
+    4966.05
+   ],
+   "wall_s": 19.6,
+   "straightened": false,
+   "dir": "results/real_data_finetune/baselines/swarm_bc0",
+   "score": 0.33544634797792944
+  },
+  "h4": {
+   "label": "uniform 4 mm",
+   "nodes": 9506,
+   "dofs": 28518,
+   "mean_rel_err": 0.01987466739782899,
+   "rel_err": [
+    0.01229,
+    0.05196,
+    0.01514,
+    0.00612,
+    0.01387
+   ],
+   "force_sim_N": [
+    870.18,
+    2276.82,
+    3358.43,
+    4196.62,
+    4808.83
+   ],
+   "wall_s": 29.1,
+   "straightened": false,
+   "dir": "results/real_data_finetune/baselines/h4",
+   "score": 0.6091916045432479
+  },
+  "h25": {
+   "label": "uniform 2.5 mm",
+   "nodes": 24194,
+   "dofs": 72582,
+   "mean_rel_err": 0.011984911313203528,
+   "rel_err": [
+    0.00383,
+    0.04306,
+    0.00538,
+    0.00419,
+    0.00347
+   ],
+   "force_sim_N": [
+    862.9,
+    2257.56,
+    3326.16,
+    4153.62,
+    4759.48
+   ],
+   "wall_s": 117.2,
+   "straightened": false,
+   "dir": "results/real_data_finetune/baselines/h25",
+   "score": 0.3969255799698859
+  },
+  "h20": {
+   "label": "uniform 2 mm",
+   "nodes": 41186,
+   "dofs": 123558,
+   "mean_rel_err": 0.0107550045371417,
+   "rel_err": [
+    0.00016,
+    0.03871,
+    3e-05,
+    0.0108,
+    0.00408
+   ],
+   "force_sim_N": [
+    859.75,
+    2248.16,
+    3308.45,
+    4126.07,
+    4723.68
+   ],
+   "wall_s": 273.3,
+   "straightened": false,
+   "dir": "results/real_data_finetune/baselines/h20",
+   "score": 0.25983124597177576
+  }
+ },
+ "added": []
+}

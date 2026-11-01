@@ -4,6 +4,10 @@ For each run the teacher sees its numbers and rank, setup, mesh request, where i
 (hotspots, a coarse grid over the WHOLE mesh, every check point), its full reasoning and tool calls,
 the notes it had, pictures of its mesh, error and stress (ace/run_report.py), the disagreement map
 across runs (ace.run_report.disagreement_map) and each agent's own previous run.
+On a task scored by its nonlinear force curve against a physical test (is_nonlinear, ace.nonlinear)
+the teacher also gets the experiment analysis (teacher_brief), each run's curve checkpoints and
+plastic-strain hotspots with its curve and PEEQ pictures, and every run's error vs nodes so far;
+there is no field error, check point or disagreement map there (NL_SCORING says so).
 
 To keep a generation fast, the review is split into parallel calls that share one cached prefix
 (everything above): one call per agent (a step-by-step critique, notes, the next mesh call, a check
@@ -20,6 +24,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -232,10 +237,33 @@ def trace_excerpt(run: dict, max_chars: int = TRACE_CHARS) -> str:
     return text or "  (no trace)"
 
 
+def is_nonlinear(task: str) -> bool:
+    """Is the task scored by its nonlinear force curve against a physical test (ace.nonlinear)? The
+    same test as ace.nonlinear.is_nonlinear, here so the teacher does not need that module to load."""
+    return (config.TASKS.get(task) or {}).get("score") == "nonlinear"
+
+
+def teacher_brief(task: str) -> str:
+    """The experiment analysis written for the teacher (physical_tests/<task>/teacher_brief.md), or ""."""
+    path = Path(__file__).resolve().parent.parent / "physical_tests" / task / "teacher_brief.md"
+    return path.read_text() if path.exists() else ""
+
+
+def run_error(run: dict) -> float | None:
+    """The run's scored error: the nonlinear curve's mean error against the test on a nonlinear
+    task, else the field-mode error (rel_error)."""
+    c = run.get("checks") or {}
+    if c.get("nonlinear"):
+        return c["nonlinear"].get("mean_rel_err")
+    return c.get("rel_error")
+
+
 def _numbers(report: dict, run: dict) -> dict:
     """The run's headline numbers: from the report (add_scores), else from its checks."""
     n = report.get("numbers") or {}
     c = run.get("checks") or {}
+    if c.get("nonlinear"):                               # the force-curve error, not a field error
+        n = {**n, "field_error": run_error(run)}
     return {"score": n.get("score", c.get("score")), "error": n.get("field_error", c.get("rel_error")),
             "probe_error": n.get("probe_error", c.get("probe_error")), "dofs": n.get("dofs", c.get("dofs")),
             "gain": n.get("gain", c.get("gain")), "bonus": n.get("bonus", c.get("best_bonus")),
@@ -442,11 +470,86 @@ YOUR ROLE: {role} (agent {agent})
   contradict it."""
 
 
+# --------------------------------------------------------------------------- nonlinear tasks
+# A task scored by its nonlinear force curve against a physical test (ace.nonlinear): the field
+# error, check points and disagreement map of the SYSTEM prompt do not exist there. This block
+# goes at the top of the prefix and says what replaces them.
+
+_NL_TASK = config.TASKS.get("abc_00000065_compression") or {}    # the one nonlinear task: its budget
+NL_SCORING = f"""\
+THIS TASK IS SCORED BY A PHYSICAL TEST, NOT BY A REFERENCE FIELD. This overrides SCORING AND SIZING,
+the check points, the disagreement map and SETUP CHECKING above.
+- Budget here (not the one above): up to {_NL_TASK.get("max_solves", MAX_SOLVES)} linear solves (a fast proxy) and
+  {_NL_TASK.get("nl_previews", 0)} nonlinear_check previews (the frozen nonlinear ramp of a chosen mesh, as scored).
+- The analysis setup is FROZEN by the scorer (the agents do not choose it and their own setup is not
+  scored): each run's scored MESH is run through one nonlinear CalculiX ramp (J2 plasticity from the
+  resin's dogbone test, large deformation, sticking platens on the prong tops, base held), and the
+  force F is read against crosshead travel u = u_part + delta + c*F (delta, c frozen).
+- error e = mean over the checkpoints of |F_sim - F_test| / F_test; gain g = automesher error /
+  max(e, 0.005); A = (g/2)^2 below g = 2, g/2 above; c = DOFs / automesher DOFs; score = A / c, plus
+  the diversity bonus (no be-the-best bonus). So the binding term is always the curve error.
+- Every run's block gives the five checkpoints (sim vs test), its mean error, nodes/DOFs, and the
+  hotspots at the end of the ramp: where the equivalent plastic strain (PEEQ) and the largest
+  principal stress peak, with their nearest faces. Its images are its force curve against the test
+  and its deformed part coloured by PEEQ (the same camera for every run, so they compare directly).
+- From the experiment analysis: the converged mesh is about 1 % from the test (model error: no mesh beats
+  it); a coarse mesh lies ABOVE the test at every checkpoint (too stiff and too strong); the
+  plastic zones decide the curve after yield. Size elements where the plastic strain is.
+- Mesh calls (h, size, radius, point, box) are in METRES (uniform 4 mm = h 0.004; x 12-31 mm = box x 0.012..0.031); the brief and the nonlinear hotspots (xyz_mm) give mm.
+- No hidden check points and no disagreement map exist on this task: ignore those instructions."""
+
+
+def nonlinear_text(nl: dict | None) -> str:
+    """A run's nonlinear check (checks["nonlinear"], ace.nonlinear.run_curve) as a few lines."""
+    if not nl:
+        return "nonlinear check: none"
+    if not nl.get("ok"):
+        return f"nonlinear check FAILED: {nl.get('error')}"
+    pct = lambda x: "-" if x is None else f"{100 * x:.2f}%"      # noqa: E731
+    L = [f"nonlinear ramp: {nl.get('nodes')} nodes, {nl.get('dofs')} DOFs, {_fmt(nl.get('wall_s'))} s"
+         + ("; " + str(nl.get("straightened_edges", "")) + " midside nodes CalculiX rejected were straightened" if nl.get("straightened") else ""),
+         f"mean error vs the test {pct(nl.get('mean_rel_err'))}; peak PEEQ {_fmt(nl.get('peeq_max'))}",
+         "checkpoint (crosshead mm) | test N | sim N | error (sim - test) / test"]
+    for u, fm, fs, e in zip(nl.get("checkpoints_mm") or [], nl.get("force_meas_N") or [],
+                            nl.get("force_sim_N") or [], nl.get("rel_err") or []):
+        L.append(f"  {_fmt(u)} | {_fmt(fm)} | {_fmt(fs)} | {pct(e)}")
+    for k, h in enumerate(nl.get("hotspots") or [], 1):
+        xyz = ", ".join(_fmt(x) for x in h.get("xyz_mm") or [])
+        L.append(f"  hotspot #{k} ({h.get('kind')}) at ({xyz}) mm, faces {', '.join(h.get('faces') or []) or '-'}: "
+                 f"{_fmt(h.get('value'))}")
+    return "\n".join(L)
+
+
+def nl_history_text(runs: list[dict]) -> str:
+    """Error vs nodes of every run so far on the task, one line per generation (best run first)."""
+    by_gen: dict[int, list] = {}
+    for r in runs:
+        nl = (r.get("checks") or {}).get("nonlinear") or {}
+        if not r.get("error") and nl.get("ok"):
+            by_gen.setdefault(r["generation"], []).append(r)
+    if not by_gen:
+        return "(no scored runs yet)"
+    lines = []
+    for g in sorted(by_gen):
+        rs = sorted(by_gen[g], key=lambda r: -((r["checks"].get("score")) or 0))
+        lines.append(f"gen {g}: " + "; ".join(
+            f"{agent_name(r['run_id'])} {100 * run_error(r):.2f}% at {r['checks']['nonlinear'].get('nodes')} nodes "
+            f"(score {_fmt(r['checks'].get('score'))})" for r in rs))
+    c = next((r["checks"] for rs in by_gen.values() for r in rs if r["checks"].get("auto_error") is not None), None)
+    if c is not None:
+        lines.append(f"automesher: {100 * c['auto_error']:.2f}% at {c.get('auto_dofs')} DOFs")
+    return "\n".join(lines)
+
+
 def _run_block(run: dict, report: dict, notes_text: str) -> str:
     rid = run["run_id"]
     cited = run.get("cited") or []
+    nl = (run.get("checks") or {}).get("nonlinear")
+    report_txt = report_as_text(report, REPORT_CHARS)
+    if nl and (report.get("error") or not report.get("nonlinear")):   # the curve, even without a report
+        report_txt += "\n" + nonlinear_text(nl)
     return (f"\n=== RUN {rid} (agent {agent_name(rid)}) ===\n"
-            f"--- report ---\n{report_as_text(report, REPORT_CHARS)}\n"
+            f"--- report ---\n{report_txt}\n"
             f"--- notes it had (playbook + own notes) ---\n{(notes_text or '(none)')[:NOTES_CHARS]}\n"
             f"--- bullets it cited --- {', '.join(cited) or '(none)'}\n"
             f"--- its steps (reasoning and every tool call) ---\n{trace_excerpt(run, TRACE_CHARS)}\n")
@@ -487,9 +590,12 @@ def continuity_text(last_by_agent: dict | None, agents: list[str]) -> str:
 
 def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict[str, str],
                  shared_text: str, prev_feedback: dict | None, disagreement: dict | None,
-                 last_by_agent: dict | None) -> tuple[list[dict], list[tuple[dict, dict]]]:
+                 last_by_agent: dict | None, history: list[dict] | None = None) -> tuple[list[dict], list[tuple[dict, dict]]]:
     """The shared user-message prefix of every teacher call (its last block marked for caching), and
-    the (run, report) pairs best first."""
+    the (run, report) pairs best first. On a nonlinear task (is_nonlinear) it also holds the
+    teacher brief, the scoring that replaces the field error, and the error vs nodes of every run so
+    far on the task (history: those runs, this generation's included)."""
+    nl = is_nonlinear(task)
     by_id = {r["run_id"]: r for r in reports}
     pairs = [(run, by_id.get(run["run_id"], {"run_id": run["run_id"], "error": "no report"})) for run in runs]
     pairs.sort(key=lambda p: -(_numbers(p[1], p[0])["score"] or 0))      # best first
@@ -498,6 +604,10 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
     test = evidence.teacher_section(task, runs)          # physical test data, when the loop has some
     head = [f"TASK {task}\n--- problem statement as the agents saw it ---\n{_task_statement(task)}\n",
             *([f"--- physical test of this setup ---\n{test}\n"] if test else []),
+            *([f"--- the experiment analysis (teacher brief) ---\n{teacher_brief(task) or '(none)'}\n",
+               f"--- how this task is scored ---\n{NL_SCORING}\n",
+               f"--- error vs nodes, every run so far on this task ---\n{nl_history_text(history or runs)}\n"]
+              if nl else []),
             f"--- shared playbook (all agents saw it) ---\n{shared_text or '(empty)'}\n",
             f"--- last generation's review of this task (mostly other agents) ---\n{prev_summary(prev_feedback)}\n",
             "--- ranking (best first) ---\nrun_id | agent | score | error | probe_error | DOFs | gain | bonus"]
@@ -508,15 +618,18 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
     blocks = [text_block("\n".join(head))]
     blocks += [text_block(_run_block(run, rep, notes_by_agent.get(agent_name(run["run_id"]), "")))
                for run, rep in pairs]
-    blocks.append(text_block(f"\n=== DISAGREEMENT MAP (across these runs) ===\n{disagreement_text(disagreement)}\n"))
+    if not nl:                                       # no von Mises field to compare on a nonlinear task
+        blocks.append(text_block(f"\n=== DISAGREEMENT MAP (across these runs) ===\n{disagreement_text(disagreement)}\n"))
     agents = [agent_name(run["run_id"]) for run, _ in pairs]
     blocks.append(text_block(f"\n=== CONTINUITY: each agent's own previous run and what it was told/promised ===\n"
                              f"{continuity_text(last_by_agent, agents)}\n"))
 
     # Images: mesh + error of every run, then stress pictures while the total stays within MAX_IMAGES.
-    chosen = [(run["run_id"], k, path) for run, rep in pairs for k, path in report_images(rep, ("mesh", "error"))]
+    # Nonlinear task: each run's force curve vs the test and its PEEQ picture instead.
+    first, more = (("curve", "peeq"), ()) if nl else (("mesh", "error"), ("stress",))
+    chosen = [(run["run_id"], k, path) for run, rep in pairs for k, path in report_images(rep, first)]
     for run, rep in pairs:
-        for k, path in report_images(rep, ("stress",)):
+        for k, path in report_images(rep, more):
             if len(chosen) < MAX_IMAGES:
                 chosen.append((run["run_id"], k, path))
     if chosen:
@@ -533,11 +646,12 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
 
 def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict[str, str], shared_text: str,
           prev_feedback: dict | None, llm, records: list, disagreement: dict | None = None,
-          last_by_agent: dict | None = None) -> TeacherFeedback | None:
+          last_by_agent: dict | None = None, history: list[dict] | None = None) -> TeacherFeedback | None:
     """The teacher for one task: warm the cache with the shared prefix, then one call per run and one
-    cross-run call in parallel; merged. None if nothing validated."""
+    cross-run call in parallel; merged. None if nothing validated. history: every run so far on the
+    task (nonlinear tasks: the error-vs-nodes summary)."""
     prefix, pairs = build_prefix(task, reports, runs, notes_by_agent, shared_text, prev_feedback,
-                                 disagreement, last_by_agent)
+                                 disagreement, last_by_agent, history)
     cross_user = prefix + [text_block(CROSS_JOB.format(task=task))]
 
     rids = [run["run_id"] for run, _ in pairs]

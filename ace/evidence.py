@@ -363,7 +363,10 @@ def compare_value(value: float, ev: dict) -> dict:
 
 
 def predict_run(problem_id: str, run: dict, ev: dict) -> dict | None:
+    from ace import nonlinear
     from ace.checkpoint import scored_solve_index
+    if nonlinear.is_nonlinear(problem_id):    # scored on the whole curve (ace.nonlinear), not a compliance
+        return None
     i = scored_solve_index(run)
     if i is None:
         return None
@@ -434,7 +437,8 @@ def scored_by_test(problem_id: str) -> bool:
 
 def missing_tests(problem_ids: list[str]) -> list[str]:
     """Problems with neither a reference value nor test data: nothing can score them."""
-    return [p for p in problem_ids if not has_reference(p) and load_active(p) is None]
+    from ace import nonlinear
+    return [p for p in problem_ids if not has_reference(p) and load_active(p) is None and not nonlinear.is_nonlinear(p)]
 
 
 def automesher_test_error(problem_id: str) -> float:
@@ -545,6 +549,13 @@ def agent_section(problem_id: str) -> str:
         lines.append(f"- test {t['test_id']}: {_scrub(t['description'], problem_id)}".rstrip(": "))
         if t.get("notes"):
             lines.append(f"  lab notes: {_scrub(t['notes'], problem_id)}")
+    from ace import nonlinear
+    if nonlinear.is_nonlinear(problem_id):    # scored on the force-displacement curve, not a compliance
+        nm = nonlinear.measured()
+        lines.append("Measured force at the scoring checkpoints (crosshead travel): " + ", ".join(
+            f"{u:g} mm: {f:.0f} N" for u, f in zip(nm["checkpoints_mm"], nm["force_N"])) + ". Runs are scored by "
+            "one frozen elastoplastic ramp of the submitted mesh against these (mean relative force error).")
+        return "\n".join(lines)
     where = (f"between {m['point2']} and {m['point']}" if m.get("point2") else
              f"at {m['point']}" if m.get("point") else f"over group {m.get('group')!r}" if m.get("group") else "")
     lines.append(f"Measured: {m['name']} ({m['type']} of {m['field']} {where}) = {ev['value_at_nominal_load']:.4g} at "
@@ -599,8 +610,9 @@ def teacher_section(problem_id: str, runs: list[dict] | None = None) -> str:
 
 def solve_check(problem_id: str, feacore_result) -> dict | None:
     """test_check for one solve: the solve's prediction of the measurement against the test."""
+    from ace import nonlinear
     rec = load_active(problem_id)
-    if not rec or feacore_result is None:
+    if not rec or feacore_result is None or nonlinear.is_nonlinear(problem_id):   # nonlinear: no linear check
         return None
     ev = rec["combined"]
     q = measurement_qoi(problem_id, {"measurement": ev.get("measurement_spec") or {"qoi": ev["measurement"]["name"]}})

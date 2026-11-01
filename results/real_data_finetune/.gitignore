@@ -1,0 +1,5 @@
+# Large per-run outputs stay on the box (fe-ref-1) and out of git: increment series, meshes, videos.
+series/
+*.msh
+*.vtu
+videos/

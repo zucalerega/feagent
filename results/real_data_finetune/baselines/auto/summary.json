@@ -1,0 +1,198 @@
+{
+ "ok": true,
+ "error": null,
+ "nodes": 2937,
+ "dofs": 8811,
+ "wall_s": 8.1,
+ "straightened": true,
+ "adaptive": false,
+ "mesh_path": "/home/ubuntu/feagent-build/results/real_data_finetune/baselines/auto/mesh.msh",
+ "mesh_sha256": "c305b690c773093d15a8b0e6a8b2335676f9c6c7d4d82792c24f7380a06bcbd9",
+ "straightened_edges": 1,
+ "converged": true,
+ "u_part_mm": [
+  0.0,
+  0.12,
+  0.24,
+  0.36,
+  0.48,
+  0.6,
+  0.72,
+  0.84,
+  0.96,
+  1.08,
+  1.2,
+  1.32,
+  1.44,
+  1.56,
+  1.68,
+  1.8,
+  1.92,
+  2.04,
+  2.16,
+  2.28,
+  2.4
+ ],
+ "force_N": [
+  0.0,
+  457.918,
+  909.835,
+  1342.886,
+  1743.817,
+  2114.207,
+  2456.931,
+  2776.54,
+  3076.643,
+  3359.744,
+  3625.968,
+  3876.583,
+  4111.832,
+  4331.283,
+  4535.339,
+  4724.65,
+  4898.452,
+  5058.684,
+  5204.434,
+  5337.232,
+  5458.305
+ ],
+ "u_cross_mm": [
+  0.0,
+  0.36677,
+  0.49987,
+  0.63242,
+  0.76404,
+  0.89477,
+  1.0247,
+  1.15396,
+  1.28266,
+  1.41087,
+  1.53858,
+  1.66584,
+  1.79266,
+  1.91902,
+  2.04493,
+  2.17042,
+  2.29546,
+  2.4201,
+  2.54432,
+  2.66817,
+  2.79168
+ ],
+ "checkpoints_mm": [
+  0.5,
+  1.0,
+  1.5,
+  2.0,
+  2.5
+ ],
+ "force_meas_N": [
+  859.61,
+  2164.37,
+  3308.35,
+  4171.1,
+  4743.03
+ ],
+ "force_sim_N": [
+  910.27,
+  2391.77,
+  3545.55,
+  4462.52,
+  5152.43
+ ],
+ "rel_err": [
+  0.05893,
+  0.10507,
+  0.0717,
+  0.06987,
+  0.08631
+ ],
+ "mean_rel_err": 0.07837501521326243,
+ "peeq_max": 0.1522134,
+ "hotspots": [
+  {
+   "kind": "peeq",
+   "xyz_mm": [
+    20.35,
+    25.74,
+    6.62
+   ],
+   "faces": [
+    "f41",
+    "f42"
+   ],
+   "value": 0.164504
+  },
+  {
+   "kind": "peeq",
+   "xyz_mm": [
+    -23.72,
+    24.39,
+    -5.92
+   ],
+   "faces": [
+    "f15",
+    "f37"
+   ],
+   "value": 0.119734
+  },
+  {
+   "kind": "peeq",
+   "xyz_mm": [
+    -23.72,
+    24.39,
+    5.92
+   ],
+   "faces": [
+    "f15",
+    "f37"
+   ],
+   "value": 0.119394
+  },
+  {
+   "kind": "s1",
+   "xyz_mm": [
+    -27.61,
+    2.98,
+    -8.1
+   ],
+   "faces": [
+    "f6",
+    "f12"
+   ],
+   "value": 47241238.013747975
+  },
+  {
+   "kind": "s1",
+   "xyz_mm": [
+    -27.61,
+    2.98,
+    8.1
+   ],
+   "faces": [
+    "f6",
+    "f13"
+   ],
+   "value": 46702395.6757074
+  },
+  {
+   "kind": "s1",
+   "xyz_mm": [
+    27.61,
+    2.98,
+    8.1
+   ],
+   "faces": [
+    "f7",
+    "f13"
+   ],
+   "value": 45619507.39944855
+  }
+ ],
+ "curve_csv": "/home/ubuntu/feagent-build/results/real_data_finetune/baselines/auto/curve.csv",
+ "series_dir": "/home/ubuntu/feagent-build/results/real_data_finetune/baselines/auto/series",
+ "images": {
+  "curve": "/home/ubuntu/feagent-build/results/real_data_finetune/baselines/auto/curve.png",
+  "peeq": "/home/ubuntu/feagent-build/results/real_data_finetune/baselines/auto/peeq.png"
+ }
+}

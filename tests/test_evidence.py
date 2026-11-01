@@ -154,9 +154,17 @@ def test_summarize_cli(tmp_path, capsys):
 COMPRESSION = "physical_tests/abc_00000065_compression"
 
 
+def _linear_compression(monkeypatch):
+    """The C-bracket task is now scored by its nonlinear force curve (ace.nonlinear); these tests
+    exercise the linear test-scoring path on it, so they drop that score mode."""
+    monkeypatch.setitem(config.TASKS, "abc_00000065_compression",
+                        {k: v for k, v in config.TASKS["abc_00000065_compression"].items() if k != "score"})
+
+
 def _active_compression(tmp_path, monkeypatch):
     """The C-bracket compression test made active, as run_loop does at a generation start."""
     import shutil
+    _linear_compression(monkeypatch)
     from pathlib import Path
     lab = tmp_path / "lab"
     lab.mkdir()
@@ -214,6 +222,7 @@ def test_field_mode_gain_is_measured_from_the_automesher_against_the_test(tmp_pa
 
 def test_loop_refuses_a_problem_with_neither_reference_nor_test(tmp_path, monkeypatch):
     from ace.run_loop import main
+    _linear_compression(monkeypatch)
     for k, v in (("ACE_STATEMENT", "bcs"), (EV.ACTIVE_ENV, ""), (EV.SCORE_ENV, "0")):
         monkeypatch.setenv(k, v)
     monkeypatch.setattr(config, "STATEMENT", "bcs")
@@ -222,10 +231,13 @@ def test_loop_refuses_a_problem_with_neither_reference_nor_test(tmp_path, monkey
               "--generations", "1", "--out", str(tmp_path / "run")])
 
 
+@pytest.mark.skip(reason="abc_00000065_compression is now scored by its nonlinear curve (needs CalculiX); "
+                         "the loop runs agents in spawned processes, which _linear_compression cannot reach")
 def test_loop_scores_the_compression_case_against_the_test(tmp_path, monkeypatch):
     """The swarm on the C-bracket with its Instron data: no reference anywhere, every run judged by
     the test, and the agents told about it."""
     from ace.run_loop import main
+    _linear_compression(monkeypatch)
     for k, v in (("ACE_STATEMENT", "bcs"), (EV.ACTIVE_ENV, ""), (EV.SCORE_ENV, "0")):
         monkeypatch.setenv(k, v)
     monkeypatch.setattr(config, "STATEMENT", "bcs")

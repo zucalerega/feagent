@@ -1,6 +1,7 @@
 """The Generator: a minimal tool-use FEA / CFD agent.
 
-It sees a problem statement, six tools (inspect_geometry, mesh, solve, view, compare, submit) and
+It sees a problem statement, six tools (inspect_geometry, mesh, solve, view, compare, submit; plus
+nonlinear_check on a task scored by a nonlinear simulation of a physical test, ace/nonlinear.py) and
 a system prompt = BASE_PROMPT + the current playbook. One call to run_agent = one run; it returns a
 JSON-able run record (trace, meshes, solves, submitted solve, cited bullet IDs, token usage) for
 the checks and the Reflector. Flow problems (physics "flow") get BASE_PROMPT_FLOW and TOOLS_FLOW:
@@ -293,6 +294,26 @@ TOOLS_FLOW = [
     _TOOL["submit"],
 ]
 
+# Only offered on a task scored by the nonlinear simulation of its physical test (tools_for).
+NONLINEAR_TOOL = {
+    "name": "nonlinear_check",
+    "description": "Run the task's frozen NONLINEAR scoring simulation (CalculiX: elastoplastic resin, large "
+                   "deformation, the platen ramp) on one of your meshes and compare its force-travel curve with "
+                   "the test: the force at each checkpoint (simulated vs measured, relative error), the mean "
+                   "relative error (the scored error), nodes, DOFs, the largest plastic strain and the hotspots "
+                   "(where plastic strain and the largest principal stress peak, with the nearest faces). It takes "
+                   "minutes and is limited per run (the task states how many); it does not use a solve. Your "
+                   "boundary conditions do not matter here: the setup is fixed.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mesh": {"type": "integer", "description": "mesh number, as returned by mesh"},
+            "using": USING,
+        },
+        "required": ["mesh", "using"],
+    },
+}
+
 # Checkpoint bookkeeping kept in the run record but not shown to the agent.
 HIDDEN_KEYS = {"path", "request", "index", "sha256", "gmsh", "info"}
 
@@ -300,21 +321,40 @@ CITATION = re.compile(r"\[using ((?:[ap]\d+-)?[a-z]+-\d{4})\]")
 BULLET_ID = re.compile(r"^(?:[ap]\d+-)?[a-z]+-\d{4}$")       # shared "mesh-0001" / "p1-mesh-0001" (task 1), private "a3-mesh-0001"
 
 
-def system_prompt(playbook_text: str, flow: bool = False) -> str:
-    return (BASE_PROMPT_FLOW if flow else BASE_PROMPT) + "\n" + (playbook_text or "(the playbook is empty)")
+def is_nonlinear(problem_id: str) -> bool:
+    """Is the task scored by the nonlinear simulation of its physical test? (Same test as
+    ace.nonlinear.is_nonlinear, kept here so linear tasks never import that module.)"""
+    return TASKS[problem_id].get("score") == "nonlinear"
+
+
+def limits(problem_id: str) -> tuple[int, int]:
+    """(max_turns, max_solves) of a task: its own entries in config.TASKS, else the global ones."""
+    task = TASKS[problem_id]
+    return task.get("max_turns", MAX_TURNS), task.get("max_solves", MAX_SOLVES)
 
 
 def tools_for(problem) -> list[dict]:
-    return TOOLS_FLOW if fea.is_flow(problem) else TOOLS
+    """The tool specs an agent gets on a task (a problem id or a problem): TOOLS_FLOW on a flow
+    task; TOOLS, plus nonlinear_check on a nonlinear task."""
+    problem = fea.get_problem(problem) if isinstance(problem, str) else problem
+    if fea.is_flow(problem):
+        return TOOLS_FLOW
+    return TOOLS + [NONLINEAR_TOOL] if is_nonlinear(problem.id) else TOOLS
+
+
+def system_prompt(playbook_text: str, flow: bool = False) -> str:
+    return (BASE_PROMPT_FLOW if flow else BASE_PROMPT) + "\n" + (playbook_text or "(the playbook is empty)")
 
 
 def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = True) -> str:
     """The task statement, scoring and limits. max_solves: the solve budget stated (default
     MAX_SOLVES); bonus=False leaves out the be-the-best paragraph (the single-agent baseline,
     ace/single_loop.py, has no peers to beat on a task)."""
-    max_solves = MAX_SOLVES if max_solves is None else max_solves
+    max_solves = limits(problem_id)[1] if max_solves is None else max_solves
     task = TASKS[problem_id]
     problem = fea.get_problem(problem_id)
+    if is_nonlinear(problem_id):
+        return _nonlinear_task_prompt(problem_id, problem, max_solves, bonus)
     q = fea.official_qoi(problem, task["qoi"])
     where = f" at point {q.point}" if q.point else (f" over group {q.group!r}" if q.group else "")
     if q.point2:
@@ -379,6 +419,86 @@ def task_prompt(problem_id: str, max_solves: int | None = None, bonus: bool = Tr
     )
 
 
+def _nonlinear_task_prompt(problem_id: str, problem, max_solves: int, bonus: bool) -> str:
+    """The task statement of a task scored against its physical test through a FROZEN nonlinear
+    simulation (ace/nonlinear.py; abc_00000065_compression): the test, the frozen setup in plain
+    words, that the agent's job is only the mesh, and the score vs the automesher per DOF. None of
+    the field-mode wording (fine reference, probe points): nothing here is scored against a reference."""
+    from ace import nonlinear
+    from ace.config import DIVERSITY_BONUS, DIVERSITY_H_RATIO, DIVERSITY_MARGIN, FIELD_ERR_FLOOR
+    sp = nonlinear.spec()
+    mat = json.loads((Path(__file__).resolve().parents[1] / sp["material_file"]).read_text())   # repo-relative
+    table = mat["plastic_table_true_stress_vs_plastic_strain"]        # [[true stress MPa, plastic strain], ...]
+    checkpoints = ", ".join(f"{c:g}" for c in sp["checkpoints_mm"])
+    u_max, n_inc = sp["u_part_max_mm"], sp["increments"]
+    task = TASKS[problem_id]
+    # The geometry line of the problem's statement (its supports, load and material are the linear
+    # placeholder setup, replaced here by the frozen one).
+    geometry = next((ln for ln in problem.description().splitlines() if ln.startswith("Geometry")), "")
+    try:                              # cached in ace/field_refs; computing it needs CalculiX
+        a = nonlinear.automesher_baseline(problem_id)
+        auto = f"gets e = {a['mean_rel_err']:.2%} with {a['dofs']} DOFs ({a['nodes']} nodes)"
+        e_auto, d_auto = f"{a['mean_rel_err']:.4f}", f"{a['dofs']}"
+    except Exception as e:  # noqa: BLE001  no ccx and no cached baseline (a laptop): the formula without numbers
+        auto, e_auto, d_auto = (f"has an error e_auto with DOFs_auto DOFs (not computed on this machine: "
+                                f"{type(e).__name__})"), "e_auto", "DOFs_auto"
+    statement = (
+        f"{geometry}\n"
+        f"THE REAL TEST: the printed part (Formlabs Alpha Fast resin) was compressed on an Instron between two flat "
+        f"platens: the base face f33 (group base_bottom) stands on the lower platen and the upper platen pushes the "
+        f"two prong tops f17 and f34 (group prong_tops) down, along -y. The machine recorded the force against the "
+        f"crosshead travel (no extensometer) up to the peak, about 4.8 kN at about 2.5 mm; the resin yields well "
+        f"before the peak. There is no reference solution: this test is the only check.")
+    from ace import evidence
+    if test := evidence.agent_section(problem_id):    # the test record (with --evidence): measured checkpoint forces
+        statement += "\n\n" + test
+    scored = (
+        f"SCORING FOR THIS TASK (replaces 'How you are scored' above). The MESH of the solve you submit is run "
+        f"through a FROZEN nonlinear simulation of the test; you do not choose any of its setup:\n"
+        f"- sticking platens (friction stops the faces from sliding): base_bottom (f33) held in x, y and z; the prong "
+        f"tops f17 and f34 held in x and z and pushed down in y by the same displacement u, ramped from 0 to "
+        f"{u_max:g} mm in {n_inc} increments;\n"
+        f"- the resin as measured on a dogbone of the same print: E = {mat['E'] / 1e3:.3g} GPa, Poisson's ratio "
+        f"{mat['nu']:g}, von Mises (J2) plasticity with isotropic hardening, yield from {table[0][0]:.3g} MPa "
+        f"hardening to {table[-1][0]:.3g} MPa;\n"
+        f"- large deformation (geometric nonlinearity on);\n"
+        f"- the force F is the total platen reaction on the prong tops, and the crosshead travel is the part's "
+        f"shortening plus a seating gap plus the load train's deflection: u_crosshead = u + {sp['delta_mm']:g} mm "
+        f"+ F x {sp['compliance_mm_per_N']:.3g} mm/N (both calibrated once and frozen);\n"
+        f"- the simulated force is compared with the measured one at five crosshead travels, {checkpoints} mm: "
+        f"e = the mean of |F_sim - F_test| / F_test over them.\n"
+        f"YOUR JOB IS ONLY THE MESH: the physics, material, seating and compliance are fixed, so between meshes e "
+        f"changes only through the mesh. The solve tool stays the fast LINEAR-elastic solver: use it, its error "
+        f"estimate, view and compare as a quick proxy for where the mesh is under-resolved. Set your linear solves "
+        f"up like the frozen setup: formulation 3d; base_bottom fixed; f17 and f34 each with displacement "
+        f"components [0, 1, 2] = [0, -u, 0] (e.g. u = {u_max / 1e3:g}; the geometry is in metres); E = "
+        f"{mat['E'] * 1e6:.4g} Pa, nu = {mat['nu']:g}. The linear solve cannot see plasticity or large "
+        f"deformation, and its own scored quantity (u_top) is not scored here. nonlinear_check runs the real "
+        f"scoring simulation on one of your meshes (minutes each; at most {task.get('nl_previews', 0)} per run; it "
+        f"does not use a solve) and shows the force at each checkpoint vs the test, e, and where the plastic strain "
+        f"and the largest principal stress concentrate. Quadratic meshes are fine: curved mid-side nodes CalculiX "
+        f"rejects are straightened automatically.\n"
+        f"You compete against an AUTOMESHER: gmsh with its default sizes and quadratic (straight-sided) elements, run "
+        f"through the same simulation, which {auto}.\n"
+        f"SCORE = A / c, where g = {e_auto} / e (your accuracy gain; e below {FIELD_ERR_FLOOR:.1%} counts as "
+        f"{FIELD_ERR_FLOOR:.1%}), c = your DOFs / {d_auto}, A = (g/2)^2 if g < 2 (missing 2x the automesher's "
+        f"accuracy is penalised quadratically) else g/2 (beating it keeps paying). Score 1 = half the automesher's "
+        f"error at its DOFs; the automesher itself scores 0.25. Extra DOFs pay only if they buy at least "
+        f"proportionally more accuracy, so put them where the error is.\n")
+    if bonus:
+        scored += (f"DIVERSITY BONUS: +{DIVERSITY_BONUS:g} if your mesh recipe is structurally different from every "
+                   f"other agent's on this task in your generation (another element order, global h differing by more "
+                   f"than {DIVERSITY_H_RATIO:g}x, or mostly different refinement targets) and your base score is at "
+                   f"least {DIVERSITY_MARGIN:.0%} of the best one there.\n")
+    return (
+        f"Problem id: {problem_id}\n\n{statement}\n\n"
+        f"{scored}"
+        f"LIMITS: the mesh you submit must have at most {task['node_cap']} nodes (a safety limit, not a target), and "
+        f"its minimum element quality (quality.min) must be at least {MIN_QUALITY}. You may call solve at most "
+        f"{max_solves} times and nonlinear_check at most {task.get('nl_previews', 0)} times."
+    )
+
+
 def parse_citations(trace: list[dict]) -> list[str]:
     """Bullet IDs from the `using` argument of tool calls, plus any "[using id]" in the text."""
     ids = set()
@@ -395,8 +515,9 @@ class Tools:
 
     def __init__(self, problem_id: str, workdir: Path, ui: dict | None = None, max_solves: int | None = None):
         self.problem_id = problem_id
-        self.max_solves = MAX_SOLVES if max_solves is None else max_solves   # larger for the single-agent baseline
         self.task = TASKS[problem_id]
+        # The task's own solve budget (config.TASKS), else MAX_SOLVES; larger for the single-agent baseline
+        self.max_solves = limits(problem_id)[1] if max_solves is None else max_solves
         self.problem = fea.get_problem(problem_id)
         self.workdir = Path(workdir)
         self.meshes: list[dict] = []
@@ -404,6 +525,7 @@ class Tools:
         self.submitted: int | None = None   # index into self.solves
         self.results: dict = {}             # solve number -> feacore Result (in memory only, never in the record)
         self.n_views = 0
+        self.nl_previews: list[dict] = []   # nonlinear_check results (the full ace.nonlinear.run_curve dicts)
         self.ui = ui                        # ace.ui_bridge context of this run; None = off
 
     def call(self, name: str, args: dict) -> tuple[dict, bool]:
@@ -422,6 +544,8 @@ class Tools:
                 return {"error": f"solve {n!r} is not a successful solve; successful solves: {ok}"}, True
             self.submitted = n - 1
             return {"submitted": n, "message": "run finished"}, False
+        if name == "nonlinear_check":
+            return self._nonlinear_check(args)
         if name in ("view", "compare"):
             try:
                 return self._view(args) if name == "view" else self._compare(args)
@@ -437,7 +561,7 @@ class Tools:
         m["request"] = {k: v for k, v in args.items() if k != "using"}
         m["index"] = len(self.meshes)
         self.meshes.append(m)
-        out = {k: v for k, v in m.items() if k not in HIDDEN_KEYS}
+        out = {"mesh": len(self.meshes), **{k: v for k, v in m.items() if k not in HIDDEN_KEYS}}   # 1-based number
         if not m["ok"]:
             return out, True
         cap = self.task["node_cap"]
@@ -497,6 +621,40 @@ class Tools:
                 except Exception as e:  # noqa: BLE001  the solve itself stands; say why there is no feedback
                     out["feedback"] = {"error": f"feedback failed: {type(e).__name__}: {e}"}
         return out, not result["ok"]
+
+    def _nonlinear_check(self, args: dict) -> tuple[dict, bool]:
+        """Mesh number n (1-based, as the mesh tool returns it) through the frozen nonlinear scoring
+        simulation (ace.nonlinear.run_curve); a compact result for the agent, the full one kept."""
+        if not is_nonlinear(self.problem_id):
+            return {"error": "nonlinear_check is not available on this task"}, True
+        cap = self.task.get("nl_previews", 0)
+        if len(self.nl_previews) >= cap:
+            return {"error": f"nonlinear_check limit ({cap}) reached for this run; choose your mesh from the "
+                             f"checks you have and your linear solves"}, True
+        n = args.get("mesh")
+        if not isinstance(n, int) or not 1 <= n <= len(self.meshes) or not self.meshes[n - 1].get("ok"):
+            ok = [i + 1 for i, m in enumerate(self.meshes) if m.get("ok")]
+            return {"error": f"mesh {n!r} is not a successful mesh; successful meshes: {ok}"}, True
+        mesh = self.meshes[n - 1]
+        if mesh["nodes"] > self.task["node_cap"]:
+            return {"error": f"mesh {n} has {mesh['nodes']} nodes, over the cap of {self.task['node_cap']} "
+                             f"(this did not use a check)"}, True
+        from ace import nonlinear
+        workdir = self.workdir / f"nl_preview_{len(self.nl_previews) + 1}"
+        try:
+            r = nonlinear.run_curve(self.problem_id, mesh, workdir=workdir, threads=4, series=False)
+        except Exception as e:  # noqa: BLE001  e.g. no CalculiX on this machine: the agent's information, not a crash
+            r = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        self.nl_previews.append({"mesh": n, **r})
+        left = cap - len(self.nl_previews)
+        if not r.get("ok"):
+            return {"mesh": n, "error": f"nonlinear check failed: {r.get('error')}", "checks_left": left}, True
+        table = [{"crosshead_mm": u, "test_N": round(fm), "sim_N": round(fs), "rel_err": f"{e:+.1%}"}
+                 for u, fm, fs, e in zip(r["checkpoints_mm"], r["force_meas_N"], r["force_sim_N"], r["rel_err"])]
+        return {"mesh": n, "mean_rel_err": f"{r['mean_rel_err']:.2%}", "checkpoints": table,
+                "nodes": r["nodes"], "dofs": r["dofs"], "peeq_max": solve_feedback._sig(r["peeq_max"]),
+                "hotspots": r.get("hotspots") or [], "straightened": r.get("straightened", False), "straightened_edges": r.get("straightened_edges", 0),
+                "wall_s": round(r.get("wall_s") or 0), "checks_left": left}, False
 
     def _result_of(self, n) -> tuple:
         """(feacore Result of solve n, None) or (None, an error for the agent)."""
@@ -604,8 +762,8 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
     usage = [] if usage is None else usage
     flow = fea.is_flow(tools.problem)                 # flow problems get the CFD prompt and tools
     trace, stop = tool_loop(llm, system_prompt(playbook_text, flow=flow), task_prompt(problem_id),
-                            tools_for(tools.problem), tools.call, lambda: tools.submitted is not None,
-                            MAX_TURNS, run_id, usage)
+                            tools_for(problem_id), tools.call, lambda: tools.submitted is not None,
+                            limits(problem_id)[0], run_id, usage)
 
     return {
         "problem_id": problem_id,
@@ -618,5 +776,6 @@ def run_agent(problem_id: str, run_id: str, generation: int, playbook_text: str,
         "trace": trace,
         "meshes": tools.meshes,
         "solves": tools.solves,
+        **({"nl_previews": tools.nl_previews} if is_nonlinear(problem_id) else {}),
         "usage": usage,
     }

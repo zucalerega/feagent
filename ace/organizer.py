@@ -102,8 +102,15 @@ def organize(owner: str, current: list[dict], incoming: list[dict], llm, records
                             OrganizerOutput, records)
     if out is None:
         return None
+    return clean_notes(out.notes, current, max_notes)
+
+
+def clean_notes(notes: list[OrganizedNote], current: list[dict], max_notes: int) -> list[dict]:
+    """A model's new note list made safe for Memory.replace_notes: unknown or repeated ids become new
+    notes, "unchanged" (content null) takes the current text, and the task tag goes into the text.
+    Also used by ace/pre_teach.py."""
     known, seen, result = {n["id"]: n for n in current}, set(), []
-    for n in out.notes[:max_notes]:
+    for n in notes[:max_notes]:
         d = n.model_dump()
         # An id the model made up, or a second note claiming the same id, becomes a new note
         # (so replace_notes never edits the wrong bullet or one bullet twice).
