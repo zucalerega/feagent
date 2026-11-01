@@ -363,12 +363,12 @@ def bc0_best_per_gen(n, key="best"):
 #   bestmean gen 0, then the running mean over gens 1..g of the best agent per generation
 #                                                                -> bar: fig2's mean over gens 1-7 of the per-gen best
 #   avg      the average agent of each generation               -> bar: the average agent after training (gen 7)
-#   max5     as max, on gens 0-4 only (the window the hyperparameters and experiment design were tuned on)
+#   max6     as max, on gens 0-5 only (the window the hyperparameters and experiment design were tuned on)
 STATS = {"max": ("best", "best score reached so far"),
-         "max5": ("best", "best score reached so far, gens 0-4 only"),
+         "max6": ("best", "best score reached so far, gens 0-5 only"),
          "bestmean": ("best", "running mean of the best agent per generation (gens 1..g)"),
          "avg": ("mean", "average agent of each generation")}
-WINDOW = {"max5": 5}                                             # generations used; default all 8
+WINDOW = {"max6": 6}                                             # generations used; default all 8
 
 
 def measured(n, stat):
@@ -376,7 +376,7 @@ def measured(n, stat):
 
 
 def aggregate(raw, stat):
-    if stat in ("max", "max5"):
+    if stat in ("max", "max6"):
         return np.maximum.accumulate(raw)
     if stat == "bestmean":
         return np.concatenate([raw[:1], np.cumsum(raw[1:]) / np.arange(1, len(raw))])
@@ -486,7 +486,7 @@ def fig7(stat):
 **Caption.** Afternoon setup, automesher = 1. Solid: {STATS[stat][1]}; gen {m - 1} is the fig3_scaling_bc0_{stat} bar.
 Dashed: the {STATS[stat][0]} agent's per-generation score is fitted with y = a + b ln(g + 1) on all 8 measured
 generations used and continued from its last measured value at that rate to gen {2 * m - 1}; the same measure is
-applied to measured + projected values. Measured: gens 0-{m - 1}{" (the runs went to gen 7; gens 5-7 are left out of this version)" if m < 8 else " (no run went past gen 7)"}.
+applied to measured + projected values. Measured: gens 0-{m - 1}{f" (the runs went to gen 7; gens {m}-7 are left out of this version)" if m < 8 else " (no run went past gen 7)"}.
 
 | agents | gens 0-{m - 1} | rate b | projected gen {2 * m - 1} |
 |---|---|---|---|
