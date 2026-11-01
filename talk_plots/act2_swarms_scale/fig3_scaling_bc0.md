@@ -12,8 +12,6 @@ Fit residuals: -0.11 / +0.10 / +0.13 / -0.12.
 
 **Caveats.**
 - The extrapolation is a fit to 4 points, one run each (noise 0.03-0.1 in score, 0.1-0.4 on this axis).
-- The measured gains shrink: +0.54, +0.36, +0.09 per doubling. The residuals
-  run -, +, +, -, i.e. the data bend below a log curve; a saturating fit (c - d n^-alpha, 3 parameters) fits them as well and
-  levels off near 3.2x. The log fit is the optimistic reading.
+- Measured gain per doubling: +0.54, +0.36, +0.09. The residuals run -, +, +, -, i.e. the data bend below a log curve; a saturating fit (c - d n^-alpha, 3 parameters) fits them as well and levels off near 3.2x. The log fit is the optimistic reading.
 - The 16-agent run's references were rebuilt (see fig2), and team size n means n/2 agents per task, so a bigger
   team also takes the best of more meshes.
