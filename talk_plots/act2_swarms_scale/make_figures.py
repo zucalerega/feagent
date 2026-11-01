@@ -359,12 +359,13 @@ def bc0_best_per_gen(n):
 
 def fig3(stat):
     """stat="max": the best score any agent reached in gens 0-7; stat="avg": the fig2 bar (mean over gens 1-7 of the
-    per-generation best). Projection: from the 16-agent bar, y16 + f(n) - f(16), where f = c - d n^-alpha is a
-    saturating fit to the four bars (so it starts at the measured value and flattens)."""
-    from scipy.optimize import curve_fit
+    per-generation best). Projection: from the 16-agent bar, y16 + f(n) - f(16), where f = c - d n^-1/2 is fitted to
+    the four bars (it flattens; the exponent 1/2 is chosen, as in fig7; a free exponent flattens faster)."""
+    a = 0.5
     sat = lambda n, c, d, a: c - d * n ** (-a)
     y = np.array([bc0_best_per_gen(n).max() if stat == "max" else bc0_best_per_gen(n)[1:].mean() for n in SIZES])
-    (c, d, a), _ = curve_fit(sat, np.array(SIZES, float), y, p0=[3.5, 3, 0.5], bounds=([0, 0, 0.05], [10, 20, 3]))
+    slope, c = np.polyfit(np.array(SIZES, float) ** -a, y, 1)
+    d = -slope
     resid = y - sat(np.array(SIZES, float), c, d, a)
     stem = f"fig3_scaling_bc0_{stat}"
     xp = np.array([5.0, 6.0])                                                  # log2 of 32 and 64 agents
@@ -399,9 +400,8 @@ def fig3(stat):
 
 **Caption.** Talk version of fig2 for {BC0} only, afternoon setup (diversity on), scores divided by the
 automesher's 0.25 so that the automesher is 1. Bars: {what}.
-Dashed: projection from the 16-agent bar, y16 + f(n) - f(16), with f = c - d n^-alpha (c = {c:.2f}, d = {d:.2f},
-alpha = {a:.2f}) a least-squares saturating fit to the four bars: 32 agents {yp[0]:.2f}x, 64 agents {yp[1]:.2f}x
-(no swarm of that size was run).
+Dashed: projection from the 16-agent bar, y16 + f(n) - f(16), with f = c - d n^-1/2 (c = {c:.2f}, d = {d:.2f})
+a least-squares fit to the four bars: 32 agents {yp[0]:.2f}x, 64 agents {yp[1]:.2f}x (no swarm of that size was run).
 
 **Key numbers.** 2 / 4 / 8 / 16 agents: {' / '.join(f'{v:.2f}x' for v in y)} the automesher.
 Fit residuals: {' / '.join(f'{r:+.2f}' for r in resid)} (the projection is anchored on the measured 16-agent value).
@@ -409,8 +409,8 @@ Fit residuals: {' / '.join(f'{r:+.2f}' for r in resid)} (the projection is ancho
 **Data.** As fig2 (16 agents from `results/diversity_s16_2026-11-01/scores.json`). Plotted values: `data.json` -> `{stem}`.
 
 **Caveats.**
-- A 3-parameter fit to 4 points, one run each (noise 0.03-0.1 in score, 0.1-0.4 on this axis); the plateau c is
-  not pinned down by the data.
+- A 2-parameter fit to 4 points, one run each (noise 0.03-0.1 in score, 0.1-0.4 on this axis). The exponent 1/2 is
+  the optimistic choice: a free exponent fits these bars with a faster plateau (projections near the 16-agent value).
 - The 16-agent run's references were rebuilt (see fig2), and team size n means n/2 agents per task, so a bigger
   team also takes the best of more meshes.
 """
@@ -421,34 +421,35 @@ Fit residuals: {' / '.join(f'{r:+.2f}' for r in resid)} (the projection is ancho
 
 
 # ------------------------------------------- fig 7: bc0 training curves per team size, extended in generations
-NOTE7 = {"max": "- 2 agents (1 per task): the running max is flat at 2.40x from gen 2; 8 agents: flat at 3.01x from gen 5.",
-         "avg": "- 2 agents (1 per task) stall: their per-generation best falls to 1.32x in gen 4, so their projection points down.\n"
-                "- The 4-agent projection ends above the 8-agent one, from the 4-agent run's jump in gens 6-7."}
-
-
 def fig7(stat):
-    """stat="max": best score so far (running max of the per-generation best; ends on the fig3 max bars);
-    stat="avg": the best agent of each generation (its gens 1-7 mean is the fig3 avg bar).
-    Projection: from the gen-7 value along a fit y = a + b (g + 1)^-1/2 to gens 0-7 (a curve that flattens), to gen 15.
-    The exponent 1/2 is a choice: a free shared exponent runs to ~0, i.e. 8 generations do not pin down a plateau."""
-    G, GP = np.arange(8), np.arange(16)
+    """stat="max": best score so far (running max of the best agent per generation; gen 7 = the fig3 max bar);
+    stat="avg": running mean over gens 1..g of the best agent per generation (gen 7 = the fig3 avg bar).
+    Projection to gen 15: y_n(g) = a_n + b (g + 1)^-1/2 with one rate b shared by all team sizes (fitted to gens 1-7 of
+    the four curves; team size sets only the level a_n), anchored at each team's gen-7 value, so the projected order
+    is the measured one. The exponent 1/2 is chosen: a free exponent runs to ~0 (no plateau visible in 8 gens)."""
+    G, GL = np.arange(8), np.arange(1, 8)
     stem = f"fig7_training_bc0_{stat}"
+    curves = {}
+    for n in SIZES:
+        raw = bc0_best_per_gen(n)
+        curves[n] = (np.maximum.accumulate(raw) if stat == "max"
+                     else np.concatenate([raw[:1], np.cumsum(raw[1:]) / np.arange(1, 8)]))
+    X = (GL + 1) ** -0.5                                         # shared rate b: within-team least squares
+    b = (sum(((X - X.mean()) * (curves[n][1:] - curves[n][1:].mean())).sum() for n in SIZES)
+         / (len(SIZES) * ((X - X.mean()) ** 2).sum()))
     fig, ax = plt.subplots(figsize=(12, 6.75))
     fig.subplots_adjust(left=0.09, right=0.84, top=0.87, bottom=0.13)
     ax.axvspan(7.5, 15.5, color="#f2f2f4", zorder=0, lw=0)
     ax.text(11.5, 3.75, "projected", ha="center", va="top", fontsize=13, color="#666666")
     labels, out = [], {}
+    gf = np.linspace(7, 15, 60)
     for n in SIZES:
-        y = bc0_best_per_gen(n)
-        if stat == "max":
-            y = np.maximum.accumulate(y)
-        b, a = np.polyfit((G + 1) ** -0.5, y, 1)
-        gf = np.linspace(7, 15, 60)
-        fit = y[-1] + b * ((gf + 1) ** -0.5 - 8 ** -0.5)          # from the gen-7 value, flattening
+        y = curves[n]
+        fit = y[-1] + b * ((gf + 1) ** -0.5 - 8 ** -0.5)
         ax.plot(gf, fit, color=COL[n], ls="--", lw=2.2, zorder=2)
         ax.plot(G, y, color=COL[n], lw=2.8, marker=MARK[n], ms=8, zorder=3 + n / 100)
         labels.append((15, fit[-1], f"{n} agents", COL[n]))
-        out[n] = {"measured": [float(v) for v in y], "fit_a": float(a), "fit_b": float(b), "gen15": float(fit[-1])}
+        out[n] = {"measured": [float(v) for v in y], "gen15": float(fit[-1])}
     end_labels(ax, labels, 0.15)
     ax.axhline(1, color=AUTO_COL, ls="--", lw=1.8, zorder=1)
     ax.text(0.1, 1.03, "automesher = 1", color="#666666", fontsize=13, va="bottom", ha="left")
@@ -460,25 +461,27 @@ def fig7(stat):
     ax.grid(axis="x", visible=False)
     fig.text(0.015, 0.975, "Swarms keep improving with training", ha="left", va="top", fontsize=21, fontweight="bold")
     what = ("the best score reached so far (running max of the best agent per generation); gen 7 equals the fig3 max bar"
-            if stat == "max" else "the best agent of each generation; its gens 1-7 mean equals the fig3 avg bar")
+            if stat == "max" else "the running mean over gens 1..g of the best agent per generation (gen 0: the gen-0 "
+            "best); gen 7 equals the fig3 avg bar")
     rows = "\n".join(f"| {n} | {' / '.join(f'{v:.2f}' for v in out[n]['measured'])} | {out[n]['gen15']:.2f} |"
                      for n in SIZES)
     md = f"""
 # {stem}: training curves on {BC0}, extended to gen 15
 
-**Caption.** Afternoon setup, automesher = 1. Solid: {what}. Dashed: continues from each team's gen-7 value along a fit
-y = a + b (g + 1)^-1/2 to its gens 0-7, a curve that flattens, out to gen 15 (no run went past gen 7).
+**Caption.** Afternoon setup, automesher = 1. Solid: {what}. Dashed: y = a_n + b (g + 1)^-1/2, one rate
+b = {b:.2f} shared by all team sizes (fitted to gens 1-7 of the four curves), started from each team's gen-7 value and
+extended to gen 15 (no run went past gen 7). With a shared rate the projected order is the measured order.
 
 | agents | gens 0-7 | projected gen 15 |
 |---|---|---|
 {rows}
 
 **Caveats.**
-- One run per team size; the projection is a 2-parameter fit to 8 points, and its exponent 1/2 is chosen, not
-  fitted: with a free exponent shared by the four teams the fit runs to ~0 (no plateau visible in 8 generations).
-{NOTE7[stat]}
+- One run per team size. The shared rate pools the four runs; per-team rates differ (the 4-agent run jumped in gens 6-7,
+  the 8-agent run is flat from gen 5). The exponent 1/2 is chosen, not fitted: a free exponent runs to ~0, i.e. the
+  8 generations do not show a plateau yet.
 """
-    DATA[stem] = out
+    DATA[stem] = {"shared_rate_b": float(b), "curves": out}
     save(fig, stem, md)
 
 
