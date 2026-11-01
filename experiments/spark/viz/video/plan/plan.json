@@ -1,0 +1,242 @@
+{
+ "usd": "~/feagent-viz/twin.usdc",
+ "fps": 30,
+ "width": 1920,
+ "height": 1080,
+ "singular_point_mm": [
+  600.0,
+  0.0,
+  150.0
+ ],
+ "bbox_mm": [
+  [
+   -0.7752755880355835,
+   0.0,
+   0.0
+  ],
+  [
+   600.7750244140625,
+   2008.4578857421875,
+   304.47998046875
+  ]
+ ],
+ "time_codes": [
+  0.0,
+  24.0
+ ],
+ "fields": [
+  "gate_status",
+  "part_colors",
+  "u_mag",
+  "von_mises"
+ ],
+ "shots": [
+  {
+   "name": "a_orbit",
+   "seconds": 6.0,
+   "field": "von_mises",
+   "kind": "orbit",
+   "coverage_first": [
+    0.413,
+    0.245,
+    0.623,
+    0.814
+   ],
+   "coverage_last": [
+    0.238,
+    0.29,
+    0.753,
+    0.711
+   ],
+   "n_frames": 180,
+   "tc_first": 0.0,
+   "tc_last": 0.0,
+   "eye_first": [
+    -59.4,
+    -2475.6,
+    2068.1
+   ],
+   "eye_last": [
+    3427.7,
+    -557.7,
+    2068.1
+   ]
+  },
+  {
+   "name": "b_deform",
+   "seconds": 5.0,
+   "field": "von_mises",
+   "kind": "deform",
+   "coverage_first": [
+    0.292,
+    0.256,
+    0.653,
+    0.791
+   ],
+   "coverage_last": [
+    0.292,
+    0.256,
+    0.653,
+    0.791
+   ],
+   "n_frames": 150,
+   "tc_first": 0.0,
+   "tc_last": 24.0,
+   "eye_first": [
+    2074.5,
+    -2226.4,
+    2172.1
+   ],
+   "eye_last": [
+    2074.5,
+    -2226.4,
+    2172.1
+   ]
+  },
+  {
+   "name": "c_root",
+   "seconds": 3.0,
+   "field": "von_mises",
+   "kind": "root",
+   "coverage_first": [
+    -0.088,
+    -0.243,
+    1.201,
+    0.995
+   ],
+   "coverage_last": [
+    -0.088,
+    -0.243,
+    1.201,
+    0.995
+   ],
+   "label": {
+    "point_mm": [
+     600.0,
+     0.0,
+     150.0
+    ],
+    "anchor_mm": [
+     600.0,
+     0.0,
+     240.0
+    ],
+    "anchor_px": [
+     963,
+     254
+    ],
+    "point_px": [
+     963,
+     602
+    ]
+   },
+   "n_frames": 90,
+   "tc_first": 24.0,
+   "tc_last": 24.0,
+   "eye_first": [
+    870.9,
+    -321.7,
+    359.9
+   ],
+   "eye_last": [
+    870.9,
+    -321.7,
+    359.9
+   ]
+  },
+  {
+   "name": "d_umag",
+   "seconds": 3.0,
+   "field": "u_mag",
+   "kind": "drift1",
+   "coverage_first": [
+    0.292,
+    0.256,
+    0.653,
+    0.791
+   ],
+   "coverage_last": [
+    0.277,
+    0.26,
+    0.671,
+    0.782
+   ],
+   "n_frames": 90,
+   "tc_first": 24.0,
+   "tc_last": 24.0,
+   "eye_first": [
+    2074.5,
+    -2226.4,
+    2172.1
+   ],
+   "eye_last": [
+    2399.3,
+    -2024.9,
+    2172.1
+   ]
+  },
+  {
+   "name": "e_gates",
+   "seconds": 3.0,
+   "field": "gate_status",
+   "kind": "drift2",
+   "coverage_first": [
+    0.277,
+    0.26,
+    0.671,
+    0.782
+   ],
+   "coverage_last": [
+    0.266,
+    0.265,
+    0.688,
+    0.77
+   ],
+   "n_frames": 90,
+   "tc_first": 24.0,
+   "tc_last": 24.0,
+   "eye_first": [
+    2399.3,
+    -2024.9,
+    2172.1
+   ],
+   "eye_last": [
+    2701.3,
+    -1790.6,
+    2172.1
+   ]
+  },
+  {
+   "name": "f_closing",
+   "seconds": 4.0,
+   "field": "von_mises",
+   "kind": "pullback",
+   "coverage_first": [
+    0.292,
+    0.256,
+    0.653,
+    0.791
+   ],
+   "coverage_last": [
+    0.382,
+    0.353,
+    0.591,
+    0.723
+   ],
+   "n_frames": 120,
+   "tc_first": 24.0,
+   "tc_last": 24.0,
+   "eye_first": [
+    2074.5,
+    -2226.4,
+    2172.1
+   ],
+   "eye_last": [
+    2195.9,
+    -3976.2,
+    3108.1
+   ]
+  }
+ ],
+ "n_frames": 720
+}
