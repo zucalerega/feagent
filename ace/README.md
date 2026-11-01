@@ -182,8 +182,8 @@ python -m ace.run_loop --suite cfd3d                       # real agents, 3D (sl
 | `cfd` | train | `taylor_couette_2d` | `u_theta_mid` (exact, 1 %) | 2500 | curved walls, moving-wall expression BC, closed domain |
 | `cfd` | train | `backward_facing_step_2d` | `u_bubble` (fixed solver, mesh-converged, 3 %) | 12000 | separation at a sharp corner: refine the corner and the bubble behind it |
 | `cfd` | held out | `cylinder_channel_dfg_2d1` | `drag` (Schaefer & Turek 1996, 1 %) | 12000 | external flow: refine at the cylinder, not everywhere |
-| `cfd3d` | train | `pipe_poiseuille_3d` | `dp_AB` (exact, 2 %) | 6000 | 3D tets; the faceted wall loses area at O(h^2) |
-| `cfd3d` | train | `square_duct_3d` | `dp_AB` (exact developed, 2 %) | 6000 | uniform inflow develops first; 3D tets |
+| `cfd3d` | train | `pipe_poiseuille_3d` | `dp_AB` (exact, 2 %) | 6000 | 3D; the faceted wall loses area at O(h^2); tets or a sweep |
+| `cfd3d` | train | `square_duct_3d` | `dp_AB` (exact developed, 2 %) | 6000 | uniform inflow develops first; tets or a graded sweep |
 
 `taylor_couette_2d`, `square_duct_3d` and `backward_facing_step_2d` are new in this branch. The first
 two are checked against the fixed solver in `docs/benchmarks_cfd.md`.
@@ -194,9 +194,10 @@ solver's own mesh-converged values (a structured study to h0 / 8, `docs/benchmar
 Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mesh for each, and
 `tests/test_diagnosis.py` checks that it passes every oracle. For example, the cylinder drag is
 0.60 % off at 6345 nodes with refinement at the cylinder alone (2 mm there, 15 mm elsewhere), and
-0.34 % off at 3229 nodes with a boundary layer on the cylinder and the walls. With lighter refinement (3277 nodes, no boundary layer)
-it was 1.71 % off (measured before the wall-distance fix in the force evaluation) and fails the 1 %
-tolerance, so local refinement is what the agents have to learn.
+0.34 % off at 3229 nodes with a boundary layer on the cylinder and the walls. With lighter
+refinement (3277 nodes, no boundary layer) it was 1.71 % off (measured before the wall-distance fix
+in the force evaluation) and fails the 1 % tolerance, so local refinement is what the agents have
+to learn.
 The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with linearUpwind
 (`calibration.json`, meshed on the CAD) mostly meets the tolerance:
 
@@ -214,9 +215,9 @@ So the score mostly rewards the cheapest accurate setup. On the pipe, swept hexa
 tolerance with a fifth of the nodes. Upwind is far worse: 3.8 % on Poiseuille, 8.1 % on the step,
 8.4 % and 7.2 % on the pipe and the duct.
 
-**3D flow (`cfd3d`).** The agent's mesh tool makes unstructured tets in 3D. With OpenFOAM's plain
-schemes, those converged to an axial pressure gradient 12-19 % high at any mesh size, so 3D was left
-out at first. Next to a wall, linear interpolation between cell centres misses the face values in
+**3D flow (`cfd3d`).** By default the agent's mesh tool makes unstructured tets in 3D; with `sweep`
+it makes swept hexahedra or prisms ("The flow mesher" below). With OpenFOAM's plain schemes, tets
+converged to an axial pressure gradient 12-19 % high at any mesh size, so 3D was left out at first. Next to a wall, linear interpolation between cell centres misses the face values in
 the same direction everywhere, and that biased the viscous flux.
 
 The backend now uses skew-consistent schemes in 3D: `pointCellsLeastSquares` gradients and a
@@ -230,9 +231,9 @@ the force read 10 % low, which made the old results look like a force imbalance.
 | `pipe_poiseuille_3d` | tets split into hexes | +20 % → +0.7 % |
 | `square_duct_3d` | uniform tets, 4.3k / 10k nodes | +11.7 % → −0.8 % / +0.0 % |
 
-A uniform tet mesh below the 6000-node cap meets the 2 % tolerance (`planted.GOOD_MESH`), so the
-score is again about the cheapest accurate mesh. For the pipe that means fewer nodes away from the
-wall; for the duct, coarser cells in the developed flow.
+Uniform tets at the 6000-node cap are 2.08 % (pipe, just over its 2 % tolerance) and 0.55 % (duct)
+off. A sweep reaches the tolerance with far fewer cells (`planted.GOOD_MESH`: 1309 nodes, 0.32 %
+on the pipe), so the score is about the cheapest accurate mesh.
 
 - **What is still weak in 3D:** point *velocities* at a smooth maximum (`u_centreline`, `u_axis`)
   read 2-5 % low on coarse tets. The probe's vertex fit flattens the peak; the solution itself is
@@ -261,10 +262,17 @@ What changes for flow (it is chosen from the problem's physics, so the two suite
   - These still run: spec compliance, gaming, the known answer, and the refinement study of the
     agent's own setup (three OpenFOAM solves).
   - The refinement estimate is pessimistic on independently remeshed unstructured meshes.
+  - Spec compliance compares an expression inflow profile with the reference at the inlet's centre
+    (a reversed inflow is a sign flip). A no-slip wall changed to slip or symmetry is a problem, not
+    an equivalent support.
+  - `planted.PLANTED` has five flow cases: a control, a reversed inflow, the viscosity in mPa s,
+    walls made slip, and a mesh too coarse. Each is found at its stage by the expected oracle.
 - **Diagnoser interventions** (`counterfactual.py`):
   - inlets and outlets count as loads, and walls, slip and symmetry as supports;
   - `convert_units` also takes `mu` or `rho`;
-  - `set_convection` switches the scheme.
+  - `set_convection` switches the scheme;
+  - `set_boundary_layer` adds, changes or removes the wall layers;
+  - a global `refine_mesh` scales the whole request (boundary layer and sweep included).
 
 ### The flow mesher (`ace/flow_mesh.py`)
 
