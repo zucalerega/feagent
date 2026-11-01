@@ -10,6 +10,7 @@ verifier checks the answer, and a GPU visualization agent shows the assembly and
 The JSON holds this checkout's absolute paths; rerun the script on another machine."""
 import datetime
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 HARNESS = REPO / "meshing-harness"
 TEAM_DIR = Path(__file__).resolve().parent
+SPARK = os.environ.get("FEAGENT_SPARK", "<spark-host>")   # user@host of the DGX Spark, set at install time
 RUN = REPO / "runs" / f"wingbox-{datetime.date.today():%Y-%m-%d}"
 TEAM_ID = "feagent-wingbox-whole-aircraft-stage-1"   # what Sculptured derives from the name on import
 SCULPTURED = "http://127.0.0.1:4410"
@@ -40,7 +42,7 @@ The system you drive:
   CUDA_VISIBLE_DEVICES="" and local solves use --linear-solver pardiso (measured: 480 k DOFs in 20 s; SciPy
   SuperLU is far slower). Keep stage-1 meshes under 400 k DOFs.
 - GPU work runs on the team's DGX Spark (GB10, aarch64, 121 GB memory shared by CPU and GPU) over SSH:
-  `ssh dell@100.115.140.105`. Read ~/AGENTS.md there first and obey it: no sudo, do not touch the running vLLM
+  `ssh {SPARK}`. Read ~/AGENTS.md there first and obey it: no sudo, do not touch the running vLLM
   container `llm` (the team's local language model), and run every job under a memory cap so the box can never
   run out of memory (an out-of-memory GB10 freezes until power-cycled): see ~/feagent-setup.md there for the
   FEAgent environment and the cap wrapper. Copy inputs with scp into ~/runs/<run name>/ on the Spark and copy

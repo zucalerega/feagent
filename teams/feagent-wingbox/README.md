@@ -39,7 +39,7 @@ uv run python teams/feagent-wingbox/build_team.py --install    # writes the JSON
 Open http://127.0.0.1:4410/p/feagent-wingbox-whole-aircraft-stage-1/board and choose **Start team**. This runs
 nine real Claude Code agents on your plan (the Chief on Opus, the rest on Sonnet); several run at once.
 
-`feagent-wingbox.json` is generated and holds this checkout's absolute paths: rerun `build_team.py` after changing
+`feagent-wingbox.json` is generated (git-ignored) and holds this checkout's absolute paths; set `FEAGENT_SPARK=user@host` for the Spark: rerun `build_team.py` after changing
 a job, or on another machine.
 
 ## Design choices
