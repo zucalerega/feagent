@@ -1,0 +1,3 @@
+{"fixture": "micro150-tap25d-fig5a", "layout": "reference", "version": "fe", "M_C": 122.29583499389526, "peak_C": 125.96477559836092, "selector_C": null, "path": "FEAgent conforming P2 tetrahedra r2"}
+{"fixture": "micro150-tap25d-fig5a", "layout": "near-01", "version": "fe", "M_C": 117.23725008328847, "peak_C": 118.69558110620125, "selector_C": null, "path": "FEAgent conforming P2 tetrahedra r2"}
+{"fixture": "micro150-tap25d-fig5a", "layout": "any-01", "version": "fe", "M_C": 111.48374250921631, "peak_C": 111.93831604416278, "selector_C": null, "path": "FEAgent conforming P2 tetrahedra r2"}

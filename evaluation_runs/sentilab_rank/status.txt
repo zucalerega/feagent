@@ -1,0 +1,7 @@
+raw_r1 0
+reference_r1 0
+near-01_r1 0
+any-01_r1 0
+reference_r2 0
+near-01_r2 0
+any-01_r2 0
