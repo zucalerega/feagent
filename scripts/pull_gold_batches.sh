@@ -9,7 +9,7 @@
 set -uo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 NODES=${GOLD_NODES:-"goldgen-l2 goldgen-l2b"}
-REMOTES=${GOLD_REMOTES:-"gold gold2"}   # run folders under ~ on each node (gold2 = second batch)
+REMOTES=${GOLD_REMOTES:-"gold gold2 gold_l3"}   # run folders under ~ on each node (gold2 = second batch, gold_l3 = L1-L3 run)
 DEST=${GOLD_DEST:-$HOME/Desktop/gold_benchmarks}
 mkdir -p "$DEST/archives"
 exec 9>"$DEST/.pull.lock"

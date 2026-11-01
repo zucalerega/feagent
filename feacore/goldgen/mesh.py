@@ -31,6 +31,7 @@ refinement (``mesh_part``). Pilot part abc_00000003, L2 (223k cells): 30 s, 0.4 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -46,7 +47,7 @@ H0_FRAC = 1 / 8        # base global size, fraction of the bbox diagonal
 CURV = 8               # base elements per 2 pi of curvature (small holes get resolved)
 RATIO = 2.0            # refinement ratio per level (nested splitting)
 STRATEGIES = ("curved-opt", "curved-local")
-ATTEMPT_TIMEOUT = 300.0   # seconds per attempt (L2 ~500k cells meshes in ~90 s; longer means a grinding optimizer)
+ATTEMPT_TIMEOUT = float(os.environ.get("GOLDGEN_ATTEMPT_TIMEOUT", 300))  # s per attempt (L2 ~500k cells meshes in ~90 s; longer means a grinding optimizer)
 SJ_MIN = 0.05             # min scaled Jacobian every curved cell must reach
 QUALITY_MIN = 0.002       # linear (pre-curving) corner-tet quality: only true degenerates (curved
                           # validity is gated by SJ_MIN and solver_check, which bad slivers also fail)
