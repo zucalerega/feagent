@@ -284,7 +284,11 @@ def spec_compliance(problem, setup: dict, rep) -> dict:
     problems += [f"{f.id}: {f.message}" for f in rep.flags if f.category == "setup" and f.severity == "fail"
                  and f.id not in baseline_fail_flags(problem.id)]
     # Supports written differently from the reference can be equivalent (e.g. displacement
-    # u_x = 0 instead of symmetry): reported, but not a failure on their own.
+    # u_x = 0 instead of symmetry): reported, but not a failure on their own. Not in flow: a no-slip
+    # wall made slip or symmetry (or the reverse) is another flow, so a changed wall type is a problem
+    # (a wall BC simply left out stays a note: groups without a BC are no-slip walls).
+    if fea.is_flow(problem):
+        problems += _flow_wall_swaps(r)
     notes = [f"support differs from reference: missing {x}" for x in r["missing"] if not _is_load(x)] + \
             [f"support differs from reference: added {x}" for x in r["unexpected"] if not _is_load(x)]
     if problems:
@@ -294,6 +298,14 @@ def spec_compliance(problem, setup: dict, rep) -> dict:
 
 def _is_load(desc: str) -> bool:
     return desc.split(" on ")[0] in LOAD_TYPES
+
+
+def _flow_wall_swaps(r: dict) -> list[str]:
+    """Flow groups whose wall-type BC (wall / slip / symmetry) differs from the reference's."""
+    split = lambda xs: {x.split(" on ", 1)[1]: x.split(" on ", 1)[0] for x in xs if not _is_load(x)}  # noqa: E731
+    missing, added = split(r["missing"]), split(r["unexpected"])
+    return [f"{missing[g]} on {g} replaced by {added[g]}: another flow (no slip vs free slip)"
+            for g in sorted(missing.keys() & added.keys())]
 
 
 def gaming(problem, setup: dict, rep) -> dict:

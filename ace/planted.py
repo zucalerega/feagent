@@ -87,6 +87,29 @@ def _replace(setup, group, bc):
     return _add(_drop(setup, group), bc)
 
 
+def _reverse_inflow(setup):
+    """The inlet velocity reversed (an expression profile negated)."""
+    s = copy.deepcopy(setup)
+    for b in s["bcs"]:
+        if b["type"] == "velocity_inlet":
+            b["value"] = [f"-({v})" if isinstance(v, str) else -float(v) for v in b["value"]]
+    return s
+
+
+def _scale_mu(setup, f):
+    s = copy.deepcopy(setup)
+    s["fluid"] = dict(s["fluid"], mu=s["fluid"]["mu"] * f)
+    return s
+
+
+def _walls_to(setup, kind):
+    s = copy.deepcopy(setup)
+    for b in s["bcs"]:
+        if b["type"] == "wall" and b.get("value") is None:
+            b["type"] = kind
+    return s
+
+
 # name -> (problem, mesh request (None = GOOD_MESH), setup transform, true_root_cause, true_stage)
 PLANTED = {
     "control_lame": ("lame_cylinder_plane_strain", None, lambda s: s, "none", None),
@@ -105,7 +128,15 @@ PLANTED = {
     "gamed_extra_support": ("nafems_le1", None, lambda s: _add(s, {"type": "fixed", "group": "edge_BC"}),
                             "gaming", "bcs"),
     "gamed_dropped_load": ("nafems_le10", None, lambda s: _drop(s, "face_upper"), "gaming", "bcs"),
+    # flow (OpenFOAM; the test skips them without it)
+    "flow_control_cavity": ("lid_driven_cavity_re100", None, lambda s: s, "none", None),
+    "flow_reversed_inflow": ("poiseuille_channel", None, _reverse_inflow, "wrong_load_direction", "bcs"),
+    "flow_viscosity_units": ("poiseuille_channel", None, lambda s: _scale_mu(s, 1e3), "units", "bcs"),  # mPa s as Pa s
+    "flow_walls_slip": ("poiseuille_channel", None, lambda s: _walls_to(s, "slip"), "wrong_bc_type", "bcs"),
+    "flow_mesh_too_coarse": ("poiseuille_channel", {"h": 0.004, "refinements": []}, lambda s: s,
+                             "mesh_too_coarse", "mesh"),
 }
+FLOW_PLANTED = [n for n in PLANTED if n.startswith("flow_")]
 
 
 def make_run(name: str, workdir: Path) -> dict:

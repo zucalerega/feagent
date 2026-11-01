@@ -154,8 +154,8 @@ def bc_report(problem, setup: dict) -> dict:
         elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
             try:   # vectors (tractions, forces): pointing in opposite directions
                 flipped = sum(float(x) * float(y) for x, y in zip(a, b)) < 0
-            except (TypeError, ValueError):   # expressions: not compared
-                flipped = False
+            except (TypeError, ValueError):   # expressions (e.g. an inlet profile): compared at the group's centre
+                flipped = _vector_at(problem, k[0], a, b)
         else:
             flipped = False
         if flipped:
@@ -172,6 +172,22 @@ def bc_report(problem, setup: dict) -> dict:
         "material_ok": all(math.isclose(float(mat.get(k, 0)), ref_mat[k], rel_tol=1e-3, abs_tol=1e-12)
                            for k in props),
     }
+
+
+def _vector_at(problem, group: str, a: list, b: list) -> bool:
+    """Do two vector BC values with expression entries point in opposite directions at the centre of
+    the group's bounding box? (False when they cannot be evaluated there.)"""
+    from feacore.case import as_field
+    import numpy as np
+    try:
+        box = next(g["bbox"] for g in fea.geometry_summary(problem)["groups"] if g["name"] == group)
+        c = [0.5 * (box[i] + box[i + 3]) for i in range(3)]
+        x, y, z = (np.array([v]) for v in c)
+        va = [float(np.asarray(as_field(v, x, y, z)).ravel()[0]) for v in a]
+        vb = [float(np.asarray(as_field(v, x, y, z)).ravel()[0]) for v in b]
+    except Exception:  # noqa: BLE001  an unknown group or a bad expression: not compared
+        return False
+    return sum(p * q for p, q in zip(va, vb)) < 0
 
 
 def check_run(problem_id: str, run: dict) -> dict:
