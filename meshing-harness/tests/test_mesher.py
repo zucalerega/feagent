@@ -341,3 +341,30 @@ def test_budget_estimate_tracks_actual_tets(tmp_path, parts_dir):
         est = estimate_tets(spec, analyze_current_model(ref_size=spec.size.global_), spec.size)
     assert 0.4 < est / res.n_elements < 2.5, (est, res.n_elements)
 
+
+def test_refine_distance_field_reaches_far_end_of_long_face(tmp_path):
+    """Default Distance sampling (20 pts/curve) left the middle of a long thin face coarse."""
+    import gmsh
+    import numpy as np
+    from feagent.gmsh_session import gmsh_session
+    from feagent.gmsh_util import distance_field
+    with gmsh_session():
+        gmsh.model.occ.addBox(0, 0, 0, 200, 4, 4)
+        gmsh.model.occ.synchronize()
+        face = next(t for _, t in gmsh.model.getEntities(2)
+                    if abs(gmsh.model.occ.getCenterOfMass(2, t)[2] - 0) < 1e-9)
+        d = distance_field([face], 1.0)
+        assert gmsh.model.mesh.field.getNumber(d, "Sampling") >= 400
+        f = gmsh.model.mesh.field
+        t = f.add("Threshold")
+        for k, v in (("InField", d), ("SizeMin", 1.0), ("SizeMax", 20.0), ("DistMin", 0.0),
+                     ("DistMax", 1.5)):
+            f.setNumber(t, k, v)
+        f.setAsBackgroundMesh(t)
+        for k, v in (("Mesh.MeshSizeMax", 20), ("Mesh.MeshSizeFromPoints", 0),
+                     ("Mesh.MeshSizeExtendFromBoundary", 0), ("Mesh.MeshSizeFromCurvature", 0)):
+            gmsh.option.setNumber(k, v)
+        gmsh.model.mesh.generate(2)
+        _, xyz, _ = gmsh.model.mesh.getNodes(2, face, includeBoundary=True)
+        x = np.sort(xyz.reshape(-1, 3)[:, 0])
+        assert np.diff(x[(x > 80) & (x < 120)]).max() < 4.0  # far end: still ~1-size spacing

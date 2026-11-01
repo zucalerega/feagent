@@ -28,7 +28,7 @@ from .errors import CadLoadError, FeagentError, QueryError, SpecError
 from .gates import failed, passed, skipped
 from .geometry import analyze, analyze_current_model
 from .gmsh_session import gmsh_messages, gmsh_session, load_cad
-from .gmsh_util import entity_tags, pinned_options
+from .gmsh_util import distance_field, entity_tags, pinned_options
 from .select import explain_miss, select_faces
 from .spec import DomainSpec, GroupSpec, MeshSpec, load_spec
 from .types import Gate, GeometryModel, GroupResult, MeshResult
@@ -416,8 +416,7 @@ def _apply_options(run: _Run) -> None:
 
 def _threshold(tags: list[int], size: float, dist: float, size_max: float) -> int:
     f = gmsh.model.mesh.field
-    d = f.add("Distance")
-    f.setNumbers(d, "SurfacesList", tags)
+    d = distance_field(tags, size)
     t = f.add("Threshold")
     f.setNumber(t, "InField", d)
     for key, v in (("SizeMin", size), ("SizeMax", size_max), ("DistMin", 0.0), ("DistMax", dist)):

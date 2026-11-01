@@ -120,3 +120,23 @@ def pinned_options(opts: dict[str, float]) -> Iterator[None]:
         for k, v in saved.items():
             gmsh.option.setNumber(k, v)
 
+
+MAX_DISTANCE_SAMPLING = 5000
+
+
+def distance_field(surfaces: list[int], size: float) -> int:
+    """A gmsh Distance field from `surfaces`, sampled finely enough for elements of `size`.
+
+    gmsh samples each boundary curve with 20 points by default, so on a long curve the samples are
+    far apart and a short threshold distance leaves the stretch between them unrefined. Sampling
+    is set to ceil(longest boundary curve / (0.5 size))."""
+    import gmsh
+
+    f = gmsh.model.mesh.field
+    d = f.add("Distance")
+    f.setNumbers(d, "SurfacesList", surfaces)
+    curves = {c for s in surfaces for _, c in gmsh.model.getBoundary([(2, s)], oriented=False)}
+    longest = max((gmsh.model.occ.getMass(1, c) for c in curves), default=0.0)
+    n = int(np.ceil(longest / (0.5 * size))) if size > 0 else 0
+    f.setNumber(d, "Sampling", float(min(max(n, 20), MAX_DISTANCE_SAMPLING)))
+    return d
