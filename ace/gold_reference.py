@@ -250,7 +250,7 @@ def build_adaptive_reference(problem_id: str, out_dir, max_dofs: int = 4_500_000
         if k >= 1 and (err < target or n_dofs >= 0.9 * max_dofs) or k == max_levels - 1:
             break
         X = res.model.mesh.p[:, res.model.mesh.t].transpose(2, 1, 0)       # corner tets (ne, 4, 3)
-        h = new_sizes(X, zz["eta2_cell"], n_dofs, min(max_dofs, growth * n_dofs))
+        h = new_sizes(X, zz["eta2_cell"], n_dofs, min(0.97 * max_dofs, growth * n_dofs))   # aim under the cap: gmsh overshoots
         t = res.model.mesh.t.T
         node_h = np.full(res.model.mesh.p.shape[1], np.inf)
         np.minimum.at(node_h, t.ravel(), np.repeat(h, 4))     # a vertex takes the smallest size around it
@@ -258,7 +258,7 @@ def build_adaptive_reference(problem_id: str, out_dir, max_dofs: int = 4_500_000
         np.savez(sizes_file, X=res.model.mesh.p.T, t=t, h=node_h)
         del res, zz, X                                         # free the solve before meshing the next level
         mesh, scale = remesh(problem_id, sizes_file, out_dir / f"{problem_id}_A{k + 1}.msh",
-                             min(max_dofs, growth * n_dofs), max_dofs, scale)
+                             min(0.97 * max_dofs, growth * n_dofs), max_dofs, scale)
     fine, coarse = log[-1], log[-2]
     np.savez_compressed(cache / f"{problem_id}.npz", pts=pts, w=w, nodes=fine["nodes"], n_dofs=fine["dofs"],
                         **{f"s_{c}": v for c, v in sig[-1].items()})

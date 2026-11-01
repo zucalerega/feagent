@@ -1,0 +1,4 @@
+{
+ "a1": "Refine along the loaded and supported boundaries, where the boundary conditions drive the stress gradients.",
+ "a2": "Economy: reach the accuracy target with as few DOFs as possible; prefer the coarsest mesh that still beats the automesher."
+}

@@ -149,9 +149,9 @@ class Material:
     nu: float = 0.0      # Poisson's ratio
     alpha: float = 0.0   # coefficient of thermal expansion
     k: float = 1.0       # conductivity (heat) / diffusion coefficient (Poisson)
+    plasticity: dict | None = None   # optional J2 plasticity (nonlinear analyses only), see module doc
     rho: float = 1.0     # density (flow)
     mu: float = 0.0      # dynamic viscosity (flow); kinematic viscosity = mu / rho
-    plasticity: dict | None = None   # optional J2 plasticity (nonlinear analyses only), see module doc
 
 
 @dataclass

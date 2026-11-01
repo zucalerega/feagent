@@ -25,8 +25,8 @@ import time
 
 import numpy as np
 
-from feacore.case import (BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field, eval_expr,
-                           hardening_table)
+from feacore.case import (BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field,
+                           eval_expr, hardening_table)
 from feacore.solver._ccx_fem import Locator, _bary, interpolate, map_points, quadrature, shape
 from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_totals, parse_frd, run_ccx
 from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh  # noqa: F401

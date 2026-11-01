@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -262,6 +263,43 @@ def _solve_pardiso(K, f, report: LinearSolveReport, symmetric: bool):
     return np.asarray(x).reshape(b.shape)
 
 
+@contextmanager
+def gpu_slot(report: LinearSolveReport):
+    """Opt-in limit on concurrent GPU factorisations across processes (env FEACORE_GPU_SLOTS=N).
+    Several processes factorising ~1M-dof systems at once can exhaust GPU memory, after which
+    cuDSS fails and the solve falls back to SciPy on the CPU (slower, ~3x the host memory).
+    Unset or 0: no limit. Slots are flock'ed files under FEACORE_GPU_SLOT_DIR (default /tmp)."""
+    n = int(os.environ.get("FEACORE_GPU_SLOTS", "0") or 0)
+    if n <= 0:
+        yield
+        return
+    import fcntl
+
+    d = os.environ.get("FEACORE_GPU_SLOT_DIR", "/tmp")
+    files = [open(os.path.join(d, f"feacore_gpu_slot_{i}"), "a") for i in range(n)]
+    t0, held = time.perf_counter(), None
+    try:
+        while held is None:
+            for fh in files:
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    held = fh
+                    break
+                except BlockingIOError:
+                    continue
+            else:
+                time.sleep(0.05)
+        waited = time.perf_counter() - t0
+        if waited > 0.5:
+            report.notes.append(f"waited {waited:.1f}s for a GPU slot ({n} slots)")
+        yield
+    finally:
+        if held is not None:
+            fcntl.flock(held, fcntl.LOCK_UN)
+        for fh in files:
+            fh.close()
+
+
 def _solve_cudss(K, f, report: LinearSolveReport, symmetric: bool):
     """cuDSS through nvmath-python. Operands stay on the host (SciPy CSR + NumPy RHS); nvmath
     copies them to device 0 and returns a NumPy array (the result lives where ``b`` lives)."""
@@ -355,7 +393,8 @@ def solve_linear(K, f, method: str | None = "auto", *, symmetric: bool | None = 
         elif m == "pardiso":
             x = _solve_pardiso(K, f, report, symmetric)
         elif m == "cudss":
-            x = _solve_cudss(K, f, report, symmetric)
+            with gpu_slot(report):
+                x = _solve_cudss(K, f, report, symmetric)
         elif m == "cg":
             x = _solve_cg(K, f, report, symmetric, rtol, near_nullspace)
         else:  # pragma: no cover

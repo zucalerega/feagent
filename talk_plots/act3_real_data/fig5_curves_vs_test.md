@@ -1,19 +1,17 @@
-# fig5_curves_vs_test: "The automesher's mesh is too stiff: 14-19 % above the real test"
+# fig5_curves_vs_test: "Post-trained mesh tracks the real test: 2.0 % off, automesher 7.8 %"
 
-**Caption.** Same solver, same learned setup, only the mesh differs: the gmsh default mesh over-predicts the force
-at every checkpoint, the swarm's bc0 mesh is close, a 41k-node uniform mesh sits on the test. Closing the gap at
-few nodes is what fine-tuning on the real test must do.
+**Caption.** Same conditions, only the mesh differs. gmsh's default mesh is too stiff: its curve runs
+6-11 % above the real test (7.8 % off on average). The
+most accurate mesh from post-training (g1-abc_00000065_compression-a2, 8,753 nodes) follows the measured curve,
+2.0 % off.
 
-**Key numbers** (force at 0.5 / 1.0 / 1.5 / 2.0 / 2.5 mm):
-- measured: 860 / 2164 / 3308 / 4171 / 4743 N
-- gmsh default (2937 nodes): 983 / 2584 / 3837 / 4828 / 5572 N, i.e. +14 to +19 %, mean 16.6 %
-- swarm bc0 mesh (6430 nodes): 887 / 2325 / 3439 / 4315 / 4966 N, mean 4.5 %
-- uniform 2 mm (41186 nodes): 859 / 2246 / 3309 / 4126 / 4723 N, mean 1.1 %
+**Key numbers** (force at 0.5 / 1.0 / 1.5 / 2.0 / 2.5 mm crosshead):
+- real test: 860 / 2164 / 3308 / 4171 / 4743 N
+- automesher: 910 / 2392 / 3546 / 4462 / 5152 N (+5.9 / +10.5 / +7.2 / +7.0 / +8.6 %)
+- post-trained: 870 / 2277 / 3357 / 4195 / 4809 N (+1.2 / +5.2 / +1.5 / +0.6 / +1.4 %)
 
-**Data.** /private/tmp/claude-501/-Users-aryan-Documents-Aryan-CS-scienceclawhack/29d391ed-69f3-4559-b365-a260e486ee85/scratchpad/nl_mesh/<auto|swarm|h20>/curve.csv mapped with the frozen delta 0.2335 mm and c 2.898e-5 mm/N
-(physical_tests/abc_00000065_compression/nonlinear_spec.json); test CSV as fig1.
+**Data.** results/real_data_finetune/baselines/auto/curve.csv; ace_runs/nl_ft/gen1/work/abc_00000065_compression-a2/nonlinear/curve.csv.
 
-**Caveats.**
-- The simulated curves start with a straight segment from (0, 0) to the first increment: that is the seating gap
-  of the mapping (u_cross = u_part + delta + c F), not physics; the real toe is curved.
-- Simulated curves are cut at 2.75 mm for display; the scored range ends at 2.5 mm.
+**Caveats.** The largest remaining gap is at 1.0 mm (+5.2 %), inside the seating toe, which the
+simple seating-gap model only approximates; every mesh shares it (uniform 2 mm: +3.9 %). This mesh is the one used
+for the Act 3 crack and video pages.

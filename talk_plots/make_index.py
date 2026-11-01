@@ -10,12 +10,25 @@ ACTS = [
      "On the benchmark problems our agents beat the gmsh automesher by a large factor, and they get better "
      "the longer they train."),
     ("act2_swarms_scale", "Act 2: swarms train better, and this scales",
-     "On the hard 3D CAD parts, more agents trained together reach better meshes: 8 > 4 > 2 in every "
+     "On the hard 3D CAD parts, more agents trained together reach better meshes: 16 > 8 > 4 > 2, and 8 > 4 > 2 in every "
      "comparison, and 8 agents beat one budget-matched agent."),
     ("act3_real_data", "Act 3: the harness learns from real lab data",
-     "A 3D-printed part crushed on an Instron: the raw nonlinear simulation misses reality; learning from "
-     "the test fixes the setup, and the swarm fine-tunes its mesh against the real curve."),
+     "A 3D-printed part crushed on an Instron: before post-training the simulation is 33 % off the real test; "
+     "with the learned test conditions and the swarm post-trained on the test, its most accurate mesh is 2.0 % off."),
 ]
+# sub-pages: (href, name, one-line description, act folder it belongs to)
+SUBPAGES = [
+    ("equal_budget/index.html", "Equal-budget meshes (Act 1)",
+     "the key Act 1 example, Cook's membrane at an equal DOF budget, plus mesh galleries", "act1_agentic_works"),
+    ("self_learning/index.html", "Self-learning figures",
+     "automesher vs early vs trained agent, solved fields on NAFEMS LE11 and Cook's membrane", "act1_agentic_works"),
+    ("act3_real_data/videos.html", "Act 3 videos",
+     "before vs after post-training, simulated crush of the printed part", "act3_real_data"),
+    ("act3_real_data/break/index.html", "Crack prediction (Act 3)",
+     "where and when each simulation predicts the first crack, vs the real part", "act3_real_data"),
+]
+KEY_ACT1 = ("equal_budget/fig_cook_equal_stress.md",
+            "KEY ACT 1 EXAMPLE: same DOF budget, the trained agent is 3.4x more accurate than the automesher")
 
 
 def inline(s: str) -> str:
@@ -65,10 +78,10 @@ def md_to_html(text: str) -> str:
     return "\n".join(out)
 
 
-def figure(md_path: Path) -> str:
+def figure(md_path: Path, title: str | None = None) -> str:
     text = md_path.read_text()
     first, rest = (text.split("\n", 1) + [""])[:2]
-    title = re.sub(r"^#\s*[^:]*:\s*", "", first).strip().strip('"')
+    title = title or re.sub(r"^#\s*[^:]*:\s*", "", first).strip().strip('"')
     stem = md_path.stem
     png = md_path.with_suffix(".png")
     img = (f'<a href="{png.parent.name}/{png.name}"><img src="{png.parent.name}/{png.name}" alt="{html.escape(title)}" '
@@ -83,7 +96,14 @@ def main():
         figs = sorted((HERE / folder).glob("fig*.md"))
         nav.append(f'<a href="#{folder}">{html.escape(name.split(":")[0])}</a>')
         body.append(f'<h2 id="{folder}">{html.escape(name)}</h2><p class="claim">{html.escape(claim)}</p>')
+        subs = [s for s in SUBPAGES if s[3] == folder]
+        if subs:
+            body.append('<ul class="subpages">' + "".join(
+                f'<li><a href="{h}">{html.escape(n)}</a>: {html.escape(d)}</li>' for h, n, d, _ in subs) + "</ul>")
+        if folder == "act1_agentic_works" and (HERE / KEY_ACT1[0]).exists():
+            body.append(figure(HERE / KEY_ACT1[0], KEY_ACT1[1]).replace('class="fig"', 'class="fig key"', 1))
         body += [figure(f) for f in figs]
+    pages = "".join(f'<li><a href="{h}">{html.escape(n)}</a>: {html.escape(d)}</li>' for h, n, d, _ in SUBPAGES)
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Talk figures</title>
 <style>
@@ -107,11 +127,15 @@ img {{ width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 
 code {{ background: var(--code); padding: 1px 4px; border-radius: 4px; font-size: 13px; }}
 table {{ border-collapse: collapse; margin: 10px 0; font-size: 14px; display: block; overflow-x: auto; }}
 th, td {{ border: 1px solid var(--rule); padding: 4px 8px; text-align: left; }}
+.subpages {{ margin: 4px 0 8px; padding-left: 22px; }}
+.subpages a, .pages a {{ color: var(--accent); font-weight: 600; }}
+.key {{ border: 2px solid var(--accent); border-radius: 8px; padding: 12px 16px 20px; }}
 .missing {{ padding: 40px; text-align: center; color: var(--muted); border: 1px dashed var(--rule); border-radius: 6px; }}
 </style></head><body>
-<nav>{''.join(nav)}</nav><main>
+<nav>{''.join(nav)}<a href="#pages">More pages</a></nav><main>
 <h1>Self-improving meshing agents: talk figures</h1>
 <p class="claim">Every number recomputed from the raw runs. Click a figure for the full-size image. Rebuild: <code>python talk_plots/make_index.py</code></p>
+<h2 id="pages">More pages</h2><ul class="pages">{pages}</ul>
 {''.join(body)}
 </main></body></html>"""
     (HERE / "index.html").write_text(page)

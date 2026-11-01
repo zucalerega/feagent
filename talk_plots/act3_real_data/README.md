@@ -1,52 +1,44 @@
 # Act 3: the harness learns from real lab data
 
-A 3D-printed abc_00000065 C-bracket was crushed on an Instron. The raw nonlinear simulation is far off. Analysing
-the experiment finds the missing physics (sticking platens, a seating gap, load-train compliance). With that setup
-frozen, the error against the REAL test is set by the mesh, and that is what the swarm fine-tunes.
+A 3D-printed abc_00000065 C-bracket was crushed on an Instron. Before post-training the simulation is 33 % off the
+real test. Learning the test conditions from the experiment (sticking platens, seating gap, load-train compliance)
+and then post-training the swarm on the test (`ace_runs/nl_ft`, 10 generations x 4 agents) bring it to 2.0 %.
 
-Regenerate everything (read-only on inputs, no solver, no API calls):
+Regenerate everything (read-only on inputs, no solver, no API calls; writes PNG 200 dpi + PDF + .md per figure,
+act3_data.json and act3_errors.csv):
 
     .venv/bin/python talk_plots/act3_real_data/make_figures.py
-    .venv/bin/python talk_plots/act3_real_data/plot_finetune_run.py ace_runs/<run>    # after the fine-tuning run
 
 | figure | takeaway title | key numbers |
 |---|---|---|
-| fig1_measured_curve | Real test: seating, linear climb, yielding to 4.8 kN, then cracking | toe 1.66 kN/mm, linear 2.70 kN/mm, peak 4755 N at 2.51 mm (4.80 kN at 2.56 mm per the report), break 8.68 mm |
-| fig2_raw_solver_vs_test | The raw solver misses reality: frictionless platens give out at 3.0 kN | test 4.74 kN at 2.5 mm; frictionless 3.0 kN, 33.2 %; sticking 5.1 kN, 35.6 % raw |
-| fig3_setup_ladder | Learning the setup: error 33 % → 2.0 %; a fine mesh: 1.1 % | 33.2 -> 20.2 (seating) -> 5.0 (sticking) -> 2.0 (compliance) -> 1.07 % (2 mm mesh) |
-| fig4_error_vs_nodes | With the learned setup, the automesher is 17 % off the real test | auto 2937 nodes 16.6 %; swarm bc0 6430 nodes 4.5 %; uniform 4 / 2.5 / 2 mm 2.0 / 1.2 / 1.1 %; target box <= 2 % at <= 8k nodes (empty); the grey band is the finest mesh's 1.1 %, roughly the model-error floor |
-| fig5_curves_vs_test | The automesher's mesh is too stiff: 14-19 % above the real test | per-checkpoint forces in the md |
+| fig1_measured_curve | Real test: seating, linear climb, yielding to 4.8 kN, then cracking | peak 4755 N at 2.51 mm (4.80 kN at 2.56 mm per the report), linear 2.70 kN/mm, break 8.68 mm |
+| fig2_raw_solver_vs_test | Before post-training, the simulation is 33 % off the real test | frictionless platens, automesher mesh, no seating/compliance: 32.65 %, 3.3 kN vs 4.7 kN at 2.5 mm |
+| fig3_setup_ladder | From 33 % to 2.0 % off the real test: test conditions, then post-training | 32.7 -> 7.84 (learned conditions, default mesh) -> 4.57 (pre-trained mesh) -> 1.97 % (post-trained mesh) |
+| fig4_error_vs_nodes | Post-trained meshes: 2.0-2.3 % off the real test, automesher 7.8 % | all 40 runs by generation; most accurate 1.97 % at 8,753 nodes; best-scoring 2.30 % at 5,612; uniform 4 / 2.5 / 2 mm 1.99 / 1.20 / 1.08 % |
+| fig5_curves_vs_test | Post-trained mesh tracks the real test: 2.0 % off, automesher 7.8 % | automesher 6-11 % above the test; post-trained most accurate mesh (g1 a2) |
 | fig6_platen_renders | Platen friction carries the strength: without it the prongs splay | team_slide F_max 2.92 kN; team_stick 4.90 kN at the test's peak travel |
-| fig7_finetune_progress_STUB | SLOT: fine-tuning the swarm on the real test (run pending) | placeholder; filled by plot_finetune_run.py |
+| fig7_post_training_progress | Post-training: best score 2.7x -> 3.6x the automesher, average 2.3x -> 3.5x | best base score 0.668 -> 0.892 (g7), mean 0.572 -> 0.880; most accurate mesh per generation 1.97-2.60 % |
 
-Each figure has <stem>.png (200 dpi), <stem>.pdf and <stem>.md (caption, numbers, sources, caveats).
-act3_data.json holds every plotted number and curve; act3_errors.csv the error table.
-render_team_slide.png / render_team_stick.png are unchanged copies of the teammates' renders.
+## Inputs (all local)
 
-## Error definition (= ace.nonlinear.run_curve, frozen in physical_tests/abc_00000065_compression/nonlinear_spec.json)
+- test: physical_tests/abc_00000065_compression/cload_compression.csv; spec nonlinear_spec.json (delta 0.2335 mm,
+  compliance 2.898e-5 mm/N)
+- before post-training: videos/before_run/summary.json and curve.csv
+- fair baselines: results/real_data_finetune/baselines/baselines.json and <auto|swarm_bc0|h4|h25|h20>/curve.csv
+  (automesher = curved P2, only the midside nodes CalculiX rejects straightened)
+- post-training run: ace_runs/nl_ft/gen*/runs/*.json and gen*/work/<pid>-a<k>/nonlinear/curve.csv
+- renders: physical_tests/abc_00000065_compression/ccx_ramp/
 
-u_cross = u_part + delta + c F (delta 0.2335 mm, c 2.898e-5 mm/N, fitted once on the 2 mm mesh), (0, 0) prepended;
-error = mean over the checkpoints 0.5, 1.0, 1.5, 2.0, 2.5 mm of |F_sim - F_test| / F_test, F_test on the loading
-branch of physical_tests/abc_00000065_compression/cload_compression.csv up to its force maximum.
-
-## Inputs
-
-- test: physical_tests/abc_00000065_compression/cload_compression.csv (+ cload_compression.json notes)
-- BC variants, 4 mm P2 mesh: /private/tmp/claude-501/-Users-aryan-Documents-Aryan-CS-scienceclawhack/29d391ed-69f3-4559-b365-a260e486ee85/scratchpad/nl_bc/<variant>/curve.csv
-- mesh sweep, sticking setup: /private/tmp/claude-501/-Users-aryan-Documents-Aryan-CS-scienceclawhack/29d391ed-69f3-4559-b365-a260e486ee85/scratchpad/nl_mesh/<auto|swarm|h4|h25|h20>/curve.csv, nodes.txt
-- renders and teammates' ramps: physical_tests/abc_00000065_compression/ccx_ramp/
-- cross-check only: results/real_data_finetune/baselines/baselines.json (agrees within 0.03 points)
-
-The scratchpad inputs are temporary: if they are gone, make_figures.py cannot regenerate; act3_data.json keeps
-every number and curve that was plotted.
+`_superseded/` holds the old fig7 placeholder and plot_finetune_run.py, which the run-based fig7 replaces.
 
 ## Things to be careful about in the talk
 
-- Order of the ladder: sticking alone, without the seating gap, is WORSE than frictionless (35.6 % vs 33.2 %).
-  The monotone ladder needs seating first.
-- delta and c are calibrated on the same test the mesh is scored against: the 1.1 % floor is a fit, not a blind
-  prediction, and there is one specimen.
-- The swarm bc0 mesh (4.5 %) was trained for a different load case; it is a transfer result, not fine-tuning.
-- The fine-tuning run has not happened: fig4's target box and fig7 are placeholders.
-- The numbers quoted in the brief (16.8 / 4.8 / 2.2 / 1.4 / 1.1 %) do not reproduce; the frozen spec gives
-  16.6 / 4.5 / 2.0 / 1.2 / 1.1 %.
+- Wording: "before / after post-training" (the solvers and the swarm were already capable); "X % off the real
+  test"; the scoring checkpoints are not shown or mentioned.
+- The automesher is 7.8 % off; an earlier, higher automesher figure straightened every midside node and was wrong.
+- Post-training gains nodes more than accuracy: 1.97 % was reached in generation 0; later meshes are 2.2-2.6 %
+  with about 30 % fewer nodes. Uniform 4 mm is 1.99 % at 9,506 nodes.
+- delta and compliance were fitted on this specimen; one specimen, one run.
+- The real crack was at the lower inner bore (team observation), where the post-trained simulation's tension
+  peaks (43 MPa, 85 % of the dogbone strength); the before simulation predicted a prong-top crack 1.6 kN early
+  (break/break.json).

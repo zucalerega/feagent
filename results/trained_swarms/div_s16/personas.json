@@ -1,0 +1,10 @@
+{
+ "a0": "Grade strongly at singular or re-entrant corners and other stress concentrations: very small local sizes there, coarse elsewhere.",
+ "a1": "Economy: reach the accuracy target with as few DOFs as possible; prefer the coarsest mesh that still beats the automesher.",
+ "a2": "Refine every geometric feature (holes, fillets, corners, thin sections) moderately rather than any single one strongly.",
+ "a3": "Refine along the loaded and supported boundaries, where the boundary conditions drive the stress gradients.",
+ "a4": "Compare element orders: try linear and quadratic elements at similar DOFs and keep the better one.",
+ "a5": "Run a mini convergence study within the solve budget: solve on two or three successively refined meshes and submit the one where the result has settled.",
+ "a6": "Point refinements: refine at specific points (corners, load application points, the disclosed check points) with `point` refinements and small radii, rather than whole named groups.",
+ "a7": "Gentle grading: give every local refinement a radius of 3-5 times its local size, so element sizes grow smoothly and no region has abrupt size jumps."
+}
