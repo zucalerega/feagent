@@ -1,11 +1,14 @@
 """--mock: canned LLM responses so the whole loop runs end to end for free (and in tests).
 
 The mock generator follows a fixed script (inspect -> mesh -> solve -> view -> finer mesh ->
-solve -> compare -> submit the finer solve) with seeded
+solve -> compare -> [nonlinear_check of the finer mesh, when the task offers it] -> submit the finer
+solve) with seeded
 randomness (element order, mesh size, occasionally a wrong load sign) so runs differ. It reads
 the playbook in its system prompt: a bullet mentioning quadratic/order 2 makes it use order 2,
 which is enough to see scores move across generations. It uses the reference setup to solve,
 which a real agent never sees; that is fine because nothing here is a real result.
+Structured outputs (reflector, curator, teacher, ...) are canned per schema; a schema without a canned
+answer gets a minimal valid instance built from its JSON schema (_from_schema).
 """
 
 from __future__ import annotations
@@ -67,6 +70,7 @@ class MockLLM:
         calls = [b for m in messages if m["role"] == "assistant" for b in m["content"] if b.type == "tool_use"]
         prev = calls[-1].name if calls else None
         first_mesh = next((c.input for c in calls if c.name == "mesh"), None)
+        offered = {t["name"] for t in tools}
 
         using = playbook_ids[:2]
 
@@ -90,9 +94,14 @@ class MockLLM:
             return tool("mesh", {"h": h, "order": order}), self._rec(run_id)
         if prev == "view":                               # second, finer mesh for a convergence check
             return tool("mesh", {"h": first_mesh["h"] * 0.8, "order": first_mesh["order"]}), self._rec(run_id)
-        if prev == "compare":
+        if prev == "compare" and "nonlinear_check" in offered:
+            # a nonlinear (test-scored) task: one check of the finer mesh, the latest one (mesh numbers count
+            # every mesh call from 1); without CalculiX it fails with a clear error and the run goes on
+            return tool("nonlinear_check", {"mesh": sum(c.name == "mesh" for c in calls)}), self._rec(run_id)
+        if prev in ("compare", "nonlinear_check"):
             # the finer solve (compare reached means solves 1 and 2 both succeeded, even if compare failed)
-            return tool("submit", {"solve": last.get("solve_b", 2)}), self._rec(run_id)
+            solve_b = next(c.input for c in reversed(calls) if c.name == "compare")["solve_b"]
+            return tool("submit", {"solve": solve_b}), self._rec(run_id)
         if prev == "mesh" and last.get("ok"):            # meshed and within cap: solve
             setup = reference_setup(problem)
             if flow:   # a second-order lesson in the playbook -> the second-order convection scheme
@@ -149,6 +158,42 @@ class MockLLM:
 
     def _rec(self, run_id, role="generator"):
         return usage_record(role, MODELS[role], _usage(1500, 200), run_id)
+
+    @staticmethod
+    def _from_schema(schema, text: str):
+        """A minimal valid instance of a pydantic schema with no canned answer (e.g. one a new role
+        adds), built from its JSON schema: required fields only, one item per list, the first enum
+        value; a string field named "agent" gets the first agent id (a0, a1, ...) in the prompt."""
+        js = schema.model_json_schema()
+        defs = js.get("$defs", {})
+        agent = (re.findall(r"\ba\d+\b", text) or ["a0"])[0]
+
+        def value(s: dict, name: str = ""):
+            if "$ref" in s:
+                return value(defs[s["$ref"].rsplit("/", 1)[-1]], name)
+            if "const" in s:
+                return s["const"]
+            if "enum" in s:
+                return s["enum"][0]
+            if "anyOf" in s:                  # Optional[X] and unions: the first non-null option
+                return value(next((o for o in s["anyOf"] if o.get("type") != "null"), {"type": "null"}), name)
+            if "allOf" in s:
+                return value(s["allOf"][0], name)
+            if "default" in s:
+                return s["default"]
+            t = s.get("type")
+            if t == "object":
+                return {k: value(v, k) for k, v in s.get("properties", {}).items() if k in s.get("required", [])}
+            if t == "array":
+                return [value(s.get("items", {}), name)] * max(1, s.get("minItems", 1))
+            if t == "string":
+                return agent if name == "agent" else f"mock {name}"
+            if t in ("integer", "number"):
+                return s.get("minimum", 0)
+            if t == "boolean":
+                return False
+            return None
+        return schema.model_validate(value(js))
 
     # ---------------------------------------------------------------- diagnoser
     def _diagnoser_turn(self, messages: list, offered: set):
@@ -212,7 +257,7 @@ class MockLLM:
     # ---------------------------------------------------------------- reflector / curator
     def structured(self, role: str, system: str, user: str, schema, records: list | None = None):
         rec = [] if records is None else records
-        rec.append(usage_record(role, MODELS[role], _usage(6000, 800)))
+        rec.append(usage_record(role, MODELS.get(role, MODELS["teacher"]), _usage(6000, 800)))
         if schema is Reflection:
             cited = sorted(set(BULLET_ID.findall(user)))
             return Reflection(
@@ -245,7 +290,7 @@ class MockLLM:
             return getattr(self, "_" + schema.__name__)(text, schema), rec
         if schema.__name__ == "AssignedFeedback":             # AgentFeedback plus the assignment
             return self._AgentFeedback(text, schema), rec
-        raise ValueError(f"mock has no canned answer for {schema}")
+        return self._from_schema(schema, text), rec
 
     # ---------------------------------------------------------------- ace.requirements roles
 

@@ -36,6 +36,10 @@ error among that generation's runs on the task earns a bonus; a tie pays nobody,
 peer's mesh exactly earns no bonus. A run whose mesh recipe differs structurally from every other
 run on the task that generation (another order, h off by more than 1.5x, or mostly different
 refinement targets) and whose base score is at least 90% of the best there earns a diversity bonus.
+A task scored against a physical test (its statement says so, e.g. abc_00000065_compression) is
+different: the submitted mesh is run through a frozen nonlinear simulation of the test and the error is
+the mean relative force error at the test's checkpoints; the automesher yardstick, the score formula
+and the diversity bonus are as above, and there is no be-the-best bonus.
 
 Learning. After each generation a teacher looks at every run on a task: the whole mesh, where the
 error is (error maps and region grids), the setup and the agent's reasoning. It tells each agent in
@@ -72,6 +76,11 @@ TOOLS_BRIEF = """\
 - compare(solve_a, solve_b): how much the stress field changed between two solves and where
   (convergence evidence without a reference).
 - submit(solve).
+- nonlinear_check(mesh): ONLY on a task scored by a nonlinear simulation of a physical test (e.g.
+  abc_00000065_compression): runs that frozen scoring simulation (elastoplastic, large deformation)
+  on one of the run's meshes and returns the force at each checkpoint vs the test, the mean relative
+  error (the scored error), nodes, DOFs, peak plastic strain and hotspots (location, nearest faces).
+  Minutes each, a few per run; on such a task the linear solve is a fast proxy for placing elements.
 Good practice: inspect the geometry first; refine re-entrant edges and support/load edges; check
 folded_cells is 0 and equilibrium holds; use the hotspots to place the next refinement; compare two
 solves before choosing; submit by this evidence.
@@ -194,8 +203,11 @@ def run_summary_text(run: dict | None) -> str:
     rank = f"rank {run.get('rank')}/{run.get('group_size')}" if run.get("rank") else "rank -"
     errs = "; ".join(str(e) for e in (run.get("error"), run.get("failed_gate")) if e) or "none"
     return (f"Task {run.get('task')} (run {run.get('run_id')}): submitted {mesh_call_text(run.get('mesh_call'))}\n"
-            f"Score {f(run.get('score'))}, {rank}; field error {f(run.get('field_error'))}, "
-            f"check-point RMS error {f(run.get('probe_error'))}, DOFs {f(run.get('dofs'))}; errors: {errs}")
+            f"Score {f(run.get('score'))}, {rank}; " + (
+                f"force error vs the test {f(run.get('nonlinear_error'))}, "    # a nonlinear task (ace.nonlinear)
+                if run.get("nonlinear_error") is not None else
+                f"field error {f(run.get('field_error'))}, check-point RMS error {f(run.get('probe_error'))}, ")
+            + f"DOFs {f(run.get('dofs'))}; errors: {errs}")
 
 
 CLOSING = (

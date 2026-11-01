@@ -210,6 +210,19 @@ class Memory:
             pb.save(pdir / f"agent{k}_gen{generation}.json")
 
 
+def renamed(playbook: Playbook, old: str, new: str) -> Playbook:
+    """An agent's private notes moved to another name (run_loop --init-from: a trained swarm's a6
+    becomes a0): ids "a6-mesh-0002" -> "a0-mesh-0002", the id counters and prefix likewise. The
+    notes' text and sources are kept as they are (they may name the old agents)."""
+    def ren(x: str) -> str:
+        return new + x[len(old):] if x.startswith(old + "-") else x
+    for b in playbook.bullets:
+        b.id = ren(b.id)
+    playbook.counters = {ren(k): v for k, v in playbook.counters.items()}
+    playbook.id_prefix = f"{new}-"
+    return playbook
+
+
 def notes_as_dicts(playbook: Playbook) -> list[dict]:
     """A playbook's notes in the form the organizer reads: {id, section, content, kind, source, gen}."""
     return [{"id": b.id, "section": b.section, "content": b.content, "kind": b.kind, "source": b.source,

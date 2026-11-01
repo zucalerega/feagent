@@ -18,6 +18,15 @@ whole mesh, where its error is, images); a teacher per task (ace.deep_teacher) a
 per run (ace.self_reflect) read them in parallel; an organizer (ace.organizer) then rewrites each
 agent's notes and the shared playbook, and each agent's next context is built by
 ace.process_brief.deep_context (feedback on its last run, peers' highlights, all its notes).
+
+--init-from <exported swarm> --init-agents a6,a3,a1,a7 starts from a trained swarm (ace.export_swarm):
+its shared playbook, and the chosen agents' private notes, personas and last feedback, renamed
+a0, a1, ... in that order (the mapping is in <out>/init.json). --pre-teach (with --deep) has the
+teacher revise all of it for the new task before generation 0 (ace.pre_teach; <out>/pre_teach/).
+
+Tasks scored by their nonlinear force curve against a physical test (config.TASKS[pid]["score"] ==
+"nonlinear", ace.nonlinear) need no field reference: --deep works on them, the scoring worker skips
+the linear oracles and builds a light run report from the curve check (run_report.build_nl_report).
 """
 
 from __future__ import annotations
@@ -38,10 +47,11 @@ from ace import config, evidence, process_brief, ui_bridge
 from ace.agent import run_agent
 from ace.checkpoint import checkpoint
 from ace.checks import check_run, score_population, tolerance
+from ace.deep_teacher import is_nonlinear, run_error
 from ace.cost import BudgetExceeded, CostLog
 from ace.curator import curate
 from ace.llm import make_llm
-from ace.memory import Memory, agent_of, notes_as_dicts
+from ace.memory import Memory, agent_of, notes_as_dicts, renamed
 from ace.merge import apply_ops, diff_markdown, save_generation
 from ace.playbook import Playbook
 from ace import stages
@@ -119,6 +129,14 @@ def _score_worker(run: dict, report_dir: str | None = None) -> tuple:
         checks = check_run(run["problem_id"], run)
         if run.get("error"):
             return checks, None, None, None
+        if is_nonlinear(run["problem_id"]):
+            # Scored by the nonlinear curve (check_run ran the ramp): the linear oracles and the field
+            # report do not apply; the report is the curve check with its pictures.
+            report = None
+            if report_dir is not None:
+                from ace.run_report import build_nl_report
+                report = build_nl_report({**run, "checks": checks}, Path(report_dir))
+            return checks, None, None, report
         tol = tolerance(run["problem_id"])
         orc = stages.run_oracles(run, tol)
         report = None
@@ -320,8 +338,10 @@ def _run_summary(run: dict, report: dict | None = None) -> dict:
             mesh = meshes[mi].get("request")
     if mesh is None and meshes:                       # no submit: its last mesh
         mesh = meshes[-1].get("request")
+    nl = c.get("nonlinear") is not None           # a nonlinear task: its force-curve error, no field error
     return {"run_id": run["run_id"], "task": run["problem_id"], "mesh_call": mesh,
-            "score": c.get("score"), "field_error": c.get("rel_error"), "probe_error": c.get("probe_error"),
+            "score": c.get("score"), "field_error": None if nl else c.get("rel_error"),
+            "nonlinear_error": run_error(run) if nl else None, "probe_error": c.get("probe_error"),
             "dofs": c.get("dofs"), "rank": n.get("rank_in_group"), "group_size": n.get("group_size"),
             "failed_gate": c.get("failed_gate"), "error": run.get("error")}
 
@@ -369,7 +389,7 @@ def shared_incoming(pid: str, fb: dict) -> list[dict]:
 
 
 def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memory, train: list[str], llm,
-               cost: CostLog, state: dict) -> dict:
+               cost: CostLog, state: dict, history: dict | None = None) -> dict:
     """--deep steps 3-4 for one generation.
       3. one thread pool: the teacher once per task and a self-reflection once per run, all at once;
       4. in the same pool, as soon as its inputs are in: the organizer once per agent (its private
@@ -379,6 +399,7 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
     "teacher" {task: last TeacherFeedback dict}, "feedback" {agent: its last AgentFeedback dict},
     "reflection" {agent: its last SelfReflection dict}, "highlights" [this generation's highlights],
     "last_run" {agent: _run_summary of its last taught run}.
+    history: {task: every run so far on it}, for the teacher's error-vs-nodes summary (nonlinear tasks).
     Returns {"timings": {...}, "private": {agent: changes}, "shared": changes or None}."""
     from ace.deep_teacher import teach        # --deep only (and written alongside this mode)
     from ace.organizer import organize_private, organize_shared
@@ -403,7 +424,7 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
     disagreement = {}
     for pid in train:
         pruns = [r for r in ok if r["problem_id"] == pid]
-        if len(pruns) >= 2:
+        if len(pruns) >= 2 and not is_nonlinear(pid):       # a nonlinear task has no von Mises map
             try:
                 from ace.run_report import disagreement_map
                 disagreement[pid] = disagreement_map([reports[r["run_id"]] for r in pruns])
@@ -428,7 +449,7 @@ def deep_learn(gen: int, gdir: Path, runs: list[dict], reports: dict, mem: Memor
                 task=pid, reports=[reports[r["run_id"]] for r in pruns], runs=pruns,
                 notes_by_agent={name(r): notes(r) for r in pruns}, shared_text=shared_text,
                 prev_feedback=None, disagreement=disagreement.get(pid),
-                last_by_agent=last_by_agent(pruns), llm=llm)))
+                last_by_agent=last_by_agent(pruns), history=(history or {}).get(pid), llm=llm)))
     for r in ok:
         jobs[f"reflect {r['run_id']}"] = (reflect_on_run, dict(report=reports[r["run_id"]], run=r,
                                                                own_notes_text=notes(r), llm=llm))
@@ -596,13 +617,48 @@ def peers_text(k: int, pid: str, prev: list[dict]) -> str:
             refs = "; ".join(f"{x.get('group') or x.get('point')} size {_fmt(x.get('size'))} radius {_fmt(x.get('radius'))}"
                              for x in req.get("refinements") or []) or "none"
             mesh = f"h {_fmt(req.get('h'))}, order {req.get('order')}, refinements: {refs}"
-        lines.append(f"- a{j}: {mesh}; DOFs {_fmt(c.get('dofs'))}, field error {_fmt(c.get('rel_error'))}, "
+        err = "force error vs the test" if c.get("nonlinear") is not None else "field error"
+        lines.append(f"- a{j}: {mesh}; DOFs {_fmt(c.get('dofs'))}, {err} {_fmt(run_error(r))}, "
                      f"base score {_fmt(c.get('base_score', c.get('score')))}")
     if not lines:
         return ""
     return ("\n\n## WHAT OTHER AGENTS DID LAST GENERATION ON THIS TASK\n" + "\n".join(lines)
             + "\nA tie with another agent on the hidden check points pays nothing, so try something "
               "different and better.")
+
+
+# --------------------------------------------------------------------------- --init-from: a trained swarm
+
+
+def load_init(export: Path, names: list[str]) -> dict:
+    """What a run starts from with --init-from (an ace.export_swarm folder): its shared playbook and,
+    for the agents `names` in that order (renamed a0, a1, ...), their private notes, personas and
+    last feedback, own reflection and last-run summary (state.json). The training swarm's
+    highlights are left out: they name its agents by their old names."""
+    manifest = json.loads((export / "manifest.json").read_text())
+    if missing := [a for a in names if a not in manifest["agents"]]:
+        raise SystemExit(f"--init-agents {','.join(missing)}: not in {export} (agents {manifest['agents']})")
+    if (export / "playbook.json").exists():
+        shared = Playbook.load(export / "playbook.json")
+    else:   # per-task scope: one playbook for all tasks (--deep uses one shared playbook)
+        shared = Playbook(bullets=[b for p in sorted((export / "playbooks").glob("*.json"))
+                                   for b in Playbook.load(p).bullets])
+    personas = json.loads((export / "personas.json").read_text()) if (export / "personas.json").exists() else {}
+    state = json.loads((export / "state.json").read_text()) if (export / "state.json").exists() else {}
+    agents = state.get("agents") or {}
+    new = {old: f"a{k}" for k, old in enumerate(names)}
+    private = [renamed(Playbook.load(export / "private" / f"{old}.json"), old, new[old]) for old in names]
+    deep = {"feedback": {}, "reflection": {}, "last_run": {}}
+    for old, a in new.items():
+        for key in deep:
+            if (agents.get(old) or {}).get(key) is not None:
+                deep[key][a] = {**agents[old][key], **({"agent": a} if key == "feedback" else {})}
+    return {"shared": shared, "private": private, "deep": deep,
+            "personas": {k: personas[old] for k, old in enumerate(names) if personas.get(old)},
+            "record": {"from": str(export), "run": manifest.get("run"), "generation": manifest.get("generation"),
+                       "trained_on": manifest.get("tasks"), "mapping": {a: old for old, a in new.items()},
+                       "personas": {a: personas.get(old) for old, a in new.items()},
+                       "loaded": ["shared playbook", "private notes", "personas", "last feedback, reflection and run"]}}
 
 
 # --------------------------------------------------------------------------- summary
@@ -619,6 +675,10 @@ def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
         how = ["score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
                "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
                "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
+    if any(is_nonlinear(r["problem"]) for r in rows):
+        how += ["nonlinear tasks: error = mean |F_sim - F_test| / F_test over the force curve's checkpoints (a",
+                "frozen nonlinear CalculiX ramp of the run's mesh, ace.nonlinear), scored like field mode against",
+                "the automesher run through the same ramp;"]
     told = ("Agents got each problem's engineering requirements (ace/requirements.py) and set the boundary "
             "conditions themselves." if config.STATEMENT == "requirements" else
             "Agents got each problem's statement, boundary conditions included.")
@@ -680,7 +740,7 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
             continue
         scores = [checks[r["run_id"]]["score"] for r in ok]
         base = [checks[r["run_id"]].get("base_score", checks[r["run_id"]]["score"]) for r in ok]
-        errs = [e for r in ok if (e := checks[r["run_id"]].get("rel_error")) is not None]
+        errs = [e for r in ok if (e := run_error({"checks": checks[r["run_id"]]})) is not None]
         dofs = [d for r in ok if (d := checks[r["run_id"]].get("dofs"))]
         rows.append({
             "gen": gen, "problem": pid, "split": "holdout" if pid in holdout else "train",
@@ -774,6 +834,14 @@ def main(argv=None) -> int:
                          "more. Files dropped into <out>/evidence/ during the run are picked up at the next generation")
     ap.add_argument("--evidence-score", action="store_true",
                     help="score runs on problems with test data against the test instead of the problem's reference")
+    ap.add_argument("--init-from", type=Path,
+                    help="start from a trained swarm (an ace.export_swarm folder): its shared playbook and the "
+                         "--init-agents' private notes, personas and last feedback")
+    ap.add_argument("--init-agents", help="with --init-from: which of its agents, best first, e.g. a6,a3,a1,a7; "
+                                          "they become a0, a1, ... (default: all, in its order)")
+    ap.add_argument("--pre-teach", action="store_true",
+                    help="--deep, one train task: before generation 0 the teacher revises the shared playbook and "
+                         "every agent's notes for the task from its teacher brief (ace/pre_teach.py)")
     ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
                     "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
@@ -811,21 +879,53 @@ def main(argv=None) -> int:
         raise SystemExit("--split needs --memory shared+private and at least one --problems")
     persona_of = {k: PERSONAS[i % len(PERSONAS)]
                   for i, k in enumerate(persona_agents(args.personas, args.persona_count, args.agents))}
-    if (peers or persona_of) and not private:
-        raise SystemExit("--peers and --personas need --memory shared+private (persistent agents)")
+    if (peers or persona_of or args.init_from) and not private:
+        raise SystemExit("--peers, --personas and --init-from need --memory shared+private (persistent agents)")
+    nl_tasks = [p for p in train + holdout if is_nonlinear(p)]     # scored by their force curve (ace.nonlinear)
     if args.deep:
-        if not (private and args.split and config.SCORE == "field"):
-            raise SystemExit("--deep needs --memory shared+private, --split and ACE_SCORE=field")
+        # field mode, or every train task nonlinear-scored (no field reference needed there)
+        if not (private and args.split and (config.SCORE == "field" or all(is_nonlinear(p) for p in train))):
+            raise SystemExit("--deep needs --memory shared+private, --split and ACE_SCORE=field "
+                             "(or only nonlinear-scored train tasks)")
         peers, args.shared_scope = True, "all"
         # Before any pool: the scoring workers skip the slow mesh-convergence oracle (the run
         # report gives the teacher a better picture of the error for far less time).
         os.environ["ACE_SKIP_CONVERGENCE"] = "1"
+    if args.pre_teach and not (args.deep and len(train) == 1):
+        raise SystemExit("--pre-teach needs --deep and exactly one train task (--problems)")
+    init = None
+    if args.init_from:
+        if not private or (args.split and args.shared_scope == "task"):
+            raise SystemExit("--init-from needs --memory shared+private with one shared playbook")
+        if args.playbook:
+            raise SystemExit("--init-from brings its own shared playbook: drop --playbook")
+        names = [a.strip() for a in (args.init_agents or "").split(",") if a.strip()] or \
+            json.loads((args.init_from / "manifest.json").read_text())["agents"]
+        init = load_init(args.init_from, names)
+        args.agents = len(names)
+        playbook = init["shared"]
+        persona_of.update(init["personas"])     # the swarm's own personas win over --personas
     per_task = args.split and args.shared_scope == "task"     # one shared playbook per task
     mem = (Memory(args.agents, tasks=train) if per_task else Memory(args.agents, shared=playbook)) if private else None
+    if init is not None:
+        mem.private = init["private"]
+        (out / "init.json").write_text(json.dumps(init["record"], indent=1))
     if config.SCORE == "field":     # build baselines once here, not concurrently in every worker
         from ace.field_error import automesher, probe_points
         for pid in train + holdout:
-            automesher(pid), probe_points(pid)
+            if not is_nonlinear(pid):     # nonlinear tasks: no field reference
+                automesher(pid), probe_points(pid)
+    if nl_tasks:
+        # Each of the --concurrency scoring workers runs one CalculiX ramp at a time with
+        # ace.nonlinear.run_curve's 4 threads: 4 workers x 4 threads on a 16-vCPU box.
+        for pid in nl_tasks:          # the automesher's ramp once here (cached), not in every worker
+            try:
+                from ace import nonlinear
+                nonlinear.automesher_baseline(pid)
+            except Exception as e:  # noqa: BLE001  no CalculiX here (a laptop): only a mock run goes on
+                if not args.mock:
+                    raise
+                print(f"  (mock) no nonlinear automesher baseline for {pid}: {e!r}")
     all_runs: dict[str, list[dict]] = {pid: [] for pid in train + holdout}   # every run so far, per problem
     rows, gen_notes = [], []
     print(f"output: {out}")
@@ -834,6 +934,9 @@ def main(argv=None) -> int:
     ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
     # --deep: what the next generation's contexts are built from (filled by deep_learn)
     deep = {"teacher": {}, "feedback": {}, "reflection": {}, "highlights": [], "last_run": {}}
+    if init is not None:
+        for key, per_agent in init["deep"].items():
+            deep[key].update(per_agent)
 
     def agent_text(k: int, pid: str | None, gen: int) -> str:
         """Agent k's prompt text on task pid (None: held out): memory, then peers and persona."""
@@ -853,6 +956,20 @@ def main(argv=None) -> int:
             text += "\n\n" + process_brief.persona_block(persona_of[k])
         return text
 
+    if args.pre_teach:   # the teacher revises everyone's context for the new task before generation 0
+        from ace import pre_teach
+        t0 = time.perf_counter()
+        origin = (f"exported swarm {init['record']['run']} (trained {init['record']['generation'] + 1} generations on "
+                  f"{', '.join(init['record']['trained_on'] or [])}); agents renamed: "
+                  + ", ".join(f"{a} (was {old})" for a, old in init["record"]["mapping"].items())
+                  if init is not None else "(no trained swarm: the notes are whatever the run started with)")
+        res, _ = _llm_jobs({"pre-teach": (pre_teach.ask, dict(
+            task=train[0], mem=mem, persona_of=persona_of, last_run=deep["last_run"], origin=origin, llm=llm))}, cost)
+        if res.get("pre-teach") is not None:
+            ch = pre_teach.apply(res["pre-teach"], train[0], mem, deep, out / "pre_teach")
+            print(f"  pre-teach ({time.perf_counter() - t0:.0f} s): " + "; ".join(
+                f"{o} +{len(c['added'])} ~{len(c['edited'])} -{len(c['removed'])}" for o, c in ch.items()))
+
     try:
         for gen in range(args.generations):
             # Early stop without killing the process: `touch <out>/STOP` ends the run cleanly before the
@@ -870,7 +987,7 @@ def main(argv=None) -> int:
                         if not r.get("error"):
                             r["checks"] = check_run(pid, r)
                     score_population(all_runs[pid])
-            if gen == 0 and (missing := evidence.missing_tests(train + holdout)):
+            if gen == 0 and (missing := evidence.missing_tests([p for p in train + holdout if not is_nonlinear(p)])):
                 raise SystemExit(f"{', '.join(missing)}: no reference value (no ground truth) and no physical test "
                                  "data to score against; give the test with --evidence (see ace/evidence.py)")
             playbook.save(out / f"playbook_gen{gen}.json")
@@ -963,7 +1080,8 @@ def main(argv=None) -> int:
             # 3. reflect (train problems only)
             cost.check()
             if args.deep:   # 3-5 replaced: deep teacher + self-reflection, then the organizer
-                learned = deep_learn(gen, gdir, runs, reports, mem, train, llm, cost, deep)
+                learned = deep_learn(gen, gdir, runs, reports, mem, train, llm, cost, deep,
+                                     history={pid: all_runs[pid] for pid in train})
                 mem.save(out, gen + 1)
                 phase.update(learned["timings"])
                 sh = learned["shared"] or {"added": [], "removed": []}

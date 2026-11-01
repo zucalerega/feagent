@@ -87,7 +87,7 @@ def ping(problem_id: str) -> bool:
         resp, rec = LLM().agent_turn(system_prompt("", flow=fea.is_flow(problem)),
                                      [{"role": "user", "content": "Pre-flight check: reply with the single word "
                                                                   "OK and do not call any tool."}],
-                                     tools_for(problem), run_id="preflight")
+                                     tools_for(problem_id), run_id="preflight")
     except Exception as e:  # noqa: BLE001  report whatever the SDK raised
         print(f"API ping: FAILED: {type(e).__name__}: {e}")
         return False

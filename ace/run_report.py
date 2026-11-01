@@ -5,6 +5,9 @@
     report_text(report, hide_hidden=)   the report as compact text for an LLM (teacher, self-reflection);
                                         hide_hidden=True for anything agents read (hidden points as aggregates)
     disagreement_map(reports)        parent, per task: where the runs' von Mises disagree (no reference needed)
+    build_nl_report(run, out_dir)    a task scored by its nonlinear force curve (ace.nonlinear): no field
+                                     reference and no re-solve; the run's checks["nonlinear"] (curve,
+                                     checkpoints, PEEQ hotspots, images) in the report's shape
 
 The teacher and the agent's own self-reflection read this instead of a few summary numbers. It
 holds the same error map and mesh layout as the teacher's inspection tools (ace.inspect_tools) plus:
@@ -536,6 +539,35 @@ def build_run_report(run: dict, out_dir: Path) -> dict:
     return report
 
 
+def build_nl_report(run: dict, out_dir: Path) -> dict:
+    """The report of a run on a nonlinear task, from its checks["nonlinear"] (ace.nonlinear.run_curve
+    already solved the ramp and drew the curve and PEEQ pictures): mesh request, nodes/DOFs, the
+    curve check and its images. Never raises: on any failure returns {"run_id", "error"}. Also
+    written to out_dir/<run_id>.json."""
+    from ace.checkpoint import checkpoint
+    t0 = time.perf_counter()
+    rid = run.get("run_id") or "run"
+    out_dir = Path(out_dir)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        nl = (run.get("checks") or {}).get("nonlinear")
+        if not nl or not nl.get("ok"):
+            raise ValueError(f"no nonlinear curve: {(nl or {}).get('error', 'not checked')}")
+        k = agent_of(rid)
+        report = {"run_id": rid, "agent": None if k is None else f"a{k}", "task": run["problem_id"],
+                  "nonlinear": True, "mesh_request": (checkpoint(run) or {}).get("request"),
+                  "mesh_stats": {"nodes": nl.get("nodes"), "dofs": nl.get("dofs")}, "nl": nl,
+                  "images": {kind: p for kind, p in (nl.get("images") or {}).items() if p},
+                  "seconds": round(time.perf_counter() - t0, 2)}
+    except Exception as e:  # noqa: BLE001  a report is a bonus: never break the loop over one
+        report = {"run_id": rid, "error": f"{type(e).__name__}: {e}", "seconds": round(time.perf_counter() - t0, 2)}
+    try:
+        (out_dir / f"{rid}.json").write_text(json.dumps(report, indent=1, default=str))
+    except Exception as e:  # noqa: BLE001
+        report.setdefault("error", f"could not write the report file: {e}")
+    return report
+
+
 def _hidden_summary(checks: list, msh: it._Mesh, rg: dict) -> dict | None:
     """The hidden check points as an aggregate only (safe to show agents): count, RMS and worst
     error, and where the worst one is only coarsely (nearest named group, region-grid cell centre)."""
@@ -566,6 +598,8 @@ def add_scores(report: dict, run: dict) -> dict:
         "rank_in_group": c.get("rank"), "group_size": c.get("group_size"),
         "valid": c.get("valid"), "invalid_because": c.get("invalid_because"),
     }
+    if c.get("nonlinear"):     # nonlinear task: the force curve's mean error vs the test is the scored error
+        report["numbers"]["nl_error"] = c["nonlinear"].get("mean_rel_err")
     return report
 
 
@@ -581,6 +615,28 @@ def _xyz(v) -> str:
     return "(" + ", ".join(_g(x) for x in v) + ")"
 
 
+def _nl_report_text(report: dict) -> str:
+    """report_text of a nonlinear task's report (build_nl_report): no check points to hide."""
+    from ace.deep_teacher import nonlinear_text
+    L = [f"RUN {report['run_id']} (agent {report.get('agent')}, task {report.get('task')})"]
+    n = report.get("numbers")
+    if n:
+        rank = f", rank {n['rank_in_group']}/{n['group_size']}" if n.get("rank_in_group") is not None else ""
+        L.append(f"score {_g(n['score'])} (base {_g(n['base_score'])}"
+                 + (f" + diversity bonus {_g(n['diversity_bonus'])}" if n.get("diversity_bonus") else "")
+                 + f"){rank}; valid {n.get('valid')}" + (f" ({n['invalid_because']})" if n.get("invalid_because") else ""))
+        L.append(f"force error vs the test {_pct(n.get('nl_error'))}; gain {_g(n['gain'])}x the automesher "
+                 f"(target {config.AUTO_GAIN_TARGET:g}x: {'met' if n['meets_target'] else 'NOT met'}; target error "
+                 f"{_pct(n['target_error'])}); accuracy term {_g(n['accuracy'])}, cost term {_g(n['efficiency'])}; "
+                 f"DOFs {n['dofs']} vs automesher {n['automesher_dofs']} (error {_pct(n['automesher_error'])})")
+    req = report.get("mesh_request") or {}
+    refs = "; ".join(f"{r.get('group') or r.get('edge') or _xyz(r.get('point') or r.get('box') or [])} size "
+                     f"{_g(r.get('size'))} radius {_g(r.get('radius'))}" for r in req.get("refinements") or []) or "none"
+    L.append(f"mesh request: h {_g(req.get('h'))}, order {req.get('order')}, refinements: {refs}")
+    L.append(nonlinear_text(report.get("nl")))
+    return "\n".join(L)
+
+
 GRID_ROWS = 20   # region-grid cells listed in report_text (worst first); the rest become one summary line
 
 
@@ -592,6 +648,8 @@ def report_text(report: dict, max_chars: int = 6000, hide_hidden: bool = False) 
     rid = report.get("run_id")
     if report.get("error"):
         return f"RUN {rid}: no report ({report['error']})"
+    if report.get("nonlinear"):
+        return _nl_report_text(report)[:max_chars]
     L = [f"RUN {rid} (agent {report.get('agent')}, task {report.get('task')}"
          + (", axisymmetric: x = r, y = z" if report.get("axisymmetric") else "") + ")"]
     n = report.get("numbers")

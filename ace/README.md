@@ -285,9 +285,9 @@ tmux new -s ace
     `config.py` first.
 - **Modes that work for flow:** the default point scoring (leave `ACE_SCORE` unset), `--teacher rerun`
   (the default), `--memory shared|shared+private`, `--split`, `--peers`, `--personas`.
-- **Modes that don't:** `--deep`, `--teacher inspect|both` and `ACE_SCORE=field` score the elastic
-  stress field, and `--statement requirements` writes elasticity setups. `run_loop` refuses them
-  for flow tasks.
+- **Modes that don't:** `--deep` (and `--pre-teach`, which needs it), `--teacher inspect|both` and
+  `ACE_SCORE=field` score the elastic stress field, and `--statement requirements` writes elasticity
+  setups. `run_loop` refuses them for flow tasks.
 - **Concurrency:** `--concurrency` (default 4) agent runs solve in parallel, and as many scoring
   workers start on finished runs while the others still work. 2D solves are light. A 3D solve and
   its refinement study can take 0.3-0.5 GB each, so keep `--concurrency` at most (RAM in GB) / 4
@@ -463,7 +463,21 @@ the same dogbone (`dogbone1.pdf`, an ASTM D638 Type I, 13 x 3.2 mm, measured by 
   geometry's own compliance) taken out, and the plastic stretch put in the narrow section.
 
 It writes `physical_tests/abc_00000065_compression/ccx_ramp/` (curves, `summary.json`, `compare.png`)
-against the test.
+against the test; `scripts/render_ccx_ramp.py` draws the plastic strain and the largest principal stress on
+the deformed part (`render_<run>.png`, and `.vtu` for ParaView with `--vtu`). What it found (41k-node P2
+mesh, 30 increments to 3 mm, both calibrations):
+- **Friction decides the strength.** With a frictionless platen the prongs splay and the part levels off
+  at 2.8-2.9 kN; with a sticking platen it carries 4.7-4.9 kN at the test's peak travel (test: 4.76 kN)
+  and is still rising.
+- **Stiffness:** the rigid platen (3593-4262 N/mm) and the statement's uniform force (3210 N/mm) are both
+  stiffer than the test (2696 N/mm). Matching it takes a load-train compliance of about 1e-4 mm/N, or
+  a lower modulus.
+- **Where it gives:** yield starts at about 0.4 kN at the sharp corners of the prongs' hex nut pockets.
+  At the test's peak load the largest tension there is 47-51 MPa, about the dogbone's 50 MPa UTS, with
+  40-50 MPa bands on the lower inner surface of the bore. Those are the likely crack sites behind the
+  load drops after the peak. J2 plasticity cannot follow the cracks.
+
+These notes are in the test spec, so the loop's agents and teachers read them.
 
 ## Knobs that matter (`ace/config.py`)
 

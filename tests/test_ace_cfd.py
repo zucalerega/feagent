@@ -39,7 +39,7 @@ def test_cfd_suite_lists_registered_flow_tasks():
 @pytest.mark.parametrize("pid", CFD)
 def test_flow_task_plumbing(pid, tmp_path):
     p = fea.get_problem(pid)
-    assert tools_for(p) is TOOLS_FLOW
+    assert tools_for(pid) is TOOLS_FLOW
     s = checks.reference_setup(p)
     assert s["convection"] == "linearUpwind" and checks.reference_setup(p, 1)["convection"] == "upwind"
     m = fea.make_mesh(p, tmp_path / "m.msh", h=p.params["h0"] * 1.5, quads=p.dim == 2)

@@ -67,8 +67,13 @@ TASKS = {
     # video-extensometer elongation; physical test data can be fed in with run_loop --evidence
     "abc_00000003_pull": {"qoi": "ext_marks", "node_cap": 60000},
     # printed gold part abc_00000065 compressed on the Instron (feacore/problems/physical.py). No reference
-    # value (no ground truth): scored against its test, physical_tests/abc_00000065_compression/ (--evidence)
-    "abc_00000065_compression": {"qoi": "u_top", "node_cap": 40000},
+    # value (no ground truth). "score": "nonlinear": scored by one frozen elastoplastic CalculiX ramp of the
+    # run's mesh against the measured force-displacement curve (ace/nonlinear.py,
+    # physical_tests/abc_00000065_compression/nonlinear_spec.json), vs the automesher as in field mode.
+    # No effective node cap (the score already charges DOFs); more turns and solves, and nl_previews
+    # nonlinear previews per run.
+    "abc_00000065_compression": {"qoi": "u_top", "node_cap": 400000, "score": "nonlinear",
+                                 "max_turns": 60, "max_solves": 12, "nl_previews": 6},
     # gold ABC CAD parts (feacore/problems/gold.py): qoi = GoldProblem.scored_qoi(); node cap about the
     # L1 study mesh (48827 / 37613 nodes). Field scoring needs their adaptive reference (ace.gold_reference).
     "abc_00000003_bc7": {"qoi": "strain_energy", "node_cap": 49000},

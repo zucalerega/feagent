@@ -119,7 +119,9 @@ def load_calibration(problem_ids: list[str]) -> dict:
 def tolerance(problem_id: str) -> float:
     """Accuracy target: the reference's stated tolerance for the scored quantity (field mode: the
     automesher's field error divided by the target gain, see config)."""
-    from ace import evidence
+    from ace import evidence, nonlinear
+    if nonlinear.is_nonlinear(problem_id):        # the frozen nonlinear ramp vs the test (ace.nonlinear)
+        return nonlinear.automesher_baseline(problem_id)["mean_rel_err"] / AUTO_GAIN_TARGET
     if evidence.scored_by_test(problem_id):       # judged by its physical test (ace.evidence)
         return evidence.test_tolerance(problem_id)
     if SCORE == "field":
@@ -196,7 +198,9 @@ def check_run(problem_id: str, run: dict) -> dict:
         return {**out, "solved": False, "failed_gate": "no successful solve"}
 
     mesh = final["mesh"]
-    from ace import evidence
+    from ace import evidence, nonlinear
+    if nonlinear.is_nonlinear(problem_id):       # scored by the frozen nonlinear ramp, not a reference
+        return _check_nonlinear(problem_id, run, problem, final, out)
     # No reference value (no ground truth): the physical test is the only check (ace.evidence).
     ref = fea.reference_value(problem, task["qoi"]) if evidence.has_reference(problem_id) else None
     rel_err = abs(final["result"]["value"] - ref) / abs(ref) if ref is not None else None
@@ -239,6 +243,50 @@ def check_run(problem_id: str, run: dict) -> dict:
     return {**out, "failed_gate": gate}
 
 
+def _check_nonlinear(problem_id: str, run: dict, problem, final: dict, out: dict) -> dict:
+    """check_run for a nonlinear task (ace.nonlinear): the run's scored mesh through the frozen
+    elastoplastic ramp, compared with the test's force-displacement curve. No field reference and
+    no automesher field solve. Artifacts go to <directory of the mesh file>/nonlinear/."""
+    from ace import nonlinear
+    from ace.checkpoint import checkpoint
+    task = TASKS[problem_id]
+    cp = checkpoint(run)
+    mesh = dict(cp["mesh"])
+    path = Path(mesh.get("path") or "")
+    if not path.is_file():                      # the .msh is gone: rebuild it from its request
+        req = cp.get("request") or {}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mesh = fea.make_mesh(problem, path, **{k: v for k, v in req.items() if k in ("h", "order", "refinements")})
+        if not mesh.get("ok"):
+            return {**out, "solved": False, "failed_gate": f"could not rebuild the scored mesh: {mesh.get('error')}"}
+    nl = nonlinear.run_curve(problem_id, mesh, path.parent / "nonlinear")
+    ok = nl["ok"]
+    nodes = nl["nodes"] or mesh["nodes"]
+    out.update({
+        "solved": True,
+        "nonlinear": nl,
+        "nodes": nodes,
+        "dofs": nl["dofs"] or nodes * 3,
+        "order": mesh["order"],
+        "min_quality": mesh.get("min_quality"),
+        "within_cap": nodes <= task["node_cap"],
+        "quality_ok": (mesh.get("min_quality") or 0) >= MIN_QUALITY,
+        "qoi_value": final["result"].get("value"),
+        "rel_error": nl["mean_rel_err"] if ok else None,
+        "point_rel_error": None,
+        "meets_tol": ok and nl["mean_rel_err"] <= out["tolerance"],
+        "valid": ok,
+        "scored_by": "nonlinear test curve",
+        "setup": bc_report(problem, final["setup"]),
+    })
+    gate = None if ok else f"nonlinear scoring run failed: {nl['error']}"
+    if gate is None and not out["within_cap"]:
+        gate = "over node cap"
+    if gate is None and not out["quality_ok"]:
+        gate = f"min element quality < {MIN_QUALITY}"
+    return {**out, "failed_gate": gate}
+
+
 def score_population(runs: list[dict]) -> None:
     """Score every run on ONE problem against each other with feacore's score_population.
     Each run needs "checks" (check_run) and, if computed, "oracles" (its feacore flags make a run
@@ -264,6 +312,10 @@ def score_population(runs: list[dict]) -> None:
         agents.append({"agent_id": r["run_id"], "report": rep, "errors": errors})
     tol = {"q": runs[0]["checks"]["tolerance"]} if runs else {}
     rows = feacore_score(agents, tol=tol)
+    from ace import nonlinear
+    if runs and nonlinear.is_nonlinear(runs[0]["problem_id"]):
+        _score_vs_nl_automesher(runs, rows)
+        return
     if SCORE == "field":
         _score_vs_automesher(runs, rows)
         return
@@ -305,6 +357,28 @@ def _score_vs_automesher(runs: list[dict], rows: list[dict]) -> None:
     _diversity_bonus(runs)
 
 
+def _score_vs_nl_automesher(runs: list[dict], rows: list[dict]) -> None:
+    """Nonlinear tasks: the field-mode formula against the automesher's run of the same frozen
+    nonlinear ramp (ace.nonlinear.automesher_baseline), with the run's error against the test curve.
+    Diversity bonus as in field mode; no be-the-best bonus (no probe points)."""
+    from ace.nonlinear import automesher_baseline
+    auto = automesher_baseline(runs[0]["problem_id"])
+    G = AUTO_GAIN_TARGET
+    for r, row in zip(runs, rows):
+        c = r["checks"]
+        if not row["valid"] or c.get("rel_error") is None:
+            c.update(score=0.0, accuracy=0.0, efficiency=0.0, gain=None, valid=False, base_score=0.0,
+                     invalid_because=list(row["flags"]) or ["no solve"])
+            continue
+        g = auto["mean_rel_err"] / max(c["rel_error"], FIELD_ERR_FLOOR)
+        acc = (g / G) ** 2 if g < G else g / G
+        eff = auto["dofs"] / c["dofs"]
+        c.update(score=acc * eff, base_score=acc * eff, accuracy=acc, efficiency=eff, gain=g, valid=True,
+                 invalid_because=None, auto_error=auto["mean_rel_err"], auto_dofs=auto["dofs"],
+                 best_bonus=0.0, best_points=0.0, diversity_bonus=0.0)
+    _diversity_bonus(runs)
+
+
 def _best_bonus(runs: list[dict]) -> None:
     """Field mode: on each hidden probe point, the one valid run of a generation with the smallest
     |error| there wins 1/n_hidden of BEST_BONUS. A tie pays nobody, so copying the leader earns
@@ -333,7 +407,12 @@ def _best_bonus(runs: list[dict]) -> None:
 
 @functools.cache
 def _diagonal(problem_id: str) -> float:
-    """The part's bounding-box diagonal, from the (cached) reference's integration points."""
+    """The part's bounding-box diagonal, from the (cached) reference's integration points (nonlinear
+    tasks have no field reference: from the CAD's bounding box)."""
+    from ace import nonlinear
+    if nonlinear.is_nonlinear(problem_id):
+        bbox = fea.geometry_summary(fea.get_problem(problem_id))["bbox"]
+        return float(math.dist(bbox[:3], bbox[3:]))
     from ace.field_error import reference
     pts = reference(problem_id)["pts"]
     return float(math.dist(pts.min(axis=0), pts.max(axis=0)))
