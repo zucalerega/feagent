@@ -1,4 +1,6 @@
 """OpenFOAM backend: steady incompressible flow (``feacore.solver.solve(case, backend="openfoam")``).
+Physics "compressible" (a perfect gas, supersonic) goes to ``rhoCentralFoam`` in
+feacore/solver/_foam_compressible.py.
 
 Physics "flow", formulations "2d" (one extruded cell layer of ``analysis.thickness``, ``empty``
 front and back) and "3d". Solver: ``simpleFoam`` with SIMPLEC (``consistent yes``), laminar by
@@ -198,8 +200,11 @@ def solve(case: Case, **options) -> "OpenFOAMResult":
     t0 = time.perf_counter()
     case.check()
     a = case.analysis
+    if a.physics == "compressible":          # rhoCentralFoam (feacore/solver/_foam_compressible.py)
+        from feacore.solver import _foam_compressible
+        return _foam_compressible.solve(case, **options)
     if a.physics != "flow":
-        raise CaseError(f"the openfoam backend solves physics 'flow' only (got {a.physics!r})")
+        raise CaseError(f"the openfoam backend solves physics 'flow' and 'compressible' only (got {a.physics!r})")
     if fio.FOAMLIB_ERROR is not None:
         raise ImportError(f"the openfoam backend needs foamlib (pip install foamlib): {fio.FOAMLIB_ERROR}")
     mat = _fluid_material(case)
