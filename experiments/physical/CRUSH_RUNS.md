@@ -164,10 +164,10 @@ y = +4 mm, above the bore centre. The photo's break is at about hf 0.45-0.6.
 |---|---|---|---|---|---|---|---|---|
 | baseline (earlier) | harness_auto (33,824) | bonded | PEEQ, any state | R tip, nut-pocket wall, compression (0.89), 0.94 mm | both tips (149 + 138 cells) | 3234 N | 1.16 mm | separated at 1.47 mm |
 | harness_expert (earlier) | harness_expert (39,608) | bonded | PEEQ | R tip (0.89), 0.94 mm | both tips | 3260 N | 1.20 mm | separated at 1.40 mm |
-| M | harness_neck (58,020) | bonded | PEEQ | R tip (0.89), 0.94 mm | both tips | @@M_PEAK@@ | @@M_TP@@ | @@M_SEP@@ |
+| M | harness_neck (58,020) | bonded | PEEQ | R tip (0.89), 0.94 mm | both tips | 3190 N | 1.34 mm | running (`run-20261101-M-r`): 133 cells, all in the tips, at 1.36 mm |
 | PT | harness_auto | frictionless | T | R tip inner face at the bolt hole, arm folding (0.90), 3.30 mm, 2.93 kN; tips slid 8 mm inward | at 50 % of peak (6.0 mm): tips 188 cells, R neck 75, L neck 5 | 2966 N | 2.55 mm | stopped at 9.26 mm, 6 % of peak (no separation: compressed hinges) |
 | T | harness_auto | bonded | T | 1 nut-pocket cell (mixed shear, triaxiality ~0.05) (0.92) at 4.53 mm, then **both necks' outer fibre** within 0.1 mm: R at +8 deg (hf 0.62), L at -41 deg, bore side (hf 0.37) | at 50 % of peak (6.1 mm): L neck 107, R neck 101, bore bottom 33, tips 17 | 5916 N | 4.74 mm | stopped at 11.6 mm, 10 % of peak (no separation) |
-| **MTI** (best match) | harness_neck + I (58,020) | bonded | T | **L neck outer fibre, +8 deg, y = +4.1 mm (hf 0.62)**, 4.49 mm, 5.74 kN; no tip cell before it | @@MTI_PATH@@ | **5745 N** | 4.53 mm | @@MTI_SEP@@ |
+| **MTI** (best match) | harness_neck + I (58,020) | bonded | T | **L neck outer fibre, +8 deg, y = +4.1 mm (hf 0.62)**, 4.49 mm, 5.74 kN; no tip cell before it | both necks across the outer half (L 347, R 333 cells at about +5 deg) at a fixed travel of 4.59 mm, while the force falls from 5.75 to 3.1 kN (unstable crack); then the right tip's pocket (50) and the bore bottom (40) | **5745 N** | 4.53 mm | not yet: the bore-side ligament of each neck is in compression (triaxiality -0.5) and hinges. It continues from 4.84 mm as `-MTI-c5` (compressive erosion at 5 x 0.043), with 800 cells and 1.89 kN at 4.84 mm |
 | MPTI | harness_neck + I | frictionless | T | none by 1.67 mm (stopped: P superseded, see below) | | 2795 N (still rising) | | stopped at 1.67 mm |
 | MFTI | harness_neck + I | friction mu 0.3 (contact) | T | contact chatter, ~4 increments in 4 min (stopped) | | | | |
 
@@ -178,7 +178,11 @@ Run dirs:
 - Laptop: `runs/nonlinear/neck_study/harness_neck/abc_00000065/run-20261031-M` is a copy from the Spark, with
   the mesh and restart paths rewritten. `run-20261101-M-r` continues it.
 - Spark `~/feagent-runs/nonlinear/neck_study/`:
-  - `harness_neck_imp/abc_00000065/run-20261101-0036-MTI`, continued (8 threads) by `-MTI-r8`.
+  - `harness_neck_imp/abc_00000065/run-20261101-0036-MTI`, continued (8 threads) by `-MTI-r8` at step 191
+    (4.595 mm). `-MTI-r8` is continued by `-MTI-c5` at step 236 (4.836 mm, `--compression-factor 5`, so the
+    compressed ligaments, crushed to PEEQ 0.2-0.3, can break).
+  - Laptop copies of the three, without `ccx_work`, are in
+    `runs/nonlinear/neck_study/harness_neck_imp/abc_00000065/`.
   - `run-20261031-2350-MPTI` and `-MPTI-r`.
   - `run-20261101-0008-MFTI` and the contact-tuning runs in `ctune/`.
   - `arm_ratio_auto_bonded.json`.
@@ -196,3 +200,22 @@ Other checks:
 - Linear *BUCKLE (harness_neck), 1 kN reference:
   - Frictionless tips: 2.07, 2.42, 4.54, 5.37 kN. Mode 1 is one arm swaying inward.
   - Stuck tips: 13.4, 17.0 kN. Mode 1 is local, at the tip face / nut-pocket walls.
+
+Videos and stills (scratchpad of the session that ran the study, not committed):
+
+- `study/videos/crush/harness_neck_imp_abc_00000065_neckbreak_crush.mp4`: MTI to 4.84 mm, 16 s, original
+  3-panel look.
+- `physical_photo/abc_00000065_photo_vs_sim_neckbreak.png`: the photo next to MTI at 4.84 mm.
+
+Reading the table:
+
+- The **erosion criterion moves the crack**. The mesh does not (M = baseline). Frictionless platens do not
+  either: they move it to the tips' inner face.
+- Tension-only erosion with stuck tips puts the first crack at the neck's outer fibre, y = +4 mm. Stuck tips
+  are bonded, which is Coulomb friction with mu >= 0.18. With the imperfection, the neck is the very first
+  failure.
+- The press loaded the part in force control, so the arm snaps at the **peak force: predicted snap load
+  5.75 kN**, against 3.2 kN for the old model's tip crush. The simulated crack runs through the outer half of
+  both necks at a fixed travel, which is the unstable snap in displacement control. Under force control one arm
+  goes first and unloads the part. In the run both necks start in the same increment (4.49 mm: 2 left-neck
+  cells, 1 right-neck cell, 1 tip cell), and the right neck's crack grows a little faster.
