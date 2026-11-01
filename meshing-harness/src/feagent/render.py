@@ -201,15 +201,24 @@ def render_quality(mesh: MeshData, sicn_per_tet: np.ndarray, out_png: str | Path
     axes = [clip_axis] + [a for a in "xyz" if a != clip_axis]
     worst = np.argsort(s)[:10]
     markers = _markers(mesh, worst, bbox_diag((lo, hi)) * 0.015)
+    kept = {ax: _kept_by_clip(mesh, worst, _AXES[ax], mid[_AXES[ax]]) for ax in axes}
     labels = ["iso"] + [f"clip {ax}={mid[_AXES[ax]]:.4g}" for ax in axes]
 
     def draw(pl: pv.Plotter, i: int) -> None:
         _add_sicn(pl, grid, mid, axes[i - 1] if i else None)
-        for m in markers:
-            pl.add_mesh(m, color="black")
+        for j, m in enumerate(markers):
+            if i == 0 or kept[axes[i - 1]][j]:
+                pl.add_mesh(m, color="black")
 
     pl = _draw_views(labels, draw)
     return RenderResult(_save(pl, out_png), _quality_caption(s, worst, clip_axis))
+
+
+def _kept_by_clip(mesh: MeshData, tets: np.ndarray, axis: int, mid: float) -> np.ndarray:
+    """Per tet: does the crinkle clip (keeps coordinate < mid) retain it, i.e. is a corner there?"""
+    if not len(tets):
+        return np.zeros(0, bool)
+    return mesh.points[mesh.tets[tets]][:, :, axis].min(axis=1) < mid
 
 
 def _markers(mesh: MeshData, tets: np.ndarray, radius: float) -> list[pv.PolyData]:
