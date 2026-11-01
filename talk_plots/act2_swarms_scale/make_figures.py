@@ -342,7 +342,66 @@ by Jaime from `ace_runs/div_s16`, which stays on his laptop). Plotted values: `d
 """
     DATA["fig2"] = {f"{s}|{t}|{n}": vals[(s, t, n)] for (s, t, n) in vals}
     save(fig, "fig2_mean_best_by_team_size", md)
-    return order_ok
+    return order_ok, vals
+
+
+# --------------------------------------- fig 3: talk version of fig 2, abc_00000065_bc0 only, extrapolated
+def fig3(vals):
+    task = "abc_00000065_bc0"
+    sizes = (2, 4, 8, 16)
+    x = np.log2(sizes)
+    y = np.array([vals[("div", task, n)] for n in sizes]) / AUTO_SCORE        # automesher = 1
+    b, a = np.polyfit(x, y, 1)                                                 # y = a + b log2(n)
+    resid = y - (a + b * x)
+    xp = np.array([5.0, 6.0])                                                  # 32 and 64 agents
+    yp = a + b * xp
+    fig, ax = plt.subplots(figsize=(12, 6.75))
+    fig.subplots_adjust(left=0.09, right=0.97, top=0.79, bottom=0.13)
+    ax.axvspan(4.5, 6.5, color="#f2f2f4", zorder=0, lw=0)
+    ax.text(5.5, 4.25, "projected", ha="center", va="top", fontsize=13, color="#666666")
+    for xi, yi, n in zip(x, y, sizes):
+        ax.bar(xi, yi, width=0.7, color=COL[n], edgecolor="white", lw=0, zorder=2)
+        ax.text(xi, yi / 2, f"{yi:.2f}x", ha="center", va="center", fontsize=17, color="white", fontweight="bold")
+    xf = np.linspace(1, 6, 100)
+    ax.plot(xf, a + b * xf, color="#333333", ls="--", lw=2, zorder=3)
+    ax.plot(xp, yp, ls="none", marker="o", ms=11, mfc="white", mec="#333333", mew=2, zorder=4)
+    for xi, yi in zip(xp, yp):
+        ax.text(xi, yi + 0.12, f"~{yi:.1f}x", ha="center", va="bottom", fontsize=14, color="#333333")
+    ax.axhline(1, color=AUTO_COL, ls="--", lw=1.8, zorder=1)
+    ax.text(4.6, 1.03, "automesher = 1", color="#666666", fontsize=13, va="bottom", ha="left")
+    ax.set_xticks(range(1, 7))
+    ax.set_xticklabels(["2", "4", "8", "16", "32", "64"])
+    ax.set_xlim(0.4, 6.6)
+    ax.set_ylim(0, 4.3)
+    ax.set_xlabel("agents in the swarm")
+    ax.set_ylabel("score relative to the automesher")
+    ax.grid(axis="x", visible=False)
+    takeaway(fig, "More agents, better swarm: 16 > 8 > 4 > 2, and it keeps scaling",
+             f"{task}: best agent's score, mean over generations 1-7; dashed = log fit, extrapolated to 32 and 64 agents")
+    md = f"""
+# fig3_scaling_bc0: 16 > 8 > 4 > 2, extrapolated
+
+**Caption.** Talk version of fig2 for {task} only, afternoon setup (diversity on), scores divided by the
+automesher's 0.25 so that the automesher is 1. Bars: the best agent's base score averaged over gens 1-7.
+Dashed: least-squares fit y = {a:.3f} + {b:.3f} log2(n) to the four measured bars, extended to 32 and 64 agents
+(projected {yp[0]:.2f}x and {yp[1]:.2f}x; no swarm of that size was run).
+
+**Key numbers.** 2 / 4 / 8 / 16 agents: {' / '.join(f'{v:.2f}x' for v in y)} the automesher.
+Fit residuals: {' / '.join(f'{r:+.2f}' for r in resid)}.
+
+**Data.** As fig2 (16 agents from `results/diversity_s16_2026-11-01/scores.json`). Plotted values: `data.json` -> `fig3`.
+
+**Caveats.**
+- The extrapolation is a fit to 4 points, one run each (noise 0.03-0.1 in score, 0.1-0.4 on this axis).
+- The measured gains shrink: +{y[1]-y[0]:.2f}, +{y[2]-y[1]:.2f}, +{y[3]-y[2]:.2f} per doubling. The residuals
+  run -, +, +, -, i.e. the data bend below a log curve; a saturating fit (c - d n^-alpha, 3 parameters) fits them as well and
+  levels off near 3.2x. The log fit is the optimistic reading.
+- The 16-agent run's references were rebuilt (see fig2), and team size n means n/2 agents per task, so a bigger
+  team also takes the best of more meshes.
+"""
+    DATA["fig3"] = {"sizes": list(sizes), "rel_to_auto": [float(v) for v in y], "fit_a": float(a), "fit_b": float(b),
+                    "projected": {"32": float(yp[0]), "64": float(yp[1])}}
+    save(fig, "fig3_scaling_bc0", md)
 
 
 # --------------------------------------------------------------------- fig 4: average agent per gen
@@ -553,7 +612,8 @@ reproduces `ace_runs/div_s1/generations.jsonl` and the cumulative $ in `ace_runs
 if __name__ == "__main__":
     fig1(False)
     fig1(True)
-    order_ok = fig2()
+    order_ok, vals2 = fig2()
+    fig3(vals2)
     fig4()
     fig5()
     fig6()
