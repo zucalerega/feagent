@@ -84,11 +84,13 @@ def main() -> int:
     ap.add_argument("--purpose", choices=["linear", "nonlinear"], required=True)
     ap.add_argument("--neck-size", type=float, default=None, help="element size at the necks, m")
     ap.add_argument("--neck-dist-factor", type=float, default=None, help="refinement reach / wall thickness")
+    ap.add_argument("--global", dest="global_size", type=float, default=None,
+                    help="override harness_expert's global size [m] (node-count matching)")
     a = ap.parse_args()
     step, out = Path(a.step), Path(a.out)
     part = step.parent.parent.name.replace("_bc0", "")
     out.mkdir(parents=True, exist_ok=True)
-    spec = expert.make_spec(step, part, a.purpose, out)
+    spec = expert.make_spec(step, part, a.purpose, out, a.global_size)
     knobs = NECK[a.purpose]
     size = a.neck_size or knobs["size"]
     fac = a.neck_dist_factor or knobs["dist_factor"]
