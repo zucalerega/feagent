@@ -1,6 +1,6 @@
 # fig3_scaling_bc0_avg: 16 > 8 > 4 > 2, extrapolated
 
-**Caption.** abc_00000065_bc0, afternoon setup (diversity on), automesher = 1 (scores divided by 0.25). Bars: the gen-7 value of
+**Caption.** abc_00000065_bc0, afternoon setup (diversity on), automesher = 1 (scores divided by 0.25). Bars: the last measured value (gen 7) of
 `avg` = average agent of each generation (fig7_training_bc0_avg ends on these bars). Dashed: y = c - d n^-1/2 fitted to the four bars
 (c = 3.44, d = 1.41); 32 agents 3.19x, 64 agents 3.27x (no swarm of that size was run).
 

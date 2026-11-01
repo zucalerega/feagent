@@ -2,8 +2,8 @@
 
 **Caption.** Afternoon setup, automesher = 1. Solid: running mean of the best agent per generation (gens 1..g); gen 7 is the fig3_scaling_bc0_bestmean bar.
 Dashed: the best agent's per-generation score is fitted with y = a + b ln(g + 1) on all 8 measured
-generations and continued from its gen-7 value at that rate to gen 15; the same measure is applied to measured +
-projected values (no run went past gen 7).
+generations used and continued from its last measured value at that rate to gen 15; the same measure is
+applied to measured + projected values. Measured: gens 0-7 (no run went past gen 7).
 
 | agents | gens 0-7 | rate b | projected gen 15 |
 |---|---|---|---|

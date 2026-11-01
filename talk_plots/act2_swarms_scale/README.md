@@ -14,8 +14,8 @@ runs of the 9 run folders. Only one run is invalid: `scale_s1_opus` gen 1 bc7 (s
 | `fig1_best_per_gen` (HEADLINE) | On 65_bc0, 8 agents improve almost every generation; 2 agents stall |
 | `fig1b_best_per_gen_with_morning` | the same, with the morning runs dashed |
 | `fig2_mean_best_by_team_size` | More agents, better swarm: 16 > 8 > 4 > 2 (16 agents: afternoon setup only) |
-| `fig3_scaling_bc0_{max,bestmean,avg}` | Talk versions for abc_00000065_bc0, automesher = 1: best score reached / best agent averaged over gens 1-7 / average agent after training; curve c - d n^-1/2 through the bars, projected to 32 and 64 agents |
-| `fig7_training_bc0_{max,bestmean,avg}` | Matching training curves (gen 7 = the bars), projected to gen 15 at each team's log-rate fitted on all 8 generations |
+| `fig3_scaling_bc0_{max,max5,bestmean,avg}` | Talk versions for abc_00000065_bc0, automesher = 1: best score reached (max5: gens 0-4 only) / best agent averaged over gens 1-7 / average agent after training; curve c - d n^-1/2 through the bars, projected to 32 and 64 agents |
+| `fig7_training_bc0_{max,max5,bestmean,avg}` | Matching training curves (last measured gen = the bars), projected to twice the measured generations at each team's log-rate fitted on all 8 generations |
 | `fig4_mean_agent_per_gen` | Not just more draws: the average agent learns too (0.55 → 0.73 with 8 agents) |
 | `fig5_swarm_vs_single` | 8 agents beat one budget-matched agent on 65_bc0 and tie on bc7 |
 | `fig6_cost_per_gen` | Cost grows sub-linearly: 4x the agents cost 3.3x per generation |

@@ -1,6 +1,6 @@
 # fig3_scaling_bc0_bestmean: 16 > 8 > 4 > 2, extrapolated
 
-**Caption.** abc_00000065_bc0, afternoon setup (diversity on), automesher = 1 (scores divided by 0.25). Bars: the gen-7 value of
+**Caption.** abc_00000065_bc0, afternoon setup (diversity on), automesher = 1 (scores divided by 0.25). Bars: the last measured value (gen 7) of
 `bestmean` = running mean of the best agent per generation (gens 1..g) (fig7_training_bc0_bestmean ends on these bars). Dashed: y = c - d n^-1/2 fitted to the four bars
 (c = 3.65, d = 2.25); 32 agents 3.25x, 64 agents 3.37x (no swarm of that size was run).
 
