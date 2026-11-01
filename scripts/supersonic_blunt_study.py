@@ -7,8 +7,13 @@ bow shock standoff (along the line from the stagnation point against the freestr
 Billig's cylinder-wedge correlation; then Richardson extrapolation / GCI of every QoI
 (feacore.verification.gci.analyze). --alpha 0 is the symmetric validation case.
 
-    python scripts/supersonic_blunt_study.py --alpha 10 --levels 0.5,1,2,4 --out /tmp/sbw/study_a10
+    python scripts/supersonic_blunt_study.py --alpha 10 --levels 0.5,1,2,4 --average 30 --out /tmp/sbw/study_a10
     python scripts/supersonic_blunt_study.py --alpha 0 --levels 0.5,1,2,4 --out /tmp/sbw/study_a0
+
+At 10 deg a small limit cycle of the scheme (behind the sonic line) keeps the windward flank pressure
+moving by ~0.1 % peak to peak: --average N continues each level N flow times and takes the QoIs' time
+mean, so the extrapolation sees the mean flow (the band is reported). --resume reuses existing case
+directories (e.g. to average a level solved earlier).
 
 Writes <out>/study.json and prints a markdown table (docs/benchmarks_cfd.md, "Supersonic blunted wedge").
 """
@@ -17,13 +22,58 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import time
 from pathlib import Path
 
+import numpy as np
 
 from feacore.problems.supersonic.blunt_wedge import SupersonicBluntWedge2D, billig_standoff, standoff
+from feacore.solver import _foam_compressible as fc
+from feacore.solver import _foam_io as fio
 from feacore.solver import solve
+from feacore.solver._foam_env import require_openfoam
+from feacore.solver._foam_fv import FvMesh
+from feacore.solver._foam_mesh import convert
 from feacore.verification.gci import analyze
+
+
+def _snapshot(case, p: SupersonicBluntWedge2D, cdir: Path, fm, poly, mesh, tdir: Path):
+    g = p.params
+    r = fc.CompressibleResult(case, fm, cdir, g["gamma"], g["gas_constant"], 0.0, g["p_inf"], [])
+    r._load(poly, tdir, mesh)
+    return r
+
+
+def average(case, p: SupersonicBluntWedge2D, cdir: Path, n_ft: int, work: Path) -> dict:
+    """Continue the kept case ``cdir`` by ``n_ft`` flow times, one at a time, and evaluate the QoIs after
+    each: their time mean (the reference over a limit cycle) and band (min, max). Also returns the
+    last snapshot result (for the standoff)."""
+    fe = require_openfoam()
+    fm = convert(case.mesh_path(), 2, 1.0, work / "_avg.msh")
+    poly = fio.read_poly(cdir)
+    nb = fio.read_list(cdir / "constant" / "polyMesh" / "neighbour").astype(np.int64)
+    mesh = FvMesh(poly["points"], poly["faces"], poly["owner"], nb, poly["patches"])
+    e = np.array(p.u_inf + [0.0]) / np.linalg.norm(p.u_inf)
+    speed = float(np.linalg.norm(p.u_inf))
+    t_ref = float(np.ptp(mesh.C @ e)) / speed                 # as the backend defines one flow time
+    opts = {**fc.DEFAULTS, **(case.analysis.options or {})}
+    samples, res = [], None
+    for _ in range(n_ft):
+        t0 = float(fc._times(cdir)[-1].name)
+        fc._write_control(cdir, t0 + t_ref, 1e-9, t_ref, float(opts["max_co"]))
+        code, _, tail, reason = fc._run_solver(fe, cdir, None)
+        if code != 0 or reason == "diverged":
+            raise RuntimeError("rhoCentralFoam failed while averaging:\n" + "".join(tail[-20:]))
+        times = fc._times(cdir)
+        for old in times[:-2]:
+            shutil.rmtree(old)
+        res = _snapshot(case, p, cdir, fm, poly, mesh, times[-1])
+        samples.append(res.evaluate_all())
+    names = list(samples[0])
+    return {"flow_times": n_ft, "mean": {n: float(np.mean([s[n] for s in samples])) for n in names},
+            "min": {n: float(min(s[n] for s in samples)) for n in names},
+            "max": {n: float(max(s[n] for s in samples)) for n in names}, "samples": samples, "result": res}
 
 
 def main(argv=None) -> int:
@@ -34,6 +84,11 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--chunk", type=float, default=5.0, help="flow times between steadiness checks")
     ap.add_argument("--no-map", action="store_true", help="start every level from the freestream")
+    ap.add_argument("--average", type=int, default=0,
+                    help="after each solve, continue this many flow times and take the QoIs' time mean "
+                         "(over a limit cycle) as the level's value")
+    ap.add_argument("--max-flow-times", type=float, default=None, help="cap of each solve (before averaging)")
+    ap.add_argument("--resume", action="store_true", help="reuse an existing case_<k> dir instead of solving")
     args = ap.parse_args(argv)
 
     p = SupersonicBluntWedge2D(id=f"supersonic_blunt_wedge_2d_a{args.alpha:g}", alpha=args.alpha, mach=args.mach)
@@ -46,24 +101,40 @@ def main(argv=None) -> int:
         tag = f"k{k:g}"
         mesh = p.mesh(out / f"{tag}.msh", h)
         cdir = out / f"case_{tag}"
-        if cdir.exists():
-            raise SystemExit(f"{cdir} exists: use a fresh --out")
+        case = p.case(mesh)
         t = time.time()
-        res = solve(p.case(mesh), backend="openfoam", case_dir=str(cdir), chunk=args.chunk,
-                    **({"init_from": str(prev)} if prev is not None and not args.no_map else {}))
+        if args.resume and cdir.exists() and fc._times(cdir):
+            info = None                                       # solved by an earlier run of this script
+            print(f"k={k:g}: resuming {cdir} at t = {fc._times(cdir)[-1].name}", flush=True)
+        else:
+            if cdir.exists():
+                raise SystemExit(f"{cdir} exists: use a fresh --out (or --resume)")
+            extra = {"init_from": str(prev)} if prev is not None and not args.no_map else {}
+            if args.max_flow_times is not None:
+                extra["max_flow_times"] = args.max_flow_times
+            res = solve(case, backend="openfoam", case_dir=str(cdir), chunk=args.chunk, **extra)
+            info = res.info
+        band = None
+        if args.average > 0:
+            avg = average(case, p, cdir, args.average, out)
+            q, res = avg["mean"], avg["result"]
+            band = {"flow_times": args.average, "min": avg["min"], "max": avg["max"]}
+        else:
+            q = res.evaluate_all()
         wall = time.time() - t
-        q = res.evaluate_all()
-        info = res.info
-        row = {"k": k, "h": h, "cells": info.n_cells, "time_steps": info.time_steps, "flow_times": info.flow_times,
-               "steady": info.steady, "converged": info.converged, "wall_s": round(wall, 1), "qois": q,
+        row = {"k": k, "h": h, "cells": res.fm.n_cells, "time_steps": info.time_steps if info else None,
+               "flow_times": info.flow_times if info else None, "steady": info.steady if info else "resumed",
+               "converged": info.converged if info else None, "wall_s": round(wall, 1), "qois": q, "band": band,
                "p_stag_over_pitot": q["p_stag"] / p.pitot(), **standoff(res, p),
-               "warnings": [w for w in info.warnings if not w.startswith("info: OpenFOAM")]}
+               "warnings": [w for w in (info.warnings if info else []) if not w.startswith("info: OpenFOAM")]}
         rows.append(row)
         prev = cdir
-        print(f"k={k:g}: {info.n_cells} cells, {info.time_steps} steps, {info.flow_times:.0f} flow times, "
-              f"steady={info.steady or 'NO'}, {wall:.0f} s; " + ", ".join(f"{n}={v:.6g}" for n, v in q.items())
-              + f"; p_stag/pitot={row['p_stag_over_pitot']:.5f}; standoff/R={row.get('standoff_over_R', float('nan')):.4f}",
-              flush=True)
+        spread = ("; band " + ", ".join(f"{n} {(band['max'][n] - band['min'][n]) / max(abs(q[n]), 1e-30):.1e}"
+                                        for n in q) if band else "")
+        print(f"k={k:g}: {row['cells']} cells, flow times {row['flow_times']}, steady={row['steady'] or 'NO'}, "
+              f"{wall:.0f} s; " + ", ".join(f"{n}={v:.7g}" for n, v in q.items())
+              + f"; p_stag/pitot={row['p_stag_over_pitot']:.5f}; standoff/R={row.get('standoff_over_R', float('nan')):.4f}"
+              + spread, flush=True)
         (out / "study.json").write_text(json.dumps({"alpha": args.alpha, "mach": args.mach, "rows": rows}, indent=1))
 
     hs = [r["h"] for r in rows]

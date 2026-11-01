@@ -1,4 +1,4 @@
-# OpenFOAM backend (`backend="openfoam"`, physics `flow`)
+# OpenFOAM backend (`backend="openfoam"`, physics `flow` and `compressible`)
 
 Steady incompressible flow for the same agent loop as the FEA problems: the agent produces a case
 JSON plus a gmsh `.msh` with named groups, and `feacore.solver.solve(case, backend="openfoam")`
@@ -275,9 +275,71 @@ Default QoIs:
 Tested on the harness `tee` part (tets, Re = 200): mass balance 1e-9, converged in 200 iterations,
 about 2 s.
 
+## Compressible flow: `rhoCentralFoam` (physics `compressible`)
+
+Supersonic flow of a perfect gas: `feacore/solver/_foam_compressible.py` (the backend dispatches on
+`analysis.physics`). Tests: `tests/test_supersonic.py`. The benchmark is `supersonic_blunt_wedge_2d`
+(`docs/benchmarks_cfd.md`, "Supersonic blunted wedge").
+
+- **Case:**
+  - Material: `gamma`, `gas_constant` (J/(kg K)) and `mu`. `mu = 0` is inviscid (Euler); `mu > 0`
+    adds laminar viscous terms with constant `mu` and option `prandtl`.
+  - BCs:
+    - `freestream`: `value` is the velocity vector, plus `p_inf` (Pa) and `T_inf` (K). `inletOutlet`
+      on U, p and T: fixed where the flow enters, extrapolated where it leaves. It is a supersonic
+      freestream boundary; a subsonic inflow would need p extrapolated.
+    - `outlet`: zero gradient, a supersonic outflow.
+    - `wall`: no slip, adiabatic. `slip`: an inviscid wall. `symmetry`.
+    - Groups without a BC are slip walls (inviscid) or no-slip walls (viscous).
+  - Fields: `p` is the absolute static pressure; `T`, `rho = p / (R T)` and `mach` are added.
+  - The `force` QoI uses the gauge pressure `p - p_inf`, so a body that the domain cuts (no base)
+    gets the force it would have with a base at `p_inf`.
+- **Solver:** `rhoCentralFoam` with Kurganov-Tadmor central-upwind fluxes (option `flux_scheme`).
+  - Limited reconstruction of rho, U and T: option `limiter`, vanAlbada by default.
+  - Explicit Euler time stepping at Courant `max_co`, 0.2 by default.
+  - It starts from the uniform freestream (the first freestream BC). `init_from` maps a kept case of
+    the same domain onto the mesh first (`mapFields -consistent`).
+  - About 1.4 us per cell per time step on one core.
+- **Steady state:** the run goes in chunks of `chunk` flow times; t_ref = the mesh's extent along
+  the freestream / |U_inf|. After each chunk:
+  - it stops if the field changed by at most `steady_tol` over the last flow time (volume RMS of p,
+    U and T, relative to the freestream): `info.steady = "field"`;
+  - or if every QoI moved by at most `qoi_tol` of its scale over the last 3 chunks (q_inf for
+    pressures, q_inf * L * depth for forces, the freestream values otherwise): `info.steady =
+    "qois"`, with a note on where the field still moves;
+  - else it runs up to `max_flow_times`.
+
+  The second rule exists because a limited central scheme on a blunt body often settles into a
+  small limit cycle instead of a steady state.
+- **Limit cycles and the default scheme.** Measured on the blunted wedge at h0 (3072 cells), alpha =
+  0, started from the converged 2 h0 solution; change of p per flow time (volume RMS / p_inf) and
+  the stagnation pressure's spread over 60 flow times:
+
+  | limiter | Courant | change per flow time | p_stag spread |
+  |---|---|---|---|
+  | vanLeer | 0.4 | 5.3e-3 | not measured |
+  | vanLeer | 0.2 | 4.3e-3 | 0.10 % |
+  | vanLeer | 0.1 | 3.7e-3 | 0.03 % |
+  | vanAlbada | 0.4 | 3.9e-3 | 3e-5 |
+  | vanAlbada | 0.2 | 6.0e-4 | 2e-5 |
+
+  The Courant number alone does not remove it, so it is not a time-stepping instability. The
+  vanLeer cycle is a wave train in the supersonic shock layer, starting where the sonic line meets
+  the bow shock. Tadmor fluxes were worse than Kurganov on the coarse mesh. vanAlbada at 0.2 is the
+  default.
+
+  At 10 deg incidence a smaller cycle remains: on the windward flank p moves by 0.1 % peak to peak
+  (7e-4 of q_inf), with a period of about 10 flow times. The reference study averages over it.
+- **Check:** a uniform Mach 3 flow at 10 deg through a box with `inletOutlet` on every boundary
+  stays uniform to 1e-8.
+
 ## Limitations
 
-* Steady, incompressible, single fluid, serial. No unsteady (pimpleFoam) and no parallel runs.
+* Incompressible flow (`simpleFoam`): steady, single fluid, serial. No unsteady (pimpleFoam) and
+  no parallel runs.
+* Compressible flow (`rhoCentralFoam`): supersonic freestream and outflow only, explicit time
+  stepping (no local time stepping), serial. A fine mesh takes hours (about 200 s per flow time at
+  50k cells).
 * BCs and the `flow_rate` / `force` QoIs need boundary groups. Facet groups inside the domain
   (interior surfaces) are detected but not supported yet.
 * `write_vtu` writes cell centres with values as a point cloud. Use `case_dir` and ParaView for

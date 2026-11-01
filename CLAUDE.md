@@ -182,6 +182,19 @@ Decisions:
   every h: next to a wall, linear interpolation misses the face values in the same direction
   everywhere. Wall forces use the wall-normal distance, as the solver does.
   `docs/solver_openfoam.md`, "3D meshes".
+- **Compressible flow (`backend="openfoam"`, physics "compressible"):** a perfect gas (`Material.gamma`,
+  `Material.gas_constant`; `mu = 0` is inviscid), solved by `rhoCentralFoam`
+  (`feacore/solver/_foam_compressible.py`, `docs/solver_openfoam.md`).
+  - BCs: `freestream` (velocity, `p_inf`, `T_inf`), `outlet`, `wall`, `slip`, `symmetry`; supersonic
+    flow only.
+  - Forces use the gauge pressure p - p_inf.
+  - It runs from the freestream until the field, or every QoI, stops changing. The QoI rule exists
+    because limited central schemes keep small limit cycles at a blunt body's sonic point.
+  - Defaults: vanAlbada at Courant 0.2. vanLeer cycled at every Courant number.
+  - Ground-truth case: `supersonic_blunt_wedge_2d` (`feacore/problems/supersonic/`), a cylinder-wedge at
+    Mach 3 and 10 deg incidence. Its references are mesh-converged (`scripts/supersonic_blunt_study.py`).
+    At alpha = 0 it is validated against the exact pitot pressure, and its standoff against Billig
+    (`docs/benchmarks_cfd.md`).
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference

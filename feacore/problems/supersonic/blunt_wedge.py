@@ -111,8 +111,12 @@ class SupersonicBluntWedge2D(FlowProblem):
     n_nose0, n_side0, n_norm0 = 24, 24, 32    # cells at h0: each 100 deg nose arc, each flank, body to inflow
     ratio_norm = 3.0                          # cell size at the inflow boundary / at the body
     ratio_side = 3.0                          # flank cell size at the outflow / at the shoulder
-    max_flow_times = 600
+    # Solver controls of the reference setup. At incidence the scheme keeps a small limit cycle behind the
+    # sonic line: p_windward moves by 7e-4 of q_inf peak to peak (h0), the other QoIs by < 2e-4, so the QoIs
+    # count as steady at 1e-3 of q_inf (well below any tolerance); the reference study averages over it.
+    max_flow_times = 200
     steady_tol = 1e-6
+    qoi_tol = 1e-3
 
     def __init__(self, id: str | None = None, **params):
         super().__init__(id, **params)
@@ -306,7 +310,7 @@ class SupersonicBluntWedge2D(FlowProblem):
         return Material(gamma=p["gamma"], gas_constant=p["gas_constant"], mu=0.0)
 
     def options(self) -> dict:
-        return {"max_flow_times": self.max_flow_times, "steady_tol": self.steady_tol}
+        return {"max_flow_times": self.max_flow_times, "steady_tol": self.steady_tol, "qoi_tol": self.qoi_tol}
 
     def case(self, mesh_path, order: int = 2) -> Case:
         p = self.params
