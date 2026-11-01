@@ -62,9 +62,13 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   - Field mode on flow (`ace/flow_field.py`): whole-domain velocity L2 error and the speed at check points,
     against the exact solution or a fine structured reference; automesher = the mesh tool at h0. With it
     `--deep` works on flow (`ace/flow_report.py` run reports).
+  - `--deep` on a flow task: the agent, teacher and self-reflection also read `process_brief.FLOW_BRIEF`.
+    Mesh calls are `FlowMeshCall` (quads, boundary_layer, sweep; no order), and the teacher's
+    experiments vary the cell structure. Elasticity prompts and schemas are byte-identical to
+    `ace-loop`'s.
   - Real runs (Claude API): `bash scripts/setup_ace_cfd.sh`, then `python -m ace.preflight --suite cfd --ping`;
-    `ace/README.md`, "Running the CFD suites with the Claude API". `--teacher inspect|both` and
-    `--statement requirements` are elasticity-only, and `run_loop` refuses them for flow tasks.
+    `ace/README.md`, "Running the CFD suites with the Claude API". `--teacher inspect|both`,
+    `--statement requirements` and `--pre-teach` are elasticity-only, and `run_loop` refuses them for flow tasks.
   - Without a local OpenFOAM: `scripts/openfoam_docker.sh` (OpenFOAM v1912 in Docker, plus shims) and `FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp`.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free

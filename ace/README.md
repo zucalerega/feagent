@@ -396,9 +396,16 @@ report. It has:
 - the flow feedback the agent saw;
 - three pictures: mesh, velocity error, and speed next to the reference's.
 
-The disagreement map compares the runs' speed. The process brief tells every role how flow tasks are
-scored and meshed. A two-generation mock `--deep` run on `poiseuille_channel` and
-`taylor_couette_2d` (`--mock`) exercises all of it without API calls.
+The disagreement map compares the runs' speed. On a flow task the agent (after the process brief),
+the teacher and the self-reflection (next to the task statement) also read `process_brief.FLOW_BRIEF`:
+how flow tasks are scored, meshed, gated and set up, and what the flow tools return. It goes with flow
+tasks only, as `NL_SCORING` does for a physical test, so a run without flow tasks reads exactly the
+elasticity prompts. The suggested and planned next mesh call is then a `FlowMeshCall`: h, quads,
+refinements, boundary_layer and sweep, no order. The teacher's experiments vary the cell structure
+where they would vary the element order: the variants change h, the boundary layer, one refinement's
+placement, the cell type, and so on, in that order, and the first explorer tries another cell
+structure. A two-generation mock `--deep` run on `poiseuille_channel` and `taylor_couette_2d`
+(`--mock`) exercises all of it without API calls.
 
 ```bash
 ACE_SCORE=field python -m ace.field_error --precompute lid_driven_cavity_re100,cylinder_channel_dfg_2d1
@@ -458,11 +465,12 @@ ACE_SCORE=field .venv/bin/python -m ace.run_loop --suite cfd --deep --split --me
   - The probe run's `Spend by role` line and `cost.jsonl` give the real figure; verify `PRICES` in
     `config.py` first.
 - **Modes that work for flow:** the default point scoring (leave `ACE_SCORE` unset), field scoring
-  (`ACE_SCORE=field`, the velocity field) and with it `--deep` (and `--pre-teach`) and the single-agent
+  (`ACE_SCORE=field`, the velocity field) and with it `--deep` and the single-agent
   baseline `ace.single_loop` (all-flow task lists), `--teacher rerun` (the default),
   `--memory shared|shared+private`, `--split`, `--peers`, `--personas`.
-- **Modes that don't:** `--teacher inspect|both` (its tools read the elastic stress field) and
-  `--statement requirements` (written for elasticity setups). `run_loop` refuses them for flow tasks.
+- **Modes that don't:** `--teacher inspect|both` (its tools read the elastic stress field),
+  `--statement requirements` (written for elasticity setups) and `--pre-teach` (it revises the context
+  from a physical test's teacher brief). `run_loop` refuses them for flow tasks.
 - **Concurrency:** `--concurrency` (default 4) agent runs solve in parallel, and as many scoring
   workers start on finished runs while the others still work. 2D solves are light. A 3D solve and
   its refinement study can take 0.3-0.5 GB each, so keep `--concurrency` at most (RAM in GB) / 4

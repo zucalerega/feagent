@@ -17,8 +17,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ace.config import MAX_SOLVES
-from ace.deep_teacher import (NL_SCORING, PROCESS_BRIEF, MeshCall, NoteItem, agent_name, is_nonlinear,
-                              report_as_text, report_images, trace_excerpt)
+from ace.deep_teacher import (FLOW_BRIEF, NL_SCORING, PROCESS_BRIEF, FlowMeshCall, MeshCall, NoteItem, agent_name,
+                              is_flow_task, is_nonlinear, report_as_text, report_images, trace_excerpt)
 from ace.llm import image_block, text_block
 from ace.run_report import report_text
 
@@ -38,6 +38,11 @@ class SelfReflection(BaseModel):
     plan_next: str = Field(description="what I will deliberately change next generation, and which solve "
                                        "I will spend on an experiment")
     next_mesh_call: MeshCall = Field(description="the exact first mesh call I will try next time on this task")
+
+
+class FlowSelfReflection(SelfReflection):
+    """SelfReflection on a flow task: the next mesh call is a FlowMeshCall (no order; quads, boundary layer, sweep)."""
+    next_mesh_call: FlowMeshCall = Field(description="the exact first mesh call I will try next time on this task")
 
 
 SYSTEM = f"""\
@@ -77,9 +82,11 @@ def build_user(report: dict, run: dict, own_notes_text: str) -> list[dict]:
     # A nonlinear task (ace.nonlinear) is scored by its force curve against a test, not by a field
     # reference: say so (it overrides the field-error wording above) and show the curve and PEEQ.
     nl = is_nonlinear(run.get("problem_id") or "")
+    flow = is_flow_task(run.get("problem_id") or "")     # a flow task: velocity, cells, no order (FLOW_BRIEF)
     blocks = [text_block(
         f"MY RUN {rid} (I am agent {agent_name(rid)}, task {run.get('problem_id')})\n"
         + (f"--- how this task is scored ---\n{NL_SCORING}\n" if nl else "")
+        + (f"--- this is a flow task ---\n{FLOW_BRIEF}" if flow else "")
         + f"--- my final results and whole mesh ---\n{_safe_text(report)}\n"
         f"--- the notes I had ---\n{own_notes_text or '(none)'}\n"
         f"--- my steps ---\n{trace_excerpt(run, TRACE_CHARS)}\n")]
@@ -104,7 +111,8 @@ def _safe_text(report: dict) -> str:
 
 
 def reflect_on_run(report: dict, run: dict, own_notes_text: str, llm, records: list) -> SelfReflection | None:
-    out, _ = llm.structured("reflect", SYSTEM, build_user(report, run, own_notes_text), SelfReflection, records)
+    schema = FlowSelfReflection if is_flow_task(run.get("problem_id") or "") else SelfReflection
+    out, _ = llm.structured("reflect", SYSTEM, build_user(report, run, own_notes_text), schema, records)
     if out is not None:          # a note is about this run's task unless the model called it general
         for n in out.what_i_learned:
             if n.task != "general":

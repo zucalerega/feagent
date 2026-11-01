@@ -449,7 +449,8 @@ def main(argv=None) -> int:
             context = process_brief.single_context(tasks, mem.shared, mem.private[0],
                                                    {t: {"last_run": state["last_run"].get(t), "feedback": state["feedback"].get(t),
                                                         "reflection": state["reflection"].get(t),
-                                                        "task_feedback": state["teacher"].get(t)} for t in tasks})
+                                                        "task_feedback": state["teacher"].get(t)} for t in tasks},
+                                                   flow=all_flow(tasks))
             (gdir / "context" / f"{AGENT}.md").write_text(context)
             seconds = swarm_agent_seconds(args.swarm_dir, gen) or args.gen_seconds
             print(f"  time budget: {seconds:.0f} s (the swarm's agents phase)")

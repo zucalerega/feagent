@@ -307,8 +307,10 @@ class MockLLM:
             return getattr(self, "_" + schema.__name__)(text, schema), rec
         if schema.__name__ in ("AgentFeedback", "CrossRunFeedback", "SelfReflection", "OrganizerOutput"):
             return getattr(self, "_" + schema.__name__)(text, schema), rec
-        if schema.__name__ == "AssignedFeedback":             # AgentFeedback plus the assignment
-            return self._AgentFeedback(text, schema), rec
+        if schema.__name__ in ("AssignedFeedback", "FlowAgentFeedback", "FlowAssignedFeedback"):
+            return self._AgentFeedback(text, schema), rec          # AgentFeedback plus the assignment / flow call
+        if schema.__name__ == "FlowSelfReflection":
+            return self._SelfReflection(text, schema), rec
         return self._from_schema(schema, text), rec
 
     # ---------------------------------------------------------------- ace.requirements roles
@@ -348,11 +350,17 @@ class MockLLM:
     def warm_cache(self, *args, **kwargs):
         pass                                        # no cache to warm in mock mode
 
+    # A flow task's schemas (FlowAgentFeedback, FlowSelfReflection) take a FlowMeshCall: no order.
+    FLOW_CALL = {"h": 0.1, "quads": True, "refinements": [],
+                 "boundary_layer": {"groups": ["walls"], "first": 0.001, "ratio": 1.2, "layers": 3}}
+
     def _AgentFeedback(self, text: str, schema):
         rid = re.search(r"^FOR RUN (\S+)", text, re.M).group(1)
         task = re.search(r"^TASK (\S+)", text, re.M).group(1)
         call = {"h": 0.1, "order": 2, "refinements": [{"group": None, "point": [0.0, 0.0], "size": 0.02,
                                                        "radius": 0.2}]}
+        if schema.__name__.startswith("Flow"):
+            call = {**self.FLOW_CALL, "refinements": call["refinements"]}
         role = re.search(r"^YOUR ROLE: (\w+)", text, re.M)
         assignment = role and {"agent": rid.rsplit("-", 1)[-1], "role": role.group(1),
                                "experiment": f"mock {role.group(1)} experiment for {rid}", "why": "mock"}
@@ -385,7 +393,9 @@ class MockLLM:
             "what_happened": f"mock: in {rid} I meshed uniformly",
             "what_i_learned": [self._note(kind="idea", content=f"mock self note {i} from {rid}: order 2")
                                for i in range(5)],
-            "plan_next": "mock: refine the hotspot", "next_mesh_call": {"h": 0.1, "order": 2, "refinements": []}})
+            "plan_next": "mock: refine the hotspot",
+            "next_mesh_call": self.FLOW_CALL if schema.__name__.startswith("Flow") else {"h": 0.1, "order": 2,
+                                                                                         "refinements": []}})
 
     def _OrganizerOutput(self, text: str, schema):
         # Keep every current note (with its id) and add every incoming one as new: the notes are

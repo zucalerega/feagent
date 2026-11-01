@@ -42,6 +42,10 @@ Flow problems (the CFD suite, `ace/README.md`) get the same six tools in their f
 - `compare(solve_a, solve_b)`: the relative L2 difference of the two velocity fields, the regions
   where they differ, every quantity's change.
 
+The short version of the flow tools is not in TOOLS_BRIEF but in `process_brief.FLOW_BRIEF`. The
+agent, the teacher and the self-reflection read it with a flow task only, so elasticity prompts are
+unchanged.
+
 ## How a careful engineer uses them
 
 1. `inspect_geometry`: find the supported and loaded faces, the **re-entrant edges** (stress

@@ -775,11 +775,12 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
 # --------------------------------------------------------------------------- main loop
 
 
-def _check_flow_tasks(problem_ids: list[str], teacher: str | None = None) -> None:
+def _check_flow_tasks(problem_ids: list[str], teacher: str | None = None, pre_teach: bool = False) -> None:
     """Fail before anything is spent when flow tasks cannot run: they need OpenFOAM + foamlib (or
-    every agent's solve fails while its API calls are still billed), and requirements statements and
-    the teacher's inspection tools are defined for elasticity only. Field scoring works on flow
-    (ace.flow_field: the velocity field), and so does --deep."""
+    every agent's solve fails while its API calls are still billed), and requirements statements,
+    the teacher's inspection tools and pre-teaching (built on a physical test's teacher brief) are
+    defined for elasticity only. Field scoring works on flow (ace.flow_field: the velocity field),
+    and so does --deep."""
     from ace import fea
 
     flow = [p for p in problem_ids if fea.is_flow(fea.get_problem(p))]
@@ -788,6 +789,9 @@ def _check_flow_tasks(problem_ids: list[str], teacher: str | None = None) -> Non
     if teacher not in (None, "rerun"):
         raise SystemExit(f"--teacher {teacher} reads the elastic stress field (ace.inspect_tools); the flow tasks "
                          f"{flow} need --teacher rerun.")
+    if pre_teach:
+        raise SystemExit(f"--pre-teach revises the context from a physical test's teacher brief (ace/pre_teach.py, "
+                         f"elasticity only); the flow tasks {flow} have none.")
     if config.STATEMENT == "requirements":
         raise SystemExit(f"--statement requirements is defined for elasticity setups only (ace/requirements.py); "
                          f"the flow tasks {flow} need --statement bcs.")
@@ -871,7 +875,7 @@ def main(argv=None) -> int:
     suite_train, suite_holdout = config.SUITES[args.suite]
     train = [p for p in (args.problems if args.problems is not None else ",".join(suite_train)).split(",") if p]
     holdout = [p for p in (args.holdout if args.holdout is not None else ",".join(suite_holdout)).split(",") if p]
-    _check_flow_tasks(train + holdout, args.teacher)
+    _check_flow_tasks(train + holdout, args.teacher, args.pre_teach)
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
     (out / "run_config.json").write_text(json.dumps({"suite": args.suite, "train": train, "holdout": holdout}, indent=1))
@@ -954,8 +958,9 @@ def main(argv=None) -> int:
         for key, per_agent in init["deep"].items():
             deep[key].update(per_agent)
 
-    def agent_text(k: int, pid: str | None, gen: int) -> str:
-        """Agent k's prompt text on task pid (None: held out): memory, then peers and persona."""
+    def agent_text(k: int, pid: str | None, gen: int, task: str | None = None) -> str:
+        """Agent k's prompt text on task pid (None: held out; task: the task it runs then): memory,
+        then peers and persona."""
         prev = [r for r in all_runs[pid] if r["generation"] == gen - 1] if pid is not None else []
         if args.deep:
             a = f"a{k}"
@@ -963,7 +968,8 @@ def main(argv=None) -> int:
                 a, pid, mem.shared, mem.private[k],     # Playbooks: rendered grouped by task
                 deep["feedback"].get(a), deep["reflection"].get(a), deep["highlights"],
                 peers_text(k, pid, prev) if pid is not None else "",
-                last_run=deep["last_run"].get(a), task_feedback=deep["teacher"].get(pid), persona=persona_of.get(k))
+                last_run=deep["last_run"].get(a), task_feedback=deep["teacher"].get(pid), persona=persona_of.get(k),
+                flow=_is_flow_task(pid or task or ""))
         else:
             text = mem.prompt_text(k, args.top_n, pid)
         if peers and pid is not None and not args.deep:
@@ -1024,11 +1030,11 @@ def main(argv=None) -> int:
                          "playbook_text": agent_text(k, pid, gen), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
                          "mock": args.mock} for k, pid in sorted(group.items())]
                 jobs += [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
-                          "playbook_text": agent_text(k, None, gen), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
+                          "playbook_text": agent_text(k, None, gen, pid), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
                           "mock": args.mock} for k in range(args.agents) for pid in holdout]
             elif private:   # persistent agents a0..: each sees the shared playbook + its own notes
                 jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
-                         "playbook_text": agent_text(k, pid if pid in train else None, gen),
+                         "playbook_text": agent_text(k, pid if pid in train else None, gen, pid),
                          "workdir": str(gdir / "work" / f"{pid}-a{k}"),
                          "mock": args.mock} for k in range(args.agents) for pid in train + holdout]
             else:
