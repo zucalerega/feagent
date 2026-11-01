@@ -293,4 +293,34 @@ Results on abc_00000065 (Alpha Fast dogbone material; the run table is in `exper
   erosion, the bending hinge left after the tensile crack keeps carrying load, so the post-peak tail is long.
   The photo shows the break; the measured force was not recorded.
 
+### The neck recipe on every mesh system at a matched node count
+
+The recipe, unchanged for every mesh:
+
+    imperfection.py --platen sliding --amp-mm 0.1     # the mesh's own mode 1
+    crush.py --platen bonded --failure peeq_tension --compression-factor 0 --compression-switch 0.5:5
+
+Option and tooling changes behind it:
+
+* `failure.compression_switch` / `--compression-switch R:F`: compressive erosion is switched on, at F x
+  limit, at the first block end after the first failed cell where the force is below R x peak. By then the
+  tensile crack has crossed the outer half of the neck, and the compressed hinge left behind can break. The
+  switch is in the records (`compression_factor`) and the checkpoint.
+* `imperfection.py` handles C3D4 and C3D8 too: every node moves by the mode, and the reference load is lumped
+  over the facet corners by area.
+* `peeq_tension` on C3D8 takes the cell stress from the 8 corner nodes (tested).
+
+`experiments/mesh_systems/match_nodes.py` rebuilt each system's mesh at 40,000 +- 2 % nodes by tuning only that
+system's own size knob. harness_hex cannot reach that band with a valid hex mesh and runs at 54,408 nodes.
+
+Results (table in `experiments/physical/CRUSH_RUNS.md`):
+
+* All seven crack through both arm necks.
+* The six tet systems agree on the snap load to 1.3 %: 5787-5861 N, peak at 4.62-4.97 mm.
+* The neck element size differs between systems (2.8-3.5 mm), and so does the tip pocket size (1.4-1.9 mm).
+  At this cost, neither moves the result.
+* harness_hex (C3D8, finer) peaks 3 % higher. It breaks one neck and the other arm's tip, the photo's pattern.
+* Every run after the switch drops the force below 1 % of peak, except harness_neck, which a hand stop ended at
+  2.9 % with 7 stuck cells. None separates topologically: crushed tip cells keep the fragments face-connected.
+
 <!-- RESULTS -->

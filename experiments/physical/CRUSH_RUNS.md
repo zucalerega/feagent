@@ -266,4 +266,56 @@ Compute: Spark (4 runs x 5 threads): harness_auto, harness_expert, ace_sizing, g
 netgen `run-20261101-0935-n40k`, harness_hex and harness_neck `run-20261101-0942-n40k`, under
 `runs/nonlinear/neck_study/<system>_n40k_imp/abc_00000065/`.
 
-@@N40K_RESULTS@@
+### Results
+
+hf is the height fraction (0 = base, 1 = platen); "neck" is the ring wall. The crack is shown at the first
+increment after the peak with force < 50 % of the peak.
+
+| system | nodes | neck / tip median edge | first failed cell: where (hf), travel, force | peak force (snap load) | travel at peak | crack at 50 % of peak (travel; failed cells) | end state | wall |
+|---|---|---|---|---|---|---|---|---|
+| harness_auto | 40,078 | 2.83 / 1.73 mm | R tip pocket wall (0.88), 4.31 mm, 5.79 kN; necks follow | 5825 N | 4.62 mm | 5.14 mm: L neck 167, R neck 140, base 9, tip 4 | force < 1 % of peak at 14.99 mm; not separated | 3.6 h (Spark, 5 thr) |
+| harness_expert | 39,608 | 3.19 / 1.65 mm | **R neck outer fibre (0.62, y +4.0 mm)**, 4.62 mm, 5.81 kN | 5815 N | 4.72 mm | 5.95 mm: R neck 96, L neck 83, bore bottom 43, tip 3 | force < 1 % at 19.46 mm; not separated | 4.9 h (Spark) |
+| ace_sizing | 40,095 | 2.88 / 1.87 mm | R tip pocket wall (0.91), 4.19 mm, 5.74 kN; necks follow | 5808 N | 4.74 mm | 5.06 mm: L neck 165, R neck 131, tip 5, base 4 | force < 1 % at 18.90 mm; not separated | 4.9 h (Spark) |
+| gold_nested | 39,234 | 3.50 / 1.79 mm | **R neck (0.63, y +4.9 mm)**, 4.99 mm, 5.85 kN | 5855 N | 4.97 mm | 5.86 mm: R neck 103, L neck 86, base 15, tips 3 | force < 1 % at 16.93 mm; not separated | 4.4 h (Spark) |
+| netgen | 39,706 | 2.78 / 1.44 mm | **L neck (0.61, y +3.8 mm)**, 4.80 mm, 5.86 kN | 5861 N | 4.78 mm | 4.99 mm: L neck 165, R neck 144, base 4 | force < 1 % at 16.22 mm; not separated | 5.6 h (laptop, 4 thr) |
+| harness_neck | 40,538 | 3.13 / 1.67 mm | R tip pocket wall (0.92), 4.50 mm, 5.77 kN; necks follow | 5787 N | 4.69 mm | 5.77 mm: L neck 136, R neck 123, base 11, tips 9 | **stopped by hand** at 11.77 mm: force flat at 169 N (2.9 % of peak) since ~10 mm, held by 7 cells whose removal never converges | 5.8 h (laptop) |
+| harness_hex (unmatched, C3D8) | 54,408 | 1.08 / 0.57 mm | R tip at the bolt hole (0.90), 2.14 mm, 4.95 kN | 5995 N | 4.38 mm | 5.22 mm: **R tip 382, L neck 189**, L tip 19 | force < 1 % at 11.65 mm; not separated | 5.8 h (laptop) |
+| reference: harness_neck 58k MTI | 58,020 | 2.0 / 1.6 mm | L neck (0.62, y +4.1 mm), 4.49 mm, 5.74 kN | 5745 N | 4.53 mm | 4.60 mm: both necks | force < 1 % at 11.94 mm (after the manual cf 5 resume); not separated | 6.5 h |
+
+**Spread across the six tet systems at ~40k nodes:**
+
+- Peak (snap load): 5787-5861 N, mean 5825 N, range 75 N (1.3 %), sd 28 N.
+- Travel at peak: 4.62-4.97 mm.
+
+With harness_hex (54k, C3D8): peak 5787-5995 N (range 3.6 %), travel at peak 4.38-4.97 mm.
+
+**Where it breaks:**
+
+- **Every system cracks through both necks.** In the tet meshes the necks hold 80-99 % of the failed cells at
+  50 % of peak. Where the neck fails first, it is at y +3.8 to +4.9 mm (hf 0.61-0.63), the photo's break.
+- Three systems (harness_expert, gold_nested, netgen) fail first in the neck.
+- The other four (harness_auto, ace_sizing, harness_neck, harness_hex) first lose a single cell in a tip's
+  nut-pocket wall (mixed shear, triaxiality ~0.05). That cell is not the start of the break; the neck cells
+  follow within 0.1-0.5 mm (hex: 2.2 mm).
+- harness_hex is the odd one. Its C3D8 cells are finer and stiffer, so its tips start cracking early
+  (2.14 mm), and its peak is 3 % higher. At 50 % of peak its R arm is broken at the tip and its L arm at the
+  neck. That is the photo's pattern: one arm off at the neck, the other's tip crushed.
+- No run separates topologically. After the switch to compressive erosion, the force falls to < 1 % of peak
+  (harness_neck to 2.9 %), while a few crushed tip cells keep the fragments face-connected.
+
+**At equal node count the refinement choice barely matters for this question.** The neck edge sizes differ
+(2.8-3.5 mm) and so do the tip sizes (1.4-1.9 mm), yet the snap load varies by 1.3 % and the crack location not
+at all. The 58k neck-refined mesh (1.6 mm at the neck) gives 5745 N, -1.4 % against the 40k mean.
+
+Videos are in the scratchpad of the session that ran the study, under `study/videos/crush_n40k/`; not committed.
+
+- Per system, `<system>_abc_00000065_crush.mp4`: the original 3-panel look, 16 s.
+- Per system, `<system>_abc_00000065_crush_rtx.mp4`: Omniverse RTX, rendered on the Spark in `feagent-crush`
+  (24 GB cap), one at a time, about 29 s.
+- Per system, `closeup/<system>_neck_closeup.mp4`: the neck crack forming, 8 s (`neck_closeup.py`).
+- `all_systems_abc_00000065_crush{,_rtx}.mp4`: 3x2 grids of the six study systems (`crush_grid.sh`).
+- `neck_closeups_7_systems.mp4`: the 7 close-ups in a row, each after a title card.
+- harness_neck is its own (7th) video, not in the grids.
+
+Still: `physical_photo/abc_00000065_photo_vs_7_matched_meshes.png` (`break_stills.py`) shows the photo next to
+all 7, each at its first increment below 50 % of peak.
