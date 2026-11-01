@@ -25,6 +25,9 @@ Loading: bottom fixed; top moved along -axis (lateral 0), axis per part from the
   (or PEEQ >= --compression-factor x failure_peeq). Alpha Fast's compressive strength is not on the TDS: the
   factor (default 5, PEEQ 0.215) is an assumption that a brittle resin crushes far later than it breaks in
   tension.
+--compression-switch R:F (neck study: --compression-factor 0 --compression-switch 0.5:5): no compressive erosion
+  until the first block end after the first failure where the force is below R x peak; from then on the factor
+  is F, so the compressed hinge left behind the tensile crack can break too.
 
 Step policy (platen travel per output increment; every converged ccx increment is written):
   * <= 0.05 mm through yield (until a cell reaches half the failure PEEQ);
@@ -76,7 +79,8 @@ TAIL_RATIO, STOP_RATIO, STOP_COUNT, MAX_CRUSH = 0.6, 0.01, 3, 0.30
 RELEASE = {"adaptive": {"adaptive_release": True, "max_remove": 64}, "fixed": {"max_remove": 8},
            "fixed-held": {"max_remove": 8, "release_travel": "held"}}   # fixed cap, platen held (comparison)
 COLS = ["step", "platen_travel_mm", "force_N", "n_failed", "n_detached", "max_peeq", "iterations", "block",
-        "retry", "tail", "removed_in_block", "deferred", "stuck", "imbalance_rel", "wall_s", "release_cap"]
+        "retry", "tail", "removed_in_block", "deferred", "stuck", "imbalance_rel", "wall_s", "release_cap",
+        "compression_factor"]
 
 
 def _material(path):
@@ -102,7 +106,7 @@ def failure_options(D: float, limit: float, end_fraction: float, release: str = 
         {"release_travel": 1e-3 / int(round(1.0 / mm(p["block_min"])))} if release == "fixed-held" else {})
 
 
-CRIT_KEYS = ("criterion", "compression_factor", "triaxiality_min", "stress_limit")
+CRIT_KEYS = ("criterion", "compression_factor", "triaxiality_min", "stress_limit", "compression_switch")
 
 
 def criterion_options(failure: str, compression_factor: float | None, uts_pa: float) -> dict:
@@ -288,6 +292,9 @@ def main():
     ap.add_argument("--compression-factor", type=float, default=None,
                     help="peeq_tension / principal: cells not in tension erode at this x failure_peeq (default 5; "
                          "0: never); with --resume it overrides the parent's")
+    ap.add_argument("--compression-switch", default=None, metavar="R:F",
+                    help="peeq_tension / principal: at the first block end after the first failure with force < R x "
+                         "peak, the compression factor becomes F (e.g. 0.5:5; the neck-study rule)")
     ap.add_argument("--resume", default=None, help="run dir to continue (a new run dir is written)")
     ap.add_argument("--restart-file", default=None, help="parent's last-block .rout (runs without checkpoint)")
     a = ap.parse_args()
@@ -304,6 +311,9 @@ def main():
     mat, limit, mdoc = _material(a.material)
     cf = 5.0 if a.compression_factor is None else a.compression_factor
     crit = criterion_options(a.failure, cf or None, float(mdoc.get("uts_eng", 0.0)) * 1e6)
+    if a.compression_switch and a.failure != "peeq":
+        r_, f_ = (float(v) for v in a.compression_switch.split(":"))
+        crit["compression_switch"] = {"force_ratio": r_, "factor": f_}
     parent, resume, parent_rows, parent_summary = None, None, [], {}
     if a.resume:
         parent = Path(a.resume).resolve()
@@ -390,7 +400,7 @@ def main():
         row = [rec["step"], rec["lambda"] * D * 1e3, fsign * rec["reaction"][k], rec["n_failed"], rec["n_detached"],
                rec["max_peeq_alive"], rec["iterations"], rec["block"], rec["retry"], int(rec.get("tail", False)),
                rec.get("removed_in_block", 0), rec.get("deferred", 0), rec.get("stuck", 0),
-               rec.get("imbalance_rel"), time.time() - t0, rec.get("release_cap")]
+               rec.get("imbalance_rel"), time.time() - t0, rec.get("release_cap"), rec.get("compression_factor")]
         rows.append(row)
         w.writerow([f"{v:.6g}" if isinstance(v, float) else v for v in row])
         f.flush()

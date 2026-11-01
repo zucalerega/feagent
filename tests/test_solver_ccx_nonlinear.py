@@ -619,3 +619,74 @@ def test_crush_friction_platen_brackets(tmp_path):
     # strains it is < 0.5 %
     assert abs(force("friction", 10.0) / fb - 1) < 0.03
     assert abs(force("friction", 0.0) / fs - 1) < 0.03
+
+
+def _imperfection_module():
+    import importlib.util
+    import sys
+    d = Path(__file__).resolve().parents[1] / "experiments" / "physical"
+    sys.path.insert(0, str(d))
+    spec = importlib.util.spec_from_file_location("imperfection_exp", d / "imperfection.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_imperfection_node_moves_tet10_and_hex(tmp_path):
+    """imperfection.node_moves: max move = amplitude; C3D10 mid-edge nodes stay at their corners' mean move
+    (interior edges stay straight); C3D8 nodes all move by the mode. lumped_cload sums to the total force."""
+    from feacore.solver._ccx_mesh import build_model, read_gmsh
+
+    imp = _imperfection_module()
+    for mesh, order in ((_platen_box(tmp_path / "t.msh"), 2), (_hex_box(tmp_path / "h.msh"), 1)):
+        m = build_model(read_gmsh(mesh), 3, order)
+        rng = np.random.default_rng(0)
+        U = np.sin(m.X * 3.0) + 0.1 * rng.standard_normal(m.X.shape)
+        Us, dX = imp.node_moves(m, U, 1e-3)
+        assert abs(np.linalg.norm(Us, axis=1).max() - 1e-3) < 1e-15
+        if m.cell_type == "tetra10":
+            for j, (p, q) in enumerate(imp.TET10_EDGES):
+                Y = m.X + dX
+                mid = 0.5 * (Y[m.conn[:, p]] + Y[m.conn[:, q]])
+                orig = m.X[m.conn[:, 4 + j]] - 0.5 * (m.X[m.conn[:, p]] + m.X[m.conn[:, q]])
+                assert np.allclose(Y[m.conn[:, 4 + j]] - mid, orig, atol=1e-15)
+        else:
+            assert m.cell_type == "hexahedron" and np.array_equal(dX, Us)
+    hm = build_model(read_gmsh(_hex_box(tmp_path / "h2.msh")), 3, 1)
+    lines = imp.lumped_cload(hm, "right", [-5.0, 0.0, 0.0])
+    tot = sum(float(ln.split(",")[2]) for ln in lines[1:])
+    assert lines[0] == "*CLOAD" and abs(tot + 5.0) < 1e-9
+
+
+@needs_ccx
+def test_failure_tension_criterion_hex_c3d8(tmp_path):
+    """peeq_tension on C3D8 (cell stress from the 8 corner nodes): a compressed hex bar is not eroded, the pulled
+    one is."""
+    eps_max, H, lim = 4.0 * SY / E, 2000.0, 0.002
+
+    def run(sign):
+        c = _bar(_hex_box(tmp_path / f"hex{sign:+.0f}.msh"), BC("displacement", group="right", components=[0],
+                 value=sign * eps_max * L), H=H, n=4,
+                 failure={"criterion": "peeq_tension", "limit": lim, "compression_factor": None})
+        c.analysis.order = 1
+        return solve(c, backend="ccx")
+
+    r = run(-1.0)
+    assert r.deck.etype == "C3D8" and r.state.sum() == 0 and r.history[-1]["max_peeq_alive"] > 2 * lim
+    assert run(1.0).state.sum() > 0
+
+
+@needs_ccx
+def test_failure_compression_switch(tmp_path):
+    """compression_switch: no compressive erosion until the force falls below force_ratio x peak after the first
+    failure; from that block end on the compression factor is the switch factor (in the records). The notched bar
+    separates in one block once the force really drops, so the ratio here is 0.99."""
+    c = _failure_case(_notched(tmp_path / "notch.msh"), 0.05, [0.4, 0.0, 0.0], criterion="peeq_tension",
+                      compression_factor=None, compression_switch={"force_ratio": 0.99, "factor": 5.0})
+    r = solve(c, backend="ccx")
+    cf = [h.get("compression_factor") for h in r.history]
+    F = np.array([h["force"] for h in r.history])
+    assert r.separated and cf[0] is None and 5.0 in cf
+    i = cf.index(5.0)
+    assert all(v == 5.0 for v in cf[i:]) and all(v is None for v in cf[:i])
+    assert r.history[i - 1]["n_failed"] > 0 and F[i - 1] < 0.99 * F[:i].max()

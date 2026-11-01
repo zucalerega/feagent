@@ -33,6 +33,10 @@ Options (``failure`` dict; all but criterion / limit optional):
                     principal). compression_factor default 5 (null: never).
                     Candidates are released in order of their damage index (PEEQ / its threshold, or
                     sigma_1 / stress_limit), highest first.
+  compression_switch  {"force_ratio": r, "factor": f} (peeq_tension / principal): at the first block end after
+                    the first failed cell where the force is below r x peak (the crack is through the tensile side),
+                    compression_factor becomes f, so the compressed ligament that is left (a hinge) can fail too.
+                    The step of the switch is in the records ("compression_factor") and in the checkpoint.
   limit             PEEQ at which a cell fails
   aggregate         "mean" (default) or "max" over the cell's integration points
   peeq_step         every block is one ccx step whose length is chosen from the last block's growth rate
@@ -344,6 +348,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
     damage = np.zeros(model.n_elems)                # criterion's damage index (crit != "peeq")
     peeq_t = np.zeros(model.n_elems)                # tensile PEEQ (peeq_tension)
     eta_min = float(fo.get("triaxiality_min", 0.0))
+    cswitch = fo.get("compression_switch") if crit != "peeq" else None
+    switched = False
     frozen_U = np.zeros((model.n_nodes, 3))
     history, stuck, prev_cap = [], {}, None
     t, k, peak, res, stop, rate, cut = 0.0, 0, 0.0, None, None, 0.0, None
@@ -355,6 +361,9 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
         ck = load_checkpoint(resume) if isinstance(resume, (str, Path)) else resume
         state[:], removed_at[:] = ck["state"], ck["removed_at"]
         agg_peeq, frozen_U = np.array(ck["agg_peeq"], float), np.array(ck["frozen_U"], float)
+        if cswitch and ck.get("compression_switched"):
+            switched = True
+            fo["compression_factor"] = float(cswitch["factor"])
         crit_now = {c: fo.get(c) for c in CRIT_KEYS}
         if "peeq_t" in ck:                      # tensile PEEQ is history: kept when parameters change
             peeq_t = np.array(ck["peeq_t"], float)
@@ -445,6 +454,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
                           (history[-1]["step"] if history else step0) + 1)
             rec["removed_in_block"], rec["deferred"] = int(len(removal)), int(deferred)
             rec["release_cap"] = int(cap)
+            if crit != "peeq":
+                rec["compression_factor"] = fo.get("compression_factor")
             rec["stuck"] = int(sum(1 for c, u in stuck.items() if u > k and state[c] == ALIVE))
             if series_dir:
                 _write_vtu(res, i, Path(series_dir) / f"result_{rec['step']:04d}.vtu", state, rec, frozen_U, agg,
@@ -460,6 +471,10 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
             damage[state == ALIVE].max(initial=0.0)
         if last.peeq_ip is not None:
             agg_peeq = last.peeq_ip.mean(axis=1) if agg == "mean" else last.peeq_ip.max(axis=1)
+        if cswitch and not switched and state.any() and \
+                history[-1]["force"] < float(cswitch["force_ratio"]) * peak:
+            switched = True                     # crack through the tensile side: let the hinge fail too
+            fo["compression_factor"] = float(cswitch["factor"])
         if crit != "peeq":
             damage = damage_index(fo, agg_peeq, model, last.S, peeq_t if crit == "peeq_tension" else None)
         pk_after = agg_peeq[state == ALIVE].max(initial=0.0) / limit if crit == "peeq" else \
@@ -473,8 +488,8 @@ def solve_failure(case, model, deck, inp: str, options: dict, t0: float):
                 "t": t, "block": k, "step": history[-1]["step"], "peak": peak, "rate": rate, "rate_unit": "damage", "tail": tail,
                 "low": low, "stuck": {str(c): u for c, u in stuck.items()}, "release_cap": rel_cap, "rout": str(prev_rout.resolve()),
                 "state": state, "removed_at": removed_at, "agg_peeq": agg_peeq, "frozen_U": frozen_U}
-                | ({"damage": damage, "peeq_t": peeq_t, "criterion_options": {c: fo.get(c) for c in CRIT_KEYS}}
-                   if crit != "peeq" else {}))
+                | ({"damage": damage, "peeq_t": peeq_t, "criterion_options": {c: fo.get(c) for c in CRIT_KEYS},
+                    "compression_switched": switched} if crit != "peeq" else {}))
         if not options.get("keep_files"):
             for suf in (".frd", ".dat"):
                 (wd / f"{job}{suf}").unlink(missing_ok=True)

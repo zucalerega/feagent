@@ -8,9 +8,10 @@ Buckling load case: the bottom platen as in crush.py --platen; the top platen no
 (1 kN total, spread evenly, along -axis) and, for --platen bonded, are held laterally; sliding / sliding_top
 leave them free laterally. Buckling factors x 1 kN are the linear critical loads.
 Imperfection: the mode normalised to a max nodal displacement of --amp-mm (default 0.1 mm, about 1 % of
-abc_00000065's 10.8 mm arm and 1.2 % of its 8.1 mm neck wall). Corner nodes move by the mode, mid-edge
-nodes by the mean of their two corners, so every edge keeps its original curvature (straight interior
-edges stay straight; CalculiX refuses curved interior C3D10 edges).
+abc_00000065's 10.8 mm arm and 1.2 % of its 8.1 mm neck wall). C3D10: corner nodes move by the mode,
+mid-edge nodes by the mean of their two corners, so every edge keeps its original curvature (straight interior
+edges stay straight; CalculiX refuses curved interior C3D10 edges). C3D4 / C3D8 (gmsh tetra / hexahedron,
+run at order 1 as in crush.py): every node moves by the mode.
 Writes OUT_DIR/mesh.msh (groups unchanged), mesh.inp, imperfection.json (factors, critical loads, amplitude,
 where the mode is largest) and mode.vtu (the mode shape on the original mesh).
 """
@@ -32,7 +33,44 @@ from crush import AX, PARTS, platen_bcs  # noqa: E402
 from feacore.case import BC, Analysis, Case, Material  # noqa: E402
 
 TET10_EDGES = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)]    # feacore (CalculiX C3D10) mid-edge order
+CELL_TYPES = ("tetra10", "tetra", "hexahedron")    # C3D10, C3D4, C3D8
+
+
+def node_moves(model, U: np.ndarray, amp_m: float) -> tuple[np.ndarray, np.ndarray]:
+    """(mode scaled to a max nodal move of amp_m, node moves). Linear cells (C3D4, C3D8) move every node by the
+    mode; C3D10 corner nodes move by the mode and mid-edge nodes by the mean of their two corners, so every edge
+    keeps its shape (straight interior edges stay straight)."""
+    if model.cell_type not in CELL_TYPES:
+        raise SystemExit(f"cell type {model.cell_type}: one of {CELL_TYPES} expected")
+    Us = U * (amp_m / np.linalg.norm(U, axis=1).max())
+    dX = Us.copy()
+    if model.cell_type == "tetra10":
+        for j, (p, q) in enumerate(TET10_EDGES):
+            dX[model.conn[:, 4 + j]] = 0.5 * (Us[model.conn[:, p]] + Us[model.conn[:, q]])
+    return Us, dX
+
+
 F_REF = 1000.0
+
+
+def lumped_cload(model, group: str, force) -> list[str]:
+    """*CLOAD lines spreading the total ``force`` over the corner nodes of the group's facets, by facet area
+    (equal shares per facet corner). For linear cells, whose faces the backend cannot load (quad facets)."""
+    el, fc = model.facets_of(group)
+    nfc = model.n_face_corners
+    fn = model.face_nodes(el, fc)[:, :nfc]
+    P = model.X[fn]
+    if nfc == 4:
+        area = 0.5 * np.linalg.norm(np.cross(P[:, 2] - P[:, 0], P[:, 3] - P[:, 1]), axis=1)
+    else:
+        area = 0.5 * np.linalg.norm(np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0]), axis=1)
+    w = np.zeros(model.n_nodes)
+    np.add.at(w, fn.ravel(), np.repeat(area / nfc, nfc))
+    w /= w.sum()
+    out = ["*CLOAD"]
+    for n in np.nonzero(w)[0]:
+        out += [f"{n + 1}, {d + 1}, {force[d] * w[n]:.12g}" for d in range(3) if force[d] != 0]
+    return out
 
 
 def buckle_deck(inp: str, n_modes: int) -> str:
@@ -74,9 +112,9 @@ def main():
     src = Path(a.mesh_dir) / "mesh.msh"
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    m = build_model(read_gmsh(src), 3, 2)
-    if m.cell_type != "tetra10":
-        raise SystemExit(f"{src}: tet10 mesh expected, got {m.cell_type}")
+    gm = read_gmsh(src)
+    order = 2 if any(ct == "tetra10" for ct, _ in gm.groups["domain"]) else 1      # as crush.py
+    m = build_model(gm, 3, order)
     mat = json.loads(Path(a.material).read_text())
     bcs = platen_bcs(m, k, 1.0, a.platen)[0]
     bcs = [b for b in bcs if b.group != "top"]
@@ -84,12 +122,16 @@ def main():
         bcs.append(BC("displacement", group="top", components=[c for c in range(3) if c != k], value=[0.0, 0.0]))
     f = [0.0, 0.0, 0.0]
     f[k] = -F_REF
-    case = Case(mesh=str(src.resolve()), analysis=Analysis("elasticity", "3d", order=2),
+    case = Case(mesh=str(src.resolve()), analysis=Analysis("elasticity", "3d", order=order),
                 materials={"resin": Material(E=float(mat["E"]) * 1e6, nu=float(mat["nu"]))},
-                bcs=bcs + [BC("force", group="top", value=f)])
+                bcs=bcs + ([BC("force", group="top", value=f)] if m.cell_type == "tetra10" else []))
     case.check()
     deck = _Deck(case, m)
-    run = run_ccx(buckle_deck(deck.build(), a.modes), job="buckle", workdir=out / "ccx_buckle", threads=a.threads)
+    inp = deck.build()
+    if m.cell_type != "tetra10":                # quad / linear facets: area-lumped nodal forces
+        i = inp.index("*NODE FILE", inp.index("\n*STEP"))
+        inp = inp[:i] + "\n".join(lumped_cload(m, "top", f)) + "\n" + inp[i:]
+    run = run_ccx(buckle_deck(inp, a.modes), job="buckle", workdir=out / "ccx_buckle", threads=a.threads)
     factors = []
     for ln in run.dat.read_text().splitlines():
         p = ln.split()
@@ -105,13 +147,9 @@ def main():
     blk = [b for _, b in parse_frd_series(run.frd) if "DISP" in b][a.mode - 1]["DISP"]
     U[blk.nodes - 1] = blk.values[:, :3]
     nrm = np.linalg.norm(U, axis=1)
-    U *= a.amp_mm * 1e-3 / nrm.max()
-    dX = U.copy()
-    conn = m.conn
-    for j, (p, q) in enumerate(TET10_EDGES):           # mid-edge nodes: mean of their corners' moves
-        dX[conn[:, 4 + j]] = 0.5 * (U[conn[:, p]] + U[conn[:, q]])
+    U, dX = node_moves(m, U, a.amp_mm * 1e-3)
     imax = int(np.argmax(nrm))
-    meshio.Mesh(m.X, [("tetra10", conn)], point_data={"mode": U}).write(str(out / "mode.vtu"))
+    meshio.Mesh(m.X, [(m.cell_type, m.conn)], point_data={"mode": U}).write(str(out / "mode.vtu"))
 
     gmsh.initialize(["-v", "0"])
     try:
@@ -138,7 +176,7 @@ def main():
         if not skip:
             lines.append(ln)
     (out / "mesh.inp").write_text("\n".join(lines) + "\n")
-    m2 = build_model(read_gmsh(out / "mesh.msh"), 3, 2)
+    m2 = build_model(read_gmsh(out / "mesh.msh"), 3, order)
     assert m2.n_nodes == m.n_nodes and np.allclose(m2.X, m.X + dX, atol=1e-12)
     info = {"source_mesh": str(src.resolve()), "part": a.part, "platen": a.platen, "reference_force_N": F_REF,
             "buckling_factors": factors[: a.modes], "critical_loads_N": [F_REF * x for x in factors[: a.modes]],
