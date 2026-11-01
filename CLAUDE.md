@@ -20,8 +20,9 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
 
 ## Status
 
-- `main` has the mesh harness (package `feagent` in `src/`: STEP → YAML mesh spec → gmsh mesh with named
-  groups, quality gates, `report.json` with the spec's `bcs:`), the fixed solver, verification,
+- `main` has the mesh harness (package `feagent`, in `meshing-harness/`: STEP → YAML mesh spec → gmsh
+  mesh with named groups, quality gates, `report.json` with the spec's `bcs:`, plus the agent's MCP server,
+  `fe-mesh` skill and Stop hook — see `meshing-harness/README.md`), the fixed solver, verification,
   benchmarks and UI (`feacore/`), and the diagnostics (`feacore/diagnostics/`). One root
   `pyproject.toml` ships both packages.
 - `mesh-harness` branch: Alexander's ongoing harness work; merged into `main` as it lands.
@@ -151,11 +152,27 @@ Decisions:
   `python-gmsh`), as `scripts/setup_gpu_box.sh` does. MKL PARDISO is x86-only. CuPy, nvmath-python
   (cuDSS) and torch do have aarch64 wheels.
 
+## Mesh harness decisions (`meshing-harness/`)
+
+- **Agent MCP tools** (`meshing-harness/`, server `uv run feagent-mcp`): `automesh` (zero-config start),
+  `inspect_geometry` (digest: features, faces, hazards), `find_faces` (geometric face query with
+  expected count), `render_view`, `mesh`, `check_mesh`; prompt `meshing_workflow`. Geometry, mesh and BCs
+  are all declared in `mesh.yaml` (`groups:` by query, `bcs:` for fixed/loads or inlet/outlet).
+- **Solver hand-off:** `out/mesh.msh` (named physical groups) + `out/report.json` → `bcs`, turned into
+  the fixed solver's case JSON by `python -m feacore.adapters.mesh_harness <out_dir | mesh.yaml>` (CFD:
+  `feacore.adapters.mesh_harness_cfd`). Also `out/mesh.inp` (every group as NSET/ELSET; surface elements
+  for groups must not get a section) and `.su2`.
+- **Evaluator input:** `out/report.json` (`schema_version: 1`, per-gate pass/warn/fail with value and
+  threshold) — schema in `meshing-harness/docs/report-schema.md`.
+- **Improver-editable surface:** `meshing-harness/agent_context/` — `SKILL.md` (workflow prompt),
+  `tools.yaml` (MCP tool descriptions), `examples/` (few-shot specs). Give each agent its own copy via
+  `FEAGENT_CONTEXT_DIR`. Harness code changes are possible but not required for prompt-level improvement.
+
 ## Open questions
 
 - How exactly is a solution scored? (proposal above; the evaluator decides)
-- Which MCP tools does the agent get (geometry / mesh / BCs)? It must emit the case JSON + `.msh` above.
-- What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
+- What exactly can an improver change beyond `meshing-harness/agent_context/` (harness code? per-agent
+  spec defaults?)
 - What does the evaluator output look like (schema for rankings + summary)?
 
 ## Conventions
