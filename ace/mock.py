@@ -79,15 +79,25 @@ class MockLLM:
                               NS(type="tool_use", id=f"t{turn}", name=name, input={**args, "using": using})],
                              "tool_use", "generator")
 
+        problem = fea.get_problem(problem_id)
+        flow = fea.is_flow(problem)
         if turn == 0:
             return tool("inspect_geometry", {}), self._rec(run_id)
         if turn == 1 or (last.get("within_cap") is False):
-            if last.get("within_cap") is False:          # over the cap: same order, coarser
-                return tool("mesh", {"h": last["h_used"] * 1.3, "order": last["order"]}), self._rec(run_id)
-            order = 2 if knows_p2 else rng.choice([1, 2])
+            if last.get("within_cap") is False:          # over the cap: same element choice, coarser
+                prev_mesh = next(c.input for c in reversed(calls) if c.name == "mesh")
+                same = ({k: prev_mesh[k] for k in ("quads", "boundary_layer", "sweep") if k in prev_mesh} if flow
+                        else {"order": last["order"]})
+                return tool("mesh", {"h": last["h_used"] * 1.3, **same}), self._rec(run_id)
             h = self._h0(problem_id) * rng.uniform(0.6, 2.0)   # around the problem's own size
+            if flow:                                     # finite volumes: no element order
+                return tool("mesh", {"h": h, **self._flow_mesh_options(problem, h, rng)}), self._rec(run_id)
+            order = 2 if knows_p2 else rng.choice([1, 2])
             return tool("mesh", {"h": h, "order": order}), self._rec(run_id)
         if prev == "view":                               # second, finer mesh for a convergence check
+            if flow:                                     # the same flow options (quads, layers, sweep), finer
+                same = {k: v for k, v in first_mesh.items() if k in ("quads", "boundary_layer", "sweep")}
+                return tool("mesh", {"h": first_mesh["h"] * 0.8, **same}), self._rec(run_id)
             return tool("mesh", {"h": first_mesh["h"] * 0.8, "order": first_mesh["order"]}), self._rec(run_id)
         if prev == "compare" and "nonlinear_check" in offered:
             # a nonlinear (test-scored) task: one check of the finer mesh, the latest one (mesh numbers count
@@ -98,17 +108,36 @@ class MockLLM:
             solve_b = next(c.input for c in reversed(calls) if c.name == "compare")["solve_b"]
             return tool("submit", {"solve": solve_b}), self._rec(run_id)
         if prev == "mesh" and last.get("ok"):            # meshed and within cap: solve
-            setup = reference_setup(fea.get_problem(problem_id))
-            if rng.random() < 0.2:                       # sometimes get a load direction wrong
+            setup = reference_setup(problem)
+            if flow:   # a second-order lesson in the playbook -> the second-order convection scheme
+                setup["convection"] = "linearUpwind" if knows_p2 else rng.choice(["upwind", "linearUpwind"])
+            if rng.random() < 0.2:                       # sometimes get a load / inflow direction wrong
                 for bc in setup["bcs"]:
-                    if bc["type"] == "traction":
+                    if bc["type"] in ("traction", "velocity_inlet") and isinstance(bc.get("value"), list) \
+                            and all(isinstance(v, (int, float)) for v in bc["value"]):
                         bc["value"] = [-v for v in bc["value"]]
             return tool("solve", setup), self._rec(run_id)
         if prev == "solve" and last.get("ok"):
             if last["solve"] == 1:
-                return tool("view", {"solve": 1, "kind": "stress", "view": "iso"}), self._rec(run_id)
+                view = {"kind": "speed", "view": "z"} if flow else {"kind": "stress", "view": "iso"}
+                return tool("view", {"solve": 1, **view}), self._rec(run_id)
             return tool("compare", {"solve_a": 1, "solve_b": last["solve"]}), self._rec(run_id)
         return _response([NS(type="text", text="Done.")], "end_turn", "generator"), self._rec(run_id)
+
+    @staticmethod
+    def _flow_mesh_options(problem, h: float, rng) -> dict:
+        """A flow mesh's options, varied so mock runs cover the flow mesher: quads, a boundary layer on
+        the no-slip walls, and in 3D a sweep from the inlet (boundary layers there need the sweep)."""
+        walls = sorted({bc["group"] for bc in reference_setup(problem)["bcs"] if bc["type"] == "wall"})
+        out: dict = {}
+        sweep = problem.dim == 3 and rng.random() < 0.5
+        if sweep:
+            out["sweep"] = {"source": "inlet", "layers": rng.choice([6, 10, 14])}
+        if problem.dim == 2 or sweep:
+            out["quads"] = rng.random() < 0.5
+            if walls and rng.random() < 0.4:
+                out["boundary_layer"] = {"groups": walls, "first": h / 8, "ratio": 1.2, "layers": 3}
+        return out
 
     @staticmethod
     def _h0(problem_id: str) -> float:
@@ -278,8 +307,10 @@ class MockLLM:
             return getattr(self, "_" + schema.__name__)(text, schema), rec
         if schema.__name__ in ("AgentFeedback", "CrossRunFeedback", "SelfReflection", "OrganizerOutput"):
             return getattr(self, "_" + schema.__name__)(text, schema), rec
-        if schema.__name__ == "AssignedFeedback":             # AgentFeedback plus the assignment
-            return self._AgentFeedback(text, schema), rec
+        if schema.__name__ in ("AssignedFeedback", "FlowAgentFeedback", "FlowAssignedFeedback"):
+            return self._AgentFeedback(text, schema), rec          # AgentFeedback plus the assignment / flow call
+        if schema.__name__ == "FlowSelfReflection":
+            return self._SelfReflection(text, schema), rec
         return self._from_schema(schema, text), rec
 
     # ---------------------------------------------------------------- ace.requirements roles
@@ -319,11 +350,17 @@ class MockLLM:
     def warm_cache(self, *args, **kwargs):
         pass                                        # no cache to warm in mock mode
 
+    # A flow task's schemas (FlowAgentFeedback, FlowSelfReflection) take a FlowMeshCall: no order.
+    FLOW_CALL = {"h": 0.1, "quads": True, "refinements": [],
+                 "boundary_layer": {"groups": ["walls"], "first": 0.001, "ratio": 1.2, "layers": 3}}
+
     def _AgentFeedback(self, text: str, schema):
         rid = re.search(r"^FOR RUN (\S+)", text, re.M).group(1)
         task = re.search(r"^TASK (\S+)", text, re.M).group(1)
         call = {"h": 0.1, "order": 2, "refinements": [{"group": None, "point": [0.0, 0.0], "size": 0.02,
                                                        "radius": 0.2}]}
+        if schema.__name__.startswith("Flow"):
+            call = {**self.FLOW_CALL, "refinements": call["refinements"]}
         role = re.search(r"^YOUR ROLE: (\w+)", text, re.M)
         assignment = role and {"agent": rid.rsplit("-", 1)[-1], "role": role.group(1),
                                "experiment": f"mock {role.group(1)} experiment for {rid}", "why": "mock"}
@@ -356,7 +393,9 @@ class MockLLM:
             "what_happened": f"mock: in {rid} I meshed uniformly",
             "what_i_learned": [self._note(kind="idea", content=f"mock self note {i} from {rid}: order 2")
                                for i in range(5)],
-            "plan_next": "mock: refine the hotspot", "next_mesh_call": {"h": 0.1, "order": 2, "refinements": []}})
+            "plan_next": "mock: refine the hotspot",
+            "next_mesh_call": self.FLOW_CALL if schema.__name__.startswith("Flow") else {"h": 0.1, "order": 2,
+                                                                                         "refinements": []}})
 
     def _OrganizerOutput(self, text: str, schema):
         # Keep every current note (with its id) and add every incoming one as new: the notes are

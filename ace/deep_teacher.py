@@ -8,6 +8,9 @@ On a task scored by its nonlinear force curve against a physical test (is_nonlin
 the teacher also gets the experiment analysis (teacher_brief), each run's curve checkpoints and
 plastic-strain hotspots with its curve and PEEQ pictures, and every run's error vs nodes so far;
 there is no field error, check point or disagreement map there (NL_SCORING says so).
+On a flow (CFD) task (is_flow_task) it also gets process_brief.FLOW_BRIEF (velocity instead of
+stress, finite-volume cells instead of an element order), the per-agent schema's next mesh call is a
+FlowMeshCall (quads, boundary_layer, sweep) and allocate() varies the cell structure.
 
 To keep a generation fast, the review is split into parallel calls that share one cached prefix
 (everything above): one call per agent (a step-by-step critique, notes, the next mesh call, a check
@@ -22,6 +25,7 @@ The schema below (NoteItem, MeshCall) is shared with ace/self_reflect.py and ace
 
 from __future__ import annotations
 
+import functools
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -37,8 +41,9 @@ from ace.reflector import Section
 # The process brief (ace/process_brief.py) explains the whole loop to every model in it. The
 # default below only covers a checkout where that module is missing.
 try:
-    from ace.process_brief import PROCESS_BRIEF
+    from ace.process_brief import FLOW_BRIEF, PROCESS_BRIEF
 except ImportError:
+    FLOW_BRIEF = ""
     PROCESS_BRIEF = (
         "You are part of a loop that trains FEA meshing agents over generations. Each generation the "
         "agents are split at random across tasks; each meshes and solves its task and is scored against a "
@@ -87,6 +92,30 @@ class MeshCall(BaseModel):
     refinements: list[Refinement] = Field(default_factory=list)
 
 
+# A flow (CFD) task's mesh call (ace.agent.TOOLS_FLOW): no element order, and the cell structure
+# instead: quads, wall boundary layers and, in 3D, a sweep. Its own schema, so that the elasticity
+# schemas (and prompts) stay exactly as they were.
+class BoundaryLayerCall(BaseModel):
+    groups: list[str] = Field(description="the no-slip wall groups to grow the layers on")
+    first: float = Field(description="height of the first cell at the wall")
+    ratio: float = Field(default=1.2, description="growth per layer, 1-3")
+    layers: int = Field(description="number of layers, 1-40")
+
+
+class SweepCall(BaseModel):
+    source: str = Field(description="group of the planar end face to extrude (e.g. the inlet)")
+    layers: int = Field(description="cell layers along the sweep, 1-400")
+    ratio: float = Field(default=1.0, description="last / first layer length (> 1: the short layers at the source end)")
+
+
+class FlowMeshCall(BaseModel):
+    h: float
+    quads: bool = Field(default=False, description="quad-dominant cells (2D, or the swept face: hexahedra)")
+    refinements: list[Refinement] = Field(default_factory=list)
+    boundary_layer: BoundaryLayerCall | None = Field(default=None, description="wall layers, or null")
+    sweep: SweepCall | None = Field(default=None, description="3D straight duct or pipe only: the sweep, or null")
+
+
 class StepCritique(BaseModel):
     step: str = Field(description='which step, e.g. "mesh call 2" or "solve 1 setup" or "choice of order"')
     what_it_did: str
@@ -127,6 +156,15 @@ class AgentFeedback(BaseModel):
 
 class AssignedFeedback(AgentFeedback):
     """AgentFeedback with the assignment required: the schema of the per-agent call when 2+ agents ran."""
+    assignment: Assignment
+
+
+class FlowAgentFeedback(AgentFeedback):
+    """AgentFeedback on a flow task: the next mesh call is a FlowMeshCall."""
+    next_mesh_call: FlowMeshCall = Field(description="the exact mesh call that should beat this run's score next time")
+
+
+class FlowAssignedFeedback(FlowAgentFeedback):
     assignment: Assignment
 
 
@@ -171,6 +209,12 @@ class TeacherFeedback(CrossRunFeedback):
     per_agent: list[AgentFeedback] = Field(description="one per run")
     assignments: list[Assignment] = Field(default_factory=list, description="next generation's experiments, "
                                           "one per agent (copied from per_agent), best run's agent first")
+
+
+class FlowTeacherFeedback(TeacherFeedback):
+    """TeacherFeedback on a flow task (typed so that model_dump keeps the FlowMeshCalls: a field typed
+    AgentFeedback would serialize them as MeshCalls and drop quads, boundary_layer and sweep)."""
+    per_agent: list[FlowAgentFeedback] = Field(description="one per run")
 
 
 # --------------------------------------------------------------------------- shared helpers
@@ -241,6 +285,16 @@ def is_nonlinear(task: str) -> bool:
     """Is the task scored by its nonlinear force curve against a physical test (ace.nonlinear)? The
     same test as ace.nonlinear.is_nonlinear, here so the teacher does not need that module to load."""
     return (config.TASKS.get(task) or {}).get("score") == "nonlinear"
+
+
+@functools.lru_cache(maxsize=None)
+def is_flow_task(task: str) -> bool:
+    """Is the task a flow (CFD) task (ace.fea.is_flow)? Unknown ids are not."""
+    from ace import fea                      # heavy (gmsh, the solvers): only when a task is checked
+    try:
+        return fea.is_flow(fea.get_problem(task))
+    except KeyError:
+        return False
 
 
 def teacher_brief(task: str) -> str:
@@ -434,20 +488,41 @@ EXPLORER_DIRECTIONS = [
     "instead of points, or one strongly graded refinement",
     "a different element ORDER, with every size re-chosen for it",
 ]
+# Flow tasks have no element order (finite-volume cells): the cell structure takes its place. Ordered
+# by what a flow recipe gains most from, since a task often has only 2-4 agents (--split) and the
+# factors / directions are handed out in this order: the explorers try another cell structure first.
+VARIANT_FACTORS_FLOW = [
+    "the global size h (everything else as in the best recipe)",
+    "the wall boundary layer: its first-cell height, growth or number of layers (or add one along the walls "
+    "with the steepest velocity gradients if the best recipe has none)",
+    VARIANT_FACTORS[3],
+    "the cell type: quads vs triangles; in 3D the sweep (its layers or grading, or a sweep instead of "
+    "tetrahedra on a straight duct or pipe)",
+    "the cell size at the refinements (keep their places, radii, h, cell type and boundary layer)",
+    "the refinement radii, i.e. how fast the size grows back to h (keep sizes, places, h, cell type and "
+    "boundary layer)",
+]
+EXPLORER_DIRECTIONS_FLOW = [
+    "a different CELL STRUCTURE: quads instead of triangles (or back), a wall boundary layer, or in 3D a sweep "
+    "of an end face, with every size re-chosen for it",
+] + EXPLORER_DIRECTIONS[:2]
 
 
-def allocate(agents: list[str]) -> list[tuple[str, str, str]]:
+def allocate(agents: list[str], flow: bool = False) -> list[tuple[str, str, str]]:
     """[(agent, role, focus)] for the agents on one task, best run first. Fewer than 2 agents: none
     (a lone agent, e.g. the single-agent baseline, keeps the plain feedback). The best run's agent
     is the control; the lowest-ranked n//3 (at least 1 when n >= 3, more if the factors run out) are
-    explorers, since they have least to lose; the rest are variants, one factor each."""
+    explorers, since they have least to lose; the rest are variants, one factor each. flow: a flow
+    task, whose factors and directions vary the cell structure instead of the element order."""
+    factors, directions = (VARIANT_FACTORS_FLOW, EXPLORER_DIRECTIONS_FLOW) if flow else (VARIANT_FACTORS,
+                                                                                         EXPLORER_DIRECTIONS)
     n = len(agents)
     if n < 2:
         return []
-    n_exp = max(n // 3, n - 1 - len(VARIANT_FACTORS)) if n >= 3 else 0
+    n_exp = max(n // 3, n - 1 - len(factors)) if n >= 3 else 0
     out = [(agents[0], "control", "re-run the best recipe so far with at most one small, deliberate tweak")]
-    out += [(a, "variant", "change only " + VARIANT_FACTORS[i]) for i, a in enumerate(agents[1:n - n_exp])]
-    out += [(a, "explorer", EXPLORER_DIRECTIONS[i % len(EXPLORER_DIRECTIONS)])
+    out += [(a, "variant", "change only " + factors[i]) for i, a in enumerate(agents[1:n - n_exp])]
+    out += [(a, "explorer", directions[i % len(directions)])
             for i, a in enumerate(agents[n - n_exp:])]
     return out
 
@@ -561,7 +636,8 @@ def disagreement_text(dmap: dict | None, max_cells: int = 30) -> str:
         return "(not available)"
     try:
         grid = sorted(dmap.get("grid") or [], key=lambda c: -(c.get("spread") or 0))
-        lines = ["region | centre | spread (std/mean of von Mises across runs) | consensus von Mises | outliers"]
+        q = dmap.get("quantity") or "von Mises"            # "speed" on a flow task
+        lines = [f"region | centre | spread (std/mean of {q} across runs) | consensus {q} | outliers"]
         lines += [f"{c.get('region')} | {_short(c.get('centre'), 60)} | {_fmt(c.get('spread'))} | "
                   f"{_fmt(c.get('consensus_vm'))} | {', '.join(map(str, c.get('outliers') or [])) or '-'}"
                   for c in grid[:max_cells]]
@@ -595,7 +671,7 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
     the (run, report) pairs best first. On a nonlinear task (is_nonlinear) it also holds the
     teacher brief, the scoring that replaces the field error, and the error vs nodes of every run so
     far on the task (history: those runs, this generation's included)."""
-    nl = is_nonlinear(task)
+    nl, flow = is_nonlinear(task), is_flow_task(task)
     by_id = {r["run_id"]: r for r in reports}
     pairs = [(run, by_id.get(run["run_id"], {"run_id": run["run_id"], "error": "no report"})) for run in runs]
     pairs.sort(key=lambda p: -(_numbers(p[1], p[0])["score"] or 0))      # best first
@@ -603,6 +679,7 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
     from ace import evidence
     test = evidence.teacher_section(task, runs)          # physical test data, when the loop has some
     head = [f"TASK {task}\n--- problem statement as the agents saw it ---\n{_task_statement(task)}\n",
+            *([f"--- this is a flow task ---\n{FLOW_BRIEF}"] if flow else []),
             *([f"--- physical test of this setup ---\n{test}\n"] if test else []),
             *([f"--- the experiment analysis (teacher brief) ---\n{teacher_brief(task) or '(none)'}\n",
                f"--- how this task is scored ---\n{NL_SCORING}\n",
@@ -626,7 +703,7 @@ def build_prefix(task: str, reports: list[dict], runs: list[dict], notes_by_agen
 
     # Images: mesh + error of every run, then stress pictures while the total stays within MAX_IMAGES.
     # Nonlinear task: each run's force curve vs the test and its PEEQ picture instead.
-    first, more = (("curve", "peeq"), ()) if nl else (("mesh", "error"), ("stress",))
+    first, more = (("curve", "peeq"), ()) if nl else (("mesh", "error"), ("stress", "speed"))   # speed: flow
     chosen = [(run["run_id"], k, path) for run, rep in pairs for k, path in report_images(rep, first)]
     for run, rep in pairs:
         for k, path in report_images(rep, more):
@@ -655,14 +732,20 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
     cross_user = prefix + [text_block(CROSS_JOB.format(task=task))]
 
     rids = [run["run_id"] for run, _ in pairs]
-    roles = allocate([agent_name(r) for r in rids])                # best first, like rids
+    flow = is_flow_task(task)                    # FlowMeshCall instead of MeshCall; cell structure, not order
+    roles = allocate([agent_name(r) for r in rids], flow)          # best first, like rids
     table = "\n".join(f"  {a}: {role}: {focus}" for a, role, focus in roles)
     role_of = {a: role for a, role, _ in roles}
-    schema = AssignedFeedback if roles else AgentFeedback
+    if flow:
+        schema = FlowAssignedFeedback if roles else FlowAgentFeedback
+    else:
+        schema = AssignedFeedback if roles else AgentFeedback
 
     def agent_user(rid: str) -> list[dict]:
         a = agent_name(rid)
         job = AGENT_JOB.format(rid=rid, agent=a, task=task)
+        if flow:
+            job = job.replace("(h, order, refinements)", "(h, quads, refinements, boundary_layer, sweep)")
         if a in role_of:
             job += "\n" + ASSIGN_JOB.format(task=task, table=table, role=role_of[a], agent=a)
         return prefix + [text_block(f"FOR RUN {rid}\n" + job)]
@@ -699,8 +782,8 @@ def teach(task: str, reports: list[dict], runs: list[dict], notes_by_agent: dict
         return None
     base = cross_fb.model_dump() if cross_fb is not None else {
         "task_summary": "(the cross-run review failed this generation)", "shared_lessons": []}
-    return TeacherFeedback(task=task, per_agent=got, assignments=[af.assignment for af in got if af.assignment],
-                           **base)
+    return (FlowTeacherFeedback if flow else TeacherFeedback)(
+        task=task, per_agent=got, assignments=[af.assignment for af in got if af.assignment], **base)
 
 
 assert config.SECTIONS.keys() == set(Section.__args__)   # NoteItem.section must match the playbook

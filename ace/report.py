@@ -57,13 +57,15 @@ def collect(run_dir: Path) -> dict:
         g += 1
 
     pids = sorted({r["problem_id"] for gen in gens for r in gen["runs"]})
+    split = _read_json(run_dir / "run_config.json", {})          # written by run_loop (suite, train, holdout)
     cost = [json.loads(line) for line in (run_dir / "cost.jsonl").read_text().splitlines()] \
         if (run_dir / "cost.jsonl").exists() else []
     return {
         "run_dir": run_dir.name,
         "config": {
             "models": config.MODELS, "effort": config.EFFORT, "max_tokens": config.MAX_TOKENS,
-            "prices": config.PRICES, "tasks": config.TASKS, "train": config.TRAIN, "holdout": config.HOLDOUT,
+            "prices": config.PRICES, "tasks": config.TASKS, "train": split.get("train", config.TRAIN),
+            "holdout": split.get("holdout", config.HOLDOUT),
             "max_solves": config.MAX_SOLVES, "max_turns": config.MAX_TURNS, "min_quality": config.MIN_QUALITY,
             "score_floor": config.SCORE_FLOOR, "score_ceil": config.SCORE_CEIL, "top_n": config.TOP_N_BULLETS,
             "dedup_threshold": config.DEDUP_THRESHOLD, "prune_margin": config.PRUNE_MARGIN,

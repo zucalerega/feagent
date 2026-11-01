@@ -109,7 +109,7 @@ def predict(run: dict, workdir: Path) -> dict:
     scoring uses) re-solved once more, so that the statement quantities, the error estimate and
     the pictures all come from the very solve it chose (the solve is direct, so it is the same
     answer)."""
-    from ace import fea, solve_feedback
+    from ace import fea, flow_feedback, solve_feedback
 
     solves = run["solves"]
     i = run.get("submitted")
@@ -122,6 +122,8 @@ def predict(run: dict, workdir: Path) -> dict:
     mesh, problem, qoi = s["mesh"], fea.get_problem(run["problem_id"]), s["result"]["qoi"]
     res = fea.run_solve(problem, mesh, s["setup"], qoi, keep_result=True)
     result = res.pop("_result")
+    if fea.is_flow(problem):
+        return _predict_flow(problem, mesh, s, i, submitted, qoi, res, result, workdir, flow_feedback)
     fb = solve_feedback.feedback(problem, mesh, s["setup"], result)
     images = {kind: str(solve_feedback.render(problem, mesh, result, kind, "iso", workdir / f"final_{kind}.png"))
               for kind in ("mesh", "stress")}
@@ -136,6 +138,30 @@ def predict(run: dict, workdir: Path) -> dict:
         "equilibrium": fb["equilibrium"],
         "max_von_mises": fb["max_von_mises"], "max_displacement": fb["max_displacement"],
         "notes": fb.get("notes", []),
+        "images": images,
+    }
+
+
+def _predict_flow(problem, mesh: dict, s: dict, i: int, submitted: bool, qoi: str, res: dict, result, workdir: Path,
+                  flow_feedback) -> dict:
+    """predict() on a flow task: the flow feedback (ace.flow_feedback) in the same shape. The
+    reference-free indicator stands in for the ZZ estimate (error_estimate.eta_rel), the speed
+    picture for the stress picture."""
+    fb = flow_feedback.feedback(problem, mesh, s["setup"], result)
+    images = {kind: str(flow_feedback.render(problem, mesh, result, kind, "z", workdir / f"final_{kind}.png"))
+              for kind in ("mesh", "speed")}
+    ei = fb["error_indicator"]
+    return {
+        "solve": i + 1, "submitted": bool(submitted),
+        "scored_quantity": {"name": qoi, "value": res["value"]},
+        "qois": fb["qois"],
+        "mesh": {"nodes": mesh["nodes"], "elements": mesh.get("elements"), "dofs": fb["dofs"],
+                 "order": mesh["order"], "h": mesh.get("h_used"), "fv_ok": mesh.get("fv_ok"),
+                 "cells": mesh.get("cells"), "request": mesh.get("request")},
+        "error_estimate": {"eta_rel": ei["rel_indicator"], "hotspots": ei["hotspots"],
+                           "kind": "velocity jumps at faces (ace.flow_feedback)"},
+        "convergence": fb["convergence"], "mass_balance": fb["mass_balance"],
+        "max_speed": fb["max_speed"], "notes": fb.get("notes", []),
         "images": images,
     }
 
@@ -199,7 +225,7 @@ def summary_md(problem: str, swarm: dict, mode: str, rows: list[dict], cons: dic
     lines += ["", f"Most confident by its own error estimate: {mc['agent']} (ZZ eta_rel {_f(mc['eta_rel'])})."
               if mc else "No agent produced a solve."]
     lines += ["", "## Images (submitted solve)", ""]
-    lines += [f"- {r['agent']}: mesh `{p['images']['mesh']}`, stress `{p['images']['stress']}`"
+    lines += [f"- {r['agent']}: " + ", ".join(f"{k} `{v}`" for k, v in p["images"].items())
               for r in rows if "images" in (p := r.get("prediction") or {})]
     return "\n".join(lines) + "\n"
 

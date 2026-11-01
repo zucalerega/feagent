@@ -80,6 +80,9 @@ ACE_SCORE=field .venv/bin/python -m ace.single_loop --problems cooks_membrane,na
 .venv/bin/python -m ace.compare ace_runs/deep2 ace_runs/single1                     # compare.md, compare.png
 ```
 
+The baseline also runs flow tasks (`ACE_SCORE=field`, the velocity field): the task list must be all
+flow or all solid, because one conversation has one tool list (TOOLS or TOOLS_FLOW).
+
 `run_loop --personas` gives agents a fixed exploration style: the flag alone = every agent,
 `--personas a0,a3,a5` or `--persona-count 3` = only some (default: none). Who has which style is
 written to `<out>/personas.json`.
@@ -160,6 +163,321 @@ FEACORE_RUNS_DIR=~/feagent/runs .venv/bin/python -m ace.run_loop ...   # or --ui
   `gen{N}/runs/<run_id>.json` also gets `ui_submission_id`, and each of its solves `ui_run_id`.
 - If the store can't be written (permissions, full disk), the loop only prints a warning and
   carries on; its own results don't change. Code: `ace/ui_bridge.py`.
+
+## The CFD suite (steady laminar flow)
+
+The same loop also trains agents on flow problems. Select them with `--suite cfd`, or name the
+problems directly:
+
+```bash
+python -m ace.run_loop --suite cfd --mock                  # free, needs OpenFOAM (see below)
+python -m ace.run_loop --suite cfd                         # real agents
+python -m ace.run_loop --suite cfd3d                       # real agents, 3D (slower solves)
+```
+
+| suite | split | problem | scored QoI | node cap | what makes it hard |
+|---|---|---|---|---|---|
+| `cfd` | train | `poiseuille_channel` | `dp_AB` (exact, 1 %) | 1200 | easy: the scheme choice matters more than the mesh |
+| `cfd` | train | `lid_driven_cavity_re100` | `u_vcl_min` (Ghia 1982, 3 %) | 2500 | closed cavity, lid-corner singularities |
+| `cfd` | train | `taylor_couette_2d` | `u_theta_mid` (exact, 1 %) | 2500 | curved walls, moving-wall expression BC, closed domain |
+| `cfd` | train | `backward_facing_step_2d` | `u_bubble` (fixed solver, mesh-converged, 3 %) | 12000 | separation at a sharp corner: refine the corner and the bubble behind it |
+| `cfd` | held out | `cylinder_channel_dfg_2d1` | `drag` (Schaefer & Turek 1996, 1 %) | 12000 | external flow: refine at the cylinder, not everywhere |
+| `cfd3d` | train | `pipe_poiseuille_3d` | `dp_AB` (exact, 2 %) | 6000 | 3D; the faceted wall loses area at O(h^2); tets or a sweep |
+| `cfd3d` | train | `square_duct_3d` | `dp_AB` (exact developed, 2 %) | 6000 | uniform inflow develops first; tets or a graded sweep |
+
+`taylor_couette_2d`, `square_duct_3d` and `backward_facing_step_2d` are new in this branch. The first
+two are checked against the fixed solver in `docs/benchmarks_cfd.md`.
+`backward_facing_step_2d` has no published value for its configuration. Its references are the fixed
+solver's own mesh-converged values (a structured study to h0 / 8, `docs/benchmarks_cfd.md`,
+"Backward-facing step"). The suites can be mixed with `--problems` / `--holdout`.
+
+Every task is achievable under its cap: `planted.GOOD_MESH` holds a sensible mesh for each, and
+`tests/test_diagnosis.py` checks that it passes every oracle. For example, the cylinder drag is
+0.60 % off at 6345 nodes with refinement at the cylinder alone (2 mm there, 15 mm elsewhere), and
+0.34 % off at 3229 nodes with a boundary layer on the cylinder and the walls. With lighter
+refinement (3277 nodes, no boundary layer) it was 1.71 % off (measured before the wall-distance fix
+in the force evaluation) and fails the 1 % tolerance, so local refinement is what the agents have
+to learn.
+The caps are safety limits, as in the elasticity suite. A uniform mesh at the cap with linearUpwind
+(`calibration.json`, meshed on the CAD) mostly meets the tolerance:
+
+| task | uniform at the cap |
+|---|---|
+| Poiseuille | 0.20 % |
+| Taylor-Couette | 0.50 % |
+| cavity | 1.29 % (upwind 1.18 %) |
+| DFG cylinder | 0.71 % |
+| backward step | 2.83 %, at the size floor (10.9k nodes, below its cap) |
+| 3D duct | 0.55 % |
+| 3D pipe | 2.08 %, just over its 2 % tolerance |
+
+So the score mostly rewards the cheapest accurate setup. On the pipe, swept hexahedra reach the
+tolerance with a fifth of the nodes. Upwind is far worse: 3.8 % on Poiseuille, 8.1 % on the step,
+8.4 % and 7.2 % on the pipe and the duct.
+
+**3D flow (`cfd3d`).** By default the agent's mesh tool makes unstructured tets in 3D; with `sweep`
+it makes swept hexahedra or prisms ("The flow mesher" below). With OpenFOAM's plain schemes, tets
+converged to an axial pressure gradient 12-19 % high at any mesh size, so 3D was left out at first. Next to a wall, linear interpolation between cell centres misses the face values in
+the same direction everywhere, and that biased the viscous flux.
+
+The backend now uses skew-consistent schemes in 3D: `pointCellsLeastSquares` gradients and a
+skew-corrected momentum-interpolation flux. Wall forces now use the wall-normal distance; before,
+the force read 10 % low, which made the old results look like a force imbalance. Details are in
+`docs/solver_openfoam.md`, "3D meshes".
+
+| case | mesh | dp_AB before → after |
+|---|---|---|
+| `pipe_poiseuille_3d` | uniform tets, 4.6k nodes | +15.3 % → +1.3 % |
+| `pipe_poiseuille_3d` | tets split into hexes | +20 % → +0.7 % |
+| `square_duct_3d` | uniform tets, 4.3k / 10k nodes | +11.7 % → −0.8 % / +0.0 % |
+
+Uniform tets at the 6000-node cap are 2.08 % (pipe, just over its 2 % tolerance) and 0.55 % (duct)
+off. A sweep reaches the tolerance with far fewer cells (`planted.GOOD_MESH`: 1309 nodes, 0.32 %
+on the pipe), so the score is about the cheapest accurate mesh.
+
+- **What is still weak in 3D:** point *velocities* at a smooth maximum (`u_centreline`, `u_axis`)
+  read 2-5 % low on coarse tets. The probe's vertex fit flattens the peak; the solution itself is
+  within 1 %. That is why both 3D tasks score `dp_AB`.
+- **Cost:** a 3D solve takes 5-30 s and up to about 250 MB per 70k tets. The refinement-study oracle
+  refines 3D flow meshes by 1.5 rather than 2, so its fine level stays near 3.4x the agent's nodes.
+
+What changes for flow (it is chosen from the problem's physics, so the two suites can be mixed):
+
+- **Tools** (`TOOLS_FLOW` in `agent.py`):
+  - `mesh` has no element order: cells are straight-sided finite volumes. `quads=true` asks for
+    quad-dominant cells, `boundary_layer` for wall layers, and in 3D `sweep` for an extruded mesh;
+    flow meshes are judged by their finite-volume quality. See "The flow mesher" below.
+  - `solve` takes a fluid (`rho`, `mu`), a `convection` scheme (`upwind` or `linearUpwind`) and
+    the flow BC types (`velocity_inlet`, `pressure_outlet`, `wall`, `slip`, `symmetry`). Values
+    may be expressions in x, y, z.
+  - The solver controls (laminar, iteration cap, residual target) come from the problem, not
+    the agent.
+  - Solve feedback, `view` and `compare` read the velocity instead of the stress (`ace/flow_feedback.py`,
+    "Flow solve feedback" below).
+- **Score**: unchanged. DOFs are cells × unknowns. The uniform-mesh baseline compares the two
+  convection schemes, where elasticity compares the two element orders. Field mode (`ACE_SCORE=field`)
+  and `--deep` work on flow too: "Field mode and --deep on flow" below.
+- **Oracles**: feacore's diagnostics run the elasticity solver, so equilibrium, singularity,
+  sanity bounds and symmetry are reported as unavailable for flow.
+  - These still run: spec compliance, gaming, the known answer, and the refinement study of the
+    agent's own setup (three OpenFOAM solves).
+  - The refinement estimate is pessimistic on independently remeshed unstructured meshes.
+  - Spec compliance compares an expression inflow profile with the reference at the inlet's centre
+    (a reversed inflow is a sign flip). A no-slip wall changed to slip or symmetry is a problem, not
+    an equivalent support.
+  - `planted.PLANTED` has five flow cases: a control, a reversed inflow, the viscosity in mPa s,
+    walls made slip, and a mesh too coarse. Each is found at its stage by the expected oracle.
+- **Diagnoser interventions** (`counterfactual.py`):
+  - inlets and outlets count as loads, and walls, slip and symmetry as supports;
+  - `convert_units` also takes `mu` or `rho`;
+  - `set_convection` switches the scheme;
+  - `set_boundary_layer` adds, changes or removes the wall layers;
+  - a global `refine_mesh` scales the whole request (boundary layer and sweep included).
+
+### The flow mesher (`ace/flow_mesh.py`)
+
+A flow mesh needs things an elasticity mesh does not: thin cells along no-slip walls, cells aligned
+with the flow in long ducts, and faces the finite-volume method likes. The flow `mesh` tool
+(`fea.make_mesh` on a flow problem) gives agents those, and judges the result the way OpenFOAM's
+`checkMesh` would.
+
+- **The CAD, not the reference's blocks.** A flow problem's `build_geometry` is the domain cut into
+  the blocks of its structured reference mesh; `build_cad` is the plain CAD (one face or solid) the
+  agent is given. Agents now inspect and mesh the CAD. Its boundary gets the reference geometry's
+  group names by geometry: every sample point of a CAD edge or face must lie on the group's
+  entities. `tests/test_flow_mesh.py` checks that every group lands with the same length or area,
+  and that no boundary entity is left without a group. Closed curves (circles) are split into
+  four arcs first, which the boundary-layer mesher handles better.
+- **Boundary layers:** `boundary_layer: {"groups": [walls], "first": h1, "ratio": r, "layers": n}`.
+  - The first cell is `h1` high, each next layer `r` times thicker (default 1.2), `n` layers deep.
+  - It uses gmsh's BoundaryLayer field with an explicit thickness. Gmsh's default thickness, 0.01 m,
+    is the Taylor-Couette gap, and the two walls' layers grew into each other there.
+  - Where a wall meets a boundary without layers (an inlet), the layers end on that boundary, so the
+    inlet gets the graded nodes.
+  - In 2D the layers go directly on the walls. In 3D they are made on the swept face.
+- **Sweep (3D):** `sweep: {"source": "inlet", "layers": n, "ratio": r}`.
+  - A straight duct or pipe is rebuilt as its planar end face extruded to the opposite end. The tool
+    checks this: an opposite face with the same area must exist, and area x length must equal the
+    CAD's volume.
+  - The face is meshed in 2D (h, refinements, quads, boundary layer), then extruded in `n` layers,
+    graded so the last is `r` x the first. The result is hexahedra (with `quads`) or prisms.
+  - Its size floor comes from the face, not the whole duct, with a node-count guard. The 3D floor
+    (bounding-box diagonal / 100) is 1 mm on the square duct, only 10 cells across.
+- **Size floors:** h keeps the global floor (bounding-box diagonal / 400 in 2D, / 100 in 3D), but on
+  flow tasks local refinement sizes may go 5x (2D) or 3x (3D) below it. Flow domains are long and
+  their features small: the DFG cylinder is 1/22 of the channel, and the floor (5.6 mm) used to clamp
+  every refinement there, gmsh's `Mesh.MeshSizeMin` included.
+- **Finite-volume quality** (`feacore/geometry/fv_quality.py`): OpenFOAM's own formulas.
+  - It reports non-orthogonality (max, and the mean as `checkMesh` gives it), skewness, aspect
+    ratio, the cell volume ratio across faces, and per boundary group the wall-normal distance of
+    the first cell centres.
+  - `tests/test_fv_quality.py` checks it against `checkMesh` on a 2D boundary-layer mesh, a tet
+    mesh and a swept hex mesh: same max and mean non-orthogonality, same max skewness.
+- **The gate:** a flow mesh passes when no cell is inverted, max non-orthogonality is at most 70°
+  and max skewness at most 4 (`checkMesh`'s thresholds). Flow meshes no longer use the element-shape
+  gate (minSICN >= 0.1), which fails a boundary layer's thin cells by design: a 20:1 cell has minSICN
+  0.1. The agent sees `fv_quality`, `fv_ok` and the reason it failed; the minSICN numbers are hidden
+  from it for flow.
+- **Refinement studies** scale a whole request (`fea.scale_request`): sizes x s, a boundary layer
+  keeps its thickness (first x s, growth 1 + s (r - 1), layers / s), and a sweep gets layers / s.
+  The same applies to the diagnoser's global `refine_mesh`; `set_boundary_layer` is a new mesh
+  intervention.
+- **Reproducibility:** a recorded request rebuilds the same mesh. With a boundary layer, it is the
+  same up to node numbering: gmsh's layer code is not order-deterministic, so the file hash can
+  differ between processes. Sweeps and plain meshes rebuild bit for bit.
+
+What it buys, on the reference setups (linearUpwind; error in the scored QoI):
+
+| task | mesh | nodes | cells | error |
+|---|---|---|---|---|
+| `pipe_poiseuille_3d` | uniform tets, h = 1 mm | 4078 | 18 760 tet | +2.37 % |
+| `pipe_poiseuille_3d` | swept quads, h = 1 mm, 10 layers | 1309 | 1020 hex | +0.32 % |
+| `square_duct_3d` | uniform tets, h = 1.4 mm | 4234 | 17 754 tet | -0.81 % |
+| `square_duct_3d` | swept quads, h = 0.7 mm, 10 layers graded 6:1 | 3168 | 2550 hex | -1.25 % |
+| `cylinder_channel_dfg_2d1` | quads, 2 mm at the cylinder | 6345 | 6089 | +0.60 % |
+| `cylinder_channel_dfg_2d1` | quads, 4 mm at the cylinder + 4-layer boundary layer | 3229 | ~3100 | +0.34 % |
+
+The score counts DOFs as cells x unknowns, so a swept mesh is about 5x cheaper than tets for the
+same nodes. A boundary layer is not always worth it: on the fully developed pipe it made the error
+worse (+0.95 % against +0.32 % at about the same cost), because there the error comes from the
+faceted circle, not the wall gradient.
+
+### Flow solve feedback (`ace/flow_feedback.py`)
+
+After every solve on a flow task the agent gets what a CFD engineer looks at without a reference:
+- every statement quantity;
+- convergence: iterations, the last residuals, whether the target was met;
+- mass balance: the flow rate through each inlet and outlet group, and the imbalance;
+- the fluid force (pressure + viscous) on each wall group;
+- the peak speed and the pressure range, and where they are;
+- the cell Peclet number |u| h / nu (above 2, upwind convection smears the flow);
+- reversed-flow zones (against the mean inflow direction), e.g. the bubble behind the DFG cylinder;
+- an error indicator: at every face, the jump between the two neighbouring cells' linear
+  reconstructions of the velocity (at walls and inlets against the boundary value). For a
+  second-order scheme it is O(h^2 u''), so it is large where the velocity curves sharply relative
+  to the cell size. It is reported as a global relative value and the 5 hotspots holding most of it,
+  each with its nearest group and local cell size. It ranks where to refine; it is not an error bound.
+
+`view` draws the mesh, speed (with velocity arrows), pressure or the error indicator; in 3D a section
+through the middle of the domain. `compare` gives the relative L2 difference of two solves' velocity
+fields, the regions where they differ and every quantity's change. All of it is computed from the
+finite-volume solution in numpy, in about 0.05 s per solve.
+
+### Field mode and `--deep` on flow (`ace/flow_field.py`, `ace/flow_report.py`)
+
+`ACE_SCORE=field` scores a flow run on its whole velocity field, as solids are scored on their
+stress field. `ace.field_error` dispatches to `ace.flow_field` for flow problems, so `checks`, the
+agent's prompt, the diagnoser and the reports use one interface.
+- **Error:** the larger of the relative L2 velocity error over the whole domain and the RMS speed
+  error at 12 check points (4 disclosed).
+- **Reference:** the exact solution where the problem has one (Poiseuille, pipe, Taylor-Couette).
+  Otherwise it is the problem's own setup on its structured reference mesh refined 4x, with the level
+  twice as coarse estimating the reference's error.
+- **Quadrature:** the cell centres and volumes of the structured mesh at h0 / 2 (the duct: h0). A run
+  is sampled there by its nearest cell's linear reconstruction.
+- **Check points:** in the bulk of the flow, at least 20 % of the domain's thickness from every
+  boundary, where the speed is at least half its median and the two reference levels agree (0.1 %,
+  relaxed up to 3 % until enough points remain). Near walls the speed is small and its relative
+  error mostly interpolation. A run's speed there is the solver's own point interpolation.
+- **Automesher:** the agents' mesh tool at the problem's base size h0 (uniform triangles /
+  tetrahedra, linearUpwind). gmsh's own default size gives 36-98 nodes on these domains.
+
+| task | automesher (h0) | error | a good mesh (`planted.GOOD_MESH`) | error |
+|---|---|---|---|---|
+| `poiseuille_channel` | 450 nodes, 2406 DOFs | 1.09 % | 1026 nodes, quads | 0.65 % |
+| `taylor_couette_2d` | 1225 nodes, 6774 DOFs | 1.44 % | 1849 nodes, quads | 1.01 % |
+| `pipe_poiseuille_3d` | 2298 nodes, 38 996 DOFs (tets) | 6.57 % | 1309 nodes, swept hexahedra | 3.72 % |
+
+With `--deep` each flow run gets a flow run report (`ace/flow_report.py`) instead of the stress
+report. It has:
+- the velocity error map (hotspots holding 80 % of the squared error, each with its nearest group,
+  local cell size and speed error);
+- the region grid and every check point (hidden ones only as an aggregate for anything agents read);
+- the flow feedback the agent saw;
+- three pictures: mesh, velocity error, and speed next to the reference's.
+
+The disagreement map compares the runs' speed. On a flow task the agent (after the process brief),
+the teacher and the self-reflection (next to the task statement) also read `process_brief.FLOW_BRIEF`:
+how flow tasks are scored, meshed, gated and set up, and what the flow tools return. It goes with flow
+tasks only, as `NL_SCORING` does for a physical test, so a run without flow tasks reads exactly the
+elasticity prompts. The suggested and planned next mesh call is then a `FlowMeshCall`: h, quads,
+refinements, boundary_layer and sweep, no order. The teacher's experiments vary the cell structure
+where they would vary the element order: the variants change h, the boundary layer, one refinement's
+placement, the cell type, and so on, in that order, and the first explorer tries another cell
+structure. A two-generation mock `--deep` run on `poiseuille_channel` and `taylor_couette_2d`
+(`--mock`) exercises all of it without API calls.
+
+```bash
+ACE_SCORE=field python -m ace.field_error --precompute lid_driven_cavity_re100,cylinder_channel_dfg_2d1
+ACE_SCORE=field python -m ace.run_loop --deep --split --memory shared+private --agents 6 \
+    --problems poiseuille_channel,lid_driven_cavity_re100,taylor_couette_2d --holdout cylinder_channel_dfg_2d1 \
+    --generations 8 --budget-usd 40 --out ace_runs/cfd_deep
+```
+
+OpenFOAM is required: ESI line, v1912 or newer, as on the Brev box. On a Mac, run
+`bash scripts/openfoam_docker.sh` once. It runs OpenFOAM v1912 in a Docker container and writes
+shims. Then:
+
+```bash
+export FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp
+```
+
+A two-generation mock run on the three 2D problems takes about 16 s that way. The solver tests in
+`tests/test_ace_cfd.py` skip without OpenFOAM.
+
+### Running the CFD suites with the Claude API (real credits)
+
+On a Brev box (Ubuntu, after `bash scripts/setup_gpu_box.sh` or `bootstrap.sh`):
+
+```bash
+bash scripts/setup_ace_cfd.sh            # OpenFOAM (apt), the ace + cfd extras, pre-flight solves
+export ANTHROPIC_API_KEY=...             # never commit it
+.venv/bin/python -m ace.preflight --suite cfd --ping     # one real call (~$0.01): key, model, tool schemas
+
+# a small first run to measure the cost per run on this suite
+.venv/bin/python -m ace.run_loop --suite cfd --generations 1 --agents 2 --budget-usd 3 --out ace_runs/cfd_probe
+
+# the experiment (defaults: 6 persistent agents, 4 generations, shared + private memory)
+tmux new -s ace
+.venv/bin/python -m ace.run_loop --suite cfd --budget-usd 40 --out ace_runs/cfd_$(date +%m%d)
+.venv/bin/python -m ace.run_loop --suite cfd3d --budget-usd 25 --out ace_runs/cfd3d_$(date +%m%d)
+
+# the deep swarm on flow (field scoring: the whole velocity field against the automesher; teacher,
+# self-reflection, organizer). Pre-flight with ACE_SCORE=field builds every field reference first
+# (a few minutes: fine structured solves for the cavity, DFG, step and duct), so the loop starts at once.
+ACE_SCORE=field .venv/bin/python -m ace.preflight --suite cfd
+ACE_SCORE=field .venv/bin/python -m ace.run_loop --suite cfd --deep --split --memory shared+private \
+    --agents 6 --generations 8 --budget-usd 60 --out ace_runs/cfd_deep_$(date +%m%d)
+```
+
+- **Pre-flight** (`ace/preflight.py`) solves every task's `planted.GOOD_MESH` with the reference
+  setup and checks it is within tolerance and under the cap. It needs no API key unless `--ping`.
+  With `ACE_SCORE=field` it also builds each task's field reference, check points and automesher
+  (cached in `ace/field_refs/`) and shows the good mesh's field error against the automesher's.
+  `run_loop` itself also stops before spending anything if a flow task cannot find OpenFOAM or
+  foamlib.
+- **Budget:** `--budget-usd` defaults to $10, which stops the CFD suite after about one generation.
+  The loop checks it before each agent run, so the last generation can overshoot by
+  `--concurrency` runs.
+  - Rough estimate, not yet measured on these suites: $0.2-0.4 per agent run with the Sonnet
+    generator. A `cfd` generation (6 agents x 4 tasks) is then about $5-10, and `cfd3d`
+    (6 x 2) about half that.
+  - The probe run's `Spend by role` line and `cost.jsonl` give the real figure; verify `PRICES` in
+    `config.py` first.
+- **Modes that work for flow:** the default point scoring (leave `ACE_SCORE` unset), field scoring
+  (`ACE_SCORE=field`, the velocity field) and with it `--deep` and the single-agent
+  baseline `ace.single_loop` (all-flow task lists), `--teacher rerun` (the default),
+  `--memory shared|shared+private`, `--split`, `--peers`, `--personas`.
+- **Modes that don't:** `--teacher inspect|both` (its tools read the elastic stress field),
+  `--statement requirements` (written for elasticity setups) and `--pre-teach` (it revises the context
+  from a physical test's teacher brief). `run_loop` refuses them for flow tasks.
+- **Concurrency:** `--concurrency` (default 4) agent runs solve in parallel, and as many scoring
+  workers start on finished runs while the others still work. 2D solves are light. A 3D solve and
+  its refinement study can take 0.3-0.5 GB each, so keep `--concurrency` at most (RAM in GB) / 4
+  for `cfd3d`.
+- **Watching and stopping:** `.venv/bin/python -m ace.watch ace_runs/<dir>` (port 8765; tunnel it from
+  the Brev box) and `.venv/bin/python -m ace.report ace_runs/<dir>` (see "Watch it evolve").
+  `touch ace_runs/<dir>/STOP` ends the run cleanly before the next generation.
 
 ## Requirements instead of boundary conditions (`--statement requirements`)
 

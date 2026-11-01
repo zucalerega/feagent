@@ -57,19 +57,35 @@ def write_control(case: Path, end: int, functions: dict | None = None) -> None:
     })
 
 
-def write_schemes(case: Path, order: int, turbulent: bool) -> None:
+def write_schemes(case: Path, order: int, turbulent: bool, skew: bool = False) -> None:
+    """``skew``: schemes that stay consistent on skewed cells (3D tets), where ``Gauss linear``
+    gradients and a plain ``linear`` flux are biased in the cells next to a wall and the solution
+    converges to a wrong one (docs/solver_openfoam.md):
+
+    * ``pointCellsLeastSquares`` gradients (exact for linear fields on any mesh) for U and the other
+      transported fields: the laplacian's non-orthogonal correction, linearUpwind and the
+      dev2(T(grad(U))) term use them;
+    * ``grad(p)`` stays ``Gauss linear``: it is conservative (the cell pressure forces sum to the
+      boundary pressure force), and a least-squares grad(p) takes zero-gradient wall values at
+      shifted face centres, which on very skewed hexes (split tets) biases the pressure level;
+    * ``skewCorrected linear`` for the momentum-interpolation flux ``flux(HbyA)``."""
     conv = "bounded Gauss linearUpwind grad(U)" if order == 2 else "bounded Gauss upwind"
     turb = "bounded Gauss limitedLinear 1" if order == 2 else "bounded Gauss upwind"
     div = {"default": "none", "div(phi,U)": _t(conv),
            "div((nuEff*dev2(T(grad(U)))))": _t("Gauss linear")}
     if turbulent:
         div.update({"div(phi,k)": _t(turb), "div(phi,omega)": _t(turb), "div(phi,epsilon)": _t(turb)})
+    grad = {"default": _t("Gauss linear")}
+    interp = {"default": "linear"}
+    if skew:
+        grad = {"default": "pointCellsLeastSquares", "grad(p)": _t("Gauss linear")}
+        interp["flux(HbyA)"] = _t("skewCorrected linear")
     _w(case / "system" / "fvSchemes", {
         "ddtSchemes": {"default": "steadyState"},
-        "gradSchemes": {"default": _t("Gauss linear")},
+        "gradSchemes": grad,
         "divSchemes": div,
         "laplacianSchemes": {"default": _t("Gauss linear corrected")},
-        "interpolationSchemes": {"default": "linear"},
+        "interpolationSchemes": interp,
         "snGradSchemes": {"default": "corrected"},
         "wallDist": {"method": "meshWave"},
     })

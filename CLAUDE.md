@@ -39,6 +39,38 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   always scored against the test (`physical_tests/abc_00000065_compression/`). `--split` also runs on
   one task. feacore's elastoplastic ccx path (`nonlinear-setup` 9978510, cherry-picked) drives
   `scripts/ccx_compression_ramp.py`, the test past yield.
+- `ace-cfd` branch (off `ace-loop`, with `main` merged in): the same ACE loop on steady laminar CFD.
+  - Run it with `python -m ace.run_loop --suite cfd`.
+  - Flow tools: finite-volume mesh with optional quads; solve with fluid, convection scheme and flow BCs on the openfoam backend.
+  - Flow mesher (`ace/flow_mesh.py`; `ace/README.md`, "The flow mesher"):
+    - agents mesh the plain CAD (`build_cad`), with the reference geometry's group names
+      transferred by geometry, not the block-split reference geometry;
+    - wall `boundary_layer` (2D, or on a swept face) and 3D `sweep` (a straight duct as its end face
+      extruded in layers: hexahedra / prisms);
+    - flow meshes are gated on finite-volume quality (`feacore/geometry/fv_quality.py`, `checkMesh`'s
+      formulas and thresholds: non-orthogonality <= 70 deg, skewness <= 4), not minSICN, which fails
+      boundary-layer cells by design.
+  - Oracles: spec compliance, gaming, known answer, and a refinement study on the openfoam backend.
+  - Two new exact benchmarks: `taylor_couette_2d` (rotating cylinder) and `square_duct_3d` (developing duct flow).
+  - `backward_facing_step_2d` (2D, Re 200, separation at a sharp corner): a `cfd` train task scored on
+    `u_bubble`, with the fixed solver's own mesh-converged references (structured study; no published
+    value fits). Local refinement at the corner and over the bubble beats uniform meshes at half the nodes.
+  - Suites: `cfd` (2D) and `cfd3d` (`pipe_poiseuille_3d`, `square_duct_3d`, scored on `dp_AB`).
+    3D became usable once the backend's 3D tet bias was fixed (FEA core, CFD bullet); swept hex
+    meshes reach the tolerance with about 1/5 of the cells tets need.
+  - Flow solve feedback, `view` and `compare` (`ace/flow_feedback.py`): convergence, mass balance, wall
+    forces, reversed flow, and a reference-free error indicator (velocity jumps at faces) with hotspots.
+  - Field mode on flow (`ace/flow_field.py`): whole-domain velocity L2 error and the speed at check points,
+    against the exact solution or a fine structured reference; automesher = the mesh tool at h0. With it
+    `--deep` works on flow (`ace/flow_report.py` run reports).
+  - `--deep` on a flow task: the agent, teacher and self-reflection also read `process_brief.FLOW_BRIEF`.
+    Mesh calls are `FlowMeshCall` (quads, boundary_layer, sweep; no order), and the teacher's
+    experiments vary the cell structure. Elasticity prompts and schemas are byte-identical to
+    `ace-loop`'s.
+  - Real runs (Claude API): `bash scripts/setup_ace_cfd.sh`, then `python -m ace.preflight --suite cfd --ping`;
+    `ace/README.md`, "Running the CFD suites with the Claude API". `--teacher inspect|both`,
+    `--statement requirements` and `--pre-teach` are elasticity-only, and `run_loop` refuses them for flow tasks.
+  - Without a local OpenFOAM: `scripts/openfoam_docker.sh` (OpenFOAM v1912 in Docker, plus shims) and `FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp`.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
   accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy
@@ -145,6 +177,12 @@ Decisions:
   values stop converging. Ghia's cavity table is itself 1.4-3.5% off converged solutions, so its
   tolerances are 3-5%. Pressure drops use the `point_difference` QoI. To enable it on a box:
   `sudo apt-get install -y openfoam && uv pip install --python .venv/bin/python foamlib`.
+  3D flow uses skew-consistent schemes (option `skew_correction`, on by default in 3D):
+  `pointCellsLeastSquares` gradients (but `grad(p)` stays Gauss linear) and a `skewCorrected linear`
+  `flux(HbyA)`. With the plain schemes, tets converged to a pressure gradient 12-15% too high at
+  every h: next to a wall, linear interpolation misses the face values in the same direction
+  everywhere. Wall forces use the wall-normal distance, as the solver does.
+  `docs/solver_openfoam.md`, "3D meshes".
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
@@ -152,6 +190,10 @@ Decisions:
   - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
     or thermal-load interfaces. Don't use point stresses right at an interface.
   - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
+  - 3D flow on tets: fixed by the skew-consistent schemes (CFD bullet above). The old +15 % pressure gradient
+    on tets was a solver bias. The apparent force imbalance came from the wall force dividing by |Cf - C|
+    instead of the wall-normal distance. Point velocities at a smooth maximum still read 2-5 % low on coarse
+    tets (the probe's vertex fit); pressure drops, forces and flow rates are fine.
 
 ## NVIDIA compute (hackathon)
 

@@ -286,6 +286,7 @@ COARSE = {
     "lid_driven_cavity_re100": (1.0, 0.06),     # Ghia's table is itself 1.5-3.5 % off
     "cylinder_channel_dfg_2d1": (1.0, 0.02),
     "pipe_poiseuille_3d": (0.5, 0.05),
+    "backward_facing_step_2d": (1.0, 0.07),     # h0: the bubble's u_x is 4.3 % off (study: order 1.2)
 }
 
 

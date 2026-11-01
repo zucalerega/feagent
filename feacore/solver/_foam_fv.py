@@ -5,7 +5,8 @@ OpenFOAM's own formulas, so the numbers match its function objects:
 * face centres / area vectors and cell centres / volumes as ``primitiveMesh`` computes them
   (triangle fans about the face average point; pyramids about the estimated cell centre);
 * ``Gauss linear`` gradients with ``surfaceInterpolation`` weights; the boundary value of the
-  gradient gets its normal part from the patch ``snGrad`` (``gaussGrad::correctBoundaryConditions``);
+  gradient gets its normal part from the patch ``snGrad`` (``gaussGrad::correctBoundaryConditions``),
+  whose distance is the wall-normal one (``fvPatch::delta``);
 * the ``forces`` function object: pressure force ``rho (p - pRef) Sf`` plus viscous force
   ``Sf . devRhoReff`` with ``devRhoReff = -rho nuEff dev(twoSymm(grad U))`` on the patch.
 
@@ -96,13 +97,16 @@ class FvMesh:
         return g if vec else g[:, :, 0]
 
     def boundary_grad(self, name: str, cell: np.ndarray, grad: np.ndarray, bval: np.ndarray) -> np.ndarray:
-        """Gradient on patch faces: owner gradient with its normal part replaced by snGrad
-        (deltaCoeffs = 1 / |Cf - C_owner|, as fvPatch::deltaCoeffs)."""
+        """Gradient on patch faces: owner gradient with its normal part replaced by snGrad.
+        deltaCoeffs = 1 / (n . (Cf - C_owner)), the wall-normal distance of the owner centre, as
+        fvPatch::delta() / deltaCoeffs of a non-coupled patch (OpenFOAM >= 2.3, ESI v1912+). It is
+        what the solver's own wall flux uses; 1 / |Cf - C_owner| differs on non-orthogonal wall cells
+        (about 10 % on tets)."""
         sl = self.patch_slice(name)
         own = self.owner[sl]
         nrm = self.Sf[sl] / self.magSf[sl][:, None]
         delta = self.Cf[sl] - self.C[own]
-        dc = 1.0 / np.linalg.norm(delta, axis=1)
+        dc = 1.0 / np.maximum(np.abs(np.einsum("ij,ij->i", nrm, delta)), 1e-300)
         sn = dc[:, None] * (bval - cell[own])                   # (nf, k)
         G = grad[own]                                           # (nf, 3, k)
         nG = np.einsum("fi,fik->fk", nrm, G)
