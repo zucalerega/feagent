@@ -69,7 +69,7 @@ def solve(case: Case, **options) -> "CcxResult":
             "inconsistently, so it fails the patch test (use analysis.order = 2)")
     gm = read_gmsh(case.mesh_path())
     model = build_model(gm, case.dim, a.order, axisymmetric=(a.formulation == "axisymmetric"))
-    _check_curvature(model, a.formulation)
+    _check_curvature(model, a.formulation, accept=bool(a.options.get("accept_curved", False)))
     deck = _Deck(case, model)
     inp = deck.build()
     if a.nonlinear:   # opt-in elastoplastic load stepping: docs/solver_ccx_nonlinear.md
@@ -99,7 +99,7 @@ def solve(case: Case, **options) -> "CcxResult":
 CURVED_INTERIOR_TOL = 1e-3
 
 
-def _check_curvature(model: FEModel, formulation: str) -> None:
+def _check_curvature(model: FEModel, formulation: str, accept: bool = False) -> None:
     """CalculiX integrates C3D10 (4 points) and the CAX6 wedge with rules that are not exact on
     curved isoparametric cells: on meshes with strongly curved interior edges the patch test fails
     (6e-5 for C3D10, up to 4e-3 for CAX6), while CPS6 / CPE6 pass. gmsh keeps interior edges
@@ -127,7 +127,10 @@ def _check_curvature(model: FEModel, formulation: str) -> None:
     worst_int = float(rel[~on_b].max()) if np.any(~on_b) else 0.0
     worst_b = float(rel[on_b].max()) if np.any(on_b) else 0.0
     kind = "C3D10" if model.dim == 3 else "CAX6"
-    if worst_int > CURVED_INTERIOR_TOL:
+    if worst_int > CURVED_INTERIOR_TOL and accept:   # analysis.options.accept_curved: opt-in, caller verifies
+        model.warnings.append(f"{kind} cells with curved interior edges (midside offset up to {worst_int:.2g} x "
+                              "edge length) accepted (accept_curved): CalculiX's quadrature is inexact on them")
+    elif worst_int > CURVED_INTERIOR_TOL:
         raise NotImplementedError(
             f"ccx backend: {kind} cells with curved interior edges (midside offset up to "
             f"{worst_int:.2g} x edge length) are refused: CalculiX's {kind} quadrature is not exact on "
