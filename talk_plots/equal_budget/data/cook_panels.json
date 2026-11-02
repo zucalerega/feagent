@@ -1,0 +1,202 @@
+{
+ "auto": {
+  "title": "Automesher, refined\n(gmsh defaults x 0.65)",
+  "dofs": 734,
+  "nodes": 367,
+  "elements": 164,
+  "field_error": 0.0363121067951404,
+  "probe_error": 0.0062468976891587825,
+  "scored_error": 0.0363121067951404,
+  "field_error_from_element_map": 0.03631210679514041,
+  "error_share_of_worst_5pct_elements": 0.9030939655511768,
+  "mesh_file": "talk_plots/equal_budget/data/auto_refined.msh",
+  "size_factor": 0.65,
+  "stored": {
+   "source": "talk_plots/act1_agentic_works/automesher_sweep.json",
+   "field_error": 0.0363121067951404,
+   "dofs": 734
+  },
+  "matches_stored": true
+ },
+ "early": {
+  "title": "Early agent\n(generation 1)",
+  "dofs": 898,
+  "nodes": 449,
+  "elements": 200,
+  "field_error": 0.028971131859824344,
+  "probe_error": 0.0035434005319826324,
+  "scored_error": 0.028971131859824344,
+  "field_error_from_element_map": 0.02897113185982434,
+  "error_share_of_worst_5pct_elements": 0.9103306750647777,
+  "run_id": "g1-cooks_membrane-a3",
+  "request": {
+   "h": 5,
+   "order": 2,
+   "refinements": [
+    {
+     "group": "clamped",
+     "size": 2.5,
+     "radius": 10
+    }
+   ]
+  },
+  "setup": {
+   "formulation": "plane_stress",
+   "material": {
+    "E": 1,
+    "nu": 0.3333333
+   },
+   "bcs": [
+    {
+     "type": "fixed",
+     "group": "clamped"
+    },
+    {
+     "type": "force",
+     "group": "loaded",
+     "value": [
+      0,
+      1
+     ]
+    }
+   ],
+   "thickness": 1
+  },
+  "rebuilt_sha_matches_run": true,
+  "stored": {
+   "source": "ace_runs/cook_auto/gen1/runs/g1-cooks_membrane-a3.json",
+   "field_error": 0.028971131859824577,
+   "dofs": 898,
+   "gain": 1.7653100176204573
+  },
+  "field_error_with_reference_setup": 0.02897113256119875,
+  "setup_equivalent": true,
+  "matches_stored": true
+ },
+ "final": {
+  "title": "Trained agent\n(generation 10)",
+  "dofs": 710,
+  "nodes": 355,
+  "elements": 152,
+  "field_error": 0.010746610442267228,
+  "probe_error": 0.00691860689608997,
+  "scored_error": 0.010746610442267228,
+  "field_error_from_element_map": 0.010746610442267228,
+  "error_share_of_worst_5pct_elements": 0.1672969009720252,
+  "run_id": "g10-cooks_membrane-a7",
+  "request": {
+   "h": 8.5,
+   "order": 2,
+   "refinements": [
+    {
+     "point": [
+      0,
+      44
+     ],
+     "size": 0.55,
+     "radius": 11
+    },
+    {
+     "point": [
+      48,
+      60
+     ],
+     "size": 0.55,
+     "radius": 9
+    },
+    {
+     "point": [
+      48,
+      44
+     ],
+     "size": 1.5,
+     "radius": 6
+    },
+    {
+     "point": [
+      0,
+      0
+     ],
+     "size": 3,
+     "radius": 4
+    },
+    {
+     "group": "loaded",
+     "size": 3,
+     "radius": 6.5
+    },
+    {
+     "point": [
+      15,
+      28.5
+     ],
+     "size": 4.2,
+     "radius": 9.5
+    },
+    {
+     "point": [
+      41.5,
+      50.5
+     ],
+     "size": 3.6,
+     "radius": 7
+    },
+    {
+     "point": [
+      2.5,
+      32.5
+     ],
+     "size": 3.5,
+     "radius": 7
+    },
+    {
+     "point": [
+      11,
+      16
+     ],
+     "size": 3.8,
+     "radius": 8.5
+    }
+   ]
+  },
+  "setup": {
+   "formulation": "plane_stress",
+   "material": {
+    "E": 1,
+    "nu": 0.3333333333
+   },
+   "thickness": 1,
+   "bcs": [
+    {
+     "type": "fixed",
+     "group": "clamped"
+    },
+    {
+     "type": "traction",
+     "group": "loaded",
+     "value": [
+      0,
+      0.0625
+     ]
+    }
+   ]
+  },
+  "rebuilt_sha_matches_run": true,
+  "stored": {
+   "source": "ace_runs/deep1/gen10/runs/g10-cooks_membrane-a7.json",
+   "field_error": 0.010746610442267332,
+   "dofs": 710,
+   "gain": 4.758991643802555
+  },
+  "field_error_with_reference_setup": 0.010746610442643974,
+  "setup_equivalent": true,
+  "matches_stored": true
+ },
+ "ref": {
+  "title": "True solution\n(fine reference)",
+  "dofs": 68970,
+  "source": "ace/field_refs/cooks_membrane.npz",
+  "reference_self_error": 0.003916567035171291
+ },
+ "_n_ref_points": 12849
+}

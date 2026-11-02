@@ -1,0 +1,46 @@
+{
+ "before_after_break": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.804755,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/before_after_break_end.png"
+  }
+ },
+ "after_break": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.642638,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/after_break_end.png"
+  }
+ },
+ "three_way_break": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/three_way_break.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 1.007561,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/three_way_break_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/three_way_break_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/three_way_break_end.png"
+  }
+ },
+ "first_vs_after_break": {
+  "mp4": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/first_vs_after_break.mp4",
+  "frames": 300,
+  "seconds": 10.0,
+  "mb": 0.758573,
+  "keys": {
+   "start": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/first_vs_after_break_start.png",
+   "middle": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/first_vs_after_break_middle.png",
+   "end": "/home/ubuntu/feagent-build/talk_plots/act3_real_data/break/first_vs_after_break_end.png"
+  }
+ }
+}

@@ -1,0 +1,42 @@
+{
+ "run": "div_s16",
+ "source": "/home/jaimeromero/Desktop/feagent/ace_runs/div_s16",
+ "kind": "swarm",
+ "generation": 7,
+ "tasks": [
+  "abc_00000003_bc7",
+  "abc_00000065_bc0"
+ ],
+ "agents": [
+  "a0",
+  "a1",
+  "a2",
+  "a3",
+  "a4",
+  "a5",
+  "a6",
+  "a7",
+  "a8",
+  "a9",
+  "a10",
+  "a11",
+  "a12",
+  "a13",
+  "a14",
+  "a15"
+ ],
+ "models": {
+  "generator": "claude-sonnet-5-5",
+  "reflector": "claude-sonnet-5-5",
+  "diagnoser": "claude-sonnet-5-5",
+  "curator": "claude-sonnet-5-5",
+  "teacher": "claude-opus-5-5",
+  "reflect": "claude-sonnet-5-5",
+  "organizer": "claude-sonnet-5-5",
+  "big_generator": "claude-sonnet-5-5",
+  "translator": "claude-opus-5-5",
+  "backtranslator": "claude-sonnet-5-5"
+ },
+ "git_commit": "603f3e726adbc559edf6e11bf9602086f1d51505",
+ "exported_at": "2026-11-01 00:47:39"
+}

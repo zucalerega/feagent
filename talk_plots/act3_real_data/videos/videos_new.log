@@ -1,0 +1,14 @@
+/home/ubuntu/feagent-build/scripts/nl_video.py:107: PyVistaFutureWarning: The default value of `algorithm` for the filter
+`UnstructuredGrid.extract_surface` will change in the future. It currently defaults to
+`'dataset_surface'`, but will change to `None`. Explicitly set the `algorithm` keyword to
+silence this warning.
+  surf = g0.linear_copy().extract_surface()        # tetra10 -> corner tets -> outer triangles
+2026-11-01 03:57:49.639 (   4.470s) [    7043EBB75740]vtkXOpenGLRenderWindow.:1452  WARN| bad X server connection. DISPLAY=
+first    41186 nodes  mean error 33.4346%  ends at 3.000 mm  converged True
+before    2937 nodes  mean error 32.6540%  ends at 2.600 mm  converged True
+stage2    2937 nodes  mean error 7.8375%  ends at 2.792 mm  converged True
+stage3    6430 nodes  mean error 4.5728%  ends at 2.785 mm  converged True
+after     8753 nodes  mean error 1.9676%  ends at 2.780 mm  converged True
+after = {"run_id": "g1-abc_00000065_compression-a2", "generation": 1, "agent": "a2", "base_score": 0.6682917360691787, "score": 0.6682917360691787, "mean_rel_err": 0.019675626497517737, "nodes": 8753, "dir": "/home/ubuntu/feagent/ace_runs/nl_ft/gen1/work/abc_00000065_compression-a2/nonlinear"}
+wrote /home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/three_way.mp4 (300 frames, 10.0 s)
+wrote /home/ubuntu/feagent-build/talk_plots/act3_real_data/videos/first_vs_after.mp4 (300 frames, 10.0 s)

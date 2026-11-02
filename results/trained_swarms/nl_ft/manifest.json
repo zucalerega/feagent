@@ -1,0 +1,29 @@
+{
+ "run": "nl_ft",
+ "source": "/Users/aryan/Documents/Aryan/CS/scienceclawhack/feagent/ace_runs/nl_ft",
+ "kind": "swarm",
+ "generation": 9,
+ "tasks": [
+  "abc_00000065_compression"
+ ],
+ "agents": [
+  "a0",
+  "a1",
+  "a2",
+  "a3"
+ ],
+ "models": {
+  "generator": "claude-sonnet-5-5",
+  "reflector": "claude-sonnet-5-5",
+  "diagnoser": "claude-sonnet-5-5",
+  "curator": "claude-sonnet-5-5",
+  "teacher": "claude-opus-5-5",
+  "reflect": "claude-sonnet-5-5",
+  "organizer": "claude-sonnet-5-5",
+  "big_generator": "claude-sonnet-5-5",
+  "translator": "claude-opus-5-5",
+  "backtranslator": "claude-sonnet-5-5"
+ },
+ "git_commit": "ca9394bc0894887e3f85905a5b1b5f63f79f272d",
+ "exported_at": "2026-10-31 23:22:17"
+}

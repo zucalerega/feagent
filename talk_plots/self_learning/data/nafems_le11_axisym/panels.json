@@ -1,0 +1,208 @@
+{
+ "auto": {
+  "title": "gmsh automesher",
+  "dofs": 332,
+  "nodes": 166,
+  "elements": 69,
+  "field_error": 0.024383927657724326,
+  "probe_error": 0.004710145797676667,
+  "scored_error": 0.024383927657724326,
+  "gain_vs_auto": 0.9999999999999991,
+  "stored": {
+   "source": "ace/field_refs/nafems_le11_axisym_auto.json",
+   "field_error": 0.024383927657724305,
+   "dofs": 332
+  },
+  "matches_stored": true,
+  "mesh_file": "talk_plots/self_learning/data/nafems_le11_axisym/automesher.msh"
+ },
+ "early": {
+  "title": "Early agent (generation 1)",
+  "dofs": 812,
+  "nodes": 406,
+  "elements": 179,
+  "field_error": 0.00705694459579639,
+  "probe_error": 0.001844252864576993,
+  "scored_error": 0.00705694459579639,
+  "gain_vs_auto": 3.455309493608477,
+  "stored": {
+   "source": "ace_runs/deep1/gen1/runs/g1-nafems_le11_axisym-a3.json",
+   "field_error": 0.007056944595796415,
+   "dofs": 812,
+   "gain": 3.4553094936084654,
+   "base_score": 0.7063810048509916
+  },
+  "matches_stored": true,
+  "run_id": "g1-nafems_le11_axisym-a3",
+  "gen": 1,
+  "setup": {
+   "formulation": "axisymmetric",
+   "material": {
+    "E": 210000000000.0,
+    "nu": 0.3,
+    "alpha": 0.00023
+   },
+   "bcs": [
+    {
+     "type": "displacement",
+     "group": "edge_AB_bottom",
+     "components": [
+      1
+     ],
+     "value": 0
+    },
+    {
+     "type": "displacement",
+     "group": "edge_HI_top",
+     "components": [
+      1
+     ],
+     "value": 0
+    }
+   ],
+   "loads": [
+    {
+     "type": "temperature",
+     "group": "*",
+     "value": "x+y"
+    }
+   ],
+   "T_ref": 0
+  },
+  "rebuilt_sha_matches_run": true,
+  "run_mesh_file": "ace_runs/deep1/gen1/work/nafems_le11_axisym-a3/mesh_1.msh",
+  "request": {
+   "h": 0.13,
+   "order": 2,
+   "refinements": [
+    {
+     "point": [
+      1.0,
+      1.39
+     ],
+     "size": 0.03,
+     "radius": 0.25
+    },
+    {
+     "point": [
+      1.2124,
+      0.7
+     ],
+     "size": 0.04,
+     "radius": 0.25
+    }
+   ]
+  }
+ },
+ "final": {
+  "title": "Trained agent (generation 10)",
+  "dofs": 648,
+  "nodes": 324,
+  "elements": 139,
+  "field_error": 0.007096572198308761,
+  "probe_error": 0.003971102596727619,
+  "scored_error": 0.007096572198308761,
+  "gain_vs_auto": 3.436014878216194,
+  "stored": {
+   "source": "ace_runs/deep1/gen10/runs/g10-nafems_le11_axisym-a4.json",
+   "field_error": 0.00709657219830879,
+   "dofs": 648,
+   "gain": 3.43601487821618,
+   "base_score": 0.8802136879380955
+  },
+  "matches_stored": true,
+  "run_id": "g10-nafems_le11_axisym-a4",
+  "gen": 10,
+  "setup": {
+   "formulation": "axisymmetric",
+   "material": {
+    "E": 210000000000.0,
+    "nu": 0.3,
+    "alpha": 0.00023
+   },
+   "bcs": [
+    {
+     "type": "displacement",
+     "group": "edge_AB_bottom",
+     "components": [
+      1
+     ],
+     "value": 0
+    },
+    {
+     "type": "displacement",
+     "group": "edge_HI_top",
+     "components": [
+      1
+     ],
+     "value": 0
+    }
+   ],
+   "loads": [
+    {
+     "type": "temperature",
+     "group": "*",
+     "value": "x+y"
+    }
+   ],
+   "T_ref": 0
+  },
+  "rebuilt_sha_matches_run": true,
+  "run_mesh_file": "ace_runs/deep1/gen10/work/nafems_le11_axisym-a4/mesh_2.msh",
+  "request": {
+   "h": 0.2,
+   "order": 2,
+   "refinements": [
+    {
+     "point": [
+      1.0,
+      1.39
+     ],
+     "size": 0.016,
+     "radius": 0.22
+    },
+    {
+     "point": [
+      1.2124,
+      0.7
+     ],
+     "size": 0.021,
+     "radius": 0.21
+    },
+    {
+     "point": [
+      0.97,
+      0.49
+     ],
+     "size": 0.05,
+     "radius": 0.24
+    },
+    {
+     "point": [
+      0.75,
+      1.5
+     ],
+     "size": 0.085,
+     "radius": 0.25
+    },
+    {
+     "point": [
+      1.02,
+      0.08
+     ],
+     "size": 0.1,
+     "radius": 0.15
+    }
+   ]
+  }
+ },
+ "ref": {
+  "title": "True solution (fine reference)",
+  "dofs": 53412,
+  "nodes": 26706,
+  "source": "ace/field_refs/nafems_le11_axisym.npz",
+  "reference_self_error": 0.0015896293675654522,
+  "n_ref_points": 9981
+ },
+ "_panels_json": "data/nafems_le11_axisym/panels.json"
+}

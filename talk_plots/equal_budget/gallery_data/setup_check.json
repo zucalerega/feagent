@@ -1,0 +1,888 @@
+{
+ "abc_00000003_bc7": [
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "f2",
+      "type": "fixed"
+     },
+     {
+      "group": "f23",
+      "type": "pressure",
+      "value": 4000000.0
+     },
+     {
+      "group": "f16",
+      "type": "pressure",
+      "value": 2100000.0
+     }
+    ],
+    "formulation": "3d",
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 111
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "f2",
+      "type": "fixed"
+     },
+     {
+      "group": "f23",
+      "type": "pressure",
+      "value": 4000000
+     },
+     {
+      "group": "f16",
+      "type": "pressure",
+      "value": 2100000
+     }
+    ],
+    "formulation": "3d",
+    "material": {
+     "E": 210000000000,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 7
+  }
+ ],
+ "abc_00000065_bc0": [
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "f12",
+      "type": "fixed"
+     },
+     {
+      "group": "f7",
+      "type": "pressure",
+      "value": 2100000.0
+     }
+    ],
+    "formulation": "3d",
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 110
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "f12",
+      "type": "fixed"
+     },
+     {
+      "group": "f7",
+      "type": "pressure",
+      "value": 2100000
+     }
+    ],
+    "formulation": "3d",
+    "material": {
+     "E": 210000000000,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 3
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "f12",
+      "type": "fixed"
+     },
+     {
+      "group": "f7",
+      "type": "pressure",
+      "value": 2100000
+     }
+    ],
+    "formulation": "3d",
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 6
+  }
+ ],
+ "cooks_membrane": [
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "clamped",
+      "type": "fixed"
+     },
+     {
+      "group": "loaded",
+      "type": "force",
+      "value": [
+       0,
+       1
+      ]
+     }
+    ],
+    "formulation": "plane_stress",
+    "material": {
+     "E": 1,
+     "nu": 0.3333333333
+    },
+    "thickness": 1
+   },
+   "rel_difference_vs_reference": 7.102195297916309e-12,
+   "correct": true,
+   "n_runs": 14
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "clamped",
+      "type": "fixed"
+     },
+     {
+      "group": "loaded",
+      "type": "force",
+      "value": [
+       0,
+       1
+      ]
+     }
+    ],
+    "formulation": "plane_stress",
+    "material": {
+     "E": 1,
+     "nu": 0.3333333
+    },
+    "thickness": 1
+   },
+   "rel_difference_vs_reference": 7.1022787035222575e-09,
+   "correct": true,
+   "n_runs": 155
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "clamped",
+      "type": "fixed"
+     },
+     {
+      "group": "loaded",
+      "type": "traction",
+      "value": [
+       0,
+       0.0625
+      ]
+     }
+    ],
+    "formulation": "plane_stress",
+    "material": {
+     "E": 1,
+     "nu": 0.3333333333
+    },
+    "thickness": 1
+   },
+   "rel_difference_vs_reference": 7.102195297916309e-12,
+   "correct": true,
+   "n_runs": 44
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "clamped",
+      "type": "fixed"
+     },
+     {
+      "group": "loaded",
+      "type": "traction",
+      "value": [
+       0,
+       0.0625
+      ]
+     }
+    ],
+    "formulation": "plane_stress",
+    "material": {
+     "E": 1,
+     "nu": 0.3333333
+    },
+    "thickness": 1
+   },
+   "rel_difference_vs_reference": 7.1022787035222575e-09,
+   "correct": true,
+   "n_runs": 14
+  }
+ ],
+ "nafems_le1": [
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "edge_AB",
+      "type": "symmetry"
+     },
+     {
+      "group": "edge_CD",
+      "type": "symmetry"
+     },
+     {
+      "group": "edge_BC",
+      "type": "pressure",
+      "value": -10000000.0
+     }
+    ],
+    "formulation": "plane_stress",
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    },
+    "thickness": 0.1
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 63
+  }
+ ],
+ "nafems_le11_3d": [
+  {
+   "setup": {
+    "T_ref": 0,
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "face_sym_xz",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       0
+      ],
+      "group": "face_sym_yz",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "3d",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x**2+y**2)+z"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 4
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "face_sym_xz",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       0
+      ],
+      "group": "face_sym_yz",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "3d",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x**2+y**2)+z"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 38
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "face_sym_xz",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       0
+      ],
+      "group": "face_sym_yz",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "3d",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x*x+y*y)+z"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 6
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "face_sym_xz",
+      "type": "symmetry"
+     },
+     {
+      "group": "face_sym_yz",
+      "type": "symmetry"
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "3d",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x**2+y**2)+z"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 4
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "face_sym_xz",
+      "type": "symmetry"
+     },
+     {
+      "group": "face_sym_yz",
+      "type": "symmetry"
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "3d",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x*x+y*y)+z"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 3
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "face_sym_xz",
+      "type": "symmetry"
+     },
+     {
+      "group": "face_sym_yz",
+      "type": "symmetry"
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_bottom",
+      "type": "fixed"
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_top",
+      "type": "fixed"
+     }
+    ],
+    "formulation": "3d",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x**2+y**2)+z"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 1.1784364815173027,
+   "correct": false,
+   "n_runs": 1
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "group": "face_sym_xz",
+      "type": "symmetry"
+     },
+     {
+      "group": "face_sym_yz",
+      "type": "symmetry"
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_bottom",
+      "type": "fixed"
+     },
+     {
+      "components": [
+       2
+      ],
+      "group": "face_top",
+      "type": "fixed"
+     }
+    ],
+    "formulation": "3d",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x*x+y*y)+z"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 1.1784364815173027,
+   "correct": false,
+   "n_runs": 1
+  }
+ ],
+ "nafems_le11_axisym": [
+  {
+   "setup": {
+    "T_ref": 0,
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_AB_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_HI_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "axisymmetric",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "x + y"
+     }
+    ],
+    "material": {
+     "E": 210000000000,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 1
+  },
+  {
+   "setup": {
+    "T_ref": 0,
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_AB_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_HI_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "axisymmetric",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "x + y"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 6
+  },
+  {
+   "setup": {
+    "T_ref": 0,
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_AB_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_HI_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "axisymmetric",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "x+y"
+     }
+    ],
+    "material": {
+     "E": 210000000000,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 3
+  },
+  {
+   "setup": {
+    "T_ref": 0,
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_AB_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_HI_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "axisymmetric",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "x+y"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 28
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_AB_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_HI_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "axisymmetric",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "sqrt(x**2+y**2)+y"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.2673633028065027,
+   "correct": false,
+   "n_runs": 37
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_AB_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_HI_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "axisymmetric",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "x + y"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 1
+  },
+  {
+   "setup": {
+    "bcs": [
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_AB_bottom",
+      "type": "displacement",
+      "value": 0
+     },
+     {
+      "components": [
+       1
+      ],
+      "group": "edge_HI_top",
+      "type": "displacement",
+      "value": 0
+     }
+    ],
+    "formulation": "axisymmetric",
+    "loads": [
+     {
+      "group": "*",
+      "type": "temperature",
+      "value": "x+y"
+     }
+    ],
+    "material": {
+     "E": 210000000000.0,
+     "alpha": 0.00023,
+     "nu": 0.3
+    }
+   },
+   "rel_difference_vs_reference": 0.0,
+   "correct": true,
+   "n_runs": 25
+  }
+ ]
+}

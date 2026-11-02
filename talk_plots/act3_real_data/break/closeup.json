@@ -1,0 +1,31 @@
+{
+ "travel_mm": 2.5133,
+ "force_sim_N": 4822.543443088117,
+ "sites": {
+  "A": {
+   "s1_MPa": 43.049232764708606,
+   "xyz_mm": [
+    -14.56,
+    -13.22,
+    -4.31
+   ],
+   "faces": [
+    "f5"
+   ],
+   "observed_crack_site": true
+  },
+  "B": {
+   "s1_MPa": 33.217082109614445,
+   "xyz_mm": [
+    20.78,
+    30.77,
+    3.72
+   ],
+   "faces": [
+    "f40",
+    "f41"
+   ],
+   "observed_crack_site": false
+  }
+ }
+}

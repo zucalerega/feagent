@@ -25,8 +25,9 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   benchmarks and UI (`feacore/`), and the diagnostics (`feacore/diagnostics/`). One root
   `pyproject.toml` ships both packages.
 - `mesh-harness` branch: Alexander's ongoing harness work; merged into `main` as it lands.
+- `make_problem.py`: prints a unique, seeded problem statement per (agent number, call number).
 - `improver-loop` branch: improver side of the loop.
-- `ace-loop` branch: minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
+- `ace-loop` branch (merged into `main`): minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
   `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
   `--statement requirements` (branch `ace-requirements`) gives agents engineering requirements
   instead of boundary conditions (`ace/requirements.py`, `ace/requirements_data/`). `--evidence`
@@ -86,7 +87,7 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   - the SimJEB loader (needs `dataverse.harvard.edu` allowed);
   - the scoring proposal in `docs/eval-design.md`.
   Next: port the verification cases and QoIs to `feacore` Problems.
-- `gold-benchmarks` branch (Jaime): the gold-benchmark generator `feacore.goldgen`. It takes ABC
+- `gold-benchmarks` branch (Jaime, merged into `main`): the gold-benchmark generator `feacore.goldgen`. It takes ABC
   CAD parts, generates BC sets, meshes nested tet10 levels L0-L2 and keeps the QoIs that the GCI
   certifies; it runs on an H100 and packs its output into numbered archives
   (`goldgen-l2_0000.tgz`, ...). `benchmarks/gold/` holds the imported sets (see FEA core). Its

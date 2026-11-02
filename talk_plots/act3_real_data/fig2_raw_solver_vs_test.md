@@ -1,30 +1,17 @@
-# fig2_raw_solver_vs_test: "The raw solver misses reality: frictionless platens give out at 3.0 kN"
+# fig2_raw_solver_vs_test: "Before post-training, the simulation is 33 % off the real test"
 
-**Caption.** The out-of-the-box nonlinear simulation (CalculiX J2 plasticity + NLGEOM, frictionless platens)
-plateaus at about 3 kN while the real part reaches 4.7 kN at 2.5 mm. Sticking platens (friction stops the prongs
-splaying) reach the right strength; tilted or one-sided loading does not help.
+**Caption.** The out-of-the-box nonlinear simulation, before post-training: frictionless platens on gmsh's default
+mesh, crosshead travel = platen travel. It starts too stiff (no seating gap) and then gives out: the prongs splay
+and the force levels off at 3.3 kN, where the real part carried 4.7 kN
+at 2.5 mm. Mean error: **32.7 % off the real test**.
 
-**Key numbers** (force at 2.5 mm travel; mean |error| at the 5 checkpoints, no seating or compliance mapping):
+**Key numbers.** 2,937 nodes (8,811 DOFs). Force vs test at 0.5 / 1.0 / 1.5 / 2.0 / 2.5 mm:
+1580 / 2566 / 3045 / 3231 / 3298 N vs 860 / 2164 / 3308 / 4171 / 4743 N
+(+84 / +19 / -8 / -23 / -30 %).
 
-| variant (4 mm P2 mesh) | F at 2.5 mm | mean error |
-|---|---|---|
-| measured | 4743 N | - |
-| frictionless platens (baseline) | 3.0 kN (3009 N at 2.56 mm) | 33.2 % |
-| sticking platens | 5.1 kN (5184 N at 2.56 mm) | 35.6 % |
-| frictionless, elastic (no plasticity) | 5.1 kN | 30.4 % |
-| frictionless, prong f17 at half travel | 2.8 kN | 29.1 % |
-| frictionless, prong f34 at half travel | 2.8 kN | 29.5 % |
-| frictionless, only prong f17 pushed | 1.5 kN | 50.3 % |
+**Data.** talk_plots/act3_real_data/videos/before_run/curve.csv and summary.json next to it (CalculiX J2 + NLGEOM, the frozen ramp with frictionless
+platens; error recomputed from the curve = the recorded 0.3265).
 
-**Data.** /private/tmp/claude-501/-Users-aryan-Documents-Aryan-CS-scienceclawhack/29d391ed-69f3-4559-b365-a260e486ee85/scratchpad/nl_bc/<variant>/curve.csv (u_mm = platen travel, F_N), set up by /private/tmp/claude-501/-Users-aryan-Documents-Aryan-CS-scienceclawhack/29d391ed-69f3-4559-b365-a260e486ee85/scratchpad/nl_bc.py;
-test: physical_tests/abc_00000065_compression/cload_compression.csv. Numbers in act3_data.json / act3_errors.csv.
-
-**Caveats.**
-- Raw: platen travel is read as crosshead travel. That is why the sticking curve scores WORSE (35.6 %) than
-  frictionless (33.2 %) on the mean error: without the seating gap it is far too high early (99 % off at 0.5 mm)
-  even though it matches the strength at 2.5 mm (8 % off). Do not quote "sticking fixes it" from this slide alone:
-  the fix needs sticking AND seating (fig3).
-- The elastic frictionless run also reaches 5.1 kN: the collapse of the frictionless model needs plasticity plus
-  splay. Elastic is not a candidate (the dogbone shows the resin yields from about 12 MPa).
-- The two tilt variants (f17 or f34 at half travel) differ by at most 1.6 % and share one label.
-- All on one uniform 4 mm P2 mesh (the bonded run equals the h4 mesh run of the mesh sweep exactly).
+**Caveats.** "Before post-training" means before the swarm was post-trained on this test: the solver and the
+swarm were already capable. This run also lacks the test conditions learned from the experiment (sticking
+platens, seating gap, load-train compliance); fig3 separates the two steps.

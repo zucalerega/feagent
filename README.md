@@ -63,3 +63,14 @@ Built before `feacore` landed; complementary to it (see `docs/decisions.md` D19)
   CalculiX decks by `feabench evaluate`.
 - `benchmarks/simjeb/`: SimJEB fetcher and `.fem` → ccx converter. Needs `dataverse.harvard.edu`.
 - `docs/eval-design.md`: accuracy vs speed vs compute-cost scoring proposal for the evaluator.
+
+## Per-agent problem statements
+
+```sh
+python make_problem.py <agent_number> <call_number>
+```
+
+Prints the FEA setup prompt with a mesh strategy, solver, BC tuple and force tuple filled in. The call
+number is SHA-256 hashed into a seed that shuffles every possible assignment, and the agent number picks
+from that shuffle. The same inputs always give the same prompt, and agents on the same call always get
+different assignments. Edit the lists at the top of the script to change what can be assigned.

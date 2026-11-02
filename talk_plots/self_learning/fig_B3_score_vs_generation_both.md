@@ -1,0 +1,3 @@
+# Both 2D problems: score vs generations
+
+As fig_B1 for Cook's membrane (left) and as fig_L6 for NAFEMS LE11 axisymmetric (right), same run `ace_runs/deep1`, correctly set-up runs only. Excluded: g0-nafems_le11_axisym-a0, g0-nafems_le11_axisym-a4, g0-nafems_le11_axisym-a5, g0-nafems_le11_axisym-a7 (generation 0), because they applied the temperature sqrt(x**2+y**2)+y instead of the problem's x + y, a setup mistake rather than meshing (field error 26.78 %-26.80 %). So the LE11 curve starts at generation 1. Mean agent at generation 2: Cook 3.42x, LE11 3.14x; generation 10: Cook best 4.50x, mean 4.38x; LE11 best 3.52x, mean 3.38x. Values: `data/per_generation_cooks_membrane.csv`, `data/per_generation_nafems_le11_axisym.csv`.

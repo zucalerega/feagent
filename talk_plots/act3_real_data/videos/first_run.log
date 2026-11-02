@@ -1,0 +1,9 @@
+/home/ubuntu/feagent-build/ace/nonlinear.py:378: PyVistaFutureWarning: The default value of `algorithm` for the filter
+`UnstructuredGrid.extract_surface` will change in the future. It currently defaults to
+`'dataset_surface'`, but will change to `None`. Explicitly set the `algorithm` keyword to
+silence this warning.
+  surf = grid.extract_surface().warp_by_vector("displacement", factor=1.0)
+2026-11-01 03:54:06.147 (   0.403s) [    71194E44D740]vtkXOpenGLRenderWindow.:1452  WARN| bad X server connection. DISPLAY=
+
+first: 41186 nodes, mean error 33.43%, converged True, reached 3.0 mm, 419.4 s
+first vs curve_team_slide.csv: {"points": 30, "max_rel_diff": 9.011444534687292e-06, "mean_rel_diff": 1.6171181641654738e-06, "F_max_N": 2919.327, "F_max_committed_N": 2919.33}
