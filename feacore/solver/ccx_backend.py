@@ -68,8 +68,11 @@ def solve(case: Case, **options) -> "CcxResult":
             "expansion of CAX3 is ~2e-4 too stiff and its face loads / films are distributed "
             "inconsistently, so it fails the patch test (use analysis.order = 2)")
     gm = read_gmsh(case.mesh_path())
-    model = build_model(gm, case.dim, a.order, axisymmetric=(a.formulation == "axisymmetric"))
-    _check_curvature(model, a.formulation, accept=bool(a.options.get("accept_curved", False)))
+    accept = bool(a.options.get("accept_curved", False))
+    # accept_curved callers pass strongly curved (certified) meshes: allow midside offsets up to 0.6 edge lengths
+    model = build_model(gm, case.dim, a.order, axisymmetric=(a.formulation == "axisymmetric"),
+                        midside_tol=0.6 if accept else 0.25)
+    _check_curvature(model, a.formulation, accept=accept)
     deck = _Deck(case, model)
     inp = deck.build()
     if a.nonlinear:   # opt-in elastoplastic load stepping: docs/solver_ccx_nonlinear.md
