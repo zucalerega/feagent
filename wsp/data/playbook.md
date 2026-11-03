@@ -1,0 +1,9 @@
+- Use "order": 2. Quadratic elements were 2-4x better than linear at the same DOFs on every part tried.
+- Make "h" large: about 250 u, and up to 400 u in long bars and plates. Quadratic elements represent uniform and linearly varying stress exactly, so small elements away from the features only cost DOFs.
+- Put one refinement on each small curved stress raiser (a notch root, fillet or hole edge: a Circle curve with a small radius r), on the whole curve: "size" about r/3 for r up to 40 u, r/4 to r/6 for larger r, never below the size floor.
+- Grade gently: choose "radius" = (h - size) / 0.5, i.e. the size grows by about 0.5 u per u of distance. Steeper grading (radius shorter than h - size) was the most costly mistake.
+- At a RE-ENTRANT corner (a stress singularity), refine the corner tag to the size floor with one gradual field: "radius" = (h - floor) / 0.6. Do not add more refinement there: the error at a singular tip does not go away, so a lean mesh scores best.
+- Ends of a CLAMPED support are singular too: treat them like a re-entrant corner. Ends of a symmetry, roller or frictionless support are not singular: do not refine them.
+- Where a narrow section feeds a much wider one (a big shoulder step, a narrow ligament next to a hole), add a second, gentler refinement on the same curve: "size" about 12-14 u, "radius" about 700-850 u.
+- A part with no stress raiser (a smooth thick cylinder or sphere, a plain beam) wants a uniform quadratic mesh, no refinements: "h" about one to two wall thicknesses.
+- The target is an error near 0.5 %: below that the score stops rising, so extra elements are wasted.
