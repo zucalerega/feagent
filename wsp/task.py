@@ -130,9 +130,9 @@ def geometry_text(geo: Geometry) -> str:
         elif tag in sharp:
             flags.append(f"acute {k['interior_angle_deg']:.0f} deg")
         if tag in sup:
-            flags.append("end of a support (singular where a clamp meets a free edge)")
+            flags.append("support end")
         if tag in load:
-            flags.append("end of a loaded edge")
+            flags.append("load end")
         if flags:
             notable.append(f"  k{tag} at (" + ", ".join(_n(v) for v in geo.xy_u(k["point"])) + "): " + "; ".join(flags))
     other = len(geo.corners) - len(notable)
@@ -141,6 +141,10 @@ def geometry_text(geo: Geometry) -> str:
         lines += notable
         if other:
             lines.append(f"  ({other} other corners: smooth or convex, not singular)")
+        if any(t in sup for t in geo.corners):
+            lines.append("  A support end is singular only where a clamp (both directions fixed) meets a free edge; the "
+                         "ends of symmetry, roller, axis or exactly prescribed supports are smooth. A load end is a "
+                         "traction jump: milder and local.")
     else:
         lines.append(f"Notable corners: none ({other} corners, all smooth or convex, not singular).")
     sf = g.get("smallest_features") or {}

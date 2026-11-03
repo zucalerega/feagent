@@ -16,7 +16,8 @@ import argparse
 import itertools
 import json
 
-DEFAULT = {"h_max": 250.0, "wall_frac": 1.0, "arc_frac": 1 / 3, "slope": 0.5, "small_arc": 0.5, "clamp_ends": True}
+# Tuned on the training split (python -m wsp.heuristic --tune, 54 settings): 3.86x mean on the 36 training parts.
+DEFAULT = {"h_max": 400.0, "wall_frac": 1.0, "arc_frac": 1 / 3, "slope": 0.5, "small_arc": 0.5, "clamp_ends": False}
 
 
 def recipe(pid: str, c: dict = DEFAULT) -> dict:
