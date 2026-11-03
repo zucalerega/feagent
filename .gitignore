@@ -38,3 +38,5 @@ data/
 
 # wsp: run outputs (evaluations, sessions, adapters, score cache) and the tiny test model
 wsp_runs/
+# wsp: the teacher recipes and demos are small, generated here, and are the training data
+!wsp/data/

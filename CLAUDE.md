@@ -45,6 +45,14 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   score (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py` give the agent
   prompt for a NAFEMS benchmark and score the reply against the reference. LE10 comes first, with
   `benchmarks/nafems_le10/public/mesh.msh`.
+- `open-model-wsp` branch: package `wsp/` (see `wsp/README.md`). A large teacher (Claude Opus) teaches a
+  small open model (default `Qwen/Qwen3.5-0.8B`, CPU fp32) to write one-shot mesh recipes, scored in field
+  mode (x the automesher) like the swarm. Train = new parametric variants registered in `wsp/problems.py`;
+  test = the repo's own 2D benchmarks (4 of them out-of-family). Methods: weight-space programming (the
+  teacher edits weights in a no-gradient kernel, after Takehi et al., MIT CSAIL 2026, via openwsp), LoRA
+  distillation of solver-verified teacher recipes (`wsp/data/demos.jsonl`), RFT, best-of-k by the ZZ
+  estimate, the in-context playbook. `bash scripts/wsp_study.sh` runs it all; huggingface.co must be
+  reachable for the model.
 - `cfd-openfoam` branch (PR #3): OpenFOAM backend and CFD benchmarks, in progress.
 - `benchmarks` branch (PR #13): `feabench/` plus `benchmarks/{verification,code_aster,calculix,simjeb}`
   and `docs/eval-design.md`. It was built before `feacore` landed, and its ccx-deck evaluator and

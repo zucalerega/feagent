@@ -95,8 +95,11 @@ def test_weight_store_rules(tmp_path):
     assert r["changed"] and st.edited() == ["model.layers.0.mlp.down_proj.weight"]
     assert torch.equal(st.load("model.layers.0.mlp.down_proj.weight"), W2)
     assert st.diff()["changed_entries"] == int((W[:, 2] != 0).sum())
+    st.snapshot("one")
     assert st.save_edit("model.layers.0.mlp.down_proj.weight", W)["changed"] is False   # back to the original
     assert st.edited() == []
+    assert st.restore("one") == ["model.layers.0.mlp.down_proj.weight"]
+    assert torch.equal(st.load("model.layers.0.mlp.down_proj.weight"), W2)
 
 
 @pytest.fixture(scope="module")

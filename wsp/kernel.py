@@ -132,6 +132,30 @@ class WeightStore:
     def edited(self) -> list[str]:
         return sorted(p.name[:-4] for p in self.edit_dir.glob("*.npy"))
 
+    def snapshot(self, tag: str) -> list[str]:
+        """Copy the current edits to <edit_dir>/../snapshots/<tag>/ (the kernel cannot import shutil)."""
+        import re
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", tag):
+            raise EditRefused("snapshot names are letters, digits, _ . -")
+        d = self.edit_dir.parent / "snapshots" / tag
+        d.mkdir(parents=True, exist_ok=True)
+        for old in d.glob("*.npy"):
+            old.unlink()
+        for name in self.edited():
+            np.save(d / f"{name}.npy", np.load(self.edit_dir / f"{name}.npy"))
+        return self.edited()
+
+    def restore(self, tag: str) -> list[str]:
+        """Make a snapshot the current edits again."""
+        d = self.edit_dir.parent / "snapshots" / tag
+        if not d.is_dir():
+            raise EditRefused(f"no snapshot {tag!r}")
+        for f in self.edit_dir.glob("*.npy"):
+            f.unlink()
+        for f in d.glob("*.npy"):
+            self.save_edit(f.name[:-4], self._torch.from_numpy(np.load(f)))
+        return self.edited()
+
     def diff(self) -> dict:
         """Per edited tensor: changed entries and relative change; the total share of weights changed."""
         rows, total = {}, 0
@@ -246,8 +270,8 @@ class Kernel:
         self.max_runs, self.timeout, self.limit, self.runs = max_runs, timeout, output_limit, 0
         self.ns: dict[str, Any] = {"__name__": "__wsp_kernel__", "NAMES": store.names, "load": store.load,
                                    "load_original": store.load_original, "save_edit": store.save_edit,
-                                   "drop_edit": store.drop_edit, "edited": store.edited, "np": np, "torch": torch,
-                                   **(extra or {})}
+                                   "drop_edit": store.drop_edit, "edited": store.edited, "snapshot": store.snapshot,
+                                   "restore": store.restore, "np": np, "torch": torch, **(extra or {})}
 
     def run(self, code: str) -> dict:
         import torch
@@ -387,22 +411,29 @@ class ForwardTool:
         which = req.get("model", "edited")
         if which not in ("original", "edited"):
             raise ValueError("model must be original or edited")
-        texts = req.get("texts")
-        if texts is None and req.get("chats") is not None:
-            texts = []
+        tok = self.s.tok
+        enc, prompt_lens = [], []
+        if req.get("texts") is not None:
+            for t in req["texts"]:
+                enc.append(torch.tensor(tok(t, add_special_tokens=False)["input_ids"]))
+                prompt_lens.append(0)
+        elif req.get("chats") is not None:
+            from wsp import task
             for c in req["chats"]:
-                if isinstance(c, dict) and "pid" in c:          # {"pid": .., "answer": ..}: the task prompt + answer
-                    from wsp import task
-                    texts.append(self.s.chat_text(task.prompt(c["pid"]), answer=c.get("answer")))
-                else:
-                    raise ValueError('chats are {"pid": practice id, "answer": text or null}')
-        if not texts or len(texts) > self.MAX_TF_TEXTS:
+                if not (isinstance(c, dict) and c.get("pid") in self.practice):
+                    raise ValueError('chats are {"pid": <practice id>, "answer": text or null}')
+                # prompt tokens + answer tokens: what generation continues from (as in wsp.sft)
+                p_ids = tok(self.s.chat_text(task.prompt(c["pid"])), add_special_tokens=False)["input_ids"]
+                a_ids = tok(c["answer"] + self.s.end_of_turn, add_special_tokens=False)["input_ids"] \
+                    if c.get("answer") else []
+                enc.append(torch.tensor(p_ids + a_ids))
+                prompt_lens.append(len(p_ids))
+        if not enc or len(enc) > self.MAX_TF_TEXTS:
             raise ValueError(f"1 to {self.MAX_TF_TEXTS} texts")
         ret = req.get("return") or {}
         layers = [int(x) for x in ret.get("hidden_states", [])]
         mlp_layers = [int(x) for x in ret.get("mlp_act", [])]
         topk = min(int(ret.get("topk", 0)), 50)
-        enc = [self.s.tok(t, return_tensors="pt")["input_ids"][0] for t in texts]
         if sum(len(e) for e in enc) > self.MAX_TF_TOKENS:
             raise ValueError("too many tokens")
         k = self.used + 1
@@ -415,7 +446,8 @@ class ForwardTool:
         for L in mlp_layers:
             mod = blocks[L].mlp.down_proj
             hooks.append(mod.register_forward_hook(lambda m, inp, out, L=L: caps[L].append(inp[0][0].float().cpu())))
-        meta = {"texts": len(texts), "lengths": [int(len(e)) for e in enc], "files": {}}
+        meta = {"texts": len(enc), "lengths": [int(len(e)) for e in enc], "prompt_lengths": prompt_lens,
+                "files": {}}
         hs: dict[int, list] = {L: [] for L in layers}
         lps, tops = [], []
         try:

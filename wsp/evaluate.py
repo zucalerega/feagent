@@ -80,6 +80,62 @@ def run(variant: str, pids: list[str], out: str | Path, *, answers: dict[str, li
     return summary
 
 
+def zz_of(pid: str, spec: dict) -> float | None:
+    """Reference-free error estimate of a recipe's solution: the ZZ (Zienkiewicz-Zhu) relative energy-norm
+    error, the same estimate the swarm agents see after every solve (ace.solve_feedback)."""
+    import tempfile
+
+    from ace import config, fea, field_error
+    from ace.checks import reference_setup
+    from feacore.diagnostics.zz import zz_estimate
+    from feacore.diagnostics.view import SolutionView
+    from wsp import problems, task
+    problems.ensure_tasks([pid])
+    req = task.to_request(pid, spec)
+    p = fea.get_problem(pid)
+    with tempfile.TemporaryDirectory() as tmp:
+        mesh = fea.make_mesh(p, Path(tmp) / "m.msh", h=req["h"], order=req["order"], refinements=req["refinements"])
+        if not mesh.get("ok"):
+            return None
+        res = field_error._solve(p, mesh, reference_setup(p), config.TASKS[pid]["qoi"])
+        return float(zz_estimate(SolutionView.from_result(res))["eta_rel"])
+
+
+def _zz_job(job):
+    import os
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    pid, spec = job
+    try:
+        return zz_of(pid, spec)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def select_zz(eval_dir: str | Path, out: str | Path, workers: int = 3) -> dict:
+    """Best-of-k without the reference: per part, keep the valid sample with the smallest ZZ error x DOFs
+    (the score is proportional to 1 / (error x DOFs) once a mesh beats the automesher 2x)."""
+    from concurrent.futures import ProcessPoolExecutor
+    eval_dir, out = Path(eval_dir), Path(out)
+    rows = [json.loads(x) for x in (eval_dir / "results.jsonl").read_text().splitlines()]
+    cand = [r for r in rows if r["valid"]]
+    with ProcessPoolExecutor(workers) as ex:
+        zz = list(ex.map(_zz_job, [(r["pid"], r["spec"]) for r in cand]))
+    for r, z in zip(cand, zz):
+        r["zz"] = z
+    picked = []
+    for pid in dict.fromkeys(r["pid"] for r in rows):
+        mine = [r for r in rows if r["pid"] == pid]
+        ok = [r for r in mine if r["valid"] and r.get("zz") is not None]
+        best = min(ok, key=lambda r: r["zz"] * r["dofs"]) if ok else mine[0]
+        picked.append({**best, "variant": best["variant"] + "+zz", "k": len(mine)})
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in picked))
+    summary = {"variant": picked[0]["variant"] if picked else "", "source": str(eval_dir), "select": "zz_x_dofs",
+               **summarize(picked)}
+    (out / "summary.json").write_text(json.dumps(summary, indent=1))
+    return summary
+
+
 def main(argv=None) -> int:
     from wsp import problems
     from wsp.student import DEFAULT_MODEL
@@ -97,7 +153,11 @@ def main(argv=None) -> int:
     ap.add_argument("--max-new-tokens", type=int, default=320)
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--select-zz", default=None, help="post-process an eval dir: best-of-k by the ZZ estimate")
     a = ap.parse_args(argv)
+    if a.select_zz:
+        print(json.dumps(select_zz(a.select_zz, a.out, workers=a.workers), indent=1))
+        return 0
     pids = (problems.test_ids() if a.split == "test" else problems.train_ids() if a.split == "train"
             else a.split.split(","))
     problems.ensure_tasks(pids)

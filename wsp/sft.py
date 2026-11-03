@@ -48,22 +48,19 @@ def train(student, examples: list[dict], out: str | Path, *, epochs: int = 3, lr
     L = cfg.num_hidden_layers
     present = {n.split(".")[-1] for n, _ in model.named_modules()}
     lcfg = LoraConfig(r=rank, lora_alpha=alpha, lora_dropout=0.05, target_modules=[t for t in TARGETS if t in present],
-                      layers_to_transform=list(range(max(0, L - lora_layers), L)), task_type="CAUSAL_LM")
+                      layers_to_transform=list(range(max(0, L - lora_layers), L)), layers_pattern="layers",
+                      task_type="CAUSAL_LM")
     model = get_peft_model(model, lcfg)
     model.train()
     n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    # tokenize: prefix (generation prompt) + answer + end of turn; loss on the answer part
+        # The sequence is the prompt's tokens followed by the answer's tokens: exactly what generation
+    # continues from (tokenizing prompt + answer as one string could merge tokens across the boundary).
     data = []
     for ex in examples:
-        prefix = student.chat_text(task.prompt(ex["pid"]))
-        full = prefix + ex["answer"] + student.end_of_turn
-        p_ids = student.tok(prefix, add_special_tokens=False)["input_ids"]
-        f_ids = student.tok(full, add_special_tokens=False)["input_ids"]
-        n_ans = len(f_ids) - len(p_ids)
-        if f_ids[: len(p_ids)] != p_ids or n_ans <= 0:
-            raise ValueError(f"{ex['pid']}: the answer does not tokenize as a continuation of the prompt")
-        data.append((torch.tensor(f_ids), n_ans))
+        p_ids = student.tok(student.chat_text(task.prompt(ex["pid"])), add_special_tokens=False)["input_ids"]
+        a_ids = student.tok(ex["answer"] + student.end_of_turn, add_special_tokens=False)["input_ids"]
+        data.append((torch.tensor(p_ids + a_ids), len(a_ids)))
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.0)
     steps = math.ceil(len(data) * epochs / accum)

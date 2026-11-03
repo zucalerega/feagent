@@ -6,8 +6,9 @@ transformer and faster on CPU). The student answers in non-thinking mode: the an
 JSON object, and thinking would multiply the cost (and, on Qwen3.5-0.8B, loop; see the paper).
 
 Variants of one base model, all through `Student(...)`:
-  edits=DIR     weight-space edits (wsp.kernel layout: one float32 <tensor name>.npy per edited tensor)
   adapter=DIR   a LoRA adapter (wsp.sft), merged into the weights for speed
+  edits=DIR     weight-space edits (wsp.kernel layout: one float32 <tensor name>.npy per edited tensor),
+                applied after the adapter is merged (so WSP can also edit a distilled student)
 """
 
 from __future__ import annotations
@@ -68,11 +69,18 @@ class Student:
         self.tok.padding_side = "left"
         if self.tok.pad_token is None:
             self.tok.pad_token = self.tok.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(self.path, dtype=dt).to(self.device).eval()
-        self.edited: list[str] = apply_edits(self.model, edits) if edits else []
-        if adapter:
+        self.model, info = AutoModelForCausalLM.from_pretrained(self.path, dtype=dt, output_loading_info=True)
+        # A checkpoint whose tensor names do not match the class (e.g. a vision-language layout loaded
+        # into a text-only class) would leave weights at their random init without an error: refuse that.
+        missing = [k for k in info.get("missing_keys", []) if "visual" not in k and "vision" not in k]
+        if missing:
+            raise RuntimeError(f"{len(missing)} weights of {self.path} were not loaded (e.g. {missing[:3]}): "
+                               f"the checkpoint layout does not match {type(self.model).__name__}")
+        self.model = self.model.to(self.device).eval()
+        if adapter:      # merged first: WSP edits made on a distilled model refer to the merged tensors
             from peft import PeftModel
             self.model = PeftModel.from_pretrained(self.model, str(adapter)).merge_and_unload().eval()
+        self.edited: list[str] = apply_edits(self.model, edits) if edits else []
         self.thinking = thinking
         self.name = Path(self.path).name
 
