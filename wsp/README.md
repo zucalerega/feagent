@@ -70,7 +70,63 @@ registered only here. Left out: three smooth Lamé / rotating-disk problems wher
 
 ## Results so far
 
-RESULTS_PLACEHOLDER
+Everything below is measured: every number is a recipe meshed, solved and scored against the fine
+reference. **The student itself has not run yet**: this environment's network policy blocks
+huggingface.co, so the open model's weights could not be downloaded (see "Run it").
+
+**The teacher's verified recipes (the distillation data).** Four Claude Opus 5.5 teacher agents each took
+a group of families, read exactly the student's prompt for each training part, and scored up to 8
+recipes per part with the solver: 193 valid recipes over 36 parts, about 0.86M tokens in total.
+
+![Teacher: first recipe vs best verified recipe](results/fig_teacher.png)
+
+| family group (training parts) | teacher's first recipe | teacher's best | scored recipes per part |
+|---|---|---|---|
+| notched bars, clevis lugs (11) | 3.84x | 4.20x | 5.2 |
+| stepped shafts (10) | 5.03x | 5.75x | 5.5 |
+| plates with holes, Kirsch (8) | 6.29x | 7.23x | 5.5 |
+| pressure vessels, Lame, cantilevers (7) | 3.06x | 3.67x | 5.3 |
+| **all 36** | **4.56x** | **5.20x** | 5.4 |
+
+Solver feedback adds about 14 % over the teacher's first recipe (which already uses what it learned on
+earlier parts of the same family). The four lessons files agree from different families: order 2; a
+very coarse far field (h about 250-400 u, roughly one element across a section); the curve of a stress
+raiser refined to about r/3 with a slope of 0.4-0.6; singular corners at the size floor with one gentle
+ramp; and two counter-cases, bending depth (at least 4 quadratic elements across, a cliff) and parts whose
+feature holds most of the energy (lugs: slope 0.12-0.2). Past a 2x gain the error x DOFs product
+plateaus, so each part's ceiling is set by its geometry (notched bars: 7.1x for the shallowest notch,
+3.4x for the deepest).
+
+**A hand-written rule from those lessons, on the held-out benchmarks** (`wsp/heuristic.py`, constants
+tuned on the training split only):
+
+| | training parts (36) | held-out, in-family (22) | held-out, out-of-family (4) |
+|---|---|---|---|
+| heuristic | 3.86x | 3.86x (18 of 22 beat the automesher) | **0.81x** (1 of 4) |
+
+The rule transfers to new sizes of the families it was written from, and fails on new kinds of parts.
+It meshes NAFEMS LE1 and the Lame parts with h = 400 u and no refinement (36-50 DOFs, 0.03-0.08x), misses
+the cantilever's bending-depth cliff (0.66x) and leaves Cook's clamped corners unrefined (0.93x).
+Those are context-dependent calls that the teacher's recipes contain and a fixed rule cannot. They are
+what the student has to learn.
+
+ZEROSHOT_PLACEHOLDER
+
+**What the student costs on this machine** (`python -m wsp.bench`: the real architectures with random
+weights, since latency depends on shapes, not values; 4 Xeon cores, fp32, a 1000-token prompt and a
+120-token recipe):
+
+| | prefill | one recipe | per recipe, batch of 6 | LoRA step | SFT, 3 epochs over the demos |
+|---|---|---|---|---|---|
+| Qwen3.5-0.8B | 8.8 s | 29.6 s | 15.7 s | 14.1 s | about 2.3 h |
+| Qwen3-0.6B | 2.9 s | 21.3 s | 10.0 s | 6.3 s | about 1 h |
+
+On CPU, Qwen3.5's Gated DeltaNet layers run on the PyTorch reference path (the fast kernels are
+GPU-only), which triples its prefill. Either way a recipe costs CPU seconds and no API tokens, against
+several scored attempts (thousands of output tokens of a frontier model) for the teacher.
+
+**Not run yet (needs the weights):** base, playbook, WSP, LoRA SFT, RFT and best-of-k on the held-out set.
+`bash scripts/wsp_study.sh` runs all of them; the WSP session also needs an editor model.
 
 ## What to expect from each method, and what else is worth building
 

@@ -1,0 +1,2 @@
+{"arch": "qwen3.5-0.8b", "params": 752393024, "threads": 4, "prompt_tokens": 1000, "answer_tokens": 120, "prefill_s": 8.78, "recipe_s": 29.62, "decode_tok_s": 5.8, "batch6_s_per_recipe": 15.65, "lora_step_s": 14.05}
+{"arch": "qwen3-0.6b", "params": 596049920, "threads": 4, "prompt_tokens": 1000, "answer_tokens": 120, "prefill_s": 2.91, "recipe_s": 21.28, "decode_tok_s": 6.5, "batch6_s_per_recipe": 10.03, "lora_step_s": 6.25}

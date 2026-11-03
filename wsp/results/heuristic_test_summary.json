@@ -1,0 +1,33 @@
+{
+ "variant": "heuristic",
+ "split": "test",
+ "n": 1,
+ "temperature": 0.0,
+ "source": "wsp_runs/study/heuristic.jsonl",
+ "all": {
+  "n": 26,
+  "mean_x": 3.3936498592348867,
+  "median_x": 3.293524682570723,
+  "valid": 1.0,
+  "beats_auto": 0.7307692307692307,
+  "geo_mean_x_valid": 1.914001122231543
+ },
+ "in_family": {
+  "n": 22,
+  "mean_x": 3.8628808060561783,
+  "median_x": 3.8540097045118733,
+  "valid": 1.0,
+  "beats_auto": 0.8181818181818182,
+  "geo_mean_x_valid": 2.517902213650694
+ },
+ "out_of_family": {
+  "n": 4,
+  "mean_x": 0.8128796517177823,
+  "median_x": 0.8657475316268648,
+  "valid": 1.0,
+  "beats_auto": 0.25,
+  "geo_mean_x_valid": 0.4235556647080566
+ },
+ "failures": {},
+ "seconds": 15.7
+}
