@@ -40,11 +40,11 @@ def fig_methods(evals: list[tuple[str, dict]], out: Path) -> Path:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     names = [n for n, _ in evals]
-    fig, ax = plt.subplots(figsize=(7.2, 0.55 * len(names) + 1.4), dpi=200)
+    fig, ax = plt.subplots(figsize=(7.2, 0.55 * len(names) + 1.9), dpi=200)
     fig.patch.set_facecolor(SURFACE)
     _style(ax)
-    groups = [("in_family", "In-family parts (new sizes of trained families)", SERIES[0]),
-              ("out_of_family", "Out-of-family parts (Cook's, LE1, LE11, L-bracket)", SERIES[1])]
+    groups = [("in_family", "In-family: new sizes of the training families (22 parts)", SERIES[0]),
+              ("out_of_family", "Out-of-family: Cook's, LE1, LE11, L-bracket (4 parts)", SERIES[1])]
     hgt = 0.36
     for gi, (g, label, color) in enumerate(groups):
         ys = [i + (gi - 0.5) * (hgt + 0.04) for i in range(len(names))]
@@ -52,12 +52,13 @@ def fig_methods(evals: list[tuple[str, dict]], out: Path) -> Path:
         ax.barh(ys, vals, height=hgt, color=color, label=label, edgecolor=SURFACE, linewidth=1)
         for y, v in zip(ys, vals):
             ax.text(v + 0.05, y, f"{v:.2f}x", va="center", ha="left", fontsize=8, color=INK2)
-    ax.axvline(1.0, color=MUTED, linewidth=1, linestyle=(0, (3, 3)))
-    ax.text(1.0, len(names) - 0.45, " automesher = 1x", color=MUTED, fontsize=8, va="bottom")
+    ax.axvline(1.0, color=MUTED, linewidth=1, linestyle=(0, (3, 3)), label="The automesher = 1x")
     ax.set_yticks(range(len(names)), names, color=INK, fontsize=9)
     ax.invert_yaxis()
+    ax.set_xlim(0, max(1.2, ax.get_xlim()[1] * 1.08))
     ax.set_xlabel("mean score on held-out benchmarks, x the automesher (higher is better)", color=INK2, fontsize=9)
-    ax.legend(frameon=False, fontsize=8, loc="lower right", labelcolor=INK2)
+    ax.legend(frameon=False, fontsize=8, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=1, labelcolor=INK2,
+              borderaxespad=0.2)
     fig.tight_layout()
     p = out / "fig_methods.png"
     fig.savefig(p, facecolor=SURFACE)
@@ -85,14 +86,16 @@ def fig_per_problem(evals: list[tuple[str, list[dict]]], out: Path) -> Path:
         for r in rows:
             by.setdefault(r["pid"], []).append(r["x_auto"])
         xs = [sum(by.get(p, [0])) / max(1, len(by.get(p, [0]))) for p in pids]
-        ax.scatter(xs, range(len(pids)), s=26, color=SERIES[k], label=name, zorder=3 + k, edgecolor=SURFACE,
-                   linewidth=1.2)
+        dy = (k - (len(evals) - 1) / 2) * 0.22          # each method on its own line within a part's row
+        ax.scatter(xs, [i + dy for i in range(len(pids))], s=26, color=SERIES[k], label=name, zorder=3 + k,
+                   edgecolor=SURFACE, linewidth=1.2)
     ax.axvline(1.0, color=MUTED, linewidth=1, linestyle=(0, (3, 3)))
     ax.set_yticks(range(len(pids)), pids, fontsize=7, color=INK)
     ax.invert_yaxis()
     ax.grid(axis="y", color=GRID, linewidth=0.5)
     ax.set_xlabel("x the automesher (0 = invalid answer; dashed line = automesher)", color=INK2, fontsize=9)
-    ax.legend(frameon=False, fontsize=8, loc="lower right", labelcolor=INK2)
+    ax.legend(frameon=False, fontsize=8, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=len(evals),
+              labelcolor=INK2, borderaxespad=0.2)
     fig.tight_layout()
     p = out / "fig_per_problem.png"
     fig.savefig(p, facecolor=SURFACE)
@@ -284,7 +287,7 @@ def fig_teacher(demo_dir: str | Path, out: Path) -> Path:
     import matplotlib.pyplot as plt
     rows = teacher_stats(demo_dir)
     groups = [g for g, _ in FAMILY_GROUPS if any(r["group"] == g for r in rows)]
-    fig, ax = plt.subplots(figsize=(7.2, 0.6 * len(groups) + 1.4), dpi=200)
+    fig, ax = plt.subplots(figsize=(7.2, 0.6 * len(groups) + 1.9), dpi=200)
     fig.patch.set_facecolor(SURFACE)
     _style(ax)
     hgt = 0.36
@@ -294,13 +297,14 @@ def fig_teacher(demo_dir: str | Path, out: Path) -> Path:
         ax.barh(ys, vals, height=hgt, color=SERIES[k], label=label, edgecolor=SURFACE, linewidth=1)
         for y, v in zip(ys, vals):
             ax.text(v + 0.06, y, f"{v:.2f}x", va="center", fontsize=8, color=INK2)
-    ax.axvline(1.0, color=MUTED, linewidth=1, linestyle=(0, (3, 3)))
-    ax.text(1.0, len(groups) - 0.45, " automesher = 1x", color=MUTED, fontsize=8, va="bottom")
+    ax.axvline(1.0, color=MUTED, linewidth=1, linestyle=(0, (3, 3)), label="The automesher = 1x")
     counts = {g: sum(r["group"] == g for r in rows) for g in groups}
     ax.set_yticks(range(len(groups)), [f"{g} ({counts[g]} parts)" for g in groups], fontsize=9, color=INK)
     ax.invert_yaxis()
+    ax.set_xlim(0, ax.get_xlim()[1] * 1.08)
     ax.set_xlabel("mean x the automesher on training parts", color=INK2, fontsize=9)
-    ax.legend(frameon=False, fontsize=8, loc="lower right", labelcolor=INK2)
+    ax.legend(frameon=False, fontsize=8, loc="lower left", bbox_to_anchor=(0, 1.0), ncol=1, labelcolor=INK2,
+              borderaxespad=0.2)
     fig.tight_layout()
     p = out / "fig_teacher.png"
     fig.savefig(p, facecolor=SURFACE)

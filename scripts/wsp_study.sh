@@ -32,8 +32,8 @@ ev() {  # ev NAME [evaluate args...]
 }
 
 step "baselines that need no model"
-[ -f "$OUT/eval_teacher_zeroshot/summary.json" ] || [ ! -f wsp_runs/opus_zeroshot/recipes.jsonl ] || \
-  $PY -m wsp.evaluate --variant teacher_zeroshot --recipes wsp_runs/opus_zeroshot/recipes.jsonl --out "$OUT/eval_teacher_zeroshot" > /dev/null
+[ -f "$OUT/eval_teacher_zeroshot/summary.json" ] || \
+  $PY -m wsp.evaluate --variant teacher_zeroshot --recipes wsp/results/opus_zeroshot_recipes.jsonl --out "$OUT/eval_teacher_zeroshot" > /dev/null
 [ -f "$OUT/eval_heuristic/summary.json" ] || { $PY -m wsp.heuristic > "$OUT/heuristic.jsonl" && \
   $PY -m wsp.evaluate --variant heuristic --recipes "$OUT/heuristic.jsonl" --out "$OUT/eval_heuristic" > /dev/null; }
 

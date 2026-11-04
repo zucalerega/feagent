@@ -82,11 +82,38 @@ def geometry(pid: str) -> Geometry:
     diag = math.dist(lo, hi)
     scale = diag / UNITS
     floor = diag / (100.0 if dim == 3 else 400.0)          # = ace.fea._size_floor
+    for tag, (rmin, at) in _min_curvature_radius(p, [int(c["tag"]) for c in g["curves"]
+                                                     if c["type"] not in ("Line", "Circle")]).items():
+        cur = next(c for c in g["curves"] if int(c["tag"]) == tag)
+        cur["min_radius"], cur["min_radius_at"] = rmin, at
     return Geometry(pid=pid, dim=dim, origin=lo + [0.0] * (3 - dim), scale=scale,
                     size_u=[(h - l) / scale for l, h in zip(lo, hi)],
                     curves={int(c["tag"]): c for c in g["curves"]},
                     corners={int(k["tag"]): k for k in g["corners"]},
                     groups=[gr["name"] for gr in g["groups"]], floor_u=floor / scale, raw=g)
+
+
+def _min_curvature_radius(problem, tags: list[int], n: int = 400) -> dict[int, tuple[float, list[float]]]:
+    """{curve tag: (smallest radius of curvature, the point where it occurs)} for curved non-circular CAD
+    curves (ellipses, B-splines): where a curved boundary concentrates stress, e.g. point D of NAFEMS LE1."""
+    if not tags:
+        return {}
+    import gmsh
+    import numpy as np
+
+    from feacore.geometry.gmsh_tools import gmsh_session
+    out = {}
+    with gmsh_session(problem.id):
+        problem.build_geometry()
+        for t in tags:
+            lo, hi = gmsh.model.getParametrizationBounds(1, t)
+            u = np.linspace(lo[0], hi[0], n)
+            k = np.abs(np.asarray(gmsh.model.getCurvature(1, t, u.tolist())))
+            if not len(k) or not np.isfinite(k).any() or k.max() <= 0:
+                continue
+            i = int(np.nanargmax(k))
+            out[t] = (float(1.0 / k[i]), list(np.asarray(gmsh.model.getValue(1, t, [float(u[i])]))[:3]))
+    return out
 
 
 def _n(x: float) -> str:
@@ -98,13 +125,43 @@ def _n(x: float) -> str:
     return f"{x:.2g}" if x < 1 else f"{x:.1f}".rstrip("0").rstrip(".")
 
 
+def bc_roles(pid: str) -> dict[str, str]:
+    """{group: role} from the problem's own setup, which the statement spells out in words: "clamped",
+    "symmetry", "roller", "prescribed displacement" (an exact field, smooth), "loaded". The text heuristic
+    in ace.geometry_info guesses roles from the statement and can get them wrong (it called the Kirsch
+    plate's traction-free hole "load" and the axis of an axisymmetric sphere a support end); a small
+    student cannot tell a wrong label, so its prompt uses these."""
+    from ace import fea
+    from ace.checks import reference_setup
+    roles: dict[str, str] = {}
+    for b in reference_setup(fea.get_problem(pid))["bcs"]:
+        g = b.get("group")
+        if not g or b.get("point") is not None:          # a point constraint only removes rigid-body motion
+            continue
+        t, comps, v = b.get("type"), b.get("components") or [], b.get("value")
+        vals = v if isinstance(v, list) else [v]
+        if t == "fixed" or (t == "displacement" and len(comps) >= 2
+                            and all(isinstance(x, (int, float)) and x == 0 for x in vals)):
+            r = "clamped"
+        elif t == "displacement":
+            r = "prescribed displacement" if len(comps) >= 2 else "roller"
+        elif t == "symmetry":
+            r = "symmetry"
+        elif t in ("force", "traction", "pressure"):
+            r = "loaded"
+        else:
+            r = str(t)
+        roles[g] = r if g not in roles or roles[g] == r else f"{roles[g]}, {r}"
+    return roles
+
+
 def geometry_text(geo: Geometry) -> str:
+    from ace import fea
     g = geo.raw
     reent = set(g.get("reentrant_corners") or [])
     sharp = set(g.get("sharp_corners") or [])
-    sup = set(g.get("support_boundary") or [])
-    load = set(g.get("load_boundary") or [])
-    from ace import fea
+    roles = bc_roles(geo.pid)
+    curve_role = {tag: roles.get(c.get("group") or "") for tag, c in geo.curves.items()}
     unit = "m" if "SI" in (fea.get_problem(geo.pid).units or "") else "length units"
     lines = [f"PART GEOMETRY. Lengths in u, where 1 u = {geo.scale:.4g} {unit} (the part diagonal is 1000 u); "
              f"coordinates are measured from the lower-left corner of the bounding box.",
@@ -114,25 +171,27 @@ def geometry_text(geo: Geometry) -> str:
         bits = [f"  c{tag} {c['type']}", f"length {_n(geo.u(c['length']))}"]
         if c.get("radius"):
             bits.append(f"radius {_n(geo.u(c['radius']))}")
+        elif c.get("min_radius"):
+            bits.append(f"smallest radius of curvature {_n(geo.u(c['min_radius']))} at ("
+                        + ", ".join(_n(v) for v in geo.xy_u(c["min_radius_at"])) + ")")
         if c.get("centroid"):
             bits.append("near (" + ", ".join(_n(v) for v in geo.xy_u(c["centroid"])) + ")")
-        tail = []
-        if c.get("group"):
-            tail.append(f"group {c['group']}")
-        if c.get("role") and c["role"] != "free":
-            tail.append(c["role"])
+        tail = [f"group {c['group']}"] if c.get("group") else []
+        if curve_role[tag]:
+            tail.append(curve_role[tag])
         lines.append(", ".join(bits) + (f" [{'; '.join(tail)}]" if tail else ""))
     notable = []
     for tag, k in sorted(geo.corners.items()):
+        adj = [curve_role.get(int(str(x).lstrip("c"))) for x in k.get("curves") or []]
         flags = []
         if tag in reent or k.get("concave"):
             flags.append(f"RE-ENTRANT {k['interior_angle_deg']:.0f} deg (stress singularity)")
         elif tag in sharp:
             flags.append(f"acute {k['interior_angle_deg']:.0f} deg")
-        if tag in sup:
-            flags.append("support end")
-        if tag in load:
-            flags.append("load end")
+        if "clamped" in adj and any(r != "clamped" for r in adj):
+            flags.append("clamp end (singular)")
+        if "loaded" in adj and None in adj:      # a load meeting a free edge: a traction jump (against a
+            flags.append("load end")            # symmetry edge the load is mirrored, and the field is smooth)
         if flags:
             notable.append(f"  k{tag} at (" + ", ".join(_n(v) for v in geo.xy_u(k["point"])) + "): " + "; ".join(flags))
     other = len(geo.corners) - len(notable)
@@ -141,10 +200,8 @@ def geometry_text(geo: Geometry) -> str:
         lines += notable
         if other:
             lines.append(f"  ({other} other corners: smooth or convex, not singular)")
-        if any(t in sup for t in geo.corners):
-            lines.append("  A support end is singular only where a clamp (both directions fixed) meets a free edge; the "
-                         "ends of symmetry, roller, axis or exactly prescribed supports are smooth. A load end is a "
-                         "traction jump: milder and local.")
+        lines.append("  A clamp end, where a clamped edge meets an unclamped one, is singular; a load end is a traction "
+                     "jump, milder and local. The ends of symmetry, roller and prescribed-displacement edges are smooth.")
     else:
         lines.append(f"Notable corners: none ({other} corners, all smooth or convex, not singular).")
     sf = g.get("smallest_features") or {}

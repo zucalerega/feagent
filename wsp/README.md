@@ -16,7 +16,7 @@ Methods, on one shared harness:
 | RFT | one round of rejection sampling: the student's own samples, kept when the solver scores them well | `wsp/rft.py` |
 | best-of-k + ZZ | k samples, the one with the smallest reference-free ZZ error x DOFs is kept | `wsp/evaluate.py --select-zz` |
 | heuristic | a hand-written rule built from the teacher's lessons (no model) | `wsp/heuristic.py` |
-| teacher zero-shot | Opus 5.5 itself, single shot from the same prompt, no feedback | `wsp_runs/opus_zeroshot/` |
+| teacher zero-shot | Opus 5.5 itself, single shot from the same prompt, no feedback | `wsp/results/opus_zeroshot_recipes.jsonl` |
 
 ## Weight-space programming, in one paragraph
 
@@ -49,12 +49,16 @@ One prompt in, one JSON recipe out, the way the swarm agents call `mesh(h, order
 {"order": 2, "h": 60, "refinements": [{"curve": 3, "size": 3, "radius": 50}, {"corner": 4, "size": 2.5, "radius": 80}]}
 ```
 
-- The prompt (`python -m wsp.task prompt <pid>`) is the problem statement, the part's curves and notable
-  corners (re-entrant, acute, ends of supports and loads), the automesher's error and DOFs, the score
-  formula and the answer format.
+- The prompt (`python -m wsp.task prompt <pid>`) is the problem statement; the part's curves (type,
+  length, radius, or the smallest radius of curvature of an ellipse or spline and where it is, and the
+  curve's role: clamped, symmetry, roller, prescribed displacement or loaded); its notable corners
+  (re-entrant, acute, clamp ends, load ends); the automesher's error and DOFs; the score formula; and the
+  answer format. Roles come from the problem's own setup, which the statement spells out in words, not
+  from the text heuristic the swarm's `inspect_geometry` uses (a teacher found that one calling a
+  traction-free hole "loaded" and an axis of revolution a support end).
 - **Lengths are in u = part diagonal / 1000**, from the bounding-box corner, so every part looks the same
-  size to the model: h is about 20-100 u, a notch root about 1-5 u. A sub-1B model learns that far more
-  easily than raw sizes from 0.0005 m to 4 (Cook's membrane).
+  size to the model: the teachers' recipes use h of about 25-400 u and feature sizes of 2.5-15 u. A sub-1B
+  model learns that far more easily than raw sizes from 0.0005 m to 4 (Cook's membrane).
 - Refinements name a corner or curve by its tag, so the model never copies coordinates.
 - The harness meshes the recipe, solves it with the correct setup (the statement spells the setup out;
   meshing is the skill under test) and scores it. An invalid answer (no JSON, unknown tag, over the node
@@ -110,7 +114,42 @@ the cantilever's bending-depth cliff (0.66x) and leaves Cook's clamped corners u
 Those are context-dependent calls that the teacher's recipes contain and a fixed rule cannot. They are
 what the student has to learn.
 
-ZEROSHOT_PLACEHOLDER
+**The teacher itself, blind, single shot, on the held-out benchmarks.** A separate Opus 5.5 agent read
+each held-out part's prompt and wrote one recipe with no scoring, meshing or solving: the reference a
+single-shot student is chasing (26 recipes, about 0.21M tokens).
+
+![Mean score per method on the held-out benchmarks](results/fig_methods.png)
+
+| on the 26 held-out benchmarks | in-family (22) | out-of-family (4) | all | beats the automesher |
+|---|---|---|---|---|
+| heuristic (rule from the lessons, train-tuned) | 3.86x | 0.81x | 3.39x | 19 of 26 |
+| **Opus 5.5 zero-shot, blind** | **4.00x** | **2.87x** | **3.82x** | **26 of 26** |
+
+The two fail in opposite ways (per part: `results/fig_per_problem.png`, `results/results.md`):
+- **The blind teacher is never bad** (at least 1.7x on every part, 2.9x out-of-family) but, without
+  feedback, it over-refines: it drives several errors to 0.1-0.3 %, below the 0.5 % floor where extra DOFs
+  earn nothing (plate d01: 0.12 % error, 3.7x, against 8.6x for the rule).
+- **The rule is well calibrated where its constants fit** (5.7-8.6x on the notched bars and small holes)
+  and collapses where they do not.
+
+The teacher's search-calibrated recipes (5.20x on the training parts) have both strengths, and they are
+what the student is distilled from. A distilled student should land between the two references
+out-of-family and can beat both in-family. The zero-shot agent read an earlier prompt whose curve and
+corner roles came from a text heuristic (it noted that it ignored the wrong ones). The prompt now takes
+those roles from the problem's own setup and gives the radius of curvature of ellipses and splines (see
+"The task"), so its 3.82x is if anything conservative.
+
+Held-out meshes, each against the automesher (top: the whole part; bottom: the boxed region, where the
+last mesh refined most):
+
+| | |
+|---|---|
+| ![](results/fig_mesh_cooks_membrane.png) | ![](results/fig_mesh_nafems_le1.png) |
+| Cook's membrane. The rule leaves the singular clamped corners coarse (0.93x); the teacher grades into them (2.86x). | NAFEMS LE1. The rule meshes the membrane with a few elements (54.6 % error); the teacher refines the inner ellipse, where point D sits (3.77x). |
+| ![](results/fig_mesh_lbracket_reentrant.png) | ![](results/fig_mesh_timoshenko_cantilever.png) |
+| L-bracket. Both refine the re-entrant corner; only the teacher also refines the clamped edge's ends (1.71x). Its reference is good to about 2 %, so scores saturate early here. | Timoshenko cantilever. A uniform mesh with at least four quadratic elements through the depth (the teacher, 5.08x) against the rule's two (0.66x). |
+
+The training parts' meshes (the teacher's first recipe against its best) are in `results/fig_mesh_train_*.png`.
 
 **What the student costs on this machine** (`python -m wsp.bench`: the real architectures with random
 weights, since latency depends on shapes, not values; 4 Xeon cores, fp32, a 1000-token prompt and a
@@ -164,6 +203,9 @@ Methods worth adding, most useful first:
    from its description. Probably overkill at this data size.
 
 ## Run it
+
+The model comes from huggingface.co, which must be reachable: in a Claude Code cloud environment, allow
+it under the environment's network access settings (or run on the team's Brev box).
 
 ```bash
 pip install -e ".[ace,wsp]"
