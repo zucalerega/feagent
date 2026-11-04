@@ -155,17 +155,19 @@ The training parts' meshes (the teacher's first recipe against its best) are in 
 weights, since latency depends on shapes, not values; 4 Xeon cores, fp32, a 1000-token prompt and a
 120-token recipe):
 
-| | prefill | one recipe | per recipe, batch of 6 | LoRA step | SFT, 3 epochs over the demos |
+| | prefill | one recipe | per recipe, batch of 6 | LoRA step | SFT: 72 examples x 3 epochs |
 |---|---|---|---|---|---|
-| Qwen3.5-0.8B | 8.8 s | 29.6 s | 15.7 s | 14.1 s | about 2.3 h |
-| Qwen3-0.6B | 2.9 s | 21.3 s | 10.0 s | 6.3 s | about 1 h |
+| Qwen3.5-0.8B | 8.8 s | 29.6 s | 15.7 s | 14.1 s | about 50 min |
+| Qwen3-0.6B | 2.9 s | 21.3 s | 10.0 s | 6.3 s | about 20 min |
 
 On CPU, Qwen3.5's Gated DeltaNet layers run on the PyTorch reference path (the fast kernels are
 GPU-only), which triples its prefill. Either way a recipe costs CPU seconds and no API tokens, against
 several scored attempts (thousands of output tokens of a frontier model) for the teacher.
 
 **Not run yet (needs the weights):** base, playbook, WSP, LoRA SFT, RFT and best-of-k on the held-out set.
-`bash scripts/wsp_study.sh` runs all of them; the WSP session also needs an editor model.
+`bash scripts/wsp_study.sh` runs all of them; the WSP session also needs an editor model. On this 4-core
+CPU the whole study is roughly half a day, most of it the two 25-pass WSP sessions (each pass generates
+and scores up to 64 answers); on a GPU box it is a couple of hours, most of it the solver scoring answers.
 
 ## What to expect from each method, and what else is worth building
 

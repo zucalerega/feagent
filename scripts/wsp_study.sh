@@ -8,7 +8,8 @@
 # Needs: the model from huggingface.co (or a local directory as WSP_MODEL), `pip install -e ".[ace,wsp]"`.
 # The weight-space programming session needs an editor: ANTHROPIC_API_KEY for the automated Claude Opus
 # editor (wsp.editor run), or run `python -m wsp.editor serve ...` and drive it from a Claude Code session.
-# Times on a 4-core CPU (fp32, Qwen3.5-0.8B): ~10 min per evaluation, ~1-2 h per LoRA run.
+# Times on a 4-core CPU (fp32, Qwen3.5-0.8B): ~10 min per evaluation, ~50 min per LoRA run, a few hours
+# per 25-pass WSP session; about half a day in all (a couple of hours on a GPU box).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=${PY:-python3}
