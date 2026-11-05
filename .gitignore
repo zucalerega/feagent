@@ -43,3 +43,6 @@ talk_plots/cfd/_cache/
 wsp_runs/
 # wsp: the teacher recipes and demos are small, generated here, and are the training data
 !wsp/data/
+
+# Claude Code subagent worktrees
+.claude/worktrees/
