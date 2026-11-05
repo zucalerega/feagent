@@ -17,7 +17,7 @@ import json
 import re
 from pathlib import Path
 
-from ace import config, fea, flow_feedback, geometry_info, solve_feedback, ui_bridge
+from ace import config, fea, flow_feedback, geometry_info, harness, solve_feedback, ui_bridge
 from ace.checks import tolerance
 from ace.config import MAX_SOLVES, MAX_TURNS, MIN_QUALITY, SCORE, TASKS
 
@@ -452,7 +452,9 @@ def tools_for(problem) -> list[dict]:
     problem = fea.get_problem(problem) if isinstance(problem, str) else problem
     if fea.is_flow(problem):
         return TOOLS_FLOW
-    return TOOLS + [NONLINEAR_TOOL] if is_nonlinear(problem.id) else TOOLS
+    specs = TOOLS + [NONLINEAR_TOOL] if is_nonlinear(problem.id) else TOOLS
+    # ACE_HARNESS=1 on a 3D solid: the descriptions name the feagent mesh harness's extra result fields
+    return harness.tool_specs(specs) if harness.applies(problem) else specs
 
 
 def system_prompt(playbook_text: str, flow: bool = False) -> str:
@@ -670,12 +672,16 @@ class Tools:
         self.n_views = 0
         self.nl_previews: list[dict] = []   # nonlinear_check results (the full ace.nonlinear.run_curve dicts)
         self.ui = ui                        # ace.ui_bridge context of this run; None = off
+        self.harness = harness.applies(self.problem)   # extra feagent fields in the results (opt-in, ACE_HARNESS=1)
 
     def call(self, name: str, args: dict) -> tuple[dict, bool]:
         """Returns (result, is_error)."""
         if name == "inspect_geometry":
             # The old group list (names BCs refer to) plus the face/edge description, compacted for big parts.
-            return geometry_info.for_agent({**fea.geometry_summary(self.problem), **geometry_info.describe(self.problem)}), False
+            out = geometry_info.for_agent({**fea.geometry_summary(self.problem), **geometry_info.describe(self.problem)})
+            if self.harness:
+                out["harness"] = harness.inspect(self.problem)
+            return out, False
         if name == "mesh":
             return self._mesh(args)
         if name == "solve":
@@ -737,6 +743,8 @@ class Tools:
                            + (f" and refinement sizes = [{sizes}]" if sizes else "")
                            + f" (the sizes used, times {factor:.2f})"
                            + (", or fewer sweep layers" if m.get("sweep") else ""))
+        if self.harness:
+            out["mesh_gates"] = harness.quality(self.problem, m["path"])   # not "quality": the element-quality stats
         return out, False
 
     def _solve(self, args: dict) -> tuple[dict, bool]:

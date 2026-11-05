@@ -662,6 +662,35 @@ mesh, 30 increments to 3 mm, both calibrations):
 
 These notes are in the test spec, so the loop's agents and teachers read them.
 
+## Mesh harness (opt-in)
+
+`ACE_HARNESS=1` (an environment variable, so the agent worker processes see it; `config.HARNESS`)
+gives the agent the `feagent` mesh harness's view of the part, on 3D problems only:
+
+- `inspect_geometry` also returns `harness`: `digest`, feagent's token-bounded geometry digest of the
+  problem's built geometry (bbox, CAD faces with kind, area, centre, normal/axis and radius, planar
+  faces by normal, features, hazards), with a NAMED SURFACE GROUPS section and each FACES row
+  labelled with the group(s) the face is in; `features` (holes, bosses, fillets, rounds: radius,
+  axis, axis point, groups); `hazards` (thin walls, small fillets or faces, short edges: value,
+  threshold, location, groups). Hazard thresholds use h = bbox diagonal / 40. That is where a
+  `group` or `point` refinement pays.
+- `mesh` also returns `mesh_gates`: feagent's mesh gates on the written `.msh` against the CAD
+  (`inverted`, `sicn`, `gamma`, `volume_fidelity`, `area_fidelity` per surface group,
+  `connectivity`, `thin_walls`), each with status, value, threshold and message. Order-2 volumes
+  and areas are integrated over the curved elements. It only reads the mesh: mesh files, node
+  counts and scores are unchanged. (It is not called `quality`: the mesh result already has a
+  `quality` entry, the element-quality statistics.)
+- The two tool descriptions mention these fields. Prompts are unchanged.
+
+2D and axisymmetric problems are untouched even with the switch on (the harness analyses 3D OCC
+solids only). It is **off by default**: with it off, the harness is never called and the tool specs,
+tool results and scores are exactly what they are without it (`tests/test_ace_harness.py`). Code:
+`ace/harness.py`.
+
+```bash
+ACE_HARNESS=1 .venv/bin/python -m ace.run_loop ...
+```
+
 ## Knobs that matter (`ace/config.py`)
 
 - `MODELS`: one line per role. The Reflector is the step most worth a strong model.
