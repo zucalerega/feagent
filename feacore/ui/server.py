@@ -344,6 +344,10 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
     token = token if token is not None else (os.environ.get("FEACORE_UI_TOKEN") or None)
     store = RunStore(runs_dir)
     runner = JobRunner(store, quick_workers=quick_workers, study_workers=study_workers)
+    from feacore.ui.tasks import TaskRunner, discover_tools
+    from feacore.ui.tasks import router as tasks_router
+
+    tasks = TaskRunner(store)   # long-running CLI tools (agent runs, gold meshing, nonlinear crush): docs/ui.md
     backend_check = _BackendCheck()
     npz_cache = _NpzCache()
     from feacore.ui.worker import load_extra_problems
@@ -354,8 +358,11 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
     async def lifespan(app: FastAPI):
         store.ensure()
         store.mark_interrupted()
+        tasks.tasks.mark_interrupted()
+        discover_tools()
         backend_check.get()
         yield
+        tasks.stop()
         runner.stop()
 
     app = FastAPI(title="feacore", version=feacore.__version__, lifespan=lifespan,
@@ -385,6 +392,8 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
                 "methods": ["Authorization: Bearer <token>", "X-Feacore-Token: <token>", "?token=<token>"]}
     app.state.store = store
     app.state.runner = runner
+    app.state.tasks = tasks
+    app.include_router(tasks_router(tasks))
 
     # ------------------------------------------------------------------ frontend
     @app.get("/", include_in_schema=False)
@@ -426,7 +435,7 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
         """Service health. ``active_jobs`` = queued + running solve / study (incl. batch) jobs, so a
         deploy script can wait for 0 before restarting. Reachable without the token, but then it
         returns only ``{ok, active_jobs, auth_required}``."""
-        active = runner.active_count()
+        active = runner.active_count() + tasks.active_count()   # tasks too: serve.sh must not restart mid-training
         if token and not _token_ok(request):
             return {"ok": True, "active_jobs": active, "auth_required": True}
         reg = _problems_api()
@@ -449,6 +458,7 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
             "ccx": shutil.which("ccx"),
             "store": {"root": str(store.root.resolve())},
             "jobs": runner.status(),
+            "tasks": {"active": tasks.active_count(), "workers": tasks.workers},
             "problems": {"count": len(reg.all_problems()), "import_errors": errors, "extra_errors": extra_errors},
         }
 
