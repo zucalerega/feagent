@@ -1,0 +1,33 @@
+{
+ "variant": "teacher_zeroshot",
+ "split": "test",
+ "n": 1,
+ "temperature": 0.0,
+ "source": "wsp_runs/opus_zeroshot/recipes.jsonl",
+ "all": {
+  "n": 26,
+  "mean_x": 3.8244341316474437,
+  "median_x": 3.7644984440258726,
+  "valid": 1.0,
+  "beats_auto": 1.0,
+  "geo_mean_x_valid": 3.595203725418393
+ },
+ "in_family": {
+  "n": 22,
+  "mean_x": 3.998898398294696,
+  "median_x": 3.8670770990864707,
+  "valid": 1.0,
+  "beats_auto": 1.0,
+  "geo_mean_x_valid": 3.773758866594763
+ },
+ "out_of_family": {
+  "n": 4,
+  "mean_x": 2.864880665087555,
+  "median_x": 2.98987940253513,
+  "valid": 1.0,
+  "beats_auto": 1.0,
+  "geo_mean_x_valid": 2.7538797832070485
+ },
+ "failures": {},
+ "seconds": 16.8
+}

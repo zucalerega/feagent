@@ -38,3 +38,8 @@ ace/field_refs_gpu/
 data/
 # talk_plots/cfd: cached flow solves (rebuilt with python talk_plots/cfd/make_figures.py --resolve)
 talk_plots/cfd/_cache/
+
+# wsp: run outputs (evaluations, sessions, adapters, score cache) and the tiny test model
+wsp_runs/
+# wsp: the teacher recipes and demos are small, generated here, and are the training data
+!wsp/data/
