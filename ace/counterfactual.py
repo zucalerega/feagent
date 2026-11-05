@@ -23,7 +23,7 @@ from ace import checkpoint as ckpt
 from ace import fea, oracles, stages
 from ace.config import SCORE, TASKS
 
-LOAD_TYPES = ("pressure", "traction", "force")
+LOAD_TYPES = ("pressure", "traction", "force", "velocity_inlet", "pressure_outlet")   # flow: what drives it
 
 # name -> (stage it changes, argument description shown to the diagnoser)
 INTERVENTIONS = {
@@ -33,14 +33,21 @@ INTERVENTIONS = {
     "set_local_mesh_size": ("mesh", "group: name OR point: [x, y(, z)]; size; radius (element size `size` at the "
                                     "group/point, growing to h at distance `radius`; replaces a refinement on the same target)"),
     "change_element_order": ("mesh", "order: 1 or 2"),
-    "fix_constraint": ("bcs", "group: name OR point: [x, y(, z)]; type: fixed | displacement | symmetry | free; "
-                              "components (for displacement); value; remove (optional list of other targets, "
-                              "group names or [x, y(, z)] points, whose supports are removed). Replaces every "
-                              "support on the target ('free' removes them): e.g. swap a point constraint for "
-                              "a symmetry condition in one change"),
-    "fix_load": ("bcs", "group; type: pressure | traction | force | none; value; remove_from (optional group whose "
-                        "loads are removed). Replaces the loads on `group` ('none' removes them)"),
-    "convert_units": ("bcs", "target: 'E' (Young's modulus) or 'loads' (every load value); factor to multiply by"),
+    "set_boundary_layer": ("mesh", "flow only: groups (wall groups), first (first cell height), ratio (growth per "
+                                   "layer, default 1.2), layers; groups: [] removes the boundary layer. 3D needs the "
+                                   "run's mesh to be a sweep"),
+    "fix_constraint": ("bcs", "group: name OR point: [x, y(, z)]; type: fixed | displacement | symmetry | free "
+                              "(flow: wall | slip | symmetry | free); components (for displacement); value (flow: "
+                              "moving-wall velocity); remove (optional list of other targets, group names or "
+                              "[x, y(, z)] points, whose supports are removed). Replaces every support on the "
+                              "target ('free' removes them): e.g. swap a point constraint for a symmetry condition "
+                              "in one change"),
+    "fix_load": ("bcs", "group; type: pressure | traction | force | none (flow: velocity_inlet | pressure_outlet | "
+                        "none); value; remove_from (optional group whose loads are removed). Replaces the loads "
+                        "on `group` ('none' removes them)"),
+    "convert_units": ("bcs", "target: 'E' (Young's modulus) or 'loads' (every load value; flow: every inlet "
+                             "velocity and outlet pressure), flow also 'mu' or 'rho'; factor to multiply by"),
+    "set_convection": ("bcs", "flow only: scheme: upwind | linearUpwind"),
 }
 
 
@@ -64,9 +71,8 @@ def apply_mesh_change(request: dict, name: str, a: dict) -> dict:
         if f <= 0:
             raise InterventionError("factor must be > 0")
         if a.get("scope", "global") == "global":
-            req["h"] = req["h"] / f
-            for r in refs:
-                r["size"] = r["size"] / f
+            # every length / f: h, refinement sizes, and (flow) the boundary layer's cells and sweep layers
+            req = fea.scale_request(req, 1.0 / f)
         else:
             mine = [r for r in refs if r.get("group") == a["scope"]]
             if mine:
@@ -86,6 +92,16 @@ def apply_mesh_change(request: dict, name: str, a: dict) -> dict:
         if int(a["order"]) not in (1, 2):
             raise InterventionError("order must be 1 or 2")
         req["order"] = int(a["order"])
+    elif name == "set_boundary_layer":
+        groups = a.get("groups") or []
+        if not groups:
+            req.pop("boundary_layer", None)
+        else:
+            try:
+                req["boundary_layer"] = {"groups": list(groups), "first": float(a["first"]),
+                                         "ratio": float(a.get("ratio", 1.2)), "layers": int(a["layers"])}
+            except (KeyError, TypeError, ValueError):
+                raise InterventionError("set_boundary_layer needs groups, first and layers (ratio optional)") from None
     return req
 
 
@@ -109,15 +125,28 @@ def apply_bc_change(setup: dict, name: str, a: dict) -> dict:
         f = float(a["factor"])
         if a["target"] == "E":
             s["material"] = dict(s.get("material") or {}, E=float((s.get("material") or {}).get("E", 0)) * f)
+        elif a["target"] in ("mu", "rho"):
+            fluid = dict(s.get("fluid") or {})
+            fluid[a["target"]] = float(fluid.get(a["target"], 0)) * f
+            s["fluid"] = fluid
         elif a["target"] == "loads":
             for b in bcs:
-                if b.get("type") in LOAD_TYPES:
-                    v = b.get("value")
-                    b["value"] = [x * f for x in v] if isinstance(v, list) else float(v) * f
+                if b.get("type") in LOAD_TYPES and b.get("value") is not None:
+                    v = b["value"]
+                    b["value"] = [_scale(x, f) for x in v] if isinstance(v, list) else _scale(v, f)
         else:
-            raise InterventionError("convert_units target must be 'E' or 'loads'")
+            raise InterventionError("convert_units target must be 'E', 'mu', 'rho' or 'loads'")
+    elif name == "set_convection":
+        if a.get("scheme") not in ("upwind", "linearUpwind"):
+            raise InterventionError("set_convection scheme must be 'upwind' or 'linearUpwind'")
+        s["convection"] = a["scheme"]
     s["bcs"] = bcs
     return s
+
+
+def _scale(v, f: float):
+    """A BC value times f; expressions (flow profiles) are wrapped."""
+    return f"({v})*{f!r}" if isinstance(v, str) else float(v) * f
 
 
 # --------------------------------------------------------------------------- evaluating a variant
@@ -221,8 +250,8 @@ def rerun_from_stage(run: dict, stage: str, change: dict, target_err: float, wor
         if not cp["request"]:
             raise InterventionError("the mesh request of this run was not recorded")
         req = apply_mesh_change(cp["request"], name, args)
-        mesh = fea.make_mesh(problem, workdir / f"cf_{hashlib.sha1(repr(req).encode()).hexdigest()[:8]}.msh",
-                             h=req["h"], order=req.get("order", 1), refinements=req.get("refinements"))
+        mesh = fea.mesh_from_request(problem, workdir / f"cf_{hashlib.sha1(repr(req).encode()).hexdigest()[:8]}.msh",
+                                     req)
         if mesh.get("ok") and mesh["h_used"] != req["h"] or any(
                 s != r["size"] for s, r in zip(mesh.get("sizes_used", []), req.get("refinements") or [])):
             notes.append("the harness clamped a requested size to its size floor (see sizes_used)")
@@ -247,8 +276,7 @@ def _checkpoint_mesh(problem, cp: dict, workdir: Path, notes: list) -> dict:
     if not cp["request"]:
         raise InterventionError("the run's mesh file is gone and its request was not recorded")
     req = cp["request"]
-    new = fea.make_mesh(problem, workdir / "checkpoint_rebuild.msh", h=req["h"], order=req.get("order", 1),
-                        refinements=req.get("refinements"))
+    new = fea.mesh_from_request(problem, workdir / "checkpoint_rebuild.msh", req)
     if m.get("sha256") and new.get("sha256") != m["sha256"]:
         notes.append("the rebuilt mesh differs from the original (different code or gmsh version)")
     return new

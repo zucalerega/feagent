@@ -345,8 +345,7 @@ def _resolve(problem_id: str, run: dict, q) -> float | None:
         if not Path(mesh.get("path", "")).exists():
             if not cp.get("request"):
                 return None
-            mesh = fea.make_mesh(problem, Path(d) / "m.msh", **{k: v for k, v in cp["request"].items()
-                                                                  if k in ("h", "order", "refinements")})
+            mesh = fea.mesh_from_request(problem, Path(d) / "m.msh", cp["request"])
             if not mesh.get("ok"):
                 return None
         res = _solve(problem, mesh, cp["setup"], TASKS[problem_id]["qoi"])

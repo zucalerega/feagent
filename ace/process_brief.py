@@ -127,8 +127,60 @@ each task compared with its last run, and say what and why. Use solves as contro
 (change one thing, compare). Specific beats generic: name groups, points, sizes, radii and orders.
 """
 
+# Flow (CFD) tasks (ace.flow_mesh, ace.flow_feedback, ace.flow_field). The briefs above are written for
+# elasticity and stay as they are, so a run without flow tasks reads exactly them. On a flow task this
+# block goes with the task, as NL_SCORING (ace.deep_teacher) does for a task scored by a physical test:
+# after the brief in the agent's context (deep_context, single_context) and next to the task statement
+# for the teacher (deep_teacher.build_prefix) and the self-reflection (self_reflect.build_user).
+FLOW_BRIEF = """\
+## FLOW (CFD) TASKS
+A flow task is steady laminar incompressible flow, solved with finite volumes (OpenFOAM, SIMPLEC).
+The rest of the instructions is written for elasticity; on a flow task read it with these changes:
+- Scoring: the error is the larger of (a) the relative L2 VELOCITY error over the whole domain and
+  (b) the RMS SPEED error at check points in the bulk of the flow (away from walls), against the
+  exact solution or a very fine reference. The automesher is the mesh tool's uniform triangles /
+  tetrahedra at the task's base size with the second-order convection scheme (linearUpwind). The
+  score formula and the bonuses are the same; the diversity bonus counts another cell kind (quads,
+  boundary layer, sweep) where it counts another element order. Error maps, region grids and
+  disagreement maps show the squared velocity error and the speed, not stress or error energy.
+- No element order: finite-volume cells. On a smooth flow the error falls ~h^2 (2D: ~N^-1, 3D:
+  ~N^-2/3, N = cells), slower at singular corners (the ends of a moving lid, a sharp step corner);
+  quads and hexahedra converge more regularly than triangles and tetrahedra.
+  DOFs = cells x unknowns per cell (3 in 2D, 4 in 3D).
+- Mesh controls: h and refinements as for elasticity; quads (quad-dominant cells: 2D, or the swept
+  face); boundary_layer {groups, first, ratio, layers} (thin cells along no-slip walls: first-cell
+  height, growth per layer, number of layers; in 3D only with a sweep); sweep {source, layers, ratio}
+  (3D: a straight duct or pipe as its end face extruded in layers, hexahedra or prisms, far fewer
+  cells than tetrahedra for the same error).
+- Gate: finite-volume quality (fv_ok: non-orthogonality <= 70 deg, skewness <= 4), not element
+  shape: thin boundary-layer cells pass. There is no folded_cells check.
+- Setup: formulation, fluid (rho; mu in Pa s: a viscosity taken as mPa s or cP is 1000x too large),
+  convection scheme, and per boundary group velocity_inlet (its profile, pointing INTO the domain),
+  pressure_outlet, wall (no slip; a moving wall carries its velocity), slip or symmetry (never in
+  place of a no-slip wall). A setup error spreads error over the whole domain.
+- Tools: mesh also returns fv_quality, fv_ok and per boundary group the first cells' wall distance;
+  solve returns convergence, mass balance, wall forces, peak speed and pressure range, the cell
+  Peclet number, reversed-flow zones and an error indicator (velocity jumps at faces) with its top
+  5 hotspots; view(kind = mesh | speed | pressure | error; 3D: a section normal to x, y or z);
+  compare gives the velocity difference between two solves and where it is.
+"""
+
+FLOW_MESH_KEYS = ("quads", "boundary_layer", "sweep")     # what a FlowMeshCall has instead of an order
+
+
+def _inline(v) -> str:
+    """A value as a mesh call reads: {k: v, ...}, [a, b], true / false, numbers and names bare."""
+    if isinstance(v, dict):
+        return "{" + ", ".join(f"{k}: {_inline(x)}" for k, x in v.items() if x is not None) + "}"
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(map(_inline, v)) + "]"
+    return str(v).lower() if isinstance(v, bool) else str(v)
+
+
 def mesh_call_text(call: dict | None) -> str:
-    """A MeshCall (ace.deep_teacher) as the agent's own tool call reads: mesh(h=..., order=..., refinements=[...])."""
+    """A MeshCall (ace.deep_teacher) as the agent's own tool call reads: mesh(h=..., order=..., refinements=[...]);
+    a FlowMeshCall (a flow task: no order) as mesh(h=..., quads=..., refinements=[...]) plus its
+    boundary_layer={...} and sweep={...} when set."""
     if not call:
         return "(none)"
     refs = ", ".join(
@@ -137,7 +189,10 @@ def mesh_call_text(call: dict | None) -> str:
                                                  ("size", r.get("size")), ("radius", r.get("radius")))
                         if v is not None) + "}"
         for r in call.get("refinements") or [])
-    return f"mesh(h={call.get('h')}, order={call.get('order')}, refinements=[{refs}])"
+    if "order" in call or not any(k in call for k in FLOW_MESH_KEYS):
+        return f"mesh(h={call.get('h')}, order={call.get('order')}, refinements=[{refs}])"
+    extra = "".join(f", {k}={_inline(call[k])}" for k in ("boundary_layer", "sweep") if call.get(k))
+    return f"mesh(h={call.get('h')}, quads={_inline(bool(call.get('quads')))}, refinements=[{refs}]{extra})"
 
 
 def render_notes(playbook: Playbook) -> str:
@@ -314,7 +369,7 @@ def persona_block(persona: str) -> str:
 def deep_context(agent: str, task: str | None, shared_text, private_text,
                  last_feedback: dict | None, last_reflection: dict | None, highlights: list[dict],
                  peers_text: str, last_run: dict | None = None, task_feedback: dict | None = None,
-                 persona: str | None = None) -> str:
+                 persona: str | None = None, flow: bool = False) -> str:
     """The full context block agent `agent` ("a3") sees on `task` (None: a held-out task) in deep
     mode. shared_text / private_text: a Playbook (rendered grouped by task, other tasks' notes cut
     first to keep the block under CONTEXT_CHARS) or ready text. last_feedback: the teacher's
@@ -322,8 +377,10 @@ def deep_context(agent: str, task: str | None, shared_text, private_text,
     last_reflection: its own SelfReflection from that run; last_run: run_loop._run_summary of that
     run; task_feedback: the teacher's last TeacherFeedback dict on `task` (its setup warnings and
     contested regions); highlights: last generation's Highlights; peers_text: run_loop.peers_text;
-    persona: this agent's fixed exploration style (run_loop --personas), None for most agents."""
-    parts = [PROCESS_BRIEF.strip(), f"You are agent {agent}" + (f", working on task {task}." if task else ".")]
+    persona: this agent's fixed exploration style (run_loop --personas), None for most agents.
+    flow: the agent's task is a flow (CFD) task (held out or not): FLOW_BRIEF follows the brief."""
+    parts = [PROCESS_BRIEF.strip(), *([FLOW_BRIEF.strip()] if flow else []),
+             f"You are agent {agent}" + (f", working on task {task}." if task else ".")]
     if block := assignment_block((last_feedback or {}).get("assignment"), _task_of(last_feedback or {}), task):
         parts.append(block)
 
@@ -358,14 +415,16 @@ def deep_context(agent: str, task: str | None, shared_text, private_text,
     return "\n\n".join(parts)
 
 
-def single_context(tasks: list[str], playbook, notes, per_task: dict[str, dict]) -> str:
+def single_context(tasks: list[str], playbook, notes, per_task: dict[str, dict], flow: bool = False) -> str:
     """The context block of the single-agent baseline (ace/single_loop.py): SINGLE_BRIEF, then for
     each task the same feedback blocks a swarm agent gets (its last run on that task, the teacher's
     feedback on it, setup warnings, contested regions, its own reflection), then its playbook and
     notes (Playbooks, grouped by task; no length cap: every task is the agent's own) and the closing
     checklist. per_task: {task: {"last_run", "feedback", "reflection", "task_feedback"}} (each may
-    be missing). There are no peers' highlights: nobody else ran."""
-    parts = [SINGLE_BRIEF.strip(), f"You are the single agent, working on all of these tasks: {', '.join(tasks)}."]
+    be missing). There are no peers' highlights: nobody else ran. flow: the tasks are flow (CFD) tasks
+    (single_loop takes all-flow or all-solid tasks): FLOW_BRIEF follows the brief."""
+    parts = [SINGLE_BRIEF.strip(), *([FLOW_BRIEF.strip()] if flow else []),
+             f"You are the single agent, working on all of these tasks: {', '.join(tasks)}."]
     for t in tasks:
         d = per_task.get(t) or {}
         parts.append(f"# TASK {t}: WHAT HAPPENED LAST TIME")

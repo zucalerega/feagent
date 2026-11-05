@@ -45,8 +45,8 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from ace import config, evidence, process_brief
-from ace.agent import TOOLS, Tools, parse_citations, system_prompt, task_prompt, tool_loop
+from ace import config, evidence, fea, process_brief
+from ace.agent import TOOLS, TOOLS_FLOW, Tools, parse_citations, system_prompt, task_prompt, tool_loop
 from ace.checks import check_run, score_population
 from ace.cost import BudgetExceeded, CostLog
 from ace.llm import make_llm
@@ -62,9 +62,16 @@ MAX_NUDGES = 5        # "continue" messages per conversation when it stops with 
 # --------------------------------------------------------------------------- one generation's run
 
 
+def all_flow(tasks: list[str]) -> bool:
+    """Are these flow (CFD) tasks? The one conversation has one tool list, so the tasks must be all
+    flow or all solid (main refuses a mix)."""
+    return bool(tasks) and all(fea.is_flow(fea.get_problem(t)) for t in tasks)
+
+
 def task_tool_specs(tasks: list[str]) -> list[dict]:
-    """ace.agent.TOOLS, each with a required `task` argument (which task the call is for)."""
-    specs = copy.deepcopy(TOOLS)
+    """ace.agent.TOOLS (TOOLS_FLOW for flow tasks), each with a required `task` argument (which task
+    the call is for)."""
+    specs = copy.deepcopy(TOOLS_FLOW if all_flow(tasks) else TOOLS)
     for t in specs:
         t["input_schema"]["properties"]["task"] = {"type": "string", "enum": list(tasks),
                                                    "description": "the problem id this call is for"}
@@ -161,7 +168,7 @@ def _big_worker(job: dict) -> list[dict]:
                 f"(each tool call names its task).")
 
     try:
-        trace, stop = tool_loop(make_llm(job["mock"]), system_prompt(job["context"]),
+        trace, stop = tool_loop(make_llm(job["mock"]), system_prompt(job["context"], flow=all_flow(tasks)),
                                 first_message(tasks, job["max_solves"]), task_tool_specs(tasks), tools.call,
                                 lambda: tools.finished() or out_of_time(), job["max_turns"], f"g{gen}-{AGENT}", usage, role="big_generator",
                                 on_stop=on_stop)
@@ -387,6 +394,13 @@ def main(argv=None) -> int:
     os.environ["ACE_SKIP_CONVERGENCE"] = "1"    # before any pool: as --deep (the run report replaces it)
 
     tasks = [p for p in args.problems.split(",") if p]
+    flow = [t for t in tasks if fea.is_flow(fea.get_problem(t))]
+    if flow and len(flow) != len(tasks):   # one conversation, one tool list: TOOLS or TOOLS_FLOW
+        raise SystemExit(f"ace.single_loop takes all-solid or all-flow tasks (one tool list per conversation); "
+                         f"the flow tasks {flow} are mixed with solid ones")
+    if flow:
+        from ace.run_loop import _check_flow_tasks
+        _check_flow_tasks(tasks)
     solves = args.solves_per_task or config.MAX_SOLVES * max(1, args.swarm_agents // len(tasks))
     turns = args.turns or config.MAX_TURNS * args.swarm_agents
     out = args.out or Path("ace_runs") / ("single-" + time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
@@ -435,7 +449,8 @@ def main(argv=None) -> int:
             context = process_brief.single_context(tasks, mem.shared, mem.private[0],
                                                    {t: {"last_run": state["last_run"].get(t), "feedback": state["feedback"].get(t),
                                                         "reflection": state["reflection"].get(t),
-                                                        "task_feedback": state["teacher"].get(t)} for t in tasks})
+                                                        "task_feedback": state["teacher"].get(t)} for t in tasks},
+                                                   flow=all_flow(tasks))
             (gdir / "context" / f"{AGENT}.md").write_text(context)
             seconds = swarm_agent_seconds(args.swarm_dir, gen) or args.gen_seconds
             print(f"  time budget: {seconds:.0f} s (the swarm's agents phase)")

@@ -11,6 +11,9 @@ from ace import requirements as R
 from ace.checks import reference_setup
 from ace.config import TASKS
 
+# Requirements are written for elasticity problems only; run_loop refuses flow tasks in requirements mode.
+ELASTIC = [pid for pid in TASKS if not fea.is_flow(fea.get_problem(pid))]
+
 
 @pytest.fixture
 def requirements_mode(monkeypatch):
@@ -19,7 +22,7 @@ def requirements_mode(monkeypatch):
 
 
 def test_every_loop_problem_has_clean_current_requirements():
-    for pid in TASKS:
+    for pid in ELASTIC:
         assert R.lint(pid, R.load(pid)) == [], pid
 
 
@@ -61,7 +64,7 @@ def test_aliases_rename_groups_everywhere_without_changing_the_physics(requireme
 
 def test_task_prompt_gives_requirements_and_hides_the_problem_id(requirements_mode):
     from ace.agent import task_prompt
-    for pid in TASKS:
+    for pid in ELASTIC:
         prompt = task_prompt(pid)
         assert R.agent_text(pid) in prompt and R.label_for(pid) in prompt
         assert pid not in prompt

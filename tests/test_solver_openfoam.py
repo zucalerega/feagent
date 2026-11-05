@@ -1,7 +1,7 @@
-"""OpenFOAM backend (physics "flow"): laminar 2D checks against closed forms.
+"""OpenFOAM backend (physics "flow"): laminar 2D and 3D checks against closed forms.
 
 Skipped when OpenFOAM (ESI line) or foamlib is missing. Small gmsh meshes generated into a
-temporary directory; every solve takes about a second.
+temporary directory; every solve takes about a second (the 3D tet pipe a few seconds).
 """
 
 from __future__ import annotations
@@ -249,6 +249,73 @@ def test_mesh_harness_cfd_adapter_tee(tmp_path):
     assert qin + q["flow_rate_outlet_main"] + q["flow_rate_outlet_branch"] == pytest.approx(0, abs=1e-7 * -qin)
     assert -qin == pytest.approx(np.pi * 10.0**2 * 10.0, rel=0.05)    # pi R^2 U (faceted inlet)
     assert q["pressure_drop"] > 0 and q["force_walls_x"] > 0
+
+
+def _tet_pipe(path, R, Lp, h):
+    """Unstructured tets in a circular pipe along x (0 <= x <= Lp), as an agent meshes the STEP."""
+    gmsh.initialize(readConfigFiles=False, interruptible=False)
+    try:
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.model.add("pipe")
+        v = gmsh.model.occ.addCylinder(0, 0, 0, Lp, 0, 0, R)
+        gmsh.model.occ.synchronize()
+        groups: dict = {}
+        for _, s in gmsh.model.getBoundary([(3, v)], oriented=False):
+            x = gmsh.model.occ.getCenterOfMass(2, s)[0]
+            groups.setdefault("inlet" if x < 1e-9 else "outlet" if x > Lp - 1e-9 else "wall", []).append(s)
+        for name, ss in groups.items():
+            gmsh.model.addPhysicalGroup(2, ss, name=name)
+        gmsh.model.addPhysicalGroup(3, [v], name="fluid")
+        gmsh.option.setNumber("Mesh.MeshSizeMax", h)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+        gmsh.model.mesh.generate(3)
+        gmsh.write(str(path))
+    finally:
+        gmsh.finalize()
+    return path
+
+
+def test_pipe_3d_tets_pressure_drop(tmp_path):
+    """Hagen-Poiseuille flow on unstructured tets (3.6k cells): the axial pressure drop and the wall
+    force match the exact values. With OpenFOAM's plain schemes (Gauss linear gradients, linear
+    momentum-interpolation flux) tets converge to a pressure gradient 15-18 % high, and the wall
+    force taken with 1/|Cf - C| instead of the wall-normal distance was 10 % off on its own.
+
+    The exact values are those of the meshed (faceted) section of area A: -dp/dx = 8 pi mu Q / A^2
+    and F = 8 pi mu Q L / A, with Q the solved flow rate; the 21-gon is 1.5 % short in area."""
+    R, Lp, mu, Ub = 0.005, 0.03, 0.01, 0.01                 # Re = rho Ub 2R / mu = 10
+    xa, xb = 0.4 * Lp, 0.8 * Lp
+    case = Case(
+        mesh=str(_tet_pipe(tmp_path / "pipe.msh", R, Lp, 0.0015)),
+        analysis=Analysis(physics="flow", formulation="3d", order=2, options={"max_iterations": 3000}),
+        materials={"oil": Material(rho=1000.0, mu=mu)},
+        bcs=[BC("velocity_inlet", group="inlet", value=[f"{2 * Ub}*(1 - (y**2 + z**2)/{R**2})", 0.0, 0.0]),
+             BC("pressure_outlet", group="outlet", value=0.0), BC("wall", group="wall")],
+        qois=[QoI("dp", "point_difference", field="p", point=[xa, 0, 0], point2=[xb, 0, 0]),
+              QoI("fx_wall", "force", group="wall", component=0),
+              QoI("p_int", "integral", field="p", group="inlet"), QoI("p_mean", "mean", field="p", group="inlet"),
+              QoI("q_out", "flow_rate", group="outlet")],
+    )
+    res = solve(case, backend="openfoam")
+    q = res.evaluate_all()
+    assert res.info.cell_type == "tetra" and res.info.converged
+    area = q["p_int"] / q["p_mean"]                              # faceted inlet section
+    assert 0.97 < area / (np.pi * R**2) < 1.0
+    assert q["dp"] == pytest.approx(8 * np.pi * mu * q["q_out"] / area**2 * (xb - xa), rel=0.03)
+    assert q["fx_wall"] == pytest.approx(8 * np.pi * mu * q["q_out"] * Lp / area, rel=0.03)
+    assert q["fx_wall"] == pytest.approx(q["p_int"], rel=0.03)     # inlet pressure force = wall force
+    assert q["dp"] == pytest.approx(8 * mu * Ub * (xb - xa) / R**2, rel=0.06)   # exact, circular section
+    assert any("skew-consistent schemes" in w for w in res.info.warnings)
+
+
+def test_skew_correction_option(tmp_path):
+    mesh = _rect(tmp_path / "ch.msh", L, H, 12, 2, _channel_names)
+    with pytest.raises(CaseError, match="skew_correction"):
+        solve(_channel_case(mesh, skew_correction="yes"), backend="openfoam")
+    res = solve(_channel_case(mesh, max_iterations=3), backend="openfoam")        # 2D: plain schemes
+    assert not any("skew-consistent" in w for w in res.info.warnings)
+    res = solve(_channel_case(mesh, max_iterations=3, skew_correction=True), backend="openfoam")
+    assert any("skew-consistent" in w for w in res.info.warnings)
 
 
 @pytest.mark.slow

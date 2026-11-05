@@ -14,10 +14,28 @@ def cal():
     return {pid: {"target_err": tolerance(pid)} for pid in TASKS}
 
 
+def _has_openfoam() -> bool:
+    from feacore.solver._foam_env import find_openfoam
+    try:
+        return find_openfoam() is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+FOAM = _has_openfoam()
+
+
 @pytest.fixture(scope="module")
 def planted_runs(tmp_path_factory):
+    """Every planted run (the flow ones only with OpenFOAM)."""
     root = tmp_path_factory.mktemp("planted")
-    return {name: planted.make_run(name, root / name) for name in planted.PLANTED}
+    return {name: planted.make_run(name, root / name) for name in planted.PLANTED
+            if FOAM or name not in planted.FLOW_PLANTED}
+
+
+def _needs_foam(name: str) -> None:
+    if name in planted.FLOW_PLANTED and not FOAM:
+        pytest.skip("flow planted case: OpenFOAM not found")
 
 
 def _diagnose(run, cal):
@@ -31,6 +49,7 @@ def _diagnose(run, cal):
 
 @pytest.mark.parametrize("name", list(planted.PLANTED))
 def test_planted_failure_is_found_at_its_stage(name, planted_runs, cal):
+    _needs_foam(name)
     run = planted_runs[name]
     _, rep = _diagnose(run, cal)
     assert rep["first_failing_stage"] == run["label"]["true_stage"]
@@ -44,11 +63,18 @@ EXPECTED_ORACLE = {
     "singular_peak": "symmetry",            # the point constraint replaced a symmetry plane
     "gamed_extra_support": "gaming",
     "gamed_dropped_load": "gaming",
+    # flow: a reversed inlet profile (an expression, compared at the inlet's centre), the viscosity in
+    # the wrong unit, no-slip walls made slip, a mesh with 2.5 cells across the channel
+    "flow_reversed_inflow": "spec_compliance",
+    "flow_viscosity_units": "spec_compliance",
+    "flow_walls_slip": "spec_compliance",
+    "flow_mesh_too_coarse": "mesh_convergence",
 }
 
 
 @pytest.mark.parametrize("name,oracle", EXPECTED_ORACLE.items())
 def test_planted_failure_trips_the_right_oracle(name, oracle, planted_runs, cal):
+    _needs_foam(name)
     orc, _ = _diagnose(planted_runs[name], cal)
     assert orc[oracle]["status"] == "fail", orc[oracle]
 
@@ -67,8 +93,14 @@ def test_unit_error_also_breaks_sanity_bounds(planted_runs, cal):
 @pytest.mark.parametrize("pid", list(TASKS))
 def test_no_oracle_fails_on_the_reference_setup(pid, cal, tmp_path):
     problem = fea.get_problem(pid)
+    if fea.is_flow(problem):
+        from feacore.solver._foam_env import find_openfoam
+
+        if find_openfoam() is None:
+            pytest.skip("flow problem: OpenFOAM not found (on a Mac: scripts/openfoam_docker.sh)")
     req = planted.GOOD_MESH[pid]
-    m = fea.make_mesh(problem, tmp_path / "m.msh", h=req["h"], order=req["order"], refinements=req["refinements"])
+    m = fea.mesh_from_request(problem, tmp_path / "m.msh", req)
+    assert m["ok"], m.get("error")
     setup = reference_setup(problem)
     value = fea.run_solve(problem, m, setup, TASKS[pid]["qoi"])["value"]
     orc = oracles.evaluate(pid, m, req, setup, value, cal[pid]["target_err"])
@@ -102,6 +134,10 @@ COUNTERFACTUALS = {
                       {"name": "change_element_order", "args": {"order": 1}}),
     "gamed_extra_support": ("bcs", {"name": "fix_constraint", "args": {"group": "edge_BC", "type": "free"}},
                             {"name": "change_element_order", "args": {"order": 1}}),
+    "flow_viscosity_units": ("bcs", {"name": "convert_units", "args": {"target": "mu", "factor": 1e-3}},
+                             {"name": "set_convection", "args": {"scheme": "upwind"}}),
+    "flow_mesh_too_coarse": ("mesh", {"name": "refine_mesh", "args": {"scope": "global", "factor": 4}},
+                             {"name": "set_convection", "args": {"scheme": "upwind"}}),
 }
 
 
@@ -111,6 +147,7 @@ def _stage_of(change):
 
 @pytest.mark.parametrize("name", list(COUNTERFACTUALS))
 def test_right_fix_flips_wrong_change_does_not(name, planted_runs, cal, tmp_path):
+    _needs_foam(name)
     run = planted_runs[name]
     e_u = cal[run["problem_id"]]["target_err"]
     _, fix, wrong = COUNTERFACTUALS[name]

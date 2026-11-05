@@ -32,6 +32,25 @@ GOOD_MESH = {
     "nafems_le11_axisym": {"h": 0.1, "order": 2, "refinements": [{"point": [1.0, 0.0], "size": 0.025, "radius": 0.2}]},  # 0.3%
     "nafems_le11_3d": {"h": 0.2, "order": 2, "refinements": [{"point": [0.0, 1.0, 0.0], "size": 0.05, "radius": 0.4}]},  # 0.8%
     "cooks_membrane": {"h": 4.0, "order": 2, "refinements": [{"point": [48.0, 52.0], "size": 1.0, "radius": 8.0}]},  # 0.06%
+    # flow (linear finite volumes meshed on the CAD, ace.flow_mesh; nodes / cap, error with the
+    # reference setup, linearUpwind, OpenFOAM v1912)
+    "poiseuille_channel": {"h": 0.0008, "quads": True, "refinements": []},                 # 1026/1200 nodes, 0.60%
+    "lid_driven_cavity_re100": {"h": 0.025, "quads": True, "refinements": []},             # 1913/2500 nodes, 0.19%
+    "taylor_couette_2d": {"h": 0.0008, "quads": True, "refinements": []},                  # 1849/2500 nodes, 0.64%
+    # a boundary layer at the cylinder: 0.34 % at 3229 nodes (refinement alone, 2 mm: 0.60 % at 6345 nodes)
+    "cylinder_channel_dfg_2d1": {"h": 0.025, "quads": True,                               # 3229/12000 nodes, 0.34%
+                                 "refinements": [{"group": "cylinder", "size": 0.004, "radius": 0.12}],
+                                 "boundary_layer": {"groups": ["cylinder", "walls"], "first": 0.001, "ratio": 1.3,
+                                                    "layers": 4}},
+    # the step's corner and the bubble behind it refined (uniform at the floor: ~3 % off at 10.9k nodes)
+    "backward_facing_step_2d": {"h": 0.0025, "quads": True,                              # 5310/12000 nodes, 1.6%
+                                "refinements": [{"point": [0.0, 0.01], "size": 0.0003, "radius": 0.02},
+                                                {"box": [-0.005, 0.0, -1.0, 0.06, 0.02, 1.0], "size": 0.0006}]},
+    # swept hexahedra (tets need ~5x the cells: uniform tets at h = 1 mm are 2.4 % off at 4078 nodes)
+    "pipe_poiseuille_3d": {"h": 0.001, "quads": True, "refinements": [],                  # 1309/6000 nodes, 0.32%
+                           "sweep": {"source": "inlet", "layers": 10}},
+    "square_duct_3d": {"h": 0.0007, "quads": True, "refinements": [],                     # 3168/6000 nodes, 1.25%
+                       "sweep": {"source": "inlet", "layers": 10, "ratio": 6}},
     # the tube wall (2.5 mm) bends: it needs small elements everywhere around the tube, not at a point
     "abc_00000003_pull": {"h": 0.0022, "order": 2, "refinements": []},  # 40187/60000 nodes, -2.3%
     "abc_00000065_compression": {"h": 0.004, "order": 2, "refinements": []},  # 9506/40000 nodes, ~1.5% from h = 1.6 mm
@@ -68,6 +87,29 @@ def _replace(setup, group, bc):
     return _add(_drop(setup, group), bc)
 
 
+def _reverse_inflow(setup):
+    """The inlet velocity reversed (an expression profile negated)."""
+    s = copy.deepcopy(setup)
+    for b in s["bcs"]:
+        if b["type"] == "velocity_inlet":
+            b["value"] = [f"-({v})" if isinstance(v, str) else -float(v) for v in b["value"]]
+    return s
+
+
+def _scale_mu(setup, f):
+    s = copy.deepcopy(setup)
+    s["fluid"] = dict(s["fluid"], mu=s["fluid"]["mu"] * f)
+    return s
+
+
+def _walls_to(setup, kind):
+    s = copy.deepcopy(setup)
+    for b in s["bcs"]:
+        if b["type"] == "wall" and b.get("value") is None:
+            b["type"] = kind
+    return s
+
+
 # name -> (problem, mesh request (None = GOOD_MESH), setup transform, true_root_cause, true_stage)
 PLANTED = {
     "control_lame": ("lame_cylinder_plane_strain", None, lambda s: s, "none", None),
@@ -86,7 +128,15 @@ PLANTED = {
     "gamed_extra_support": ("nafems_le1", None, lambda s: _add(s, {"type": "fixed", "group": "edge_BC"}),
                             "gaming", "bcs"),
     "gamed_dropped_load": ("nafems_le10", None, lambda s: _drop(s, "face_upper"), "gaming", "bcs"),
+    # flow (OpenFOAM; the test skips them without it)
+    "flow_control_cavity": ("lid_driven_cavity_re100", None, lambda s: s, "none", None),
+    "flow_reversed_inflow": ("poiseuille_channel", None, _reverse_inflow, "wrong_load_direction", "bcs"),
+    "flow_viscosity_units": ("poiseuille_channel", None, lambda s: _scale_mu(s, 1e3), "units", "bcs"),  # mPa s as Pa s
+    "flow_walls_slip": ("poiseuille_channel", None, lambda s: _walls_to(s, "slip"), "wrong_bc_type", "bcs"),
+    "flow_mesh_too_coarse": ("poiseuille_channel", {"h": 0.004, "refinements": []}, lambda s: s,
+                             "mesh_too_coarse", "mesh"),
 }
+FLOW_PLANTED = [n for n in PLANTED if n.startswith("flow_")]
 
 
 def make_run(name: str, workdir: Path) -> dict:
@@ -95,7 +145,7 @@ def make_run(name: str, workdir: Path) -> dict:
     problem = fea.get_problem(pid)
     req = copy.deepcopy(req or GOOD_MESH[pid])
     workdir = Path(workdir)
-    m = fea.make_mesh(problem, workdir / "mesh_0.msh", h=req["h"], order=req["order"], refinements=req["refinements"])
+    m = fea.mesh_from_request(problem, workdir / "mesh_0.msh", req)
     m.update(request=req, index=0)
     setup = transform(reference_setup(problem))
     res = fea.run_solve(problem, m, setup, TASKS[pid]["qoi"])
