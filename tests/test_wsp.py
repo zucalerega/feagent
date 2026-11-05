@@ -78,7 +78,7 @@ def test_kernel_guard():
 
 
 def test_weight_store_rules(tmp_path):
-    import torch
+    torch = pytest.importorskip("torch", reason="torch is not installed (the optional wsp extra)")
     from wsp.kernel import EditRefused, WeightStore
     tensors = {"model.embed_tokens.weight": torch.randn(5, 4), "model.layers.0.mlp.down_proj.weight": torch.randn(4, 6),
                "model.norm.weight": torch.ones(4), "model.layers.0.input_layernorm.weight": torch.ones(4)}
@@ -104,6 +104,8 @@ def test_weight_store_rules(tmp_path):
 
 @pytest.fixture(scope="module")
 def tiny(tmp_path_factory):
+    for mod in ("torch", "transformers"):
+        pytest.importorskip(mod, reason=f"{mod} is not installed (the optional wsp extra)")
     from wsp import tiny
     return tiny.build(tmp_path_factory.mktemp("tiny") / "model")
 
