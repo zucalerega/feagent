@@ -306,7 +306,8 @@ class FEModel:
         return worst
 
 
-def build_model(gm: GmshMesh, dim: int, order: int, axisymmetric: bool = False) -> FEModel:
+def build_model(gm: GmshMesh, dim: int, order: int, axisymmetric: bool = False,
+                midside_tol: float = 0.25) -> FEModel:
     """Domain cells of dimension ``dim`` -> CalculiX-ordered model of the requested order."""
     warnings: list[str] = []
     blocks: list[tuple[str, np.ndarray, str]] = []          # (type, conn, group name)
@@ -390,7 +391,7 @@ def build_model(gm: GmshMesh, dim: int, order: int, axisymmetric: bool = False) 
     model = FEModel(X=X, conn=conn, cell_type=cell_type, dim=dim, order=order,
                     elem_groups=elem_groups_np, mesh=gm, orig_to_model=orig_to_model,
                     warnings=warnings)
-    model.check_midside()
+    model.check_midside(midside_tol)
     return model
 
 
