@@ -2,8 +2,10 @@
 
 **Run.** `ace_runs/supersonic-deep-blunt`: 6 Claude Sonnet agents, the `--deep` loop (Claude Opus teacher, self-reflection,
 organizer), field scoring. Training tasks: `wedge_m2_10deg`, `wedge_m3_15deg`, `supersonic_blunt_wedge_2d`; held out:
-`wedge_m5_15deg`. Compressible flow and the blunted wedge come from PR #24; the run itself
-is work in progress on the branch `claude/supersonic-blunt-swarm`. Generation 0 only.
+`wedge_m5_15deg`. Compressible flow and the blunted wedge are in `feacore/` (`feacore/solver/_foam_compressible.py`,
+`feacore/problems/supersonic/`). The swarm-side code of the run (the wedge suite and the agents' compressible-flow
+tasks) was on the branch `claude/supersonic-blunt-swarm`, which was never pushed, so it is not in this repository.
+Generation 0 only.
 
 **Agent a0, generation 0, on `supersonic_blunt_wedge_2d`** (`gen0/runs/g0-supersonic_blunt_wedge_2d-a0.json`, `checks`)
 - Mesh: 2,077 nodes, 3,884 linear triangles, 15,536 DOFs, first-order (upwind)

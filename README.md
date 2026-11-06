@@ -26,7 +26,7 @@ from each other. No model weights change: what learns is each agent's notebook o
 We report results as **"x the automesher"**: a score that rewards accuracy and penalizes mesh size, where the default
 gmsh mesh scores 1x. Mesh size is counted in **DOFs**, the number of unknowns the solver computes.
 
-**In three results:**
+**In four results:**
 
 1. **Agentic meshing beats the gmsh automesher, and training works.** On Cook's membrane (a standard 2D test: a
    tapered plate clamped at one end and loaded at the other), a trained agent is **3.4x more accurate** than the
@@ -38,6 +38,11 @@ gmsh mesh scores 1x. Mesh size is counted in **DOFs**, the number of unknowns th
 3. **The harness learns from real lab data.** From one physical test, we fit the test conditions and post-train
    the swarm on it. The simulation of a printed part goes from **33 % to 2.0 %** off the measured force curve,
    and it finds the spot where the real part cracked.
+4. **Independent mesh systems show which numbers to trust.** Six mesh systems crush the same printed clamp to
+   failure. They agree on its stiffness within about 1 %, but their peak crush forces spread 20-31 %. With
+   tension-only erosion, every mesh cracks at the arm necks, where the printed clamp broke.
+
+Everything runs from one dashboard: `python -m feacore.ui` (see [Run it](#run-it)).
 
 ---
 
@@ -189,9 +194,12 @@ across it is 0.12 % off the published reference.
 
 ### The swarm on supersonic flow: the first generation
 
-A first swarm run on flow is under way: 6 agents on a supersonic suite of sharp wedges at Mach 2 to 5 and a
-blunted wedge at Mach 3 and 10° incidence (inviscid, compressible; work in progress from
-[PR #24](https://github.com/zucalerega/feagent/pull/24)). In generation 0, agent a0 refined around the body and left
+A first swarm run on flow: 6 agents on a supersonic suite of sharp wedges at Mach 2 to 5 and a blunted wedge at
+Mach 3 and 10° incidence (inviscid, compressible). The compressible solver and the blunted-wedge problem are in this
+repository (`feacore/solver/_foam_compressible.py`, `feacore/problems/supersonic/`); the swarm-side code of this run
+(the wedge suite and the agents' compressible-flow tasks) was on a branch that was never pushed, so only its figures
+and notes are here ([`talk_plots/cfd/supersonic_g0.md`](talk_plots/cfd/supersonic_g0.md)). Generation 0 only. In
+generation 0, agent a0 refined around the body and left
 most of the bow shock in coarse cells. Its field error was 11.5 %, against 5.7 % for the automesher, which used 3x
 the DOFs. The teacher's first lesson to the swarm: about 80 % of the squared error is on the bow shock, not on the
 body.
@@ -204,7 +212,7 @@ body.
 | The error map the teacher reads: the error sits on the shock, with hotspots numbered largest first. | a0's flow next to the reference, on one colour scale: its shock is smeared over the coarse cells. |
 
 The learning loop also runs on the incompressible problems, as the `cfd` (2D) and `cfd3d` suites
-(`python -m ace.run_loop --suite cfd`, [PR #21](https://github.com/zucalerega/feagent/pull/21)). Every figure's
+(`python -m ace.run_loop --suite cfd`; `ace/README.md`). Every figure's
 caption and numbers are in [`talk_plots/cfd/`](talk_plots/cfd/README.md).
 
 ---
@@ -216,13 +224,16 @@ caption and numbers are in [`talk_plots/cfd/`](talk_plots/cfd/README.md).
 | Path | What it is |
 |---|---|
 | [`ace/`](ace/README.md) | The learning loop: agents, scoring, teacher, self-reflection, organizer, memory, export and inference. |
-| `feacore/` | The fixed solver and everything around it: scikit-fem (the solver of record), CalculiX (cross-check and nonlinear), verification (GCI, MMS, ZZ), the problem registry, the UI and an OpenFOAM flow backend. |
+| `feacore/` | The fixed solver and everything around it: scikit-fem (the solver of record), CalculiX (cross-check and nonlinear), verification (GCI, MMS, ZZ), the problem registry, an OpenFOAM flow backend and the dashboard (`feacore/ui/`, [docs/ui.md](docs/ui.md)). |
 | `feacore/goldgen/` | The gold-benchmark generator: ABC CAD → load cases → nested tet10 meshes → GCI-certified references, run on an H100. |
 | [`benchmarks/`](benchmarks/README.md) | Benchmark problems, each with `public/` for agents (statement + STEP) and `private/` for the evaluator (references). The gold set is in [`benchmarks/gold/`](benchmarks/gold/README.md). It also holds the verification, SimJEB, code_aster and CalculiX suites. |
 | `physical_tests/` | Real test data for the Instron compression test of the printed C-bracket (`abc_00000065_compression/`): the force curve, the dogbone curve of the same resin, the frozen nonlinear scoring spec and the teacher brief. |
 | `results/trained_swarms/` | Exported trained swarms (notebooks, personas, roles), ready for inference: `div_s1` … `div_s16`, `nl_ft`. |
 | [`talk_plots/`](talk_plots/README.md) | Every figure and video in the results, with captions, data files and the scripts that make them. |
-| `src/feagent/` | The YAML-spec gmsh mesh harness: STEP → a named, quality-gated mesh. |
+| [`meshing-harness/`](meshing-harness/README.md) | The YAML-spec gmsh mesh harness (package `feagent`): STEP → a named, quality-gated mesh, with an MCP server and a skill for Claude Code agents. |
+| [`experiments/`](experiments/README.md) | The mesh-system study and crush-to-failure runs of Result 4, the material fit, the wingbox, the DGX Spark scripts. |
+| [`wsp/`](wsp/README.md) | Teaching a small open model to mesh: weight-space programming and LoRA distillation, scored like the swarm. |
+| `feabench/`, `teams/`, `docs/` | The benchmark-suite runner; Sculptured team definitions; solver, benchmark and dashboard docs. |
 | `scripts/` | Setup, baselines, figure and video scripts, and the gold pipeline. |
 
 ### The learning loop (`ace/`)
@@ -301,17 +312,20 @@ trained 8-agent swarm (`--init-from`). `--pre-teach` lets the teacher adapt thei
   `docs/benchmarks_cfd.md`.
 - **Physical tests:**
   - Instron compression of a printed C-bracket (Formlabs Alpha Fast) and a dogbone test of the same resin.
-  - A pull test of a printed gold part is defined as a problem (`abc_00000003_pull`), but its data is not in the
-    repo.
+  - A pull test of a printed gold part is defined as a problem (`abc_00000003_pull`). Its printable parts and test
+    plan are in [`physical_tests/`](physical_tests/README.md), but it has not been measured yet.
 
 ### Run it
 
 ```bash
-# setup (laptop)
-python3.13 -m venv .venv && .venv/bin/pip install -e ".[ace]" pytest
+# setup (laptop): the dashboard, the agents and the tests
+python3.13 -m venv .venv && .venv/bin/pip install -e ".[ui,ace]" pytest httpx
 export ANTHROPIC_API_KEY=...          # environment only, never in the repo
-# setup (fresh Ubuntu / Brev box, with CalculiX and GPU extras); then add the ACE dependencies
-bash scripts/setup_gpu_box.sh && uv pip install --python .venv/bin/python -e ".[ace]"
+# setup (fresh Ubuntu / Brev box, with CalculiX and GPU extras); then add the dashboard and ACE dependencies
+bash scripts/setup_gpu_box.sh && uv pip install --python .venv/bin/python -e ".[ui,ace]"
+
+# the dashboard: every command below can also be started, watched and stopped from it (docs/ui.md)
+.venv/bin/python -m feacore.ui --port 8000                   # http://localhost:8000
 
 # free dry run with canned LLM responses
 .venv/bin/python -m ace.run_loop --mock
@@ -330,9 +344,6 @@ ACE_SCORE=field .venv/bin/python -m ace.run_loop --deep --split --problems abc_0
   --holdout "" --memory shared+private --agents 4 --concurrency 4 \
   --init-from results/trained_swarms/div_s8 --init-agents a6,a3,a1,a7 --pre-teach \
   --generations 10 --budget-usd 45 --out ace_runs/nl_ft
-
-# or do all of the above and below from the dashboard: Agents section (docs/ui.md)
-.venv/bin/python -m feacore.ui --port 8000                   # http://localhost:8000/#/agents
 
 # watch a run live, export it, run a trained swarm on a new problem
 .venv/bin/python -m ace.watch ace_runs/div_s8                # http://localhost:8765
