@@ -35,7 +35,7 @@ if [ "$PY" = "$PWD/.venv/bin/python" ] && [ -x "$UV" ]; then
 elif [ "$PY" = "$PWD/.venv/bin/python" ]; then
   "$PY" -m pip install -q -e ".[dev,ace,cfd]"
 else   # aarch64 conda env: gmsh came from conda-forge, so only add the extras' packages
-  "$PY" -m pip install -q anthropic "pydantic>=2" rapidfuzz matplotlib streamlit plotly altair foamlib
+  "$PY" -m pip install -q anthropic "pydantic>=2" rapidfuzz matplotlib foamlib
 fi
 
 echo "== pre-flight (no API calls)"

@@ -331,6 +331,9 @@ ACE_SCORE=field .venv/bin/python -m ace.run_loop --deep --split --problems abc_0
   --init-from results/trained_swarms/div_s8 --init-agents a6,a3,a1,a7 --pre-teach \
   --generations 10 --budget-usd 45 --out ace_runs/nl_ft
 
+# or do all of the above and below from the dashboard: Agents section (docs/ui.md)
+.venv/bin/python -m feacore.ui --port 8000                   # http://localhost:8000/#/agents
+
 # watch a run live, export it, run a trained swarm on a new problem
 .venv/bin/python -m ace.watch ace_runs/div_s8                # http://localhost:8765
 .venv/bin/python -m ace.export_swarm ace_runs/div_s8 results/trained_swarms/div_s8

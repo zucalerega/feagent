@@ -23,7 +23,7 @@ dependencies = [
 ui = ["fastapi", "uvicorn", "python-multipart"]
 gpu = ["nvmath-python", "cupy-cuda12x"]
 pardiso = ["pypardiso"]
-ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib", "streamlit", "plotly", "altair", "imageio-ffmpeg"]
+ace = ["anthropic", "pydantic>=2", "rapidfuzz", "matplotlib", "imageio-ffmpeg"]
 cfd = ["foamlib"]
 feabench = ["h5py"]   # code_aster MED meshes
 # wsp: a small open model taught to mesh (weight-space programming, LoRA distillation); torch CPU is enough

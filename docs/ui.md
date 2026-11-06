@@ -14,6 +14,7 @@ Navigation has five sections: **Benchmarks** (library, problem pages, batch runs
 | Benchmarks `#/benchmarks` | problem library, tag filter, detail with statement, 3D CAD preview with named groups, **evaluator view** (references, expectations, reference setup, studies); **Run with defaults** starts the reference study (skfem, P2, the problem's sizes) and opens its live view |
 | Run benchmarks `#/batch` | select many problems (by tag, family, ticked rows, "all with references"), choose backend / order / nested / meshes, queue one convergence study each; live per-problem progress; results table (reference, finest, extrapolated, p vs theory, GCI, error, pass / fail / divergence detected as expected, runtime) with links to each study's plot and finest-mesh field; CSV / JSON download. Batches persist in the run store |
 | Runs `#/runs` | tabs for convergence studies, benchmark batches, solves (opens the field viewer) and consensus views; "New study" and "Run benchmarks" start new work |
+| Agents `#/agents` | the ACE loops from the dashboard: train swarms and the single-agent baseline, runs with their training curve, per-agent views and the live tracker, then compare, export and run a trained swarm on any problem. See "Agents section" below |
 | Swarm `#/swarm` | the ACE agent loop, live: loop and generation selectors, score distribution per generation, per-problem leaderboards (score, QoI vs reference, mesh, DOFs, solves, gates) linking to the field viewer and the problem's Consensus view. Empty state until the ACE bridge writes records |
 | Run study `#/study` | pick problem / backend / element order / refinement; live progress; per QoI: QoI vs log h with the Richardson extrapolation, the GCI band and the reference; error vs h (log-log, observed vs theoretical slope); verdict and flags in plain words |
 | Consensus `#/consensus/<problem>` | forest plot per QoI: each submission's finest-mesh value ± GCI, extrapolated value, consensus median, reference ± tolerance; per-submission verdicts and flags |
@@ -198,6 +199,67 @@ curl $S/api/consensus/nafems_le1
 
 The best estimate is the extrapolated value when the convergence and the extrapolation are reliable, otherwise the finest-mesh value. With 3 or more submissions, a submission is an `outlier_vs_consensus` when |best − median| > max(3·σ_robust, its own band, tolerance·|median|).
 
+## Agents section
+
+`#/agents` runs the ACE loops (`ace/`) from the dashboard. It replaces the Streamlit agent tracker
+(`ace/agent_dashboard.py`, removed): its per-agent views are in each run's page. Three tabs:
+
+- **Train** (`#/agents?tab=train`): start a swarm (`ace.run_loop`) or the single-agent baseline
+  (`ace.single_loop`) as a task. One click fills the form with a recipe: a free mock try, the deep
+  swarm of Result 2, the post-training of Result 3 (from `results/trained_swarms/div_s8`), or the
+  basic loop. Problems come from the loop's task catalogue (`ace/config.py` `TASKS`): click a problem
+  once to train on it, twice to hold it out. Every flag of the two loops is in the form (the rarer
+  ones under "More options"). The table below lists the Agents tasks, with Stop (writes
+  `<run>/STOP`: the loop ends after the current generation and still writes its summary) and Kill.
+- **Runs** (`#/agents?tab=runs`): every run folder in `ace_runs/` and every folder an Agents task
+  wrote, with status, generations, cost and scores. A run's page (`#/agents/run/<key>`) refreshes
+  while the run goes. It shows:
+  - the training curve (mean or best score per problem and generation) and its table;
+  - an agents × generations score matrix. A cell opens that agent run: its score parts, the run
+    report's pictures (what the teacher and the agent's self-reflection looked at), the context it
+    saw with the changes since its previous one, the notes as stored, the teacher's feedback, its
+    self-reflection, the organizer's changes, its tool calls, and its solves with links to the
+    field viewer;
+  - the live tracker of `ace.watch`, `report.html` (built with the Run report tool), the summary,
+    `scores.png` and the task's console output.
+- **Evaluate** (`#/agents?tab=evaluate`):
+  - run an exported swarm (`results/trained_swarms/`, `swarms/`, or an export made here) on any
+    registered problem, your CAD and the gold parts included (`ace.infer`);
+  - export a run (`ace.export_swarm`, default `swarms/<run>`);
+  - compare a deep swarm with a single-agent run (`ace.compare`);
+  - the results: `#/agents/infer/<key>` (the consensus, each agent's prediction and pictures),
+    `#/agents/swarm/<key>` and `#/agents/compare/<key>`.
+
+Real runs need `ANTHROPIC_API_KEY` in the server's environment. Without it only mock runs start,
+and the forms start with "mock LLM" ticked. Field scoring (`ACE_SCORE=field`) and the mesh harness
+(`ACE_HARNESS=1`) are environment settings of ACE: the tools set them per task (`Tool.build_env`).
+Deep runs and the single agent always use field scoring. Training runs record every solve and
+agent run in this server's run store (the task runner sets `FEACORE_RUNS_DIR`), so they also fill
+the Swarm page, the Consensus views and the field viewer.
+
+API (`feacore/ui/ace_runs.py`, read-only; the work itself runs through `POST /api/tasks` with the
+tools `ace.swarm`, `ace.single`, `ace.compare`, `ace.report`, `ace.export_swarm`, `ace.infer`):
+
+| endpoint | |
+|---|---|
+| `GET /api/ace/catalog` | the loop's task catalogue and suites (for the forms) |
+| `GET /api/ace/runs` | training runs, newest first, each with a summary |
+| `GET /api/ace/run?dir=KEY` | one run: per generation and problem, the agents, files, tasks |
+| `GET /api/ace/agent-run?dir=KEY&run_id=ID` | one agent run (see the run page above) |
+| `GET /api/ace/file?dir=KEY&path=REL[&swarm=true]` | a picture or text file inside a known folder |
+| `GET /api/ace/report?dir=KEY` | `<run>/report.html` |
+| `GET /api/ace/tracker?dir=KEY`, `/api/ace/tracker/data?dir=KEY` | the live tracker page and its data (`ace.watch.collect`) |
+| `GET /api/ace/swarms`, `/api/ace/swarm?dir=KEY` | exported swarms |
+| `GET /api/ace/infers`, `/api/ace/infer?dir=KEY` | `ace.infer` results |
+| `GET /api/ace/compares`, `/api/ace/compare?dir=KEY` | `ace.compare` outputs |
+
+A folder's key is its path relative to the repository (`ace_runs/div_s8`), or `@runs/<path>` for a
+folder inside the run store. A key is refused (404) unless it names one of the folders above; a
+symlink that leaves its root is refused too. The report and the tracker pages are served with a
+Content-Security-Policy that lets them run only their own inline code and talk only to this
+server. The tracker polls its data without headers, so when the server has a token the page is
+served with its data URL carrying the token it was opened with (`?token=`).
+
 ## ACE swarm records (Swarm page)
 
 The ACE loop's bridge writes into the same run store, through `RunStore` or the HTTP API. `GET /api/swarm?loop_id=&generation=` reads it back. The response holds:
@@ -349,6 +411,7 @@ Each flag carries a one-paragraph explanation (`feacore/ui/analysis.py`, `FLAG_I
 
 ```bash
 python -m pytest tests/test_ui_api.py -q
+python -m pytest tests/test_ui_agents.py -q    # Agents section: tools, folders API, one mock train/export/infer run
 ```
 
 The tests use FastAPI's TestClient on a temporary store and cover every endpoint. That includes real solves through `POST /api/solve`, a real three-level study, a benchmark batch (run, CSV / JSON, cancel), submissions, consensus and the token auth. They skip if no 2D elasticity problem is registered or `skfem` does not import.
