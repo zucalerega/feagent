@@ -6,7 +6,7 @@ abc_00000003_pull
     along z, closed at the top, with two opposed stubs on bosses along x. Both stubs are lengthened
     by 40 mm (same diameter and axis) so wedge grips can hold them; the tube, bosses and original
     stubs are the gold geometry. The print files of the same part come from
-    scripts/physical_parts.py (branch physical-validation): gold STEP + a 40 mm cylinder on each
+    scripts/physical_parts.py: gold STEP + a 40 mm cylinder on each
     stub end face (OCC faces 15 and 17).
     Test: printed in Formlabs Rigid 10K (TDS: E = 10 GPa UV-cured; Poisson's ratio not given, 0.35
     assumed), the -x stub in the fixed wedge grip over the added 40 mm, the +x stub in the moving

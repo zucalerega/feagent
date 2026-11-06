@@ -78,9 +78,52 @@ TASKS = {
     # L1 study mesh (48827 / 37613 nodes). Field scoring needs their adaptive reference (ace.gold_reference).
     "abc_00000003_bc7": {"qoi": "strain_energy", "node_cap": 49000},
     "abc_00000065_bc0": {"qoi": "strain_energy", "node_cap": 38000},
+    # CFD (physics "flow", steady laminar, openfoam backend). The caps are safety limits like the
+    # others: a uniform mesh at the cap meets the tolerance (calibration.json), so the score is about
+    # the cheapest accurate mesh.
+    "poiseuille_channel": {"qoi": "dp_AB", "node_cap": 1200},             # 2D channel, exact (easy sanity case)
+    "lid_driven_cavity_re100": {"qoi": "u_vcl_min", "node_cap": 2500},    # 2D closed cavity, Ghia et al. 1982
+    "taylor_couette_2d": {"qoi": "u_theta_mid", "node_cap": 2500},        # 2D annulus, rotating wall, exact
+    "cylinder_channel_dfg_2d1": {"qoi": "drag", "node_cap": 12000},       # 2D external flow, Schaefer & Turek 1996
+    # 3D flow on the unstructured tets the mesh tool makes, scored on the axial pressure drop in the
+    # developed flow. They need the backend's skew-consistent 3D schemes (feacore skew_correction, on
+    # by default in 3D): with the plain schemes tets gave a pressure gradient 12-15 % high at any size.
+    # Uniform tets now meet the 2 % tolerance below the cap: pipe +1.3 % at 4.6k nodes, duct -0.8 % at
+    # 4.3k nodes (docs/solver_openfoam.md, "3D meshes").
+    "pipe_poiseuille_3d": {"qoi": "dp_AB", "node_cap": 6000},             # 3D pipe, exact (curved, faceted wall)
+    "square_duct_3d": {"qoi": "dp_AB", "node_cap": 6000},                 # 3D duct, developing flow, exact developed
+    # 2D backward-facing step (feacore/problems/cfd/backward_step.py): u_x inside the recirculation bubble,
+    # against the fixed solver's own mesh-converged value. The flow separates at the step's sharp corner:
+    # a uniform mesh at the size floor (10.9k nodes) is ~3 % off, refining the corner and the bubble
+    # gets under 2 % with half the nodes (ace/README.md, "The CFD suite").
+    "backward_facing_step_2d": {"qoi": "u_bubble", "node_cap": 12000},
 }
+
+
+def _custom_tasks() -> dict:
+    """Problems made from uploaded CAD (the dashboard's Your CAD page, feacore/problems/custom.py) bring
+    their own entry: the certified quantity (else strain energy, scored reference-free) and the node cap
+    set on the page. Read when this module is imported, so every ACE process started after the problem
+    was made has it (they find it through FEACORE_RUNS_DIR / FEACORE_CAD_DIR)."""
+    try:
+        from feacore.problems.custom import ace_tasks
+        return ace_tasks()
+    except Exception:  # noqa: BLE001  a broken upload must not stop the loop
+        return {}
+
+
+for _pid, _task in _custom_tasks().items():
+    TASKS.setdefault(_pid, _task)
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
+# The CFD suite (run_loop --suite cfd): held out is a new topology, external flow past a cylinder,
+# where the cheapest accurate mesh refines at the body instead of everywhere.
+TRAIN_CFD = ["poiseuille_channel", "lid_driven_cavity_re100", "taylor_couette_2d", "backward_facing_step_2d"]
+HOLDOUT_CFD = ["cylinder_channel_dfg_2d1"]
+# 3D flow (run_loop --suite cfd3d): each solve takes 5-30 s instead of 1-5 s, so it is its own suite.
+TRAIN_CFD3D = ["pipe_poiseuille_3d", "square_duct_3d"]
+HOLDOUT_CFD3D: list[str] = []
+SUITES = {"fea": (TRAIN, HOLDOUT), "cfd": (TRAIN_CFD, HOLDOUT_CFD), "cfd3d": (TRAIN_CFD3D, HOLDOUT_CFD3D)}
 
 # What the agent is told about a problem (ACE_STATEMENT, set by run_loop --statement; an environment
 # variable so the spawned workers see it too):
@@ -96,6 +139,13 @@ STATEMENT = os.environ.get("ACE_STATEMENT", "bcs")
 MAX_SOLVES = 4                    # solve calls per run (stand-in for a wall-clock budget)
 MAX_TURNS = 35                    # model calls per run
 MIN_QUALITY = 0.1                 # gate: minimum element quality (gmsh minSICN) of the mesh
+
+# --------------------------------------------------------------------------- mesh harness (opt-in)
+# ACE_HARNESS=1: on 3D problems the agent's inspect_geometry also returns the feagent geometry digest
+# (faces labelled by group, features, hazards) and each mesh call the feagent mesh gates (ace/harness.py).
+# Off by default: prompts, tools, results and scores are then exactly as without it. An environment
+# variable, so the agent worker processes see it too.
+HARNESS = os.environ.get("ACE_HARNESS") == "1"
 
 # --------------------------------------------------------------------------- score
 # The team's speed/accuracy score (feacore.diagnostics.score.score_population, docs/failure-modes.md):

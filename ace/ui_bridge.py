@@ -1,6 +1,7 @@
 """Optional bridge to the feacore run store, so ACE runs show up live in the feacore web UI.
 
-Off unless `python -m ace.run_loop --ui-runs-dir DIR` is used or FEACORE_RUNS_DIR is set. When on:
+Off unless `--ui-runs-dir DIR` is given (ace.run_loop, ace.single_loop, ace.infer) or FEACORE_RUNS_DIR
+is set (the dashboard's task runner sets it). When on:
 
   each solve an agent makes    -> one run record (RunStore.record_result, with the viewer fields;
                                   a failed solve -> a run with status "failed" and the error)
@@ -10,6 +11,7 @@ Off unless `python -m ace.run_loop --ui-runs-dir DIR` is used or FEACORE_RUNS_DI
                                   relative to all runs on the problem so far, so it moves as the
                                   population grows)
   each diagnoser session       -> its verdict on each run it diagnosed
+  each ace.infer agent run     -> one submission, scored only in field mode (record_predictions)
 
 Both records have agent_id "ace:<ace run id>" and source "ace". Their meta:
   run:        {source, loop_id, generation, ace_run_id, solve_index, mesh}
@@ -127,6 +129,18 @@ def record_scores(ui: dict | None, all_runs: dict[str, list[dict]]) -> None:
                 failed.append(f"{r['run_id']}: {type(e).__name__}: {e}")
     if failed:
         raise RuntimeError(f"{len(failed)} submission(s) not updated, first: {failed[0]}")
+
+
+@_safe
+def record_predictions(ui: dict | None, runs: list[dict]) -> None:
+    """ace.infer: each agent's run (crashed ones left out) as a submission of its successful solves,
+    with its field-mode checks when it has them. Nothing scores these runs in point mode, so their
+    score stays null there."""
+    if not ui:
+        return
+    for r in runs:
+        if not r.get("error"):
+            r["ui_submission_id"] = _write(ui, r, r.get("checks") or {}, population=len(runs))
 
 
 @_safe

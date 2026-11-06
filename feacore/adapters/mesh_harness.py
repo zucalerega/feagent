@@ -1,4 +1,4 @@
-"""Turn the mesh harness output (branch ``mesh-harness``, package ``feagent``) into a feacore case.
+"""Turn the mesh harness output (``meshing-harness/``, package ``feagent``) into a feacore case.
 
 The mesher writes ``<out_dir>/mesh.msh`` (MSH 4.1, a named dim-2 physical group per spec group plus
 a dim-3 group ``domain``), ``manifest.json`` (its MeshResult, incl. ``mesh_path`` and ``order``) and

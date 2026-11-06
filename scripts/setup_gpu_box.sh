@@ -34,7 +34,7 @@ if [ "$ARCH" = "x86_64" ]; then
   [ -x .venv/bin/python ] || uv venv -q --python ">=3.12" .venv   # re-runs reuse the environment
   PY="$PWD/.venv/bin/python"
   PIP="uv pip install -q --python $PY"   # uv venvs have no pip module
-  $PIP -e ".[dev]" pypardiso fastapi uvicorn python-multipart httpx
+  $PIP -e ".[ui]" --group dev pypardiso   # dev is a dependency group (pytest, matplotlib, sympy, httpx), not an extra
 else
   echo "== aarch64: python + gmsh from conda-forge (micromamba)"
   if ! command -v micromamba >/dev/null; then
@@ -45,7 +45,7 @@ else
   micromamba create -y -q -n feacore -c conda-forge python=3.12 gmsh python-gmsh numpy scipy meshio >/dev/null
   PY="$MAMBA_ROOT_PREFIX/envs/feacore/bin/python"
   PIP="$PY -m pip install -q"
-  $PIP -e ".[dev]" --no-deps
+  $PIP -e . --no-deps
   $PIP "scikit-fem>=10" pytest matplotlib sympy fastapi uvicorn python-multipart httpx
 fi
 

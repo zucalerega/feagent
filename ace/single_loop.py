@@ -31,6 +31,8 @@ Outputs (the --deep layout, so ace.run_report, ace.compare, the dashboard and an
   gen<g>/context/big.md, reports/, teacher_<task>.json, reflections/, organizer/{big,shared}.json
   playbook_gen<g>.json, private/agent0_gen<g>.json   its two note lists (see `learn`)
   generations.jsonl, summary.md, scores.png, cost.jsonl, solver.jsonl
+With --ui-runs-dir (or FEACORE_RUNS_DIR, as the dashboard sets it) every solve and each task's run also
+go to that feacore run store (ace.ui_bridge), as run_loop's do.
 """
 
 from __future__ import annotations
@@ -45,8 +47,8 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from ace import config, evidence, process_brief
-from ace.agent import TOOLS, Tools, parse_citations, system_prompt, task_prompt, tool_loop
+from ace import config, evidence, fea, process_brief, ui_bridge
+from ace.agent import TOOLS, TOOLS_FLOW, Tools, parse_citations, system_prompt, task_prompt, tool_loop
 from ace.checks import check_run, score_population
 from ace.cost import BudgetExceeded, CostLog
 from ace.llm import make_llm
@@ -62,9 +64,16 @@ MAX_NUDGES = 5        # "continue" messages per conversation when it stops with 
 # --------------------------------------------------------------------------- one generation's run
 
 
+def all_flow(tasks: list[str]) -> bool:
+    """Are these flow (CFD) tasks? The one conversation has one tool list, so the tasks must be all
+    flow or all solid (main refuses a mix)."""
+    return bool(tasks) and all(fea.is_flow(fea.get_problem(t)) for t in tasks)
+
+
 def task_tool_specs(tasks: list[str]) -> list[dict]:
-    """ace.agent.TOOLS, each with a required `task` argument (which task the call is for)."""
-    specs = copy.deepcopy(TOOLS)
+    """ace.agent.TOOLS (TOOLS_FLOW for flow tasks), each with a required `task` argument (which task
+    the call is for)."""
+    specs = copy.deepcopy(TOOLS_FLOW if all_flow(tasks) else TOOLS)
     for t in specs:
         t["input_schema"]["properties"]["task"] = {"type": "string", "enum": list(tasks),
                                                    "description": "the problem id this call is for"}
@@ -76,8 +85,10 @@ class TaskTools:
     """One ace.agent.Tools per task (its own meshes, solves and submission); each call is routed by
     its `task` argument. A submitted task is closed, as a swarm run ends at its submit."""
 
-    def __init__(self, tasks: list[str], gdir: Path, max_solves: int):
-        self.tools = {t: Tools(t, gdir / "work" / f"{t}-{AGENT}", max_solves=max_solves) for t in tasks}
+    def __init__(self, tasks: list[str], gdir: Path, max_solves: int, ui: dict | None = None, generation: int = 0):
+        # ui: ace.ui_bridge settings (None = off); each task's solves are recorded under that task's run id
+        self.tools = {t: Tools(t, gdir / "work" / f"{t}-{AGENT}", ui_bridge.for_run(ui, f"g{generation}-{t}-{AGENT}", generation),
+                               max_solves=max_solves) for t in tasks}
 
     def call(self, name: str, args: dict) -> tuple[dict, bool]:
         args = dict(args)
@@ -139,7 +150,7 @@ def split_records(tasks: list[str], gen: int, trace: list[dict], tools: TaskTool
 def _big_worker(job: dict) -> list[dict]:
     """The whole conversation, in a child process (gmsh is process-global, as in the swarm's workers)."""
     tasks, gen = job["tasks"], job["generation"]
-    tools = TaskTools(tasks, Path(job["gdir"]), job["max_solves"])
+    tools = TaskTools(tasks, Path(job["gdir"]), job["max_solves"], job.get("ui"), gen)
     usage: list = []      # filled call by call, so a crash halfway still reports its tokens
     trace, stop, error = [], "error", None
     nudges = [0]
@@ -161,7 +172,7 @@ def _big_worker(job: dict) -> list[dict]:
                 f"(each tool call names its task).")
 
     try:
-        trace, stop = tool_loop(make_llm(job["mock"]), system_prompt(job["context"]),
+        trace, stop = tool_loop(make_llm(job["mock"]), system_prompt(job["context"], flow=all_flow(tasks)),
                                 first_message(tasks, job["max_solves"]), task_tool_specs(tasks), tools.call,
                                 lambda: tools.finished() or out_of_time(), job["max_turns"], f"g{gen}-{AGENT}", usage, role="big_generator",
                                 on_stop=on_stop)
@@ -381,16 +392,26 @@ def main(argv=None) -> int:
                          "directory of them; files dropped into <out>/evidence/ are picked up each generation")
     ap.add_argument("--evidence-score", action="store_true",
                     help="score tasks that have test data against the test (always so for tasks without a reference)")
+    ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
+                    "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
     if config.SCORE != "field":
         raise SystemExit("ace.single_loop needs field scoring (ACE_SCORE=field), as run_loop --deep does")
     os.environ["ACE_SKIP_CONVERGENCE"] = "1"    # before any pool: as --deep (the run report replaces it)
 
     tasks = [p for p in args.problems.split(",") if p]
+    flow = [t for t in tasks if fea.is_flow(fea.get_problem(t))]
+    if flow and len(flow) != len(tasks):   # one conversation, one tool list: TOOLS or TOOLS_FLOW
+        raise SystemExit(f"ace.single_loop takes all-solid or all-flow tasks (one tool list per conversation); "
+                         f"the flow tasks {flow} are mixed with solid ones")
+    if flow:
+        from ace.run_loop import _check_flow_tasks
+        _check_flow_tasks(tasks)
     solves = args.solves_per_task or config.MAX_SOLVES * max(1, args.swarm_agents // len(tasks))
     turns = args.turns or config.MAX_TURNS * args.swarm_agents
     out = args.out or Path("ace_runs") / ("single-" + time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
+    ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.resolve().name)   # None = off
     # Physical test data (ace.evidence), exactly as run_loop: set before any process pool exists.
     os.environ[evidence.ACTIVE_ENV] = str((out / "evidence_active").resolve())
     os.environ[evidence.SCORE_ENV] = "1" if args.evidence_score else "0"
@@ -435,13 +456,14 @@ def main(argv=None) -> int:
             context = process_brief.single_context(tasks, mem.shared, mem.private[0],
                                                    {t: {"last_run": state["last_run"].get(t), "feedback": state["feedback"].get(t),
                                                         "reflection": state["reflection"].get(t),
-                                                        "task_feedback": state["teacher"].get(t)} for t in tasks})
+                                                        "task_feedback": state["teacher"].get(t)} for t in tasks},
+                                                   flow=all_flow(tasks))
             (gdir / "context" / f"{AGENT}.md").write_text(context)
             seconds = swarm_agent_seconds(args.swarm_dir, gen) or args.gen_seconds
             print(f"  time budget: {seconds:.0f} s (the swarm's agents phase)")
             t0 = time.perf_counter()
             runs = run_big({"tasks": tasks, "generation": gen, "gdir": str(gdir), "context": context,
-                            "max_solves": solves, "max_turns": turns, "mock": args.mock, "seconds": seconds})
+                            "max_solves": solves, "max_turns": turns, "mock": args.mock, "seconds": seconds, "ui": ui})
             phase = {"gen": gen, "what": "phase", "agents": round(time.perf_counter() - t0, 2)}
             for r in runs:                       # one conversation per task: each record carries its own usage
                 cost.add(r["usage"])
@@ -462,6 +484,7 @@ def main(argv=None) -> int:
                 all_runs[r["problem_id"]].append(r)
             for prs in all_runs.values():
                 rescore(prs)
+            ui_bridge.record_scores(ui, all_runs)   # every run so far was just (re)scored
             for r in runs:
                 rep = reports.get(r["run_id"])
                 if rep is not None and "error" not in rep and not r.get("error"):
@@ -494,9 +517,11 @@ def main(argv=None) -> int:
         for prs in all_runs.values():           # final scores, every generation against the whole run
             if prs:
                 rescore(prs)
-                for r in prs:
-                    (out / f"gen{r['generation']}" / "runs" / f"{r['run_id']}.json").write_text(
-                        json.dumps(r, indent=1, default=str))
+        ui_bridge.record_scores(ui, {pid: prs for pid, prs in all_runs.items() if prs})
+        for prs in all_runs.values():
+            for r in prs:
+                (out / f"gen{r['generation']}" / "runs" / f"{r['run_id']}.json").write_text(
+                    json.dumps(r, indent=1, default=str))
         write_summary(out, all_runs, gens)
         print("\n" + (out / "summary.md").read_text())
         if args.swarm_dir is not None and args.swarm_dir.exists():

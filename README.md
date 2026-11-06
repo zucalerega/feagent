@@ -26,7 +26,7 @@ from each other. No model weights change: what learns is each agent's notebook o
 We report results as **"x the automesher"**: a score that rewards accuracy and penalizes mesh size, where the default
 gmsh mesh scores 1x. Mesh size is counted in **DOFs**, the number of unknowns the solver computes.
 
-**In three results:**
+**In four results:**
 
 1. **Agentic meshing beats the gmsh automesher, and training works.** On Cook's membrane (a standard 2D test: a
    tapered plate clamped at one end and loaded at the other), a trained agent is **3.4x more accurate** than the
@@ -38,6 +38,11 @@ gmsh mesh scores 1x. Mesh size is counted in **DOFs**, the number of unknowns th
 3. **The harness learns from real lab data.** From one physical test, we fit the test conditions and post-train
    the swarm on it. The simulation of a printed part goes from **33 % to 2.0 %** off the measured force curve,
    and it finds the spot where the real part cracked.
+4. **Independent mesh systems show which numbers to trust.** Six mesh systems crush the same printed clamp to
+   failure. They agree on its stiffness within about 1 %, but their peak crush forces spread 20-31 %. With
+   tension-only erosion, every mesh cracks at the arm necks, where the printed clamp broke.
+
+Everything runs from one dashboard: `python -m feacore.ui` (see [Run it](#run-it)).
 
 ---
 
@@ -132,6 +137,27 @@ peaks at 4,755 N.
 More: the [videos](talk_plots/act3_real_data/videos.html) and the [crack-prediction page](talk_plots/act3_real_data/break/index.html).
 Every figure has its caption and data in [`talk_plots/`](talk_plots/README.md), listed in [slide order](talk_plots/SLIDES.md).
 
+### 4. Six independent mesh systems, crushed to failure
+
+![The clamp abc_00000065 crushed to failure on six mesh systems, Omniverse RTX](docs/gallery/videos/all_systems_abc_00000065_crush_rtx.gif)
+
+*The same clamp, the same material (Alpha Fast resin calibrated from our dogbone test) and the same CalculiX crush:
+J2 plasticity, large displacements and element erosion, run until the part separates. The only difference between
+the six panels is the mesh system that built the mesh. Rendered with Omniverse RTX (Isaac Sim 6.2) on the DGX Spark.
+[MP4](docs/gallery/videos/all_systems_abc_00000065_crush_rtx.mp4).*
+
+- **Stiffness agrees across the six systems within 0.8-1.3 %.** That is a number a single agent can be trusted on.
+- **Crush peak force spreads 20-31 %, and single-point peak stress 42-88 %.** Only running several independent
+  systems shows that these numbers depend on the mesh.
+- **The printed clamp broke at an arm neck.** With tension-only erosion, a buckling imperfection and tips held by
+  the platens, all 7 meshes crack at the necks, at 0.60-0.63 of the part's height, instead of at the tips. All 7
+  meshes have about the same node count. Their predicted snap loads are 5.79-6.00 kN.
+
+Details are in [`experiments/mesh_systems/RESULTS.md`](experiments/mesh_systems/RESULTS.md) and
+[`experiments/physical/CRUSH_RUNS.md`](experiments/physical/CRUSH_RUNS.md). The
+[gallery](docs/gallery/README.md) has every mesh, a still of every crush video, and the printed part next to the
+simulation.
+
 ### Limitations and what's next
 
 - **One run per configuration.** This was a hackathon, so there are no repeats or confidence intervals. Run-to-run
@@ -150,6 +176,47 @@ Every figure has its caption and data in [`talk_plots/`](talk_plots/README.md), 
 
 ---
 
+## Flow (CFD)
+
+![Flow past a cylinder at Re = 20](talk_plots/cfd/fig_cylinder_wake.png)
+
+The fixed solver does fluids too. `feacore` has an OpenFOAM backend for steady laminar flow, checked on four
+benchmarks with known answers: a Poiseuille channel and a 3D pipe (exact solutions), the lid-driven cavity
+(Ghia et al. 1982) and the DFG cylinder (Schäfer & Turek 1996). Above is the cylinder at Re = 20: the pressure drop
+across it is 0.12 % off the published reference.
+
+| | |
+|---|---|
+| ![](talk_plots/cfd/fig_cylinder_mesh.png) | ![](talk_plots/cfd/fig_cylinder_vorticity.png) |
+| Close to the cylinder: the block-structured quad mesh and the two eddies of the recirculation bubble. | Vorticity: shear layers leave the cylinder and the walls. At Re = 20 the wake is steady, with no vortex shedding. |
+| ![](talk_plots/cfd/fig_cavity.png) | ![](talk_plots/cfd/fig_cavity_ghia.png) |
+| The lid-driven cavity at Re = 100: one main vortex and two small corner eddies. | Its centreline velocities on Ghia et al.'s classic table: the largest gap is 0.009 m/s, with the lid at 1 m/s. |
+
+### The swarm on supersonic flow: the first generation
+
+A first swarm run on flow: 6 agents on a supersonic suite of sharp wedges at Mach 2 to 5 and a blunted wedge at
+Mach 3 and 10° incidence (inviscid, compressible). The compressible solver and the blunted-wedge problem are in this
+repository (`feacore/solver/_foam_compressible.py`, `feacore/problems/supersonic/`); the swarm-side code of this run
+(the wedge suite and the agents' compressible-flow tasks) was on a branch that was never pushed, so only its figures
+and notes are here ([`talk_plots/cfd/supersonic_g0.md`](talk_plots/cfd/supersonic_g0.md)). Generation 0 only. In
+generation 0, agent a0 refined around the body and left
+most of the bow shock in coarse cells. Its field error was 11.5 %, against 5.7 % for the automesher, which used 3x
+the DOFs. The teacher's first lesson to the swarm: about 80 % of the squared error is on the bow shock, not on the
+body.
+
+| | |
+|---|---|
+| ![](talk_plots/cfd/fig_supersonic_reference.png) | ![](talk_plots/cfd/fig_supersonic_mesh_g0.png) |
+| The target: a detached bow shock ahead of the nose and a subsonic pocket behind it (dashed: the sonic line). | Agent a0's first mesh (2,077 nodes), with the reference shock drawn over it. |
+| ![](talk_plots/cfd/supersonic_g0/g0-supersonic_blunt_wedge_2d-a0_error.png) | ![](talk_plots/cfd/supersonic_g0/g0-supersonic_blunt_wedge_2d-a0_speed.png) |
+| The error map the teacher reads: the error sits on the shock, with hotspots numbered largest first. | a0's flow next to the reference, on one colour scale: its shock is smeared over the coarse cells. |
+
+The learning loop also runs on the incompressible problems, as the `cfd` (2D) and `cfd3d` suites
+(`python -m ace.run_loop --suite cfd`; `ace/README.md`). Every figure's
+caption and numbers are in [`talk_plots/cfd/`](talk_plots/cfd/README.md).
+
+---
+
 ## Technical description
 
 ### Repository layout
@@ -157,13 +224,16 @@ Every figure has its caption and data in [`talk_plots/`](talk_plots/README.md), 
 | Path | What it is |
 |---|---|
 | [`ace/`](ace/README.md) | The learning loop: agents, scoring, teacher, self-reflection, organizer, memory, export and inference. |
-| `feacore/` | The fixed solver and everything around it: scikit-fem (the solver of record), CalculiX (cross-check and nonlinear), verification (GCI, MMS, ZZ), the problem registry, the UI and an OpenFOAM flow backend. |
+| `feacore/` | The fixed solver and everything around it: scikit-fem (the solver of record), CalculiX (cross-check and nonlinear), verification (GCI, MMS, ZZ), the problem registry, an OpenFOAM flow backend and the dashboard (`feacore/ui/`, [docs/ui.md](docs/ui.md)). |
 | `feacore/goldgen/` | The gold-benchmark generator: ABC CAD → load cases → nested tet10 meshes → GCI-certified references, run on an H100. |
 | [`benchmarks/`](benchmarks/README.md) | Benchmark problems, each with `public/` for agents (statement + STEP) and `private/` for the evaluator (references). The gold set is in [`benchmarks/gold/`](benchmarks/gold/README.md). It also holds the verification, SimJEB, code_aster and CalculiX suites. |
 | `physical_tests/` | Real test data for the Instron compression test of the printed C-bracket (`abc_00000065_compression/`): the force curve, the dogbone curve of the same resin, the frozen nonlinear scoring spec and the teacher brief. |
 | `results/trained_swarms/` | Exported trained swarms (notebooks, personas, roles), ready for inference: `div_s1` … `div_s16`, `nl_ft`. |
 | [`talk_plots/`](talk_plots/README.md) | Every figure and video in the results, with captions, data files and the scripts that make them. |
-| `src/feagent/` | The YAML-spec gmsh mesh harness: STEP → a named, quality-gated mesh. |
+| [`meshing-harness/`](meshing-harness/README.md) | The YAML-spec gmsh mesh harness (package `feagent`): STEP → a named, quality-gated mesh, with an MCP server and a skill for Claude Code agents. |
+| [`experiments/`](experiments/README.md) | The mesh-system study and crush-to-failure runs of Result 4, the material fit, the wingbox, the DGX Spark scripts. |
+| [`wsp/`](wsp/README.md) | Teaching a small open model to mesh: weight-space programming and LoRA distillation, scored like the swarm. |
+| `feabench/`, `teams/`, `docs/` | The benchmark-suite runner; Sculptured team definitions; solver, benchmark and dashboard docs. |
 | `scripts/` | Setup, baselines, figure and video scripts, and the gold pipeline. |
 
 ### The learning loop (`ace/`)
@@ -219,7 +289,8 @@ trained 8-agent swarm (`--init-from`). `--pre-teach` lets the teacher adapt thei
 - **Solver input:** a case JSON (analysis, materials, BCs, loads, QoIs) plus a gmsh `.msh` with named groups.
   Run it with `python -m feacore.cli case.json --out result.json`.
 - **Backends:** scikit-fem is the solver of record (CPU, with an optional NVIDIA cuDSS direct solve on GPU).
-  CalculiX is an independent cross-check and runs the elastoplastic J2/NLGEOM path.
+  CalculiX is an independent cross-check and runs the elastoplastic J2/NLGEOM path. OpenFOAM solves the flow
+  problems: steady, laminar, with forces and probes computed in numpy (`docs/solver_openfoam.md`).
 - **Verification:**
   - Richardson extrapolation and GCI (Celik et al. 2008);
   - method-of-manufactured-solutions code checks;
@@ -236,19 +307,25 @@ trained 8-agent swarm (`--init-from`). `--pre-teach` lets the teacher adapt thei
   For field scoring, the reference fields are refined adaptively beyond L2 (`ace/gold_reference.py`).
 - **Classical benchmarks:** NAFEMS LE1, LE10 and LE11 (axisymmetric and 3D), Cook's membrane and Lamé. These are
   standard textbook FE test problems.
+- **Flow benchmarks:** a Poiseuille channel and a 3D pipe (exact solutions), the lid-driven cavity at Re = 100
+  (Ghia et al. 1982) and the DFG 2D-1 cylinder (Schäfer & Turek 1996), with their convergence studies in
+  `docs/benchmarks_cfd.md`.
 - **Physical tests:**
   - Instron compression of a printed C-bracket (Formlabs Alpha Fast) and a dogbone test of the same resin.
-  - A pull test of a printed gold part is defined as a problem (`abc_00000003_pull`), but its data is not in the
-    repo.
+  - A pull test of a printed gold part is defined as a problem (`abc_00000003_pull`). Its printable parts and test
+    plan are in [`physical_tests/`](physical_tests/README.md), but it has not been measured yet.
 
 ### Run it
 
 ```bash
-# setup (laptop)
-python3.13 -m venv .venv && .venv/bin/pip install -e ".[ace]" pytest
+# setup (laptop): the dashboard, the agents and the tests
+python3.13 -m venv .venv && .venv/bin/pip install -e ".[ui,ace]" pytest httpx
 export ANTHROPIC_API_KEY=...          # environment only, never in the repo
-# setup (fresh Ubuntu / Brev box, with CalculiX and GPU extras); then add the ACE dependencies
-bash scripts/setup_gpu_box.sh && uv pip install --python .venv/bin/python -e ".[ace]"
+# setup (fresh Ubuntu / Brev box, with CalculiX and GPU extras); then add the dashboard and ACE dependencies
+bash scripts/setup_gpu_box.sh && uv pip install --python .venv/bin/python -e ".[ui,ace]"
+
+# the dashboard: every command below can also be started, watched and stopped from it (docs/ui.md)
+.venv/bin/python -m feacore.ui --port 8000                   # http://localhost:8000
 
 # free dry run with canned LLM responses
 .venv/bin/python -m ace.run_loop --mock

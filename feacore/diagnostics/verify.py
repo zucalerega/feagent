@@ -26,8 +26,8 @@ ENERGY = QoI(name="strain_energy", type="strain_energy")
 
 def _qois(case: Case) -> list[QoI]:
     qs = list(case.qois)
-    if not any(q.type == "strain_energy" for q in qs):
-        qs.append(ENERGY)
+    if case.analysis.physics != "flow" and not any(q.type == "strain_energy" for q in qs):
+        qs.append(ENERGY)               # a global check for solids; flow has no strain energy
     return qs
 
 
@@ -52,13 +52,14 @@ def classify(g: dict, p_theory: float | None) -> str:
 
 def refinement_study(case_at: Callable[[float], Case], r: float = 2.0, solve_options: dict | None = None) -> dict:
     """``case_at(scale)`` must return the agent's setup meshed with every size multiplied by
-    ``scale`` (1.0 = the agent's own mesh)."""
-    from feacore.solver.skfem_backend import solve
+    ``scale`` (1.0 = the agent's own mesh). Flow cases run on the openfoam backend, the rest on skfem."""
+    from feacore.solver import solve
 
     scales = [r, 1.0, 1.0 / r]                          # coarse, agent, fine
     runs = []
     for s in scales:
-        res = solve(case_at(s), **(solve_options or {}))
+        c = case_at(s)
+        res = solve(c, backend="openfoam" if c.analysis.physics == "flow" else "skfem", **(solve_options or {}))
         runs.append((res.info, {q.name: res.evaluate(q) for q in _qois(res.case)}, res.case))
     case = runs[1][2]
     out = {"scales": scales, "h": [i.h_rep for i, _, _ in runs], "dofs": [i.n_dofs for i, _, _ in runs],

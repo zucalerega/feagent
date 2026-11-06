@@ -59,7 +59,7 @@ EARLY_RUN = Path("ace_runs/cook_auto/gen1/runs/g1-cooks_membrane-a3.json")
 FINAL_RUN = Path("ace_runs/deep1/gen10/runs/g10-cooks_membrane-a7.json")
 SETUP_TOL = 1e-6
 
-# style: as talk_plots/self_learning/make_figures.py (the agent dashboard's look)
+# style: as talk_plots/self_learning/make_figures.py (the former agent dashboard's look)
 EDGE = "#26313b"
 CMAP = "turbo"
 ERR_CMAP = "magma_r"                      # dark = large error
@@ -187,7 +187,7 @@ def solve_panels() -> tuple[dict, dict]:
                                   and P[k]["dofs"] == s["dofs"])
 
     # 4. the truth on the dashboard's target tessellation (inverse-distance mean of 4 nearest ref points)
-    m = meshio.read(f"ace/field_refs/{PROBLEM}_target.msh")
+    m = meshio.read(fe.target_mesh(PROBLEM))
     tris = np.vstack([c.data[:, :3] for c in m.cells if c.type.startswith("triangle")])
     dist, idx = cKDTree(ref["pts"][:, :2]).query(m.points[:, :2], k=4)
     iw = 1 / np.maximum(dist, 1e-12)

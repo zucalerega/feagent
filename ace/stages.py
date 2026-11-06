@@ -16,7 +16,8 @@ from pathlib import Path
 
 from ace import checkpoint as ckpt
 from ace import fea, oracles
-from ace.config import MIN_QUALITY, SCORE, TASKS
+from ace.checks import quality_ok
+from ace.config import SCORE, TASKS
 
 STAGES = ["geometry", "mesh", "bcs", "solve", "postprocess"]
 
@@ -123,8 +124,9 @@ def stage_report(run: dict, orc: dict | None, target_err: float) -> dict:
     flags = {f["id"] for f in orc.get("flags", [])} if orc else set()
     rep["mesh"] = [
         _check("within node cap", m["nodes"] <= task["node_cap"], f"{m['nodes']} / {task['node_cap']} nodes"),
-        _check("element quality", (m.get("min_quality") or 0) >= MIN_QUALITY and not flags & MESH_FLAGS,
-               f"min quality {m.get('min_quality')}"),
+        _check("element quality", quality_ok(m) and not flags & MESH_FLAGS,
+               (f"finite-volume gate: {m.get('fv_gate') or 'pass'}" if "fv_ok" in m
+                else f"min quality {m.get('min_quality')}")),
     ]
     err = run["solves"][cp["solve_index"]]["result"].get("error")
     rep["solve"] = [_check("solve succeeded", cp["solved"] and not flags & SOLVE_FLAGS,

@@ -35,31 +35,44 @@ CALIBRATION_PATH = Path(__file__).with_name("calibration.json")
 # --------------------------------------------------------------------------- calibration
 
 
-def reference_setup(problem) -> dict:
-    """The problem's own (correct) setup, in the same shape the agent submits."""
-    rc = problem.case("REF.msh").to_dict()
+def reference_setup(problem, order: int = 2) -> dict:
+    """The problem's own (correct) setup, in the same shape the agent submits. For flow, `order`
+    picks the convection scheme (1 upwind, 2 linearUpwind), the one setup choice that is ours."""
+    rc = problem.case("REF.msh", order=order).to_dict()
+    bcs = [{k: v for k, v in bc.items() if v is not None} for bc in rc["bcs"]]
+    mat = next(iter(rc["materials"].values()))
+    if fea.is_flow(problem):
+        conv = next(k for k, v in fea.CONVECTION.items() if v == rc["analysis"]["order"])
+        return {"formulation": rc["analysis"]["formulation"], "thickness": rc["analysis"]["thickness"],
+                "fluid": {"rho": mat["rho"], "mu": mat["mu"]}, "convection": conv, "bcs": bcs}
     return {
         "formulation": rc["analysis"]["formulation"],
         "thickness": rc["analysis"]["thickness"],
-        "material": next(iter(rc["materials"].values())),
-        "bcs": [{k: v for k, v in bc.items() if v is not None} for bc in rc["bcs"]],
+        # without the fluid fields (rho, mu): they are not part of an elastic setup, and keeping them
+        # would change every requirements fingerprint (ace.requirements)
+        "material": {k: v for k, v in mat.items() if k not in ("rho", "mu")},
+        "bcs": bcs,
         "loads": rc["loads"],
         "T_ref": rc["analysis"]["T_ref"],
     }
 
 
 def _uniform_error(problem, qoi, h, order, workdir) -> tuple[int, float]:
+    """Nodes and error of a uniform mesh of size h. Elasticity: `order` is the element order;
+    flow: the mesh is linear and `order` is the convection scheme."""
     mesh = fea.make_mesh(problem, Path(workdir) / "uniform.msh", h=h, order=order)
-    sol = fea.run_solve(problem, mesh, reference_setup(problem), qoi)
+    sol = fea.run_solve(problem, mesh, reference_setup(problem, order), qoi)
+    if not sol["ok"]:
+        raise RuntimeError(f"calibration solve failed for {problem.id} at h = {h:.4g}: {sol['error']}")
     ref = fea.reference_value(problem, qoi)
     return mesh["nodes"], abs(sol["value"] - ref) / abs(ref)
 
 
 def _calibrate_order(problem, qoi, cap, order, tmp) -> dict:
-    lo, hi = problem.params["h0"] / 20, problem.params["h0"] * 20   # bisection on h
+    lo, hi = problem.params["h0"] / 20, problem.params["h0"] * 20   # bisection on h: meshing only
     for _ in range(25):
         h = math.sqrt(lo * hi)
-        n, _ = _uniform_error(problem, qoi, h, order, tmp)
+        n = fea.make_mesh(problem, Path(tmp) / "uniform.msh", h=h, order=order)["nodes"]
         lo, hi = (h, hi) if n > cap else (lo, h)
     nodes, errs = [], []
     for f in (1.0, 1.05, 1.1, 1.15, 1.2):
@@ -76,7 +89,8 @@ def calibrate(problem_id: str) -> dict:
     For each element order, find the uniform size that just fits the cap. Point and peak errors
     on coarse meshes jump around with node placement, so average (geometric mean) over five
     slightly coarser sizes that all fit. The baseline is the better of the two orders, so an
-    agent gets no credit for merely choosing quadratic elements.
+    agent gets no credit for merely choosing quadratic elements (flow: the second-order
+    convection scheme).
     """
     task = TASKS[problem_id]
     problem = fea.get_problem(problem_id)
@@ -140,13 +154,15 @@ def bc_report(problem, setup: dict) -> dict:
         elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
             try:   # vectors (tractions, forces): pointing in opposite directions
                 flipped = sum(float(x) * float(y) for x, y in zip(a, b)) < 0
-            except (TypeError, ValueError):   # expressions: not compared
-                flipped = False
+            except (TypeError, ValueError):   # expressions (e.g. an inlet profile): compared at the group's centre
+                flipped = _vector_at(problem, k[0], a, b)
         else:
             flipped = False
         if flipped:
             sign_flips.append(f"{k[1]} on {k[0]}: reversed relative to the reference")
-    mat, ref_mat = setup.get("material") or {}, ref["material"]
+    key = "fluid" if fea.is_flow(problem) else "material"
+    props = ("rho", "mu") if key == "fluid" else ("E", "nu", "alpha")
+    mat, ref_mat = setup.get(key) or {}, ref[key]
     return {
         "missing": [f"{t} on {g}" for g, t in ref_bcs.keys() - got_bcs.keys()],
         "unexpected": [f"{t} on {g}" for g, t in got_bcs.keys() - ref_bcs.keys()],
@@ -154,8 +170,24 @@ def bc_report(problem, setup: dict) -> dict:
         "formulation_ok": setup.get("formulation") == ref["formulation"],
         "thickness_ok": math.isclose(float(setup.get("thickness", 1.0)), ref["thickness"], rel_tol=1e-6),
         "material_ok": all(math.isclose(float(mat.get(k, 0)), ref_mat[k], rel_tol=1e-3, abs_tol=1e-12)
-                           for k in ("E", "nu", "alpha")),
+                           for k in props),
     }
+
+
+def _vector_at(problem, group: str, a: list, b: list) -> bool:
+    """Do two vector BC values with expression entries point in opposite directions at the centre of
+    the group's bounding box? (False when they cannot be evaluated there.)"""
+    from feacore.case import as_field
+    import numpy as np
+    try:
+        box = next(g["bbox"] for g in fea.geometry_summary(problem)["groups"] if g["name"] == group)
+        c = [0.5 * (box[i] + box[i + 3]) for i in range(3)]
+        x, y, z = (np.array([v]) for v in c)
+        va = [float(np.asarray(as_field(v, x, y, z)).ravel()[0]) for v in a]
+        vb = [float(np.asarray(as_field(v, x, y, z)).ravel()[0]) for v in b]
+    except Exception:  # noqa: BLE001  an unknown group or a bad expression: not compared
+        return False
+    return sum(p * q for p, q in zip(va, vb)) < 0
 
 
 def check_run(problem_id: str, run: dict) -> dict:
@@ -215,7 +247,7 @@ def check_run(problem_id: str, run: dict) -> dict:
         "order": mesh["order"],
         "min_quality": mesh["min_quality"],
         "within_cap": mesh["nodes"] <= task["node_cap"],
-        "quality_ok": (mesh["min_quality"] or 0) >= MIN_QUALITY,
+        "quality_ok": quality_ok(mesh),
         "qoi_value": final["result"]["value"],
         "rel_error": rel_err,
         "point_rel_error": point_err,
@@ -224,8 +256,22 @@ def check_run(problem_id: str, run: dict) -> dict:
     })
     gate = None if out["within_cap"] else "over node cap"
     if gate is None and not out["quality_ok"]:
-        gate = f"min element quality < {MIN_QUALITY}"
+        gate = quality_gate_message(mesh)
     return {**out, "failed_gate": gate}
+
+
+def quality_ok(mesh: dict) -> bool:
+    """The mesh quality gate: a flow mesh's finite-volume gate (fv_ok, ace.flow_mesh), else the
+    element quality (min straight-cell minSICN >= MIN_QUALITY)."""
+    if "fv_ok" in mesh:
+        return bool(mesh["fv_ok"])
+    return (mesh.get("min_quality") or 0) >= MIN_QUALITY
+
+
+def quality_gate_message(mesh: dict) -> str:
+    if "fv_ok" in mesh:
+        return f"finite-volume quality gate: {mesh.get('fv_gate') or 'failed'}"
+    return f"min element quality < {MIN_QUALITY}"
 
 
 def _check_nonlinear(problem_id: str, run: dict, problem, final: dict, out: dict) -> dict:
@@ -255,7 +301,7 @@ def _check_nonlinear(problem_id: str, run: dict, problem, final: dict, out: dict
         "order": mesh["order"],
         "min_quality": mesh.get("min_quality"),
         "within_cap": nodes <= task["node_cap"],
-        "quality_ok": (mesh.get("min_quality") or 0) >= MIN_QUALITY,
+        "quality_ok": quality_ok(mesh),
         "qoi_value": final["result"].get("value"),
         "rel_error": nl["mean_rel_err"] if ok else None,
         "point_rel_error": None,
@@ -404,7 +450,8 @@ def _diagonal(problem_id: str) -> float:
 
 
 def _recipe(run: dict, grid: float) -> tuple | None:
-    """(element order, global h, set of refinement targets) of the run's scored mesh, or None.
+    """(element order, global h, set of refinement targets) of the run's scored mesh, or None. On a
+    flow mesh the "order" is its cell kind: (quads, boundary layer, sweep).
     Targets are named groups and edges as they are; boxes and points are rounded to the grid, so
     the same region moved slightly still counts as the same target."""
     from ace.checkpoint import checkpoint
@@ -420,11 +467,15 @@ def _recipe(run: dict, grid: float) -> tuple | None:
                 targets.add((kind, tuple(round(float(x) / grid) for x in v) if kind in ("box", "point") else v))
                 break
     h = float(req.get("h") or cp["mesh"].get("h_used"))
+    if "fv_ok" in cp["mesh"] or req.get("boundary_layer") or req.get("sweep"):
+        # flow: the cell kind plays the element order's part (quads or not, wall layers or not, swept or not)
+        kind = ("flow", bool(req.get("quads")), bool(req.get("boundary_layer")), bool(req.get("sweep")))
+        return kind, h, frozenset(targets)
     return cp["mesh"]["order"], h, frozenset(targets)
 
 
 def _different(a: tuple, b: tuple) -> bool:
-    """Structurally different mesh recipes: another order, h off by a large factor, or mostly
+    """Structurally different mesh recipes: another order (flow: cell kind), h off by a large factor, or mostly
     different refinement targets (Jaccard distance |A Δ B| / |A ∪ B|, 0 for two empty sets)."""
     (oa, ha, ta), (ob, hb, tb) = a, b
     union = ta | tb

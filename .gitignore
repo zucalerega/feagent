@@ -3,7 +3,6 @@ __pycache__/
 *.py[cod]
 out/
 .feagent/
-examples/**/out/*.msh
 .pytest_cache/
 build/
 dist/
@@ -31,7 +30,17 @@ ace/field_refs_gpu/
 .feacore_python
 .feacore_token
 .feacore_autoupdate_deferrals
-# feabench: solver scratch; downloaded datasets (SimJEB etc.) are never committed (licensing + size)
+# feabench: solver scratch; downloaded datasets (SimJEB etc., in the root data/) are never committed (licensing + size)
 *.dat
 !benchmarks/**/*.dat.ref
-data/
+/data/
+# talk_plots/cfd: cached flow solves (rebuilt with python talk_plots/cfd/make_figures.py --resolve)
+talk_plots/cfd/_cache/
+
+# wsp: run outputs (evaluations, sessions, adapters, score cache) and the tiny test model
+wsp_runs/
+
+# Claude Code subagent worktrees
+.claude/worktrees/
+# swarms exported from the dashboard or ace.export_swarm (curated ones are committed under results/trained_swarms/)
+swarms/

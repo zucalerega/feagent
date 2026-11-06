@@ -57,7 +57,9 @@ def test_deep_context_sections_in_order():
     pos = [text.index(s) for s in order]
     assert pos == sorted(pos)
     assert "{group: load, size: 0.5, radius: 3}" in text and "W2" in text and "OWNHL" not in text   # own highlight hidden
-    assert 250 <= len(PROCESS_BRIEF.split()) <= 400
+    # A bloat guard, not a target: every role reads the brief. It grew past the first 400-word cap with the
+    # tools, experiments, diversity, nonlinear and flow sections (856 words in November); raise it on purpose.
+    assert 250 <= len(PROCESS_BRIEF.split()) <= 1000
 
 
 # The mock organizer keeps every note and appends; this one also drops the oldest current note and

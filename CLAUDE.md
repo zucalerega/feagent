@@ -4,66 +4,136 @@ Shared context for anyone (human or agent) working in this repo.
 
 ## What this is
 
-ScienceClaw hackathon project. A population of (agent, improver) pairs that get better over time at
-setting up FEA problems from CAD designs.
+ScienceClaw hackathon project, consolidated afterwards into one branch. A swarm of Claude agents learns
+to set up finite-element (and flow) simulations from CAD: each agent meshes real parts, a fixed solver
+scores the result against answers the agents never see, and every round a teacher, the agents' own
+reflections and an organizer rewrite each agent's notebook of lessons. No model weights change. The
+README tells the story and the results; this file records where things are and the decisions behind them.
 
-## Architecture
+Everything is on `main`. The dashboard, `python -m feacore.ui`, is the single entry point for running it.
 
-- **Agent**: assigned at random to one CAD design problem (many agents per problem). It uses an MCP to
-  set up geometry, mesh it, and apply boundary conditions. The solver is fixed, so agents don't touch it.
-- **Evaluator**: a separate agent that reviews every solution. It ranks each agent across key areas,
-  scores the population as a whole, and writes a summary of what worked, what failed, and the good ideas.
-- **Improver**: paired 1:1 with an agent. It reads the evaluator's summary and updates its agent's
-  context + harness so the agent does better on future problems.
+## Architecture (as built)
 
-One train iteration: agents solve → evaluator ranks and summarizes → improvers update their agents.
+The original plan had three roles: agent, evaluator and improver. In `ace/` they became:
 
-## Status
+- **Agent** (`ace/agent.py`, Claude Sonnet): one persistent agent per notebook, assigned to a task. Its tools
+  are `inspect_geometry`, `mesh(h, order, refinements)`, `solve`, `view`, `compare`, `submit`, plus
+  `nonlinear_check` on the nonlinear task and the flow tools on CFD tasks. The solver is fixed; agents never
+  touch it. Budgets of solves and turns per task (`ace/config.py` `TASKS`).
+- **Evaluator**: deterministic scoring with no LLM (`ace/checks.py`): field mode against a fine reference,
+  hidden probe points, x the gmsh automesher, plus the "be the best" and "be different" bonuses. Then a
+  teacher (`ace/deep_teacher.py`, Claude Opus) reviews every run and writes a critique and the next
+  experiment per agent (control / variant / explorer roles).
+- **Improver**: each agent's self-reflection (`ace/self_reflect.py`) and an organizer (`ace/organizer.py`)
+  that merges and rewrites the private notes and the shared playbook; `ace/process_brief.py` builds each
+  agent's next context.
 
-- `main` has the mesh harness (package `feagent` in `src/`: STEP → YAML mesh spec → gmsh mesh with named
-  groups, quality gates, `report.json` with the spec's `bcs:`), the fixed solver, verification,
-  benchmarks and UI (`feacore/`), and the diagnostics (`feacore/diagnostics/`). One root
-  `pyproject.toml` ships both packages.
-- `mesh-harness` branch: Alexander's ongoing harness work; merged into `main` as it lands.
+One generation: agents solve → score → teacher + self-reflection → organizer rewrites the notebooks.
+`python -m ace.run_loop --mock` runs the whole loop for free with canned LLM responses.
+
+The mesh harness in `meshing-harness/` is the other agent interface: an MCP server, skill and Stop hook
+that let a Claude Code agent mesh raw STEP through a YAML spec with quality gates. The ACE agents use
+`ace/fea.py`'s gmsh tools instead; `ACE_HARNESS=1` adds the harness's geometry digest and mesh gates to
+their 3D tool results (`ace/harness.py`).
+
+## Repository layout
+
+| Path | What |
+|---|---|
+| `ace/` | The learning loop (swarm and single agent), scoring, teacher, reflection, organizer, memory, export / inference, live tracker, CFD and nonlinear tasks. `ace/README.md` |
+| `feacore/` | Fixed solver (scikit-fem), CalculiX cross-check and nonlinear path, OpenFOAM flow, verification (GCI, MMS, ZZ), diagnostics, problem registry, gold generator (`goldgen/`), run store, and the dashboard (`ui/`) |
+| `meshing-harness/` | Package `feagent`: STEP → YAML mesh spec → named, quality-gated gmsh mesh; MCP server `feagent-mcp`, `fe-mesh` skill, Stop hook, own tests. `meshing-harness/README.md` |
+| `benchmarks/` | Problem exports (`public/` for agents, `private/` for the evaluator), the gold sets (`benchmarks/gold/`), and the verification / code_aster / CalculiX / SimJEB suites |
+| `feabench/` | Benchmark-suite runner (`feabench` CLI) for the verification / code_aster / CalculiX suites |
+| `physical_tests/` | Real test data: the Instron compression test of the printed C-bracket, and the printable pull-test parts with their test plan |
+| `experiments/` | Reproducible studies: mesh systems, crush to fracture, neck break, material fit, wingbox, DGX Spark scripts. `experiments/README.md` |
+| `results/`, `talk_plots/`, `docs/gallery/` | Run summaries and exported trained swarms (`results/trained_swarms/`), every presentation figure with its script, the image/video gallery |
+| `wsp/` | Teaching a small open model to mesh (weight-space programming, LoRA distillation). `wsp/README.md` |
+| `teams/` | Sculptured team definitions (wingbox; parallel mesh systems → synthesis) |
+| `scripts/` | Setup (`setup_gpu_box.sh`, `bootstrap.sh`, `serve.sh`), the gold pipeline, nonlinear runs and videos, figures |
+| `docs/` | Solver, benchmark, UI and Brev docs |
+| `tests/` | The root test suite (`meshing-harness/tests/` has the harness's) |
+
+Never committed: `runs/` (the run store), `ace_runs/`, `swarms/`, `benchmarks/gold/_meshes/`, `wsp_runs/`.
+
+## The dashboard (`feacore/ui/`, `docs/ui.md`)
+
+`python -m feacore.ui --port 8000` (add `--host 0.0.0.0 --token auto` to share it). Sections:
+
+- **Benchmarks**: every registered problem (statement, 3D CAD preview, evaluator view), convergence studies, batches.
+- **Gold**: the gold sets and their nested study meshes: local status against `index.json`, regeneration with
+  `feacore.goldgen` (gmsh is not bitwise reproducible, so a regenerated mesh never matches the stored sha256; it
+  is fine to view and solve), verify / render / import, *Solve L<k>* into the viewer.
+- **Your CAD**: upload a STEP (`feacore/problems/custom.py`, `feacore/ui/cad_api.py`). Each upload is a mini gold
+  root under `<runs>/cad/<upload>/`; its BC sets (picked on the 3D view, or generated with the gold rules) are
+  registered problems `<upload>_bc<k>` / `<upload>_m<k>`, tag `custom`, found by every process whose
+  `FEACORE_RUNS_DIR` (or `FEACORE_CAD_DIR`) points there, with an `ace.config.TASKS` entry. `ace.infer` works on
+  them reference-free (ZZ, agreement between agents); the training loops need a certified reference first (the
+  page's reference study, or adopting a finished P2 study).
+- **Agents**: train a swarm or a single agent, watch it live (the `ace.watch` tracker), stop it, browse runs,
+  compare swarm vs single, export a trained swarm and run it on any problem (`ace.infer`). `#/swarm` is the live
+  per-solve view fed by the run-store bridge (`ace/ui_bridge.py`).
+- **Nonlinear**: the agents' scoring ramp, the elastoplastic ramp and crush to fracture (with *Resume* from a
+  checkpoint), each run's force-travel curve over the Instron test (or an uploaded one) with the scoring error,
+  renders to stills and videos, and the committed gallery. Outputs: `<runs>/nonlinear/<kind>/<tool>-<task>/`.
+- **Test data**: the physical tests and printable parts; a machine export (CSV / TXT, read by
+  `ace.evidence.read_table`) is checked and saved as `<runs>/testdata/<id>/`, a ready `--evidence` folder.
+- **Runs**, **Tasks**, **Solve**, **Connect** (API examples), **Health**.
+
+Long jobs run on the **task lane** (`feacore/ui/tasks.py`): a tool is a whitelisted command with typed
+parameters, registered by a module in `feacore/ui/tools/`; the browser only names a tool and fills its form.
+To expose a new command, add a `Tool` there (and a page section if it needs one). Tasks get
+`FEACORE_RUNS_DIR` = the server's run store, and `/api/health` counts them as active jobs. A tool that renders
+with pyvista / VTK sets `display=True`: VTK segfaults (it does not raise) without an OpenGL context, so such tools
+start through `feacore/ui/offscreen.py` (`xvfb-run` when the server has no display). Run renders by hand on a
+headless box the same way: `xvfb-run -a python ...`.
+
+## What's where (features and how to run them)
+
+- **Swarm training** (`ace/run_loop.py`): `--deep` (run reports, teacher, self-reflection, organizer),
+  `--memory shared+private --agents N --split`, `--personas` / `--persona-count`, `--suite fea|cfd|cfd3d`,
+  `--statement requirements` (engineering requirements instead of BCs; `ace/requirements.py`,
+  `ace/requirements_data/`), `--evidence` / `--evidence-score` (physical test data; `ace/evidence.py`),
+  `--init-from <exported swarm> --init-agents ... --pre-teach` (start from a trained swarm). Stop cleanly with
+  `<out>/STOP`. `ACE_SCORE=field` selects field scoring.
+- **Single-agent baseline** (`ace/single_loop.py`) and the comparison `ace/compare.py`.
+- **Trained swarms**: `ace.export_swarm` saves one; `ace.infer` runs it on any problem without learning.
+  Committed swarms: `results/trained_swarms/` (`div_s1` … `div_s16`, `nl_ft`).
+- **Watch / report**: `ace.watch <run>` (live tracker, also inside the dashboard), `ace.report <run>` (one HTML page).
+- **Physical tests**: `abc_00000065_compression` (the printed C-bracket crushed on an Instron, no reference:
+  always scored against the test; `physical_tests/abc_00000065_compression/`, `ace/nonlinear.py`) and
+  `abc_00000003_pull` (a planned pull test, defined as a problem, data not in the repo;
+  `feacore/problems/physical.py`). Printable parts: `physical_tests/parts/`, `scripts/physical_parts.py`.
+- **Nonlinear analysis**: feacore's elastoplastic CalculiX path (J2 hardening, NLGEOM) and opt-in progressive
+  failure by element erosion (`feacore/solver/_ccx_nl.py`, `_ccx_failure.py`; `docs/solver_ccx_nonlinear.md`).
+  Drivers: `scripts/ccx_compression_ramp.py` (the frozen ramp the agents are scored with),
+  `scripts/ccx_crush.py`, `experiments/physical/crush.py` (platen, contact, failure criteria, resume),
+  the six-mesh-system study (`experiments/mesh_systems/`, `experiments/physical/CRUSH_RUNS.md`), videos
+  (`scripts/nl_video.py`, `nl_story_video.py`, `nl_break.py`, `experiments/physical/render_*.py`).
+- **CFD on the ACE loop** (`--suite cfd` / `cfd3d`): flow mesher (`ace/flow_mesh.py`: agents mesh the plain CAD,
+  wall `boundary_layer`, 3D `sweep`), finite-volume quality gate (`feacore/geometry/fv_quality.py`), flow feedback
+  and field mode (`ace/flow_feedback.py`, `ace/flow_field.py`, `ace/flow_report.py`), oracles, the exact benchmarks
+  `taylor_couette_2d` and `square_duct_3d`, and `backward_facing_step_2d` (scored on `u_bubble`). Real runs:
+  `bash scripts/setup_ace_cfd.sh`, then `python -m ace.preflight --suite cfd --ping`. Without a local OpenFOAM:
+  `scripts/openfoam_docker.sh`. `--teacher inspect|both`, `--statement requirements` and `--pre-teach` are
+  elasticity-only.
+- **Supersonic flow**: compressible OpenFOAM (`rhoCentralFoam`) and the blunted-wedge ground-truth case
+  (FEA core, compressible bullet).
+- **Gold benchmarks**: generator `feacore.goldgen` (H100), imported sets in `benchmarks/gold/`, J2-plastic gold
+  sets from the linear meshes (`scripts/gold_nonlinear.py`). FEA core, gold bullet.
+- **Diagnostics** (`feacore/diagnostics/`): failure-mode flags before and after solving, reference-free accuracy
+  (ZZ, a refinement study of the agent's own setup, P1 vs P2), the speed / accuracy score
+  (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py` score a single reply.
+- **Benchmark suites**: `feabench/` with `benchmarks/{verification,code_aster,calculix,simjeb}` and
+  `docs/eval-design.md` (built before `feacore`; its ccx-deck contract is superseded by the case JSON + `.msh`).
+  The SimJEB loader needs `dataverse.harvard.edu` allowed.
+- **Open-model study** (`wsp/`): a teacher (Claude Opus) teaches `Qwen/Qwen3.5-0.8B` (CPU fp32) one-shot mesh
+  recipes, scored like the swarm; weight-space programming, LoRA distillation, RFT, best-of-k by ZZ, the
+  playbook. `bash scripts/wsp_study.sh`; huggingface.co must be reachable for the model.
+- **Sculptured teams** (`teams/`): the wingbox team and the parallel-mesh-systems → synthesis team.
 - `make_problem.py`: prints a unique, seeded problem statement per (agent number, call number).
-- `improver-loop` branch: improver side of the loop.
-- `ace-loop` branch (merged into `main`): minimal ACE improver loop (package `ace/`, see `ace/README.md`) on top of
-  `feacore`: Sonnet agent → node-capped accuracy score → Opus reflector → curator → playbook.
-  `--statement requirements` (branch `ace-requirements`) gives agents engineering requirements
-  instead of boundary conditions (`ace/requirements.py`, `ace/requirements_data/`). `--evidence`
-  feeds physical test data (machine exports) into the loop, also mid-run, for agents and teachers
-  to learn from (`ace/evidence.py`); `--evidence-score` scores against the test. The printed pull test
-  of gold part abc_00000003 is the problem `abc_00000003_pull` (`feacore/problems/physical.py`).
-  `feacore` gained main's `point_difference` QoI (same code) for extensometer readings.
-  The printed C-bracket's compression test is `abc_00000065_compression`: no reference, so its runs are
-  always scored against the test (`physical_tests/abc_00000065_compression/`). `--split` also runs on
-  one task. feacore's elastoplastic ccx path (`nonlinear-setup` 9978510, cherry-picked) drives
-  `scripts/ccx_compression_ramp.py`, the test past yield.
-- `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
-  deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
-  accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy
-  score (`docs/failure-modes.md`). `scripts/nafems_task.py` / `scripts/compare_nafems.py` give the agent
-  prompt for a NAFEMS benchmark and score the reply against the reference. LE10 comes first, with
-  `benchmarks/nafems_le10/public/mesh.msh`.
-- `cfd-openfoam` branch (PR #3): OpenFOAM backend and CFD benchmarks, in progress.
-- `benchmarks` branch (PR #13): `feabench/` plus `benchmarks/{verification,code_aster,calculix,simjeb}`
-  and `docs/eval-design.md`. It was built before `feacore` landed, and its ccx-deck evaluator and
-  `model.inp` contract are superseded by the decisions below (skfem, case JSON + `.msh`).
-  Still useful:
-  - code_aster reference values with locations;
-  - the CalculiX deck corpus;
-  - the SimJEB loader (needs `dataverse.harvard.edu` allowed);
-  - the scoring proposal in `docs/eval-design.md`.
-  Next: port the verification cases and QoIs to `feacore` Problems.
-- `gold-benchmarks` branch (Jaime, merged into `main`): the gold-benchmark generator `feacore.goldgen`. It takes ABC
-  CAD parts, generates BC sets, meshes nested tet10 levels L0-L2 and keeps the QoIs that the GCI
-  certifies; it runs on an H100 and packs its output into numbered archives
-  (`goldgen-l2_0000.tgz`, ...). `benchmarks/gold/` holds the imported sets (see FEA core). Its
-  solver fixes for curved tet10 are ported to main byte-identical: a robust inverse isoparametric
-  map, curved-cell validity judged by the Jacobian, and a reduced SVD in the rigid-body checks.
-  Without them skfem rejects some of these meshes.
 
-## FEA core (`feacore/`, branch `fea-solver-benchmarks`)
+## FEA core decisions (`feacore/`)
 
 Decisions:
 
@@ -111,6 +181,9 @@ Decisions:
   - The study meshes (`benchmarks/gold/_meshes/`) are not in git.
   - `scripts/gold.py verify` re-solves a stored level against the study. `scripts/gold.py render`
     records runs for the UI viewer, and `--png` writes images.
+  - Known issue (not fixed): goldgen's `parts._outward_normal` probes at the face centroid, which can lie
+    inside the solid, so the statements of `abc_00000003`'s faces f18 and f19 give the wrong outward-normal
+    sign. Only the words are affected (forces carry explicit vectors). Uploaded CAD probes a point on the face.
 - **Verification** = Richardson extrapolation / Grid Convergence Index (Celik et al. 2008),
   `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to
@@ -145,6 +218,25 @@ Decisions:
   values stop converging. Ghia's cavity table is itself 1.4-3.5% off converged solutions, so its
   tolerances are 3-5%. Pressure drops use the `point_difference` QoI. To enable it on a box:
   `sudo apt-get install -y openfoam && uv pip install --python .venv/bin/python foamlib`.
+  3D flow uses skew-consistent schemes (option `skew_correction`, on by default in 3D):
+  `pointCellsLeastSquares` gradients (but `grad(p)` stays Gauss linear) and a `skewCorrected linear`
+  `flux(HbyA)`. With the plain schemes, tets converged to a pressure gradient 12-15% too high at
+  every h: next to a wall, linear interpolation misses the face values in the same direction
+  everywhere. Wall forces use the wall-normal distance, as the solver does.
+  `docs/solver_openfoam.md`, "3D meshes".
+- **Compressible flow (`backend="openfoam"`, physics "compressible"):** a perfect gas (`Material.gamma`,
+  `Material.gas_constant`; `mu = 0` is inviscid), solved by `rhoCentralFoam`
+  (`feacore/solver/_foam_compressible.py`, `docs/solver_openfoam.md`).
+  - BCs: `freestream` (velocity, `p_inf`, `T_inf`), `outlet`, `wall`, `slip`, `symmetry`; supersonic
+    flow only.
+  - Forces use the gauge pressure p - p_inf.
+  - It runs from the freestream until the field, or every QoI, stops changing. The QoI rule exists
+    because limited central schemes keep small limit cycles at a blunt body's sonic point.
+  - Defaults: vanAlbada at Courant 0.2. vanLeer cycled at every Courant number.
+  - Ground-truth case: `supersonic_blunt_wedge_2d` (`feacore/problems/supersonic/`), a cylinder-wedge at
+    Mach 3 and 10 deg incidence. Its references are mesh-converged (`scripts/supersonic_blunt_study.py`).
+    At alpha = 0 it is validated against the exact pitot pressure, and its standoff against Billig
+    (`docs/benchmarks_cfd.md`).
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
@@ -152,6 +244,10 @@ Decisions:
   - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
     or thermal-load interfaces. Don't use point stresses right at an interface.
   - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
+  - 3D flow on tets: fixed by the skew-consistent schemes (CFD bullet above). The old +15 % pressure gradient
+    on tets was a solver bias. The apparent force imbalance came from the wall force dividing by |Cf - C|
+    instead of the wall-normal distance. Point velocities at a smooth maximum still read 2-5 % low on coarse
+    tets (the probe's vertex fit); pressure drops, forces and flow rates are fine.
 
 ## NVIDIA compute (hackathon)
 
@@ -163,14 +259,42 @@ Decisions:
   `python-gmsh`), as `scripts/setup_gpu_box.sh` does. MKL PARDISO is x86-only. CuPy, nvmath-python
   (cuDSS) and torch do have aarch64 wheels.
 
+## Mesh harness decisions (`meshing-harness/`)
+
+- **Agent MCP tools** (`meshing-harness/`, server `uv run feagent-mcp`): `automesh` (zero-config start),
+  `inspect_geometry` (digest: features, faces, hazards), `find_faces` (geometric face query with
+  expected count), `render_view`, `mesh`, `check_mesh`; prompt `meshing_workflow`. Geometry, mesh and BCs
+  are all declared in `mesh.yaml` (`groups:` by query, `bcs:` for fixed/loads or inlet/outlet).
+- **Solver hand-off:** `out/mesh.msh` (named physical groups) + `out/report.json` → `bcs`, turned into
+  the fixed solver's case JSON by `python -m feacore.adapters.mesh_harness <out_dir | mesh.yaml>` (CFD:
+  `feacore.adapters.mesh_harness_cfd`). Also `out/mesh.inp` (every group as NSET/ELSET; surface elements
+  for groups must not get a section) and `.su2`.
+- **Evaluator input:** `out/report.json` (`schema_version: 1`, per-gate pass/warn/fail with value and
+  threshold) — schema in `meshing-harness/docs/report-schema.md`.
+- **Improver-editable surface:** `meshing-harness/agent_context/` — `SKILL.md` (workflow prompt),
+  `tools.yaml` (MCP tool descriptions), `examples/` (few-shot specs). Give each agent its own copy via
+  `FEAGENT_CONTEXT_DIR`. Harness code changes are possible but not required for prompt-level improvement.
+
 ## Open questions
 
-- How exactly is a solution scored? (proposal above; the evaluator decides)
-- Which MCP tools does the agent get (geometry / mesh / BCs)? It must emit the case JSON + `.msh` above.
-- What exactly can an improver change: system prompt, tool descriptions, few-shot examples, harness code?
-- What does the evaluator output look like (schema for rankings + summary)?
+- Scoring is settled for the ACE loop (`ace/checks.py`: field mode x the automesher, hidden probe points,
+  bonuses; nonlinear tasks against the measured curve). Still open: one rubric across FEA, CFD and the
+  nonlinear task, and how much a reference-free estimate (ZZ) may stand in for a reference on custom CAD.
+- The improver edits notebooks (private notes + shared playbook) only. Whether it should also edit
+  `meshing-harness/agent_context/` (skill, tool descriptions, examples) or harness defaults is untested.
+- The mesh-harness MCP is not yet the ACE agents' tool set: `ACE_HARNESS=1` only adds its digest and gates.
+- A pull-test data set for `abc_00000003_pull` (parts and plan in `physical_tests/`) has not been measured.
 
 ## Conventions
 
-- Branch off `main` per workstream; don't push directly to someone else's branch.
+- `main` is the only long-lived branch and the source of truth. Branch off `main` per workstream, merge back
+  through a pull request, and delete the branch once it is merged. Don't push directly to someone else's branch.
+- Dropped or superseded work is kept as a tag `archive/<branch name>` before its branch is deleted
+  (`git tag -l 'archive/*'`; restore with `git checkout -b <name> archive/<name>`).
+- Never commit run outputs (`runs/`, `ace_runs/`, `swarms/`, `wsp_runs/`), study meshes
+  (`benchmarks/gold/_meshes/`), API keys or tokens. Agents get `public/` problem files only, never `private/`.
+- New long-running commands that people should be able to start go into the dashboard as a tool
+  (`feacore/ui/tools/`), not only into a script.
+- Tests: `pytest -m "not slow"` (root `tests/` and `meshing-harness/tests/`); `-m slow` for the long convergence
+  checks.
 - Update this file when a decision above gets made.

@@ -20,6 +20,8 @@ Output in <out> (default ace_runs/infer-<problem>-<time>):
   runs/<agent>.json    each agent's whole run record (its reasoning trace, every mesh and solve)
   context/<agent>.md   the context each agent was given
   work/<agent>/        its meshes and images (final_mesh.png, final_stress.png: the submitted solve)
+With --ui-runs-dir (or FEACORE_RUNS_DIR, as the dashboard sets it) every solve and each agent's run
+also go to that feacore run store (ace.ui_bridge), for the field viewer and the problem's consensus view.
 
 Scoring. With no ground truth, agreement is the signal: the consensus gives, for each statement
 quantity, the median of the agents' values and their spread, and names the agent whose own error
@@ -89,7 +91,7 @@ def _worker(job: dict) -> dict:
     usage: list = []
     try:
         run = run_agent(job["problem"], job["run_id"], 0, job["context"], Path(job["workdir"]),
-                        make_llm(job["mock"]), usage=usage)
+                        make_llm(job["mock"]), usage=usage, ui=job.get("ui"))
     except Exception:  # noqa: BLE001  one broken agent must not take the others down
         return {"agent": job["agent"], "problem_id": job["problem"], "run_id": job["run_id"],
                 "error": traceback.format_exc(), "usage": usage}
@@ -109,7 +111,7 @@ def predict(run: dict, workdir: Path) -> dict:
     scoring uses) re-solved once more, so that the statement quantities, the error estimate and
     the pictures all come from the very solve it chose (the solve is direct, so it is the same
     answer)."""
-    from ace import fea, solve_feedback
+    from ace import fea, flow_feedback, solve_feedback
 
     solves = run["solves"]
     i = run.get("submitted")
@@ -122,6 +124,8 @@ def predict(run: dict, workdir: Path) -> dict:
     mesh, problem, qoi = s["mesh"], fea.get_problem(run["problem_id"]), s["result"]["qoi"]
     res = fea.run_solve(problem, mesh, s["setup"], qoi, keep_result=True)
     result = res.pop("_result")
+    if fea.is_flow(problem):
+        return _predict_flow(problem, mesh, s, i, submitted, qoi, res, result, workdir, flow_feedback)
     fb = solve_feedback.feedback(problem, mesh, s["setup"], result)
     images = {kind: str(solve_feedback.render(problem, mesh, result, kind, "iso", workdir / f"final_{kind}.png"))
               for kind in ("mesh", "stress")}
@@ -136,6 +140,30 @@ def predict(run: dict, workdir: Path) -> dict:
         "equilibrium": fb["equilibrium"],
         "max_von_mises": fb["max_von_mises"], "max_displacement": fb["max_displacement"],
         "notes": fb.get("notes", []),
+        "images": images,
+    }
+
+
+def _predict_flow(problem, mesh: dict, s: dict, i: int, submitted: bool, qoi: str, res: dict, result, workdir: Path,
+                  flow_feedback) -> dict:
+    """predict() on a flow task: the flow feedback (ace.flow_feedback) in the same shape. The
+    reference-free indicator stands in for the ZZ estimate (error_estimate.eta_rel), the speed
+    picture for the stress picture."""
+    fb = flow_feedback.feedback(problem, mesh, s["setup"], result)
+    images = {kind: str(flow_feedback.render(problem, mesh, result, kind, "z", workdir / f"final_{kind}.png"))
+              for kind in ("mesh", "speed")}
+    ei = fb["error_indicator"]
+    return {
+        "solve": i + 1, "submitted": bool(submitted),
+        "scored_quantity": {"name": qoi, "value": res["value"]},
+        "qois": fb["qois"],
+        "mesh": {"nodes": mesh["nodes"], "elements": mesh.get("elements"), "dofs": fb["dofs"],
+                 "order": mesh["order"], "h": mesh.get("h_used"), "fv_ok": mesh.get("fv_ok"),
+                 "cells": mesh.get("cells"), "request": mesh.get("request")},
+        "error_estimate": {"eta_rel": ei["rel_indicator"], "hotspots": ei["hotspots"],
+                           "kind": "velocity jumps at faces (ace.flow_feedback)"},
+        "convergence": fb["convergence"], "mass_balance": fb["mass_balance"],
+        "max_speed": fb["max_speed"], "notes": fb.get("notes", []),
         "images": images,
     }
 
@@ -199,7 +227,7 @@ def summary_md(problem: str, swarm: dict, mode: str, rows: list[dict], cons: dic
     lines += ["", f"Most confident by its own error estimate: {mc['agent']} (ZZ eta_rel {_f(mc['eta_rel'])})."
               if mc else "No agent produced a solve."]
     lines += ["", "## Images (submitted solve)", ""]
-    lines += [f"- {r['agent']}: mesh `{p['images']['mesh']}`, stress `{p['images']['stress']}`"
+    lines += [f"- {r['agent']}: " + ", ".join(f"{k} `{v}`" for k, v in p["images"].items())
               for r in rows if "images" in (p := r.get("prediction") or {})]
     return "\n".join(lines) + "\n"
 
@@ -214,12 +242,14 @@ def main(argv=None) -> int:
     ap.add_argument("--agents", default="all", help="comma-separated agents (a0,a3) or all")
     ap.add_argument("--out", type=Path, help="output dir (default ace_runs/infer-<problem>-<time>)")
     ap.add_argument("--mock", action="store_true", help="canned LLM responses, no API calls")
+    ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
+                    "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
 
     # Scoring mode first, before ace.config is imported anywhere (see the note at the top).
     mode = "field" if field_ready(args.problem) else "point"
     os.environ["ACE_SCORE"] = mode
-    from ace import config
+    from ace import config, ui_bridge
     from ace.cost import CostLog
     from ace.export_swarm import agent_context
 
@@ -236,13 +266,15 @@ def main(argv=None) -> int:
         (out / sub).mkdir(parents=True, exist_ok=True)
     print(f"output: {out}\nproblem {args.problem} (scored quantity {task['qoi']}, node cap {task['node_cap']}), "
           f"mode {mode}; agents {', '.join(agents)}")
+    ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.name)   # the feacore run store; None = off
 
     jobs = []
     for a in agents:
         context = agent_context(args.swarm, a, args.problem)
         (out / "context" / f"{a}.md").write_text(context)
         jobs.append({"agent": a, "problem": args.problem, "task": task, "context": context, "mock": args.mock,
-                     "run_id": f"infer-{args.problem}-{a}", "workdir": str(out / "work" / a), "field": mode == "field"})
+                     "run_id": f"infer-{args.problem}-{a}", "workdir": str(out / "work" / a), "field": mode == "field",
+                     "ui": ui})
 
     # One process per agent, all at once, as training runs a generation.
     cost = CostLog(out / "cost.jsonl", float("inf"))
@@ -259,6 +291,10 @@ def main(argv=None) -> int:
             score_population(scored)
             for r, s in zip([r for r in runs if r.get("checks")], scored):
                 r["checks"] = s["checks"]
+    if ui:   # each agent's run as a submission of its solves (the consensus view, the field viewer)
+        ui_bridge.record_predictions(ui, runs)
+        for r in runs:
+            (out / "runs" / f"{r['agent']}.json").write_text(json.dumps(r, indent=1, default=str))
 
     preds = {r["agent"]: r.get("prediction") for r in runs}
     cons = consensus(preds)

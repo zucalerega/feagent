@@ -43,7 +43,7 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolE
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
-from ace import config, evidence, process_brief, ui_bridge
+from ace import config, evidence, fea, process_brief, ui_bridge
 from ace.agent import run_agent
 from ace.checkpoint import checkpoint
 from ace.checks import check_run, score_population, tolerance
@@ -140,9 +140,13 @@ def _score_worker(run: dict, report_dir: str | None = None) -> tuple:
         tol = tolerance(run["problem_id"])
         orc = stages.run_oracles(run, tol)
         report = None
-        if report_dir is not None:
-            from ace.run_report import build_run_report   # --deep only
-            report = build_run_report(run, Path(report_dir))
+        if report_dir is not None:                        # --deep only
+            if fea.is_flow(fea.get_problem(run["problem_id"])):
+                from ace.flow_report import build_flow_report   # velocity error map (ace.flow_field)
+                report = build_flow_report(run, Path(report_dir))
+            else:
+                from ace.run_report import build_run_report
+                report = build_run_report(run, Path(report_dir))
     return checks, orc, stages.stage_report(run, orc, tol), report
 
 
@@ -664,6 +668,13 @@ def load_init(export: Path, names: list[str]) -> dict:
 # --------------------------------------------------------------------------- summary
 
 
+def _is_flow_task(problem_id: str) -> bool:
+    try:
+        return fea.is_flow(fea.get_problem(problem_id))
+    except KeyError:
+        return False
+
+
 def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
     if config.SCORE == "field":
         how = ["score = accuracy x efficiency against the automesher (gmsh default sizes, quadratic): error =",
@@ -675,6 +686,10 @@ def summarize(rows: list[dict], gen_notes: list[dict], cost: CostLog) -> str:
         how = ["score = accuracy x efficiency (the team's speed/accuracy metric), 0..1: 1 = the cheapest mesh within",
                "tolerance among all runs on that problem in this run. accuracy = min(1, tolerance / error);",
                "efficiency = cheapest in-tolerance DOFs / own DOFs. 'within tol' counts runs inside the tolerance;"]
+    if config.SCORE == "field" and any(_is_flow_task(r["problem"]) for r in rows):
+        how += ["flow tasks: error = max(whole-domain relative L2 velocity error, RMS speed error at the check",
+                "points in the bulk of the flow) against the exact solution or a fine reference (ace.flow_field);",
+                "their automesher is the mesh tool's uniform triangles / tetrahedra at the base size h0 (linearUpwind);"]
     if any(is_nonlinear(r["problem"]) for r in rows):
         how += ["nonlinear tasks: error = mean |F_sim - F_test| / F_test over the force curve's checkpoints (a",
                 "frozen nonlinear CalculiX ramp of the run's mesh, ace.nonlinear), scored like field mode against",
@@ -760,10 +775,47 @@ def score_rows(gen: int, runs: list[dict], checks: dict, holdout: list[str]) -> 
 # --------------------------------------------------------------------------- main loop
 
 
+def _check_flow_tasks(problem_ids: list[str], teacher: str | None = None, pre_teach: bool = False) -> None:
+    """Fail before anything is spent when flow tasks cannot run: they need OpenFOAM + foamlib (or
+    every agent's solve fails while its API calls are still billed), and requirements statements,
+    the teacher's inspection tools and pre-teaching (built on a physical test's teacher brief) are
+    defined for elasticity only. Field scoring works on flow (ace.flow_field: the velocity field),
+    and so does --deep."""
+    from ace import fea
+
+    flow = [p for p in problem_ids if fea.is_flow(fea.get_problem(p))]
+    if not flow:
+        return
+    if teacher not in (None, "rerun"):
+        raise SystemExit(f"--teacher {teacher} reads the elastic stress field (ace.inspect_tools); the flow tasks "
+                         f"{flow} need --teacher rerun.")
+    if pre_teach:
+        raise SystemExit(f"--pre-teach revises the context from a physical test's teacher brief (ace/pre_teach.py, "
+                         f"elasticity only); the flow tasks {flow} have none.")
+    if config.STATEMENT == "requirements":
+        raise SystemExit(f"--statement requirements is defined for elasticity setups only (ace/requirements.py); "
+                         f"the flow tasks {flow} need --statement bcs.")
+    from feacore.solver._foam_env import FoamNotFound, require_openfoam
+    from feacore.solver._foam_io import FOAMLIB_ERROR
+
+    try:
+        fe = require_openfoam()
+    except FoamNotFound as e:
+        raise SystemExit(f"the flow tasks {flow} need OpenFOAM: {e}. On a Mac: bash scripts/openfoam_docker.sh, then "
+                         f"export FEACORE_OPENFOAM_BASHRC=~/.feacore_foam/bashrc TMPDIR=~/.feacore_foam/tmp "
+                         f"(ace/README.md, 'The CFD suite').") from None
+    if FOAMLIB_ERROR is not None:
+        raise SystemExit(f"the flow tasks {flow} need foamlib (pip install -e '.[cfd]'): {FOAMLIB_ERROR}")
+    print(f"flow tasks {flow}: {fe.describe()}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--problems", default=",".join(config.TRAIN), help="train problems (reflected on)")
-    ap.add_argument("--holdout", default=",".join(config.HOLDOUT), help="held-out problems (evaluated only)")
+    ap.add_argument("--suite", choices=sorted(config.SUITES), default="fea",
+                    help="default train / held-out problems: fea (elasticity), cfd (2D laminar flow, OpenFOAM) "
+                         "or cfd3d (3D laminar flow on tets, OpenFOAM)")
+    ap.add_argument("--problems", default=None, help="train problems (reflected on); default: the suite's")
+    ap.add_argument("--holdout", default=None, help="held-out problems (evaluated only); default: the suite's")
     ap.add_argument("--runs-per-problem", type=int, default=config.RUNS_PER_PROBLEM)
     ap.add_argument("--generations", type=int, default=config.GENERATIONS)
     ap.add_argument("--budget-usd", type=float, default=config.BUDGET_USD)
@@ -820,10 +872,13 @@ def main(argv=None) -> int:
     config.STATEMENT = args.statement
     peers = args.split if args.peers is None else args.peers
 
-    train = [p for p in args.problems.split(",") if p]
-    holdout = [p for p in args.holdout.split(",") if p]
+    suite_train, suite_holdout = config.SUITES[args.suite]
+    train = [p for p in (args.problems if args.problems is not None else ",".join(suite_train)).split(",") if p]
+    holdout = [p for p in (args.holdout if args.holdout is not None else ",".join(suite_holdout)).split(",") if p]
+    _check_flow_tasks(train + holdout, args.teacher, args.pre_teach)
     out = args.out or Path("ace_runs") / (time.strftime("%Y%m%d-%H%M%S") + ("-mock" if args.mock else ""))
     out.mkdir(parents=True, exist_ok=True)
+    (out / "run_config.json").write_text(json.dumps({"suite": args.suite, "train": train, "holdout": holdout}, indent=1))
     # Physical test data (ace.evidence): processed into <out>/evidence_active/, which the spawned agents,
     # scorers and teachers read; set before any pool exists.
     os.environ[evidence.ACTIVE_ENV] = str((out / "evidence_active").resolve())
@@ -903,8 +958,9 @@ def main(argv=None) -> int:
         for key, per_agent in init["deep"].items():
             deep[key].update(per_agent)
 
-    def agent_text(k: int, pid: str | None, gen: int) -> str:
-        """Agent k's prompt text on task pid (None: held out): memory, then peers and persona."""
+    def agent_text(k: int, pid: str | None, gen: int, task: str | None = None) -> str:
+        """Agent k's prompt text on task pid (None: held out; task: the task it runs then): memory,
+        then peers and persona."""
         prev = [r for r in all_runs[pid] if r["generation"] == gen - 1] if pid is not None else []
         if args.deep:
             a = f"a{k}"
@@ -912,7 +968,8 @@ def main(argv=None) -> int:
                 a, pid, mem.shared, mem.private[k],     # Playbooks: rendered grouped by task
                 deep["feedback"].get(a), deep["reflection"].get(a), deep["highlights"],
                 peers_text(k, pid, prev) if pid is not None else "",
-                last_run=deep["last_run"].get(a), task_feedback=deep["teacher"].get(pid), persona=persona_of.get(k))
+                last_run=deep["last_run"].get(a), task_feedback=deep["teacher"].get(pid), persona=persona_of.get(k),
+                flow=_is_flow_task(pid or task or ""))
         else:
             text = mem.prompt_text(k, args.top_n, pid)
         if peers and pid is not None and not args.deep:
@@ -973,11 +1030,11 @@ def main(argv=None) -> int:
                          "playbook_text": agent_text(k, pid, gen), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
                          "mock": args.mock} for k, pid in sorted(group.items())]
                 jobs += [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
-                          "playbook_text": agent_text(k, None, gen), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
+                          "playbook_text": agent_text(k, None, gen, pid), "workdir": str(gdir / "work" / f"{pid}-a{k}"),
                           "mock": args.mock} for k in range(args.agents) for pid in holdout]
             elif private:   # persistent agents a0..: each sees the shared playbook + its own notes
                 jobs = [{"problem_id": pid, "run_id": f"g{gen}-{pid}-a{k}", "generation": gen,
-                         "playbook_text": agent_text(k, pid if pid in train else None, gen),
+                         "playbook_text": agent_text(k, pid if pid in train else None, gen, pid),
                          "workdir": str(gdir / "work" / f"{pid}-a{k}"),
                          "mock": args.mock} for k in range(args.agents) for pid in train + holdout]
             else:

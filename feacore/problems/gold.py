@@ -1,7 +1,7 @@
 """Gold benchmarks: third-party CAD parts (ABC dataset) with generated supports and loads, and
 reference values certified by a nested-mesh convergence study.
 
-They come from the gold-benchmark generator (``feacore.goldgen``, branch ``gold-benchmarks``) and
+They come from the gold-benchmark generator (``feacore.goldgen``) and
 are data, not code. ``python scripts/gold.py import ARCHIVE`` copies a generator archive into
 ``gold_root()`` (``FEACORE_GOLD_DIR``, default ``benchmarks/gold``), one directory per BC set in
 the benchmark-store layout:

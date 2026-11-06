@@ -25,8 +25,8 @@ import time
 
 import numpy as np
 
-from feacore.case import (BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field,
-                           eval_expr, hardening_table)
+from feacore.case import (BC, Case, CaseError, ELASTICITY_FIELDS, HEAT_FIELDS, QoI, as_field, eval_expr,
+                          hardening_table)
 from feacore.solver._ccx_fem import Locator, _bary, interpolate, map_points, quadrature, shape
 from feacore.solver._ccx_io import CcxError, fnum, id_lines, parse_dat_totals, parse_frd, run_ccx
 from feacore.solver._ccx_mesh import FEModel, MeshError, build_model, read_gmsh  # noqa: F401
@@ -68,11 +68,17 @@ def solve(case: Case, **options) -> "CcxResult":
             "expansion of CAX3 is ~2e-4 too stiff and its face loads / films are distributed "
             "inconsistently, so it fails the patch test (use analysis.order = 2)")
     gm = read_gmsh(case.mesh_path())
-    model = build_model(gm, case.dim, a.order, axisymmetric=(a.formulation == "axisymmetric"))
-    _check_curvature(model, a.formulation)
+    accept = bool(a.options.get("accept_curved", False))
+    # accept_curved callers pass strongly curved (certified) meshes: allow midside offsets up to 0.6 edge lengths
+    model = build_model(gm, case.dim, a.order, axisymmetric=(a.formulation == "axisymmetric"),
+                        midside_tol=0.6 if accept else 0.25)
+    _check_curvature(model, a.formulation, accept=accept)
     deck = _Deck(case, model)
     inp = deck.build()
     if a.nonlinear:   # opt-in elastoplastic load stepping: docs/solver_ccx_nonlinear.md
+        if a.options.get("failure"):
+            from feacore.solver._ccx_failure import solve_failure
+            return solve_failure(case, model, deck, inp, options, t0)
         from feacore.solver._ccx_nl import solve_nonlinear
         return solve_nonlinear(case, model, deck, inp, options, t0)
     keep = bool(options.get("keep", False)) or options.get("workdir") is not None
@@ -96,7 +102,7 @@ def solve(case: Case, **options) -> "CcxResult":
 CURVED_INTERIOR_TOL = 1e-3
 
 
-def _check_curvature(model: FEModel, formulation: str) -> None:
+def _check_curvature(model: FEModel, formulation: str, accept: bool = False) -> None:
     """CalculiX integrates C3D10 (4 points) and the CAX6 wedge with rules that are not exact on
     curved isoparametric cells: on meshes with strongly curved interior edges the patch test fails
     (6e-5 for C3D10, up to 4e-3 for CAX6), while CPS6 / CPE6 pass. gmsh keeps interior edges
@@ -124,7 +130,10 @@ def _check_curvature(model: FEModel, formulation: str) -> None:
     worst_int = float(rel[~on_b].max()) if np.any(~on_b) else 0.0
     worst_b = float(rel[on_b].max()) if np.any(on_b) else 0.0
     kind = "C3D10" if model.dim == 3 else "CAX6"
-    if worst_int > CURVED_INTERIOR_TOL:
+    if worst_int > CURVED_INTERIOR_TOL and accept:   # analysis.options.accept_curved: opt-in, caller verifies
+        model.warnings.append(f"{kind} cells with curved interior edges (midside offset up to {worst_int:.2g} x "
+                              "edge length) accepted (accept_curved): CalculiX's quadrature is inexact on them")
+    elif worst_int > CURVED_INTERIOR_TOL:
         raise NotImplementedError(
             f"ccx backend: {kind} cells with curved interior edges (midside offset up to "
             f"{worst_int:.2g} x edge length) are refused: CalculiX's {kind} quadrature is not exact on "
@@ -164,7 +173,9 @@ class _Deck:
         self.axi = a.formulation == "axisymmetric"
         self.plane = a.formulation in ("plane_stress", "plane_strain", "2d")
         self.ncomp = 1 if self.heat else model.dim
-        self.etype = ELEMENT_TYPES[(a.formulation, model.order)]
+        if model.hex and (a.formulation != "3d" or self.heat):
+            raise NotImplementedError("ccx backend: hexahedral meshes (C3D8) are supported for 3D elasticity only")
+        self.etype = "C3D8" if model.hex else ELEMENT_TYPES[(a.formulation, model.order)]
         self.nsets: dict[str, str] = {}       # group -> NSET name
         self.elsets: dict[str, str] = {}      # group -> ELSET name
         self.lines: list[str] = []
@@ -256,8 +267,13 @@ class _Deck:
 
     def cell_quad(self, elems: np.ndarray, degree: int = 6):
         m = self.m
-        xi, w = quadrature(m.dim, degree)
-        N, dN = shape(m.dim, m.order, xi)
+        if m.hex:
+            from feacore.solver._ccx_fem import hex_quadrature, hex_shape
+            xi, w = hex_quadrature(degree)
+            N, dN = hex_shape(xi)
+        else:
+            xi, w = quadrature(m.dim, degree)
+            N, dN = shape(m.dim, m.order, xi)
         nodes = m.conn[elems]
         x, J = map_points(m.X[nodes][..., : m.dim], N, dN)
         detJ = np.abs(np.linalg.det(J))

@@ -12,11 +12,18 @@ const ROUTES = {
   connect: () => import('./pages/connect.js'),
   runs: () => import('./pages/runs.js'),
   swarm: () => import('./pages/swarm.js'),
+  agents: () => import('./pages/agents.js'),
+  gold: () => import('./pages/gold.js'),
+  cad: () => import('./pages/cad.js'),
+  nonlinear: () => import('./pages/nonlinear.js'),
+  testdata: () => import('./pages/testdata.js'),
+  tasks: () => import('./pages/tasks.js'),
 };
 
 // top-level sections; deeper pages highlight their parent
 const SECTION = { benchmarks: 'benchmarks', batch: 'benchmarks', runs: 'runs', study: 'runs', viewer: 'runs',
-                  consensus: 'runs', swarm: 'swarm', solve: 'solve', connect: 'connect', health: 'connect' };
+                  consensus: 'runs', swarm: 'agents', agents: 'agents', gold: 'gold', cad: 'cad', nonlinear: 'nonlinear',
+                  testdata: 'testdata', tasks: 'tasks', solve: 'solve', connect: 'connect', health: 'connect' };
 
 let cleanup = null;
 let renderToken = 0;

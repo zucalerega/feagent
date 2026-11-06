@@ -1,20 +1,29 @@
-# feacore UI and solver service
+# The dashboard (feacore UI) and solver service
 
-A web UI and HTTP API on top of `feacore`. It serves:
+One web app for the whole project, `python -m feacore.ui`, on top of `feacore`. It serves:
 
 - the **solver service**: the fixed solver behind `POST /api/solve` (case JSON + gmsh `.msh`). The agents' MCP and the mesh harness call it.
-- **convergence studies** of the benchmark problems (Richardson / GCI, `feacore.verification`).
-- the **run store** (`feacore/runstore.py`): solves, studies and agent submissions as files, readable by the evaluator and the improvers.
+- **convergence studies** of the benchmark problems (Richardson / GCI, `feacore.verification`), including the **gold** sets and problems made from **your own CAD**.
+- the **agents**: swarm and single-agent training, live tracking, evaluation and trained-swarm inference (`ace/`).
+- **nonlinear analysis** (elastoplastic CalculiX ramps, crush to fracture) against the **physical test data**.
+- the **task lane**: every long-running command above runs as a task you can watch, stop or kill from the browser.
+- the **run store** (`feacore/runstore.py`): solves, studies, agent submissions and task outputs as files, readable by the evaluator and the improvers.
 - the **multi-agent consensus view**: every agent's answer with its own error band, against the population and the reference.
 
-Navigation has five sections: **Benchmarks** (library, problem pages, batch runs), **Runs** (studies, batches, solves, consensus), **Swarm** (the ACE agent loop), **Solve** and **Connect** (plus Health). Pages (single-page app, no build step, `feacore/ui/static/`):
+Navigation: **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **Swarm** view), **Nonlinear**, **Test data**, **Runs**, **Tasks**, **Solve** and **Connect** (plus Health). Pages (single-page app, no build step, `feacore/ui/static/`):
 
 | page | what it shows |
 |---|---|
 | Benchmarks `#/benchmarks` | problem library, tag filter, detail with statement, 3D CAD preview with named groups, **evaluator view** (references, expectations, reference setup, studies); **Run with defaults** starts the reference study (skfem, P2, the problem's sizes) and opens its live view |
 | Run benchmarks `#/batch` | select many problems (by tag, family, ticked rows, "all with references"), choose backend / order / nested / meshes, queue one convergence study each; live per-problem progress; results table (reference, finest, extrapolated, p vs theory, GCI, error, pass / fail / divergence detected as expected, runtime) with links to each study's plot and finest-mesh field; CSV / JSON download. Batches persist in the run store |
+| Gold `#/gold` | the gold sets per part: BC sets with references and singular QoIs, the nested study meshes with their local status (missing / ok / mismatch against `index.json`), regenerate / verify / render / import / nonlinear tools, *Solve L<k>* into the field viewer. See "Gold and Your CAD pages" below |
+| Your CAD `#/cad` | upload a STEP, pick support and load faces on the 3D view (or generate BC sets with the gold rules), and get a registered problem (tag `custom`) for studies, the solver and the agents; reference studies; run trained agents on it |
 | Runs `#/runs` | tabs for convergence studies, benchmark batches, solves (opens the field viewer) and consensus views; "New study" and "Run benchmarks" start new work |
+| Agents `#/agents` | the ACE loops from the dashboard: train swarms and the single-agent baseline, runs with their training curve, per-agent views and the live tracker, then compare, export and run a trained swarm on any problem. See "Agents section" below |
 | Swarm `#/swarm` | the ACE agent loop, live: loop and generation selectors, score distribution per generation, per-problem leaderboards (score, QoI vs reference, mesh, DOFs, solves, gates) linking to the field viewer and the problem's Consensus view. Empty state until the ACE bridge writes records |
+| Nonlinear `#/nonlinear` | nonlinear runs with their force-travel curves over the Instron test, run pages with videos and *Resume*, the analysis tools (scoring ramp, elastoplastic ramp, crush to fracture, renderers), the gallery. See "Nonlinear and Test data pages" below |
+| Test data `#/testdata` | the physical tests and printable parts; upload a machine export, check its parsing and save it as an `--evidence` folder |
+| Tasks `#/tasks` | every task (agent runs, gold meshing, crush runs, renders, ...) with its state, command, output folder and live log; *Stop* (graceful, where the tool supports it) and *Kill* |
 | Run study `#/study` | pick problem / backend / element order / refinement; live progress; per QoI: QoI vs log h with the Richardson extrapolation, the GCI band and the reference; error vs h (log-log, observed vs theoretical slope); verdict and flags in plain words |
 | Consensus `#/consensus/<problem>` | forest plot per QoI: each submission's finest-mesh value ± GCI, extrapolated value, consensus median, reference ± tolerance; per-submission verdicts and flags |
 | Field viewer `#/viewer/<run>` | 2D mesh / 3D boundary surface coloured by any field, colour bar, mesh edges, deformed shape with scale, study-level switcher. Tested smooth at 230k display triangles |
@@ -36,7 +45,9 @@ python -m feacore.ui --port 8000       # then open http://localhost:8000
 
 Options: `--host` (default 127.0.0.1; 0.0.0.0 to expose), `--runs-dir DIR` (default `$FEACORE_RUNS_DIR`, else `<repo>/runs`), `--quick-workers N` (parallel solves / geometry previews, default 1), `--study-workers N` (parallel studies; default one per 4 cores, at most 4), `--token T` (shared-token auth, `auto` generates one; see below), `--threads N` (sets OMP/MKL/OPENBLAS threads for the worker processes), `--extra-problems a.py,b.py` (register scratch problems that are not in the repo), `--fetch-vendor` (see below).
 
-Environment: `FEACORE_RUNS_DIR`, `FEACORE_UI_TOKEN`, `FEACORE_UI_QUICK_WORKERS`, `FEACORE_UI_STUDY_WORKERS`, `FEACORE_UI_SOLVE_TIMEOUT` (s, default 1800), `FEACORE_UI_STUDY_TIMEOUT` (default 4 h), `FEACORE_EXTRA_PROBLEMS`, `FEACORE_UI_VENDOR_DIR`, `FEACORE_BENCHMARKS_DIR`.
+Environment: `FEACORE_RUNS_DIR`, `FEACORE_UI_TOKEN`, `FEACORE_UI_QUICK_WORKERS`, `FEACORE_UI_STUDY_WORKERS`, `FEACORE_UI_TASK_WORKERS` (parallel tasks, default 2), `FEACORE_UI_SOLVE_TIMEOUT` (s, default 1800), `FEACORE_UI_STUDY_TIMEOUT` (default 4 h), `FEACORE_EXTRA_PROBLEMS`, `FEACORE_UI_VENDOR_DIR`, `FEACORE_BENCHMARKS_DIR`, `FEACORE_GOLD_DIR` (gold sets, default `benchmarks/gold`), `FEACORE_CAD_DIR` (extra roots of uploaded CAD, besides `<runs>/cad`), `FEACORE_CAD_MAX_BYTES` (upload limit, default 30 MB). Real agent runs need `ANTHROPIC_API_KEY` in the server's environment; without it only mock runs start.
+
+For the dashboard's own tools: `pip install -e ".[ui,ace]"` (agents), CalculiX `ccx` on `PATH` (nonlinear, gold nonlinear), OpenFOAM for flow problems, and `xvfb` for 3D renders on a box without a display.
 
 three.js (pinned 0.170.0, the only external JS) is served **same-origin** at `/vendor/...`, so the viewer's browser never needs to reach a CDN. The server serves the first copy it finds:
 
@@ -81,6 +92,8 @@ The page shell and static files stay open, so the UI can load. Share the UI as `
 - `feacore/ui/worker.py`: job bodies. A study calls the contract `feacore.verification.study.convergence_study` and wraps the solver it uses, so that each level's `Result` is stored (fields for the viewer) and progress is reported while the study runs.
 - `feacore/ui/viewdata.py`: viewer data. For 3D, the boundary faces of the volume mesh (oriented outward); for 2D, every cell. Quadratic faces are split into 4 display triangles. Nodal values are matched to the solution-space nodes with a KD-tree; `probe` fills in the rest.
 - `feacore/ui/analysis.py`: verdicts, flag explanations, submission analysis, consensus (pure numpy).
+- `feacore/ui/tasks.py`: the **task lane** for long-running command-line tools. A tool is a whitelisted command with typed parameters (`Tool`, `Param`), registered by a module of `feacore/ui/tools/` (`agents.py`, `gold.py`, `cad.py`, `nonlinear.py`, `testdata.py`; auto-discovered). The browser names a tool and fills its form; arguments are checked (types, ranges, choices, registered problem ids, paths inside the repo or the run store, nothing that starts with `-`) and turned into an argv, so no command line ever comes from the client. Each task is a child process in its own process group (cwd = the repo, `FEACORE_RUNS_DIR` = this store) with its record and log under `<runs>/tasks/<id>/`; at most `FEACORE_UI_TASK_WORKERS` run at once. *Stop* writes the tool's stop file (ACE loops stop before the next generation); *Kill* terminates the group. Tasks count in `/api/health`'s `active_jobs`, so `serve.sh` never restarts the service mid-run. Tools marked `display` (they render with pyvista / VTK) start through `feacore/ui/offscreen.py`, which uses `xvfb-run` when there is no display.
+- Section routers: `feacore/ui/ace_runs.py` (Agents), `feacore/ui/gold_api.py` + `cad_api.py` (Gold, Your CAD), `feacore/ui/nonlinear_api.py`, `feacore/ui/testdata_api.py` and `feacore/ui/media.py` (Nonlinear, Test data). Every file they serve is resolved against a fixed list of roots, with symlinks out of a root refused.
 
 ## API
 
@@ -93,6 +106,19 @@ curl "$S/api/problems?tag=nafems&tag=2d"   # list (tags AND-ed), tag counts, imp
 curl $S/api/problems/nafems_le1            # statement + evaluator view (references, expectations, reference case, studies)
 curl $S/api/problems/nafems_le1/geometry   # coarse CAD triangulation + named groups (gmsh in a worker, cached)
 ```
+
+### Tasks (long-running tools)
+
+```bash
+curl $S/api/tools                                    # every tool with its parameter schema (the forms are built from it)
+curl -X POST $S/api/tasks -H 'Content-Type: application/json' \
+     -d '{"tool": "ace.swarm", "args": {"mock": true, "generations": 1}}'   # 202: the task record
+curl "$S/api/tasks?group=agents"                     # records, newest first (state: queued | running | done | failed | cancelled | interrupted)
+curl $S/api/tasks/<id>/log                           # stdout + stderr
+curl -X POST "$S/api/tasks/<id>/cancel?mode=stop"    # graceful (stop file) | mode=kill
+```
+
+Invalid arguments get **422** with every problem listed; an unknown tool **404**. A real (non-mock) agent run is refused while the server has no `ANTHROPIC_API_KEY`.
 
 ### Solve service
 
@@ -198,6 +224,67 @@ curl $S/api/consensus/nafems_le1
 
 The best estimate is the extrapolated value when the convergence and the extrapolation are reliable, otherwise the finest-mesh value. With 3 or more submissions, a submission is an `outlier_vs_consensus` when |best − median| > max(3·σ_robust, its own band, tolerance·|median|).
 
+## Agents section
+
+`#/agents` runs the ACE loops (`ace/`) from the dashboard. It replaces the Streamlit agent tracker
+(`ace/agent_dashboard.py`, removed): its per-agent views are in each run's page. Three tabs:
+
+- **Train** (`#/agents?tab=train`): start a swarm (`ace.run_loop`) or the single-agent baseline
+  (`ace.single_loop`) as a task. One click fills the form with a recipe: a free mock try, the deep
+  swarm of Result 2, the post-training of Result 3 (from `results/trained_swarms/div_s8`), or the
+  basic loop. Problems come from the loop's task catalogue (`ace/config.py` `TASKS`): click a problem
+  once to train on it, twice to hold it out. Every flag of the two loops is in the form (the rarer
+  ones under "More options"). The table below lists the Agents tasks, with Stop (writes
+  `<run>/STOP`: the loop ends after the current generation and still writes its summary) and Kill.
+- **Runs** (`#/agents?tab=runs`): every run folder in `ace_runs/` and every folder an Agents task
+  wrote, with status, generations, cost and scores. A run's page (`#/agents/run/<key>`) refreshes
+  while the run goes. It shows:
+  - the training curve (mean or best score per problem and generation) and its table;
+  - an agents × generations score matrix. A cell opens that agent run: its score parts, the run
+    report's pictures (what the teacher and the agent's self-reflection looked at), the context it
+    saw with the changes since its previous one, the notes as stored, the teacher's feedback, its
+    self-reflection, the organizer's changes, its tool calls, and its solves with links to the
+    field viewer;
+  - the live tracker of `ace.watch`, `report.html` (built with the Run report tool), the summary,
+    `scores.png` and the task's console output.
+- **Evaluate** (`#/agents?tab=evaluate`):
+  - run an exported swarm (`results/trained_swarms/`, `swarms/`, or an export made here) on any
+    registered problem, your CAD and the gold parts included (`ace.infer`);
+  - export a run (`ace.export_swarm`, default `swarms/<run>`);
+  - compare a deep swarm with a single-agent run (`ace.compare`);
+  - the results: `#/agents/infer/<key>` (the consensus, each agent's prediction and pictures),
+    `#/agents/swarm/<key>` and `#/agents/compare/<key>`.
+
+Real runs need `ANTHROPIC_API_KEY` in the server's environment. Without it only mock runs start,
+and the forms start with "mock LLM" ticked. Field scoring (`ACE_SCORE=field`) and the mesh harness
+(`ACE_HARNESS=1`) are environment settings of ACE: the tools set them per task (`Tool.build_env`).
+Deep runs and the single agent always use field scoring. Training runs record every solve and
+agent run in this server's run store (the task runner sets `FEACORE_RUNS_DIR`), so they also fill
+the Swarm page, the Consensus views and the field viewer.
+
+API (`feacore/ui/ace_runs.py`, read-only; the work itself runs through `POST /api/tasks` with the
+tools `ace.swarm`, `ace.single`, `ace.compare`, `ace.report`, `ace.export_swarm`, `ace.infer`):
+
+| endpoint | |
+|---|---|
+| `GET /api/ace/catalog` | the loop's task catalogue and suites (for the forms) |
+| `GET /api/ace/runs` | training runs, newest first, each with a summary |
+| `GET /api/ace/run?dir=KEY` | one run: per generation and problem, the agents, files, tasks |
+| `GET /api/ace/agent-run?dir=KEY&run_id=ID` | one agent run (see the run page above) |
+| `GET /api/ace/file?dir=KEY&path=REL[&swarm=true]` | a picture or text file inside a known folder |
+| `GET /api/ace/report?dir=KEY` | `<run>/report.html` |
+| `GET /api/ace/tracker?dir=KEY`, `/api/ace/tracker/data?dir=KEY` | the live tracker page and its data (`ace.watch.collect`) |
+| `GET /api/ace/swarms`, `/api/ace/swarm?dir=KEY` | exported swarms |
+| `GET /api/ace/infers`, `/api/ace/infer?dir=KEY` | `ace.infer` results |
+| `GET /api/ace/compares`, `/api/ace/compare?dir=KEY` | `ace.compare` outputs |
+
+A folder's key is its path relative to the repository (`ace_runs/div_s8`), or `@runs/<path>` for a
+folder inside the run store. A key is refused (404) unless it names one of the folders above; a
+symlink that leaves its root is refused too. The report and the tracker pages are served with a
+Content-Security-Policy that lets them run only their own inline code and talk only to this
+server. The tracker polls its data without headers, so when the server has a token the page is
+served with its data URL carrying the token it was opened with (`?token=`).
+
 ## ACE swarm records (Swarm page)
 
 The ACE loop's bridge writes into the same run store, through `RunStore` or the HTTP API. `GET /api/swarm?loop_id=&generation=` reads it back. The response holds:
@@ -257,6 +344,52 @@ Per agent run, the leaderboard shows:
 - gates and diagnostics counts.
 
 Agents without a submission yet are listed as running. ACE submissions also appear in the regular Consensus view of each problem.
+
+## Gold and Your CAD pages
+
+Routes `#/gold` and `#/cad` (`#/cad/<upload>`). Server side: `feacore/ui/gold_api.py` (mounted once by
+`create_app`; it also mounts `feacore/ui/cad_api.py`), tools in `feacore/ui/tools/gold.py` and `cad.py`.
+
+```bash
+curl $S/api/gold                                   # parts -> BC sets, study meshes with their status here
+curl -OJ $S/api/gold/meshes/abc_00000003/L0         # a stored study mesh (404 when not on this machine)
+curl -X POST $S/api/gold/solve -H 'Content-Type: application/json' \
+     -d '{"set_id": "abc_00000003_bc0", "level": 0, "source": "regenerated"}'    # a run for the viewer
+curl -T goldgen-l2_0001.tgz $S/api/gold/archives/goldgen-l2_0001.tgz              # then the gold.import tool
+curl -F file=@part.step -F units=si $S/api/cad/uploads                            # a STEP upload -> its faces
+curl -X POST $S/api/cad/uploads/<upload>/sets -H 'Content-Type: application/json' \
+     -d '{"mode": "manual", "fixed": ["f12"], "loads": [{"group": "f7", "type": "pressure", "value": 2e6}]}'
+```
+
+- **Mesh status** on the Gold page: `ok` (the sha256 of index.json), `mismatch`, `missing` (the meshes are
+  not in git), `unlisted`. Tools: `gold.regenerate` (`python -m feacore.goldgen.local regenerate PART
+  --levels 0,1`: the generator's settings into `<runs>/gold_regen/<part>/`, sha256 and cells compared with
+  the index; `--install` only for a byte-identical level), `gold.verify` / `gold.render`
+  (`scripts/gold.py`), `gold.import`, `gold.nonlinear` (`scripts/gold_nonlinear.py` on a view of the gold
+  root). Regenerated meshes do not reproduce the stored bytes: gmsh is not even bitwise reproducible from
+  run to run, and the input is the rescaled public STEP (cells within ~0.5 % at L0).
+- **Uploads** (`feacore/problems/custom.py`): checked (size limit `FEACORE_CAD_MAX_BYTES`, default 30 MB;
+  STEP header and end; exactly one solid; a coarse tet mesh), read by the CAD kernel in its own process,
+  stored in the gold layout under `<runs>/cad/<upload>/`. Each BC set (generated with the gold rules, or
+  picked on the 3D view) is a registered problem `<upload>_bc<k>` / `<upload>_m<k>`, tag `custom`, found by
+  every process whose `FEACORE_RUNS_DIR` (or `FEACORE_CAD_DIR`) points there, and by ACE
+  (`ace.config.TASKS` entry: scored QoI and node cap). Without a reference its runs are judged
+  reference-free (`ace.infer`: ZZ estimate, agreement); the `cad.reference` tool or a finished P2 study
+  (`POST /api/cad/problems/<id>/adopt`) certifies references with the gold rules.
+
+## Nonlinear and Test data pages
+
+**Nonlinear** `#/nonlinear` (`feacore/ui/nonlinear_api.py`, tools in `feacore/ui/tools/nonlinear.py`) has three tabs:
+
+- **Runs**: every nonlinear run found in the run store (`<runs>/nonlinear/`, `<runs>/ccx_ramp/`) and in the committed results, with its force-travel curves over the Instron test of the printed C-bracket (or an uploaded test). The simulated travel is mapped to the crosshead with the frozen seating gap and compliance of `nonlinear_spec.json` (editable), and each curve gets the mean force error at the test's checkpoints, as the agents are scored. `#/nonlinear/run/<ref>` shows one run: facts, curves, its pictures and videos, render buttons, files and the live `progress.log`.
+- **Run an analysis**: the tools, with small defaults timed on a 4-core box: the agents' frozen scoring ramp (`scripts/nl_baselines.py --out`, automesher + 4 mm in about 1 min), the elastoplastic ramp of the test (`scripts/ccx_compression_ramp.py --straight`, about 30 s at 5 mm), and crush to fracture in three steps (a straight-edged crush mesh from `mesh_systems/ace_sizing --straight`, an optional buckling imperfection, `experiments/physical/crush.py`: about 6 min at 8 mm, hours for the 40k-node study meshes). Renderers turn a finished run into stills (`scripts/render_ccx_ramp.py`) or videos (`experiments/physical/render_crush.py`, `scripts/nl_video.py ramp`); the pyvista ones run through `python -m feacore.ui.offscreen`, which uses `xvfb-run` when there is no display and imageio-ffmpeg when there is no system ffmpeg.
+- **Gallery**: the committed figures and videos (`talk_plots/act3_real_data/`, `docs/gallery/`, `physical_tests/.../ccx_ramp/`, the scoring baselines) with the captions of their READMEs and HTML pages. The Omniverse RTX renders need the DGX Spark: committed media only.
+
+Dashboard outputs: `<runs>/nonlinear/{score,ramp,crush,meshes,renders}/<tool>-<task id>/`. A crush run keeps a checkpoint when it is killed; *Resume* continues it into a new run directory.
+
+**Test data** `#/testdata` (`feacore/ui/testdata_api.py`) lists the physical tests (committed evidence specs under `physical_tests/`, uploads under `<runs>/testdata/<id>/`) with their curves, and the printable test parts (STL / STEP). An upload is a machine export (CSV / TXT as Bluehill writes it) read with the loop's own `ace.evidence.read_table`: the columns and units are detected and can be changed, the curve and the loop's processing (`process_test`: loadings, fitted compliance, uncertainty budget) are shown before it is saved. A saved record is `test.json` (an evidence spec plus a `lab` block) next to the export, a ready `--evidence` folder: `python -m ace.run_loop --problems <problem> --evidence <runs>/testdata/<id>`.
+
+API: `GET /api/nonlinear/{runs,run?ref=,test,meshes,gallery,capabilities,file?ref=}`; `GET /api/testdata`, `GET|DELETE /api/testdata/item?id=`, `POST /api/testdata/parse` and `POST /api/testdata` (multipart `file` + fields), `GET /api/testdata/file?ref=`. Files are served only from the run store's `nonlinear/`, `ccx_ramp/` and `testdata/` and from the committed media folders, with a known media type (never HTML); links carry `?token=` when the server has one.
 
 ## Run-record format (for the harness and the evaluator)
 
@@ -349,6 +482,10 @@ Each flag carries a one-paragraph explanation (`feacore/ui/analysis.py`, `FLAG_I
 
 ```bash
 python -m pytest tests/test_ui_api.py -q
+python -m pytest tests/test_ui_tasks.py -q              # the task lane: tools, arguments, stop / kill, the offscreen launcher
+python -m pytest tests/test_ui_agents.py -q             # Agents section: tools, folders API, one mock train/export/infer run
+python -m pytest tests/test_ui_gold_cad.py -q           # Gold + Your CAD (temporary gold root, a STEP upload)
+python -m pytest tests/test_ui_nonlinear_testdata.py -q # Nonlinear + Test data (fake run folders, one short ccx scoring run)
 ```
 
 The tests use FastAPI's TestClient on a temporary store and cover every endpoint. That includes real solves through `POST /api/solve`, a real three-level study, a benchmark batch (run, CSV / JSON, cancel), submissions, consensus and the token auth. They skip if no 2D elasticity problem is registered or `skfem` does not import.
@@ -363,3 +500,7 @@ The screenshots were made with headless Chromium (Playwright) against a scratch 
 - List endpoints scan the store directory on each call. That is fine up to a few thousand runs; past that, add an index.
 - The viewer shows the boundary surface only (no cut planes or interior clipping in 3D). Axisymmetric results are shown as the 2D meridian section.
 - The `nn` backend shows whatever its module provides. The UI treats it like any other backend.
+- Tasks run first come, first served on one lane; there are no priorities. A task whose server stopped is marked `interrupted`; its process may still be running (the record says so), and the dashboard cannot reattach to its log.
+- Gold meshes regenerated here do not match the stored sha256: gmsh is not bitwise reproducible, not even run to run. They are fine to view and solve (L0 within about 2 % of the study).
+- An `ace.config.TASKS` entry for an uploaded CAD problem is read when `ace` is imported: a process started before its reference was certified keeps the old scored quantity.
+- Real (non-mock) agent runs, the Omniverse RTX renders and runs on stored gold meshes were not exercised from the dashboard here (no API key, no RTX GPU, no gold meshes on the test box).

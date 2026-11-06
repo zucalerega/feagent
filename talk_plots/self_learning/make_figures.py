@@ -13,7 +13,7 @@ Two 2D problems of run ace_runs/deep1 (11 generations, Opus teacher), each in CA
     problem's reference setup (ace/checks.py reference_setup): equal field error to 1e-6. (Setups
     that differ only in spelling, e.g. "x+y" vs "x + y" or T_ref left out, pass; a different
     temperature field does not.)
-(A) Solved von Mises stress drawn as the agent dashboard draws it (ace/agent_dashboard.py: von Mises
+(A) Solved von Mises stress drawn as the former Streamlit agent dashboard drew it (von Mises
     at the mesh vertices, "Turbo" colour scale, element edges #26313b, colour range = 1st..99th
     percentile of the reference stress on the target tessellation) for four meshes on ONE scale:
         1. gmsh automesher (gmsh defaults, quadratic; ace/field_error.py automesher)
@@ -334,8 +334,8 @@ def solve_panels(pid: str, early: dict, final: dict) -> tuple[dict, dict]:
                {"run_id": row["run_id"], "gen": row["gen"], "setup": cp["setup"], **info})
 
     # 4. the truth: the fine reference stress on the dashboard's target tessellation
-    #    (ace/agent_dashboard.py target_structure: inverse-distance mean of the 4 nearest reference points)
-    m = meshio.read(f"ace/field_refs/{pid}_target.msh")
+    #    (ace.field_error.target_mesh; inverse-distance mean of the 4 nearest reference points)
+    m = meshio.read(fe.target_mesh(pid))
     tris = np.vstack([c.data[:, :3] for c in m.cells if c.type.startswith("triangle")])
     dist, idx = cKDTree(ref["pts"][:, :2]).query(m.points[:, :2], k=4)
     w = 1 / np.maximum(dist, 1e-12)
@@ -623,7 +623,7 @@ def panel_captions(pid: str, P: dict, rows: list[dict], G: list[dict]) -> dict:
         S["ref"]: (f"{case['name']}, panel 4: the true solution",
                    f"The fine reference solve (`{r['source']}`, {r['dofs']:,} DOFs) drawn on the dashboard's target "
                    f"tessellation (`ace/field_refs/{pid}_target.msh`, inverse-distance mean of the 4 nearest "
-                   f"reference points, as `ace/agent_dashboard.py target_structure`). No mesh edges: this is the "
+                   f"reference points, as the former agent dashboard did). No mesh edges: this is the "
                    f"truth, not a mesh anyone submitted. Same Turbo scale as panels 1-3. {common}"),
         S["errors"]: (f"{case['name']}: error maps",
                       f"Per element: RMS over the reference integration points inside it ({r['n_ref_points']} "

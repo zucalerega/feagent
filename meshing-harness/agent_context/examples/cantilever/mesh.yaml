@@ -1,0 +1,18 @@
+# Cantilever beam 100 x 10 x 10 mm: clamped at x = 0, tip load at x = 100.
+# Pattern: name every BC face by a geometric query (`at:` an extreme of the bbox) with an
+# exact `expect` count, so a changed CAD fails the `groups` gate instead of silently moving a BC.
+name: cantilever
+geometry: ../parts/cantilever.step
+analysis: fea
+groups:
+  fixed: {select: {at: xmin, kind: plane}, expect: 1}
+  tip: {select: {at: xmax, kind: plane}, expect: 1}
+size: {global: 2.5}
+element: {order: 2}          # quadratic tets: bending needs them at 4 elements through the depth
+export: [msh, inp]
+bcs:
+  fea:
+    fixed: [fixed]
+    loads: [{group: tip, force: [0.0, 0.0, -100.0]}]   # total force on the group, N
+    E: 210000.0
+    nu: 0.3

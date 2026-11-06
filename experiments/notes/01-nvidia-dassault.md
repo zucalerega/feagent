@@ -1,0 +1,41 @@
+# NVIDIA x Dassault Systemes: what it is, what we can adopt (researched 2026-10-31)
+
+## 1. The case study (https://www.nvidia.com/en-us/case-studies/dassault-systemes/)
+Short marketing page. Verified via fetch (summarized by a fetch model, quotes below are from that output):
+- "Dassault Systemes is combining its Virtual Twin technologies with NVIDIA AI infrastructure, open models, and AI physics" -> goal: science-validated "industry world models" + AI "Virtual Companions" on 3DEXPERIENCE.
+- "Simulation outcomes can be predicted faster with SIMULIA AI-driven Virtual Twin Physics Behavior" ; NVIDIA CUDA-X + AI physics libraries (PhysicsNeMo named) integrated into SIMULIA.
+- "Earlier conformity checks in automotive and aircraft design are enabled by Virtual Companions" (compliance by design).
+- Customers: Wichita State NIAR (aircraft design/test/certification; uses Nemotron open models; quote "Using the platform to align the virtual twin to the means of compliance reduces certification efforts"); Lucid Motors (exploring multiphysics models w/ physics-informed AI, "has the potential to help our teams move from concept to production faster").
+- ONLY number: "10,000+ requirements" supported by Virtual Companions. NO speedups, accuracy, cost figures.
+- Page does NOT mention OpenUSD, Abaqus, PowerFLOW, XFlow, CST. (Don't attribute them to this page.) Omniverse is named only generically.
+- Corroborating primary-ish: Feb 3 2026 partnership PR https://www.3ds.com/assets/invest/2026-02/dassault-systemes-and-nvidia-partner-to-build-industrial-ai-platform-powering-virtual-twins-pr-3-feb-2026-final.pdf ; https://www.3ds.com/partners/strategic-partnerships/nvidia ; GTC San Jose Mar 16-19 2026 and GTC Berlin Oct 20-22 2026 (DELMIA factory twins w/ Omniverse physical-AI libraries) per 3ds.com newsroom. I did not read those PDFs in full (search-snippet level) = partly unverified.
+Bottom line: it is a vision/partnership announcement, not a technical recipe; the transferable content must come from NVIDIA's actual tools.
+
+## 2. Technology-by-technology (open/accessible equivalent, status, 4060-8GB fit)
+| Tech | Status/licence (verified unless marked) | RTX 4060 8GB? |
+|---|---|---|
+| OpenUSD | pip `usd-core` 26.11 (2026-10-21), py3.11-3.14, Linux x86/ARM, Win, mac; license LicenseRef-TOST-1.0 (Tomorrow Open Source Technology; permissive, per PyPI) https://pypi.org/project/usd-core/ . Core libs only, no imaging plugins; usdview not confirmed in wheel (unverified; usdview normally needs full build from github.com/PixarAnimationStudios/OpenUSD) | CPU-only, yes |
+| Omniverse Kit SDK / Kit-CAE / Kit App Streaming | Kit-CAE (https://github.com/NVIDIA-Omniverse/kit-cae): reference app, composes VTK/CGNS/OpenFOAM/EnSight data via USD plugins; under Omniverse license terms, "not accepting outside contributions", needs build via repo.sh. Not truly open. | Kit needs RTX GPU; blueprint "Lite" says 16GB VRAM min -> 8GB likely too small (inference) |
+| Omniverse Blueprint "Real-time CAE Digital Twins" (digital-twins-for-fluid-simulation) https://github.com/NVIDIA-Omniverse-blueprints/digital-twins-for-fluid-simulation | Web UI (Trame) + Kit CAE app streamed via WebRTC + AeroNIM (DoMINO-based automotive aero surrogate NIM). Omniverse License Agreement. Lite: 1 RTX >=16GB VRAM, 16GB RAM, 8 cores; Standard: 2x40GB RTX (L40/A6000) or one >80GB, 128GB RAM, 32 cores. Ubuntu 22.04/24.04. One client at a time. Automotive, not aircraft. | NO |
+| NVIDIA Warp / warp.fem | Apache-2.0 https://github.com/NVIDIA/warp ; py>=3.11; Linux/Win wheels CPU+CUDA; default wheel CUDA 13.4, needs R580+ driver; min GPU Turing sm_75 (4060 Ada fine); +cu12 wheel exists. warp.fem has examples: diffusion, mixed elasticity, topology optimization, contact. Can write USD. | YES (small/medium FEM, kernels) |
+| PhysicsNeMo (ex-Modulus) https://github.com/NVIDIA/physicsnemo | Apache-2.0, v2 line. External-aero examples: DoMINO, Transolver, FIGConvNet, AeroJEPA, unified_external_aero_recipe (surface+volume), active learning. Mainly CFD aero (cars); no structural-airframe example verified. Model training on large 3D meshes typically needs 24-80GB+ (my estimate, unverified); pretrained inference on small meshes / small models could fit 8GB. | Inference maybe, training large no |
+| cuDSS | Proprietary NVIDIA EULA (LicenseRef-NVIDIA-EULA), free binary: pip `nvidia-cudss-cu13`/`-cu12`, conda libcudss. Sparse direct (analysis/factor/solve), hybrid CPU-GPU memory mode, batched (uniform/non-uniform), multi-GPU/node; Python via nvmath-python. Benchmarks on B200 vs MKL (figures not captured). https://developer.nvidia.com/cudss | YES for matrices fitting 8GB; hybrid memory helps; batched mode good for many small component solves |
+| nvmath-python | has `nvmath.sparse.advanced.DirectSolver` (+ExecutionHybrid) https://docs.nvidia.com/cuda/nvmath-python/latest/index.html ; license not confirmed by me (PyPI fetch failed; I believe Apache-2.0 - UNVERIFIED) | yes |
+| AmgX https://github.com/NVIDIA/AMGX | Open source (license file in repo; I believe BSD-3 - UNVERIFIED); AMG + Krylov, fp32/fp64/mixed, MPI multi-GPU, JSON config, C API; compute cap >=3.0; needs C++ build, no first-class python (pyamgx 3rd party). Iterative: good for huge SPD/elasticity w/ AMG. | yes |
+| cuSPARSE / cuSOLVER | part of CUDA Toolkit, free (also via CuPy `cupyx.scipy.sparse.linalg`) - not separately fetched | yes |
+| NIM microservices for sim | AeroNIM exists inside blueprint; NIM needs NVIDIA AI Enterprise licence for production (dev free via NVIDIA Developer Program - UNVERIFIED) | no (large GPU) |
+| Nemotron open models | named in case study for Virtual Companions (agentic compliance). Open weights, usable locally/API. Irrelevant to us (we use Claude) | n/a |
+| Abaqus/PowerFLOW/XFlow/CST | Proprietary SIMULIA solvers; no open equivalent needed; our open stand-ins: scikit-fem + cuDSS (feacore), CalculiX, Code_Aster, OpenFOAM, SU2 (not researched here) |
+
+## 3. Most transferable ideas (ranked)
+1. **Surrogate-for-what-if + verified solver-for-final** (the blueprint's core pattern; Dassault's "AI-driven virtual twin of physics behavior"). For us: train tiny surrogates (sklearn/torch MLP, GP, or PhysicsNeMo-style models) on feacore runs per component family; agent uses surrogate for fast sweeps, then confirms the chosen design with a full feacore solve and reports surrogate-vs-FEA error. Fits 4060; cheap. Keep the verified solve as the acceptance gate (matches "science-validated" framing).
+2. **USD as one scene + results format** (Kit-CAE composes solver/surrogate outputs via USD without copying). For us: `usd-core` assembly stage referencing per-part meshes (payloads/references), with results as primvars/attributes (stress, disp) per part; an agent-readable, diffable text (.usda) scene of the whole aircraft. Pure CPU, pip-installable. Caveat: USD has no FE solver semantics; you define own schema (CAE OpenUSD Plugins from NVIDIA is the closest reference).
+3. **Batch many independent component analyses on GPU** (cuDSS batched mode / Warp kernels / one process per part with a job queue). Aircraft = hundreds of parts; embarrassingly parallel at component level; 8GB limits to ~per-part solves sequentially or small batches. Integration level (assembly with tied/contact interfaces) is the hard bit, not GPU.
+4. **Compliance/requirements as agent "Virtual Companion"**: "10,000+ requirements" traced to twin => our analogue is a requirements YAML (load cases, allowables, margins of safety) checked automatically by agent after each solve; cheap and high value for hackathon demo.
+5. **Streaming/web visualization**: NVIDIA uses Kit+WebRTC (needs big RTX). Open alternative (not researched in depth): PyVista/trame or VTK.js, three.js/glTF viewer, or Foxglove-like; convert USD->glTF for browser. Treat Omniverse streaming as not adoptable on 8GB/licence grounds.
+
+## Not adoptable / caveats
+- Omniverse Blueprint & AeroNIM: licence-restricted and >=16GB (Lite) / 80GB+ (Standard) VRAM; automotive CFD only.
+- No NVIDIA-published speedups in the case study; any "Nx faster" claim for Dassault is unverified.
+- cuDSS is proprietary-free-binary; fine for a hackathon but note licence.
+- Fetches were summarised by a small model; versions/licences with "UNVERIFIED" need a direct check.

@@ -1,0 +1,22 @@
+# Bullet in a wind tunnel (external flow along +x): the fluid is a box around the body minus it.
+# Pattern: queries run on the built domain (box minus body), so `at: xmin` is the tunnel inlet;
+# select the body faces with a `box:` around the part, and refine near the body.
+name: bullet
+geometry: ../parts/bullet.step
+analysis: cfd
+domain: {type: external, flow_axis: "+x", upstream: 3.0, downstream: 6.0, lateral: 2.0}
+groups:
+  inlet: {select: {at: xmin}, expect: 1}
+  outlet: {select: {at: xmax}, expect: 1}
+  body: {select: {box: [[-1, -6, -6], [36, 6, 6]]}, expect: 3}
+default_group: farfield
+size: {global: 6.0, curvature: 24}
+refine:
+  - {group: body, size: 0.8, distance: 6}
+element: {order: 1}
+export: [msh, su2]
+bcs:
+  cfd:
+    inlet: [inlet]
+    outlet: [outlet]
+    velocity: 1.0

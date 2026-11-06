@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {"type": "command", "command": "uv run feagent hook-stop", "timeout": 60}
+        ]
+      }
+    ]
+  }
+}

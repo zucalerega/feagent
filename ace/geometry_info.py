@@ -32,6 +32,10 @@ SMOOTH_DEG = 10.0        # within this of 180 deg the two entities meet tangenti
 
 _CACHE: dict[str, dict] = {}
 
+# flow BC type -> the role inspect_geometry reports for the boundary
+FLOW_ROLES = {"velocity_inlet": "inlet", "pressure_outlet": "outlet", "wall": "wall", "slip": "slip",
+              "symmetry": "symmetry"}
+
 # Statement words that say what a sentence does to the entities it names.
 _ROLE_WORDS = [
     ("support", r"clamp|fixed|support|roller|symmetr|displacements? (are |is )?zero"),
@@ -45,8 +49,12 @@ def describe(problem: Problem) -> dict:
     from ace import config
     key = (problem.id, config.STATEMENT)      # the roles come from the statement the agent reads
     if key not in _CACHE:
+        from ace import fea
         with gmsh_session(problem.id):
-            problem.build_geometry()
+            if fea.is_flow(problem):
+                fea.build_agent_geometry(problem)    # the CAD the agent meshes (its tags), not the blocks
+            else:
+                problem.build_geometry()
             gmsh.model.occ.synchronize()
             _CACHE[key] = _Describer(problem).run()
     return _CACHE[key]
@@ -104,6 +112,16 @@ class _Describer:
         for d, pt in gmsh.model.getPhysicalGroups(self.D - 1):
             for e in gmsh.model.getEntitiesForPhysicalGroup(d, pt):
                 self.groups.setdefault(int(e), []).append(gmsh.model.getPhysicalName(d, pt))
+        # Flow: a boundary's role is its BC in the problem's setup (inlet, outlet, wall, ...), not a
+        # support / load read off the statement.
+        self.flow = getattr(problem, "physics", "") == "flow"
+        self.flow_roles: dict[str, str] = {}
+        if self.flow:
+            for b in problem.case("REF.msh", order=2).bcs:
+                if b.group:
+                    self.flow_roles[b.group] = FLOW_ROLES.get(b.type, b.type)
+                    if b.type == "wall" and b.value is not None:
+                        self.flow_roles[b.group] = "moving wall"
 
     # ----------------------------------------------------------------- formatting
 
@@ -192,7 +210,12 @@ class _Describer:
     # ----------------------------------------------------------------- statement roles
 
     def roles(self, names: list[str]) -> tuple[bool, str | None]:
-        """(named in the statement?, role there: support / load / free / mentioned)."""
+        """(named in the statement?, role there: support / load / free / mentioned; flow: the BC)."""
+        if self.flow:
+            role = next((self.flow_roles.get(n, "wall") for n in names if n in self.flow_roles), None)
+            if role is None and names and not names[0].startswith("c") and not names[0].startswith("f"):
+                role = "wall"                 # a named boundary without a BC is a no-slip wall
+            return bool(role), role
         # lines, then sentences (". " before a capital; decimals like 60.08 have no space)
         sentences = re.split(r"(?<=[.;])\s+(?=[A-Z])|\n", self.desc)
         found, role = False, None
@@ -369,7 +392,60 @@ class _Describer:
         out["hints"] = self.hints(out, reentrant, sharp, sup, load, by_label, seams, angle_key)
         return out
 
+    def flow_hints(self, out, reentrant, sharp, angle_key) -> str:
+        """The plain-words summary for a flow domain: where the fluid enters and leaves, the walls
+        (boundary layers), the corners the flow separates at, curved walls."""
+        D = self.D
+        fk, ek = ("faces", "edges") if D == 3 else ("curves", "corners")
+        g = lambda x: f"{x:.3g}"
+        unit = " m" if out["units"].startswith("SI") else ""
+        h = [f"The fluid domain spans {' x '.join(g(b - a) for a, b in zip(out['bbox'][:D], out['bbox'][D:]))}{unit}"
+             f" (diagonal {g(self.diag)}), with {len(out[fk])} boundary {fk} and {len(out[ek])} {ek}."]
+        by_role: dict[str, list[str]] = {}
+        for r in out[fk]:
+            if r.get("role"):
+                by_role.setdefault(r["role"], []).append(r["group"] or self.label(r["tag"]))
+        for role in ("inlet", "outlet", "wall", "moving wall", "slip", "symmetry"):
+            if role in by_role:
+                names = ", ".join(dict.fromkeys(by_role[role]))
+                h.append(f"{role.capitalize()}: {names}.")
+        if any(r in by_role for r in ("wall", "moving wall")):
+            h.append("No slip: the fluid takes each wall's velocity, so the velocity changes fast across a thin "
+                     "layer along the walls; a boundary layer of thin cells resolves it cheaply.")
+        feat_by_tag = {f["tag"]: f for f in out[ek]}
+        role_of = {self.label(r["tag"]): r.get("role") for r in out[fk]}
+        jumps = [f for f in out[ek] if {role_of.get(c) for c in f["curves" if D == 2 else "faces"]}
+                 == {"moving wall", "wall"}]
+
+        def ref(tag):
+            return str(tag) if D == 3 else f"{tag} at ({', '.join(f'{c:g}' for c in feat_by_tag[tag]['point'])})"
+        pair_key = "faces" if D == 3 else "curves"
+        if reentrant:
+            lst = ", ".join(f"{ref(f['tag'])} ({f[angle_key]:.0f} deg, {'/'.join(f[pair_key])})" for f in reentrant[:6])
+            h.append(f"{len(reentrant)} re-entrant {ek if len(reentrant) > 1 else ek[:-1]} (fluid angle > 180 deg): "
+                     f"{lst}. The flow separates at such a corner; the corner and the shear layer leaving it "
+                     "downstream need small cells, and a recirculation zone forms behind it. "
+                     + ('Refine along it with {"edge": tag}.' if D == 3 else 'Refine around it with {"point": [x, y]}.'))
+        if jumps:
+            h.append(f"A moving wall meets a stationary one at {ek} "
+                     + ", ".join(ref(f["tag"]) for f in jumps)
+                     + ": the wall velocity jumps there, the flow is singular and the error concentrates; small "
+                       "cells around them.")
+        if sharp:
+            h.append(f"Acute {ek} (< {SHARP_DEG:.0f} deg; slow corner flow in a thin wedge): "
+                     + ", ".join(f"{ref(f['tag'])} ({f[angle_key]:.0f} deg)" for f in sharp[:5]) + ".")
+        curved = [r for r in out[fk] if r["type"] not in ("Plane", "Line")]
+        if curved:
+            h.append(f"{len(curved)} curved boundary {fk if len(curved) > 1 else fk[:-1]}: straight-sided cells "
+                     "facet them, so cells along them must be small enough to keep the wetted shape.")
+        sm = out["smallest_features"]
+        if "smallest_radius" in sm:
+            h.append(f"Smallest radius {g(sm['smallest_radius']['radius'])}.")
+        return " ".join(h)
+
     def hints(self, out, reentrant, sharp, sup, load, by_label, seams, angle_key) -> str:
+        if self.flow:
+            return self.flow_hints(out, reentrant, sharp, angle_key)
         D = self.D
         fk, ek = ("faces", "edges") if D == 3 else ("curves", "corners")
         one = fk[:-1]

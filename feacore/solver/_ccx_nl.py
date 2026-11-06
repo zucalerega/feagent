@@ -205,7 +205,7 @@ class CcxNonlinearResult(CcxResult):
         if inc.peeq_ip is not None:
             cd["PEEQ_ip_max"] = [inc.peeq_ip.max(axis=1)]
             cd["plastic_ip_fraction"] = [np.mean(inc.peeq_ip > PEEQ_TOL, axis=1)]
-        cells = [(_VTK_CELL[(m.dim, m.order)], m.conn.astype(np.int64))]
+        cells = [(m.cell_type, m.conn.astype(np.int64))]
         meshio.Mesh(m.X.copy(), cells, point_data=pd, cell_data=cd,
                     field_data={"lambda": np.array([inc.lam])}).write(str(path))
         return path
@@ -239,7 +239,7 @@ class CcxNonlinearResult(CcxResult):
         pd = {"displacement": np.zeros((m.n_nodes, 3)), "PEEQ": z, "plastic": z}
         pd.update({f: z for f in ("von_mises", "sxx", "syy", "szz", "sxy", "syz", "sxz", "s1", "s3", "u_mag")})
         pd.update(extra or {})
-        cells = [(_VTK_CELL[(m.dim, m.order)], m.conn.astype(np.int64))]
+        cells = [(m.cell_type, m.conn.astype(np.int64))]
         meshio.Mesh(m.X.copy(), cells, point_data=pd, field_data={"lambda": np.array([0.0])}).write(str(path))
         return path
 

@@ -203,7 +203,7 @@ def disagreement_map(reports: list[dict], top: int = 6) -> dict:
                if mad[j] > 0 and abs(M[i, j] - med[j]) > 2 * mad[j]]
         grid.append({"region": f"cell {int(k)} near {c.get('near')}", "centre": c.get("centre"),
                      "spread": sig(spread[j], 3), "consensus_vm": sig(med[j]), "outliers": out})
-    return {"task": rs[0].get("task"), "n_runs": len(rs), "grid": grid,
+    return {"task": rs[0].get("task"), "n_runs": len(rs), "grid": grid, "quantity": rs[0].get("grid_quantity", "von Mises"),
             "most_contested": sorted(grid, key=lambda g: -g["spread"])[:top]}
 
 
@@ -212,7 +212,7 @@ def disagreement_text(dm: dict) -> str:
     if not dm.get("most_contested"):
         return f"disagreement map: too few runs ({dm.get('n_runs', 0)})"
     L = [f"disagreement map over {dm['n_runs']} runs (no reference used): most contested regions "
-         "(spread = std/mean of the runs' von Mises there; consensus = median; outliers > 2 MAD):"]
+         f"(spread = std/mean of the runs' {dm.get('quantity', 'von Mises')} there; consensus = median; outliers > 2 MAD):"]
     for g in dm["most_contested"]:
         o = ", ".join(f"{x['agent']} {_g(x['cell_vm'])}" for x in g["outliers"]) or "none"
         L.append(f"  {g['region']} at {_xyz(g['centre'] or [])}: spread {_pct(g['spread'])}, consensus "
@@ -650,6 +650,9 @@ def report_text(report: dict, max_chars: int = 6000, hide_hidden: bool = False) 
         return f"RUN {rid}: no report ({report['error']})"
     if report.get("nonlinear"):
         return _nl_report_text(report)[:max_chars]
+    if report.get("flow"):                       # a flow run's report (ace.flow_report): velocity, not stress
+        from ace.flow_report import flow_report_text
+        return flow_report_text(report, max_chars, hide_hidden)
     L = [f"RUN {rid} (agent {report.get('agent')}, task {report.get('task')}"
          + (", axisymmetric: x = r, y = z" if report.get("axisymmetric") else "") + ")"]
     n = report.get("numbers")

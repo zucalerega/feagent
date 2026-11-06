@@ -248,7 +248,8 @@ def parse_dat_series(path: str | Path) -> list[dict]:
 
 
 def parse_sta(path: str | Path) -> list[dict]:
-    """Converged increments in the .sta file: [{"inc", "attempts", "iterations", "time", "dt"}, ...]."""
+    """Converged increments in the .sta file: [{"step", "inc", "attempts", "iterations", "time" (total),
+    "step_time", "dt"}, ...]."""
     out = []
     p = Path(path)
     if not p.exists():
@@ -256,6 +257,6 @@ def parse_sta(path: str | Path) -> list[dict]:
     for ln in p.read_text(errors="replace").splitlines():
         f = ln.split()   # STEP INC ATT ITRS TOT-TIME STEP-TIME INC-TIME; ATT is e.g. "1U" for a cut-back attempt
         if len(f) == 7 and f[0].isdigit() and f[1].isdigit() and f[2].isdigit():
-            out.append({"inc": int(f[1]), "attempts": int(f[2]), "iterations": int(f[3]),
-                        "time": _flt(f[5]), "dt": _flt(f[6])})
+            out.append({"step": int(f[0]), "inc": int(f[1]), "attempts": int(f[2]), "iterations": int(f[3]),
+                        "time": _flt(f[4]), "step_time": _flt(f[5]), "dt": _flt(f[6])})
     return out
