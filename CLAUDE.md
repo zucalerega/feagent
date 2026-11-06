@@ -47,7 +47,10 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   uncertainty, singular peaks, study), and a rulebook = a general handbook + rules the arm learns from its
   training scorecards (holdout never reflected on). `single_agent.oracle` is the non-LLM baseline. Findings:
   the gold references of `abc_00000003_bc3` violate the FE energy bound by 12% (excluded); feacore's `gci3`
-  misclassifies unequal refinement ratios (the harness uses a ratio-corrected test).
+  misclassifies unequal refinement ratios (the harness uses a ratio-corrected test). Pilot (Claude Code subagents
+  through `single_agent.cli`, holdout `abc_00000065_bc1`, handbook only): Opus and Sonnet both scored 1.00; Opus
+  was more precise and also found a converged ring-root stress above yield that fails the part
+  (`single_agent/pilots/`). The API loop itself has not run on real models yet.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
   accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy

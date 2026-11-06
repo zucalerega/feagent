@@ -156,6 +156,40 @@ divergence. Spotting those takes reasoning about where the peak is, which is wha
   at most 70 words. Near-duplicates become votes, and rules voted harmful (harmful ≥ helpful + 2) are pruned.
 - **Holdout problems are never reflected on.** The holdout score is the test of whether the rules generalise.
 
+## Pilot: Opus and Sonnet on one holdout problem
+
+This environment has no API key, so the loop itself has not run on real models yet. As a pilot, Claude Code
+subagents (Opus 5.5 and Sonnet 5.5) drove the same harness through `single_agent.cli`.
+- They got the same system text and handbook the loop gives the agent, with no learned rules.
+- The problem was the holdout set `abc_00000065_bc1`: the clamp body pressed onto two locating pins, 6 questions,
+  one of them a singular peak.
+- Each worked in a workspace outside the repository, under instructions not to read anything else.
+
+| | Sonnet 5.5 | Opus 5.5 |
+|---|---|---|
+| score | **1.00** | **1.00** |
+| idealization | equivalent (both notches held, 21.5 MPa on the front face) | equivalent (the same) |
+| converging answers | 5/5 within tolerance, errors 0.02-1.3% | 5/5 within tolerance, errors 0.004-0.75% |
+| stated uncertainties | 0.2-3%, all cover the truth | 0.04-1.4%, all cover the truth |
+| singular peak | flagged singular at the pin-notch rim; verdict "cannot tell" | flagged singular; verdict "fails" (next row) |
+| beyond the questions | none | the part fails anyway: a smooth-region stress at the jaw-ring root converges to ~630 MPa, so it is above yield. The review allows 220 MPa and requires no yielding; Opus recommends a third of the press force or backing the ring. |
+| study | 4 meshes, 5k-31k nodes | two families of 6 meshes, 8k-47k nodes |
+| cost | 6 of 12 solves, about 99k tokens, about 4 min | 12 of 12 solves, about 275k tokens, about 14 min of work (plus a container restart) |
+
+- **The ring-root stress was checked independently:** the bore's peak von Mises is 611-615 MPa on meshes refined
+  at the bore (Opus: 630 ± 2%).
+- **The composite score saturates here; the arms differ elsewhere.** Opus was more precise and more thorough,
+  and it closed the loop to the design by finding a converged stress that decides the verdict. Sonnet was 3x
+  cheaper and 3x faster for the same score. One problem is not a benchmark, but it shows the analysis layer is
+  within reach of both models with this harness on a holdout case.
+- **Both pilots' feedback on the tools is now in the harness:**
+  - `solve` refuses a repeat of a solve it already ran (Sonnet lost 2 solves to the default mesh).
+  - The mesh tools report h_rep and the effective refinement ratio.
+  - Sizes clamped at the mesher's 1 mm floor are reported (Opus's first study converged 1% low on it).
+  - The GCI takes well-spaced meshes rather than the three finest.
+  - Small trendless changes read as scatter, not divergence.
+  - The CLI output is one line per key.
+
 ## Findings so far (from building and validating the benchmark)
 
 1. **The gold references of `abc_00000003_bc3` look wrong.** For a pressure-loaded part with rigid supports, the
@@ -193,15 +227,18 @@ divergence. Spotting those takes reasoning about where the peak is, which is wha
 | `handbook.md`, `rulebook.py`, `reflect.py` | the general rules; learned rules and their lint/merge; the learning step |
 | `loop.py`, `compare.py`, `mock.py` | the generations; arms side by side; the free mock |
 | `design/` | the ten design packages and their evaluator keys |
+| `pilots/` | the real-model pilot runs: reports, solves, studies, scorecards |
 
 Run outputs go to `sa_runs/` and workspaces to `sa_workspaces/`; both are git-ignored.
 
 ## Cost and time (estimates, not yet measured on the API)
 
-One analysis is about 30-50 model turns with a growing context: on the order of $1-2.5 with Opus 5.5 and
-$0.5-1.5 with Sonnet 5.5, with caching. A generation with 4 training problems, plus 3 holdout problems in the
-first and last generation, then costs about $5-10 (Sonnet) to $10-20 (Opus). Most of a turn's time is the
-model; solves take seconds with PARDISO (x86) or cuDSS (GPU). The scipy fallback is about 7x slower at the cap.
+One analysis is about 30-50 model turns with a growing context. The pilots used about 99k tokens (Sonnet) and
+about 275k tokens (Opus) per analysis, through Claude Code rather than the API loop. With caching that is on the
+order of $0.5-1.5 per analysis with Sonnet 5.5 and $1-3 with Opus 5.5. A generation with 4 training problems,
+plus 3 holdout problems in the first and last generation, then costs about $5-10 (Sonnet) to $10-20 (Opus).
+Most of a turn's time is the model; solves take seconds with PARDISO (x86) or cuDSS (GPU). The scipy fallback
+is about 7x slower at the cap.
 
 ## Limitations and next steps
 
