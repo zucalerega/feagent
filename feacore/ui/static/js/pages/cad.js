@@ -150,7 +150,7 @@ async function detail(el, uid) {
   el.append(h('div', { style: { height: '24px' } }), usageBox);
   const tasks = liveTasks({ group: 'cad' }, { empty: 'No reference study or agent run started from this page yet.', limit: 20 });
   el.append(h('div', { style: { height: '24px' } }), h('div', { class: 'card flush' },
-    h('div', { class: 'card-head', style: { padding: '16px 22px 0' } }, h('h2', {}, 'Tasks')), tasks.el));
+    h('div', { class: 'card-head', style: { padding: '16px 22px 0' } }, h('h2', {}, 'Your CAD tasks')), tasks.el));
 
   // ---- selection and roles
   const select = tag => { state.selected = tag; paint(); drawBuilder(); drawFaces(); };
