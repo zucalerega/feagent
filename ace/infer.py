@@ -20,6 +20,8 @@ Output in <out> (default ace_runs/infer-<problem>-<time>):
   runs/<agent>.json    each agent's whole run record (its reasoning trace, every mesh and solve)
   context/<agent>.md   the context each agent was given
   work/<agent>/        its meshes and images (final_mesh.png, final_stress.png: the submitted solve)
+With --ui-runs-dir (or FEACORE_RUNS_DIR, as the dashboard sets it) every solve and each agent's run
+also go to that feacore run store (ace.ui_bridge), for the field viewer and the problem's consensus view.
 
 Scoring. With no ground truth, agreement is the signal: the consensus gives, for each statement
 quantity, the median of the agents' values and their spread, and names the agent whose own error
@@ -89,7 +91,7 @@ def _worker(job: dict) -> dict:
     usage: list = []
     try:
         run = run_agent(job["problem"], job["run_id"], 0, job["context"], Path(job["workdir"]),
-                        make_llm(job["mock"]), usage=usage)
+                        make_llm(job["mock"]), usage=usage, ui=job.get("ui"))
     except Exception:  # noqa: BLE001  one broken agent must not take the others down
         return {"agent": job["agent"], "problem_id": job["problem"], "run_id": job["run_id"],
                 "error": traceback.format_exc(), "usage": usage}
@@ -240,12 +242,14 @@ def main(argv=None) -> int:
     ap.add_argument("--agents", default="all", help="comma-separated agents (a0,a3) or all")
     ap.add_argument("--out", type=Path, help="output dir (default ace_runs/infer-<problem>-<time>)")
     ap.add_argument("--mock", action="store_true", help="canned LLM responses, no API calls")
+    ap.add_argument("--ui-runs-dir", type=Path, help="also record every solve and agent run in this feacore run "
+                    "store, for the feacore web UI (default: $FEACORE_RUNS_DIR if set, else off)")
     args = ap.parse_args(argv)
 
     # Scoring mode first, before ace.config is imported anywhere (see the note at the top).
     mode = "field" if field_ready(args.problem) else "point"
     os.environ["ACE_SCORE"] = mode
-    from ace import config
+    from ace import config, ui_bridge
     from ace.cost import CostLog
     from ace.export_swarm import agent_context
 
@@ -262,13 +266,15 @@ def main(argv=None) -> int:
         (out / sub).mkdir(parents=True, exist_ok=True)
     print(f"output: {out}\nproblem {args.problem} (scored quantity {task['qoi']}, node cap {task['node_cap']}), "
           f"mode {mode}; agents {', '.join(agents)}")
+    ui = ui_bridge.settings(args.ui_runs_dir, loop_id=out.name)   # the feacore run store; None = off
 
     jobs = []
     for a in agents:
         context = agent_context(args.swarm, a, args.problem)
         (out / "context" / f"{a}.md").write_text(context)
         jobs.append({"agent": a, "problem": args.problem, "task": task, "context": context, "mock": args.mock,
-                     "run_id": f"infer-{args.problem}-{a}", "workdir": str(out / "work" / a), "field": mode == "field"})
+                     "run_id": f"infer-{args.problem}-{a}", "workdir": str(out / "work" / a), "field": mode == "field",
+                     "ui": ui})
 
     # One process per agent, all at once, as training runs a generation.
     cost = CostLog(out / "cost.jsonl", float("inf"))
@@ -285,6 +291,10 @@ def main(argv=None) -> int:
             score_population(scored)
             for r, s in zip([r for r in runs if r.get("checks")], scored):
                 r["checks"] = s["checks"]
+    if ui:   # each agent's run as a submission of its solves (the consensus view, the field viewer)
+        ui_bridge.record_predictions(ui, runs)
+        for r in runs:
+            (out / "runs" / f"{r['agent']}.json").write_text(json.dumps(r, indent=1, default=str))
 
     preds = {r["agent"]: r.get("prediction") for r in runs}
     cons = consensus(preds)

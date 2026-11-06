@@ -357,6 +357,30 @@ def von_mises(s: dict) -> np.ndarray:
     return np.sqrt(0.5 * ((xx - yy) ** 2 + (yy - zz) ** 2 + (zz - xx) ** 2) + 3 * (xy ** 2 + yz ** 2 + xz ** 2))
 
 
+def target_mesh(problem_id: str) -> Path:
+    """A fine tessellation of the problem's CAD geometry, to draw a field on (the talk_plots figures
+    draw the reference stress on it): CACHE/<problem>_target.msh, made once in a separate process
+    because gmsh is process-global. A gold CAD part (no "h0") is drawn on its own L1 study mesh."""
+    import subprocess
+    import sys
+
+    p = fea.get_problem(problem_id)
+    if "h0" not in p.params:
+        return Path(p.mesh_file(1))
+    path = CACHE / f"{problem_id}_target.msh"
+    if not path.exists():
+        CACHE.mkdir(parents=True, exist_ok=True)
+        script = ("import gmsh, sys; from ace import fea; "
+                  "from feacore.geometry.gmsh_tools import ensure_domain_group, gmsh_session, set_uniform_size; "
+                  "p = fea.get_problem(sys.argv[1]); "
+                  "s = gmsh_session(p.id); s.__enter__(); p.build_geometry(); ensure_domain_group(p.dim); "
+                  "set_uniform_size(p.params['h0'] / (1.5 if p.dim == 3 else 3)); "
+                  "gmsh.model.mesh.generate(2); gmsh.write(sys.argv[2]); s.__exit__(None, None, None)")
+        subprocess.run([sys.executable, "-c", script, problem_id, str(path)], check=True, capture_output=True,
+                       cwd=Path(__file__).resolve().parent.parent)
+    return path
+
+
 def _geometry_vertices(problem) -> np.ndarray:
     """Coordinates of the CAD vertices (gmsh points) of the problem's geometry."""
     import gmsh

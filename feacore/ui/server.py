@@ -346,6 +346,7 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
     runner = JobRunner(store, quick_workers=quick_workers, study_workers=study_workers)
     from feacore.ui.tasks import TaskRunner, discover_tools
     from feacore.ui.tasks import router as tasks_router
+    from feacore.ui.ace_runs import router as ace_runs_router
 
     tasks = TaskRunner(store)   # long-running CLI tools (agent runs, gold meshing, nonlinear crush): docs/ui.md
     backend_check = _BackendCheck()
@@ -394,6 +395,7 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
     app.state.runner = runner
     app.state.tasks = tasks
     app.include_router(tasks_router(tasks))
+    app.include_router(ace_runs_router(store, tasks))   # Agents section: ACE run folders (feacore/ui/ace_runs.py)
 
     # ------------------------------------------------------------------ frontend
     @app.get("/", include_in_schema=False)

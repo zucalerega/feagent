@@ -112,7 +112,14 @@ also scored in field mode.
 
 ## Watch it evolve
 
-Live, while a run is going (refreshes itself every few seconds):
+The feacore dashboard does all of this in one place (`python -m feacore.ui`, then **Agents**;
+`docs/ui.md`, "Agents section"): start swarm and single-agent runs, watch them live, stop them,
+open a run's training curve, every agent's runs generation by generation (score parts, the run
+report's pictures, the context it saw, the teacher's feedback, its reflection, the organizer's
+changes, links to each solve in the field viewer), the tracker below, the report, and then compare,
+export and run a trained swarm on any problem.
+
+On the command line, live while a run is going (refreshes itself every few seconds):
 
 ```bash
 .venv/bin/python -m ace.watch ace_runs/<dir>                       # then open http://localhost:8765
@@ -475,9 +482,10 @@ ACE_SCORE=field .venv/bin/python -m ace.run_loop --suite cfd --deep --split --me
   workers start on finished runs while the others still work. 2D solves are light. A 3D solve and
   its refinement study can take 0.3-0.5 GB each, so keep `--concurrency` at most (RAM in GB) / 4
   for `cfd3d`.
-- **Watching and stopping:** `.venv/bin/python -m ace.watch ace_runs/<dir>` (port 8765; tunnel it from
-  the Brev box) and `.venv/bin/python -m ace.report ace_runs/<dir>` (see "Watch it evolve").
-  `touch ace_runs/<dir>/STOP` ends the run cleanly before the next generation.
+- **Watching and stopping:** the dashboard's Agents section (see "Watch it evolve"), or
+  `.venv/bin/python -m ace.watch ace_runs/<dir>` (port 8765; tunnel it from the Brev box) and
+  `.venv/bin/python -m ace.report ace_runs/<dir>`.
+  `touch ace_runs/<dir>/STOP` (the dashboard's Stop) ends the run cleanly before the next generation.
 
 ## Requirements instead of boundary conditions (`--statement requirements`)
 
