@@ -174,13 +174,13 @@ subagents (Opus 5.5 and Sonnet 5.5) drove the same harness through `single_agent
 | singular peak | flagged singular at the pin-notch rim; verdict "cannot tell" | flagged singular; verdict "fails" (next row) |
 | beyond the questions | none | the part fails anyway: a smooth-region stress at the jaw-ring root converges to ~630 MPa, so it is above yield. The review allows 220 MPa and requires no yielding; Opus recommends a third of the press force or backing the ring. |
 | study | 4 meshes, 5k-31k nodes | two families of 6 meshes, 8k-47k nodes |
-| cost | 6 of 12 solves, about 99k tokens, about 4 min | 12 of 12 solves, about 275k tokens, about 14 min of work (plus a container restart) |
+| cost | 6 of 12 solves, about 99k tokens, about 4 min | 12 of 12 solves, about 275k tokens; 14 min after a container restart interrupted it, on top of the work before it (no clean total) |
 
 - **The ring-root stress was checked independently:** the bore's peak von Mises is 611-615 MPa on meshes refined
   at the bore (Opus: 630 ± 2%).
 - **The composite score saturates here; the arms differ elsewhere.** Opus was more precise and more thorough,
-  and it closed the loop to the design by finding a converged stress that decides the verdict. Sonnet was 3x
-  cheaper and 3x faster for the same score. One problem is not a benchmark, but it shows the analysis layer is
+  and it closed the loop to the design by finding a converged stress that decides the verdict. Sonnet used about a third
+  of the tokens and far less time for the same score. One problem is not a benchmark, but it shows the analysis layer is
   within reach of both models with this harness on a holdout case.
 - **Both pilots' feedback on the tools is now in the harness:**
   - `solve` refuses a repeat of a solve it already ran (Sonnet lost 2 solves to the default mesh).
