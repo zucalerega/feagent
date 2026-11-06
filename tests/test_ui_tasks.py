@@ -142,3 +142,21 @@ def test_build_argv_positional_and_bool_flags():
     assert T.build_argv(tool, {"target": "abc", "mock": False, "n": 2}) == ["-m", "m", "--real", "--n", "2", "abc"]
     assert T.build_argv(tool, {"target": "abc", "mock": True, "n": None}) == ["-m", "m", "--mock", "abc"]
     assert sys.executable  # the runner always uses the server's own interpreter
+
+
+def test_display_tools_start_through_the_offscreen_launcher(tmp_path):
+    """A tool that renders (Tool.display) runs as python -m feacore.ui.offscreen <its command>: VTK gets a
+    virtual display on a headless server instead of segfaulting. Already-wrapped commands stay as they are."""
+    runner = T.TaskRunner(RunStore(tmp_path))
+    plain = T.Tool(name="test.render", title="Render", group="test", command=["-m", "x.render"], display=True)
+    wrapped = T.Tool(name="test.render2", title="Render", group="test", command=[*T.OFFSCREEN, "scripts/r.py"],
+                     display=True)
+    for t in (plain, wrapped):
+        T.TOOLS[t.name] = t
+    try:
+        assert runner.submit("test.render", {})["argv"] == [*T.OFFSCREEN, "-m", "x.render"]
+        assert runner.submit("test.render2", {})["argv"] == [*T.OFFSCREEN, "scripts/r.py"]
+    finally:
+        runner.stop()
+        for t in (plain, wrapped):
+            T.TOOLS.pop(t.name, None)

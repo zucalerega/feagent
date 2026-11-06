@@ -48,6 +48,7 @@ from typing import Any, Callable
 from feacore.runstore import RunStore, new_id, now_iso
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+OFFSCREEN = ["-m", "feacore.ui.offscreen"]   # launcher for tools that render (Tool.display)
 TASK_STATES = ("queued", "running", "done", "failed", "cancelled", "interrupted")
 _SAFE_TEXT = re.compile(r"^[^\x00-\x08\x0b\x0c\x0e-\x1f]*$")
 
@@ -101,7 +102,9 @@ class Tool:
     API key unless ``mock``). ``build``: optional custom argv builder from the validated args.
     ``build_env``: optional extra environment variables from the validated args, for settings a tool
     reads from its environment rather than its command line (e.g. ACE's ``ACE_SCORE=field``). Both
-    builders may raise ToolArgsError to refuse a combination of arguments.
+    builders may raise ToolArgsError to refuse a combination of arguments. ``display``: the tool may
+    render with pyvista / VTK, which segfaults without an OpenGL context, so the runner starts it
+    through ``feacore.ui.offscreen`` (a virtual X display when the server has none; a no-op otherwise).
     """
 
     name: str
@@ -119,6 +122,7 @@ class Tool:
     build: Callable[[dict], list[str]] | None = None
     env: dict[str, str] = field(default_factory=dict)
     build_env: Callable[[dict], dict[str, str]] | None = None
+    display: bool = False
 
     def schema(self) -> dict:
         missing = [k for k in self.requires_env if not os.environ.get(k)]
@@ -434,6 +438,8 @@ class TaskRunner:
         if out:
             resolved[tool.out_param] = str(resolve_out(out, self.store))
         argv = build_argv(tool, resolved)
+        if tool.display and argv[:2] != OFFSCREEN:
+            argv = [*OFFSCREEN, *argv]
         extra_env = {str(k): str(v) for k, v in (tool.build_env(resolved) if tool.build_env else {}).items()}
         rec = {"id": tid, "tool": tool.name, "title": tool.title, "group": tool.group, "args": clean,
                "argv": argv, "env": extra_env, "out": out, "out_abs": str(resolve_out(out, self.store)) if out else None,

@@ -112,7 +112,7 @@ def ace_env(a: dict) -> dict[str, str]:
 
 
 SWARM = register_tool(Tool(
-    name="ace.swarm", title="Swarm training", group=GROUP, command=["-m", "ace.run_loop"],
+    name="ace.swarm", title="Swarm training", group=GROUP, command=["-m", "ace.run_loop"], display=True,
     description="Train a population of agents (ACE, ace/README.md). Each generation every agent meshes and "
                 "solves its task, the runs are scored, and a teacher, the agents' own reflections and an "
                 "organizer rewrite the agents' notes for the next generation.",
@@ -185,7 +185,7 @@ def single_argv(a: dict) -> list[str]:
 
 
 SINGLE = register_tool(Tool(
-    name="ace.single", title="Single-agent training", group=GROUP, command=["-m", "ace.single_loop"],
+    name="ace.single", title="Single-agent training", group=GROUP, command=["-m", "ace.single_loop"], display=True,
     description="The swarm's baseline: one agent does every task each generation in one conversation, with "
                 "the whole swarm's solve and turn budget, and learns through the same teacher, reflection and "
                 "organizer. Always field-scored (ACE_SCORE=field).",
@@ -252,7 +252,7 @@ def infer_argv(a: dict) -> list[str]:
 
 
 INFER = register_tool(Tool(
-    name="ace.infer", title="Run a trained swarm", group=GROUP, command=["-m", "ace.infer"],
+    name="ace.infer", title="Run a trained swarm", group=GROUP, command=["-m", "ace.infer"], display=True,
     description="Run an exported swarm's agents on any registered problem (benchmarks, gold parts, your own "
                 "CAD), one process per agent, with the context training gave them. Nothing learns. Writes "
                 "each agent's prediction and the consensus between them (results.json, summary.md).",
