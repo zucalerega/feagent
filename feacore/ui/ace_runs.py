@@ -413,13 +413,17 @@ class AceRuns:
         return next((p for p in (d / "run.log", d.parent / f"{d.name}.log") if p.exists()), None)
 
     # ------------------------------------------------------------------ training runs
-    def briefs_of(self, d: Path) -> list[dict]:
+    @staticmethod
+    def run_files(d: Path) -> dict[int, list[Path]]:
+        """{generation: its run records}. A loop writes a generation's records once it is scored."""
+        return {g: sorted((d / f"gen{g}" / "runs").glob("*.json")) for g in _gen_numbers(d)}
+
+    def briefs_of(self, d: Path, gens: set[int] | None = None) -> list[dict]:
+        """The run records' numbers (all generations, or only `gens`), each file read once per change."""
         out = []
-        for g in _gen_numbers(d):
-            for f in sorted((d / f"gen{g}" / "runs").glob("*.json")):
-                b = self.briefs.get(f, run_brief)
-                if b is not None:
-                    out.append(dict(b))
+        for g, files in self.run_files(d).items():
+            if gens is None or g in gens:
+                out += [dict(b) for f in files if (b := self.briefs.get(f, run_brief)) is not None]
         return out
 
     @staticmethod
@@ -445,40 +449,49 @@ class AceRuns:
         return "active" if time.time() - updated < ACTIVE_S else "incomplete"
 
     @staticmethod
-    def _agents(d: Path, kind: str | None, briefs: list[dict]) -> list[str]:
+    def _agents(d: Path, kind: str | None, names: list[re.Match]) -> list[str]:
+        """Persistent agents: from the run ids (g<g>-<problem>-a<k>) and the private notes files."""
         if kind == "single":
             return ["big"]
-        names = {b["agent"] for b in briefs if b["agent"]}
-        names |= {f"a{m.group(1)}" for f in (d / "private").glob("agent*_gen0.json")
-                  if (m := re.fullmatch(r"agent(\d+)_gen0", f.stem))}
-        return sorted(names, key=lambda a: (len(a), a))
+        agents = {m.group(3) for m in names if not m.group(3).isdigit()}
+        agents |= {f"a{m.group(1)}" for f in (d / "private").glob("agent*_gen0.json")
+                   if (m := re.fullmatch(r"agent(\d+)_gen0", f.stem))}
+        return sorted(agents, key=lambda a: (len(a), a))
 
     def run_summary(self, d: Path, entry: dict, briefs: list[dict] | None = None) -> dict:
+        """A run's summary. With `briefs` (every record, the run page) it is complete; without, for
+        the list, only the first and last scored generations' records are read (they hold the scores
+        it shows), and the rest is counted from file names."""
         task = entry.get("task")
-        briefs = self.briefs_of(d) if briefs is None else briefs
         kind = self.kind(d, task)
-        gens = _gen_numbers(d)
+        files = self.run_files(d)
+        done = [g for g, fs in files.items() if fs]
+        full = briefs is not None
+        if briefs is None:
+            briefs = self.briefs_of(d, {done[0], done[-1]} if done else set())
+        names = [m for fs in files.values() for f in fs if (m := RUN_ID.match(f.stem))]
         cfg = _json(d / "run_config.json", {}) or {}
         args = (task or {}).get("args") or {}
-        seen = sorted({b["problem_id"] for b in briefs if b["problem_id"]})
+        seen = sorted({m.group(2) for m in names})
         train = cfg.get("train") or [p for p in (args.get("problems") or "").split(",") if p] or seen
         holdout = cfg.get("holdout") or []
         c = self.small.get(d / "cost.jsonl", costs, NO_COSTS)
         scored = [b for b in briefs if b["score"] is not None and b["generation"] is not None]
         last_gen = max((b["generation"] for b in scored), default=None)
         first_gen = min((b["generation"] for b in scored), default=None)
-        files = [d, d / "cost.jsonl", d / "summary.md", *[d / f"gen{g}" for g in gens[-1:]],
-                 *[d / f"gen{g}" / "runs" for g in gens[-1:]]]
-        updated = max([_mtime(f) for f in files] + [c.get("last_t") or 0])
+        stamped = [d, d / "cost.jsonl", d / "summary.md", *[d / f"gen{g}" for g in list(files)[-1:]],
+                   *[d / f"gen{g}" / "runs" for g in list(files)[-1:]]]
+        updated = max([_mtime(f) for f in stamped] + [c.get("last_t") or 0])
         log = self._log(d, task)
         return {
             "key": entry["key"], "name": d.name, "loop_id": d.name, "kind": kind,
             "deep": kind == "single" or (d / "gen0" / "context").is_dir() or any(d.glob("gen*/reports")),
             "status": self._status(d, task, updated),
             "budget_stop": bool(log and self.small.get(log, lambda p: "BUDGET REACHED" in tail(p, 400_000), False)),
-            "generations": len(gens), "generations_scored": len({b["generation"] for b in scored}),
+            "generations": len(files), "generations_scored": len(done),
             "planned": args.get("generations"), "planned_agents": args.get("agents"), "train": train, "holdout": holdout,
-            "agents": self._agents(d, kind, briefs), "n_runs": len(briefs), "n_crashed": sum(b["crashed"] for b in briefs),
+            "agents": self._agents(d, kind, names), "n_runs": sum(len(fs) for fs in files.values()),
+            "n_crashed": sum(b["crashed"] for b in briefs) if full else None,   # the list does not read them all
             "usd": c["usd"], "calls": c["calls"], "mock": bool(args.get("mock")) or d.name.endswith("-mock"),
             "last": {"generation": last_gen, **group_stats([b for b in scored if b["generation"] == last_gen])}
             if scored else None,

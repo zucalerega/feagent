@@ -754,7 +754,7 @@ function inferCard(swarms, problems, want) {
   const syncAgents = () => {
     const s = ready.find(x => x.key === swarmSel.value);
     values.agents = !s || picked.size === s.agents.length ? 'all' : [...picked].join(',');
-    info.textContent = s ? `${s.root}/ · trained on ${(s.tasks || []).join(', ') || '?'}${s.exported_at ? ` · exported ${s.exported_at}` : ''}` : '';
+    info.textContent = s ? `${s.root}/${(s.tasks || []).length ? ` · trained on ${s.tasks.join(', ')}` : ''}${s.exported_at ? ` · exported ${s.exported_at}` : ''}` : '';
   };
   const drawAgents = () => {
     const s = ready.find(x => x.key === swarmSel.value);
@@ -986,7 +986,7 @@ async function swarmPage(el, key) {
   fill(el, 
     h('div', { class: 'page-head' },
       h('div', {}, backLink('evaluate'), h('h1', {}, s.name, ' ', chip(s.status)),
-        h('p', { class: 'lede' }, `${s.kind === 'single' ? 'Single agent' : `Swarm of ${plural(s.agents.length, 'agent')}`} from run ${s.run || '?'}, generation ${s.generation ?? '?'} · trained on ${(s.tasks || []).join(', ') || '?'}`),
+        h('p', { class: 'lede' }, `${s.kind === 'single' ? 'Single agent' : `Swarm of ${plural(s.agents.length, 'agent')}`} from run ${s.run || '?'}, generation ${s.generation ?? '?'}${(s.tasks || []).length ? ` · trained on ${s.tasks.join(', ')}` : ''}`),
         h('p', { class: 'muted small mono', style: { margin: '6px 0 0' } }, s.key, s.exported_at ? ` · exported ${s.exported_at}` : '', s.git_commit ? ` · commit ${String(s.git_commit).slice(0, 10)}` : '')),
       h('div', { class: 'row wrap', style: { gap: '10px' } },
         s.status === 'ready' ? h('a', { class: 'btn primary', href: `#/agents?tab=evaluate&swarm=${enc(s.key)}` }, 'Run it on a problem') : null,
@@ -1117,6 +1117,6 @@ tr.ag-sel td { background: var(--accent-wash); }
 .ag-md p { max-width: 90ch; }
 .ag-probsel { display: flex; flex-direction: column; gap: 6px; }
 .ag-form > .stack > p.muted:first-child { display: none; }   /* the tool's description: the card says it */
-.ag-form .field input[type=text] { min-width: 300px; }
+.ag-form .field input[type=text] { min-width: 380px; }
 `));
 }
