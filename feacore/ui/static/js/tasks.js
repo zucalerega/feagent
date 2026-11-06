@@ -62,7 +62,7 @@ export function toolForm(name, { defaults = {}, hide = [], submitLabel = 'Start'
       }
       btn.disabled = false;
     };
-    clear(box).append(...[   // DOM append writes null as the text "null": drop the empty parts
+    clear(box).append(...[   // DOM append() would print a null as the text "null"
       t.description ? h('p', { class: 'muted' }, t.description) : null,
       h('div', { class: 'row wrap', style: { gap: '18px' } }, basic.map(field)),
       adv.length ? h('details', {}, h('summary', {}, 'More options'), h('div', { class: 'row wrap', style: { gap: '18px' } }, adv.map(field))) : null,

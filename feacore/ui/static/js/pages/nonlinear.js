@@ -325,9 +325,10 @@ async function runPage(el, ref) {
   const drawMedia = () => {
     const own = (rec.media || []).map(m => ({ ...m, title: m.name }));
     const rendered = (rec.renders || []).flatMap(r => (r.media || []).map(m => ({ ...m, title: m.name, caption: `${r.task.title} (${r.task.id})` })));
-    const pending = (rec.renders || []).filter(r => ['queued', 'running'].includes(r.task.state));
-    put(mediaBox, 
-      pending.length ? h('p', { class: 'muted small' }, pending.map(r => [taskChip(r.task.state), ' ', h('a', { href: `#/tasks/${r.task.id}` }, r.task.title), '  '])) : null,
+    // renders still going, and the ones that ended without a picture (their log says why)
+    const notes = (rec.renders || []).filter(r => ['queued', 'running'].includes(r.task.state) || (['failed', 'cancelled', 'interrupted'].includes(r.task.state) && !(r.media || []).length));
+    put(mediaBox,
+      notes.length ? h('p', { class: 'muted small' }, notes.map(r => [taskChip(r.task.state), ' ', h('a', { href: `#/tasks/${r.task.id}` }, r.task.title), r.task.error ? ` (${r.task.error})` : '', '  '])) : null,
       mediaGrid([...rendered, ...own], { empty: 'No pictures or videos yet: render them below.' }));
   };
 
