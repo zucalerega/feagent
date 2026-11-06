@@ -755,7 +755,9 @@ def router(store, tasks=None):
             if not t:
                 raise HTTPException(404, f"{ref!r} is not a nonlinear run")
             return jsonable(_placeholder(ref, t, d))
-        return jsonable(await run_in_threadpool(run_record, d, kind, root, by_out.get(key), renders.get(key, ()), True))
+        # a scoring run's videos are rendered per mesh, from its sub-folders: they belong to the run too
+        mine = [t for k, ts in renders.items() if k == key or k.startswith(key + os.sep) for t in ts]
+        return jsonable(await run_in_threadpool(run_record, d, kind, root, by_out.get(key), mine, True))
 
     @r.get("/api/nonlinear/test")
     def test():

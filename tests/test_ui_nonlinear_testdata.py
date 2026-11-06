@@ -222,6 +222,23 @@ def test_a_resumed_crush_shows_its_parents_rows_until_it_finishes(client, store_
     assert len(c["u"]) == 1 + 15                     # crush.py's full CSV at the end is taken as it is
 
 
+def test_render_outputs_attach_to_their_run(client, store_root):
+    """A render task's output folder is listed on the page of the run it names, also when it names one mesh
+    (a sub-folder) of a scoring run."""
+    _fake_score(store_root / "nonlinear" / "score" / "s2" / "auto")
+    out = store_root / "nonlinear" / "renders" / "render-score-1"
+    out.mkdir(parents=True)
+    (out / "ramp.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+    T.TaskStore(RunStore(store_root)).save({
+        "id": "task-20260101-000000-abcdef", "tool": "nonlinear.render_score", "title": "Video of a scoring ramp",
+        "group": "nonlinear", "args": {"run": "@runs/nonlinear/score/s2/auto"}, "argv": [], "out": None,
+        "out_abs": str(out), "state": "done", "created_at": "2026-01-01T00:00:00Z"})
+    run = client.get("/api/nonlinear/run", params={"ref": "@runs/nonlinear/score/s2"}).json()
+    (r,) = run["renders"]
+    assert r["task"]["state"] == "done" and [m["name"] for m in r["media"]] == ["ramp.mp4"]
+    assert r["media"][0]["kind"] == "video"
+
+
 def test_gallery_has_captions_and_the_committed_videos(client):
     g = client.get("/api/nonlinear/gallery").json()
     items = [it for s in g["sections"] for it in s["items"]]
