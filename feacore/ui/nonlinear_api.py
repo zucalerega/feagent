@@ -342,8 +342,10 @@ def _task_maps(tasks) -> tuple[dict, dict]:
         if t.get("out_abs"):
             by_out.setdefault(str(Path(t["out_abs"]).resolve()), t)
         if t.get("tool") in RENDER_TOOLS and (t.get("args") or {}).get("run"):
+            arg = str(t["args"]["run"])                     # absolute, repo-relative or @runs/...
+            p = tasks.store.root / arg[len("@runs/"):] if arg.startswith("@runs/") else Path(arg)
             try:
-                run = str(Path(t["args"]["run"]).resolve())
+                run = str((p if p.is_absolute() else REPO_ROOT / p).resolve())
             except OSError:
                 continue
             renders.setdefault(run, []).append(t)
