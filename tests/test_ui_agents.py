@@ -343,3 +343,23 @@ def test_train_export_and_run_a_mock_swarm_through_the_dashboard(tmp_path, roots
         assert _wait(c, inf["id"])["state"] == "done", c.get(f"/api/tasks/{inf['id']}/log").text[-3000:]
         res = c.get("/api/ace/infer", params={"dir": "@runs/ace_runs/infer-e2e"}).json()
         assert res["problem"] == "cooks_membrane" and res["n_ok"] == 1 and res["results"]["consensus"]["qois"]
+        a0 = res["agents"][0]
+        assert a0["ui_submission_id"] and all(s["ui_run_id"] for s in a0["solves"] if s["ok"])   # bridged too
+
+
+def test_a_mock_single_agent_run_through_the_dashboard(tmp_path, roots, monkeypatch):
+    """The single-agent baseline: always field-scored (ACE_SCORE=field set for the task), and recorded
+    in the run store like the swarm (its run-store bridge, on because the task runner sets
+    FEACORE_RUNS_DIR)."""
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    with TestClient(create_app(runs_dir=tmp_path / "store", token="")) as c:
+        rec = c.post("/api/tasks", json={"tool": "ace.single", "args": {
+            "mock": True, "problems": "cooks_membrane", "generations": 1, "out": "@runs/ace_runs/single-e2e"}}).json()
+        assert rec["env"] == {"ACE_SCORE": "field"}
+        assert _wait(c, rec["id"])["state"] == "done", c.get(f"/api/tasks/{rec['id']}/log").text[-3000:]
+        run = next(x for x in c.get("/api/ace/runs").json()["runs"] if x["name"] == "single-e2e")
+        assert run["kind"] == "single" and run["status"] == "finished" and run["agents"] == ["big"]
+        detail = c.get("/api/ace/run", params={"dir": run["key"]}).json()
+        assert detail["bridge"] and detail["runs"][0]["run_id"] == "g0-cooks_membrane-big"
+        a = c.get("/api/ace/agent-run", params={"dir": run["key"], "run_id": "g0-cooks_membrane-big"}).json()
+        assert a["context"]["text"] and a["report"]["images"]   # its context and the run report's pictures
