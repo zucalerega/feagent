@@ -459,13 +459,16 @@ class AceRuns:
     @staticmethod
     def _status(d: Path, task: dict | None, updated: float) -> str:
         state = (task or {}).get("state")
+        recent = time.time() - updated < ACTIVE_S
         if state in ("queued", "running"):
             return "stopping" if state == "running" and task.get("cancel") == "stop" else state
+        if state == "interrupted" and recent and not (d / "summary.md").exists():
+            return "active"     # the server restarted, but the loop's own process is still writing
         if state in ("failed", "interrupted", "cancelled"):
             return state
         if (d / "summary.md").exists():
             return "stopped" if (d / "STOP").exists() else "finished"
-        return "active" if time.time() - updated < ACTIVE_S else "incomplete"
+        return "active" if recent else "incomplete"
 
     @staticmethod
     def _agents(d: Path, kind: str | None, names: list[re.Match]) -> list[str]:
