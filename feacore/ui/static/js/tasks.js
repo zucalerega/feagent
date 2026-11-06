@@ -13,7 +13,7 @@ export async function tool(name) {
   return t;
 }
 
-const STATE_CHIP = { queued: 'pending', running: 'running', done: 'succeeded', failed: 'failed', cancelled: 'cancelled', interrupted: 'failed' };
+const STATE_CHIP = { queued: 'info', running: 'running', done: 'good', failed: 'critical', cancelled: 'warning', interrupted: 'warning' };   // statusChip's severities
 export function taskChip(state) { return statusChip(STATE_CHIP[state] || state, state); }
 
 /** A form for tool `name`. `defaults` pre-fills values; `hide` lists params not shown (sent from defaults).
