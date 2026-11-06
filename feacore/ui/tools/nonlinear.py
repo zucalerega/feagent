@@ -130,10 +130,11 @@ register_tool(Tool(
     description="A contract mesh (groups bottom, top, domain; experiments/mesh_systems/CONTRACT.md) made the ACE "
                 "agents' way: a global size, refinement at the platens and at the two worst stress spots of a "
                 "coarse linear solve, quality gates. Quadratic tets with straight edges, so CalculiX accepts any "
-                "size. 8 mm gives about 7k nodes in under a minute; the study meshes had about 40k nodes.",
+                "size (the faceted bore can fail the volume gate). 8 mm gives about 6k nodes in seconds; the study "
+                "meshes had about 40k nodes.",
     params=[Param("part", "choice", "abc_00000065", choices=PARTS,
                   help="abc_00000065: the C-bracket (shaft clamp), crushed along y; abc_00000003: the tube, along z"),
-            Param("h", "float", 8.0, label="element size (mm)", help="8 mm: ~7k nodes (a crush takes minutes); "
+            Param("h", "float", 8.0, label="element size (mm)", help="8 mm: ~6k nodes (a crush takes minutes); "
                   "3.5 mm: ~30k nodes (hours)", min=2.0, max=15.0),
             Param("hotspots", "bool", True, help="refine at the two worst von Mises spots of a coarse linear solve",
                   advanced=True),

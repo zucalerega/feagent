@@ -236,6 +236,9 @@ def crush_curves(d: Path) -> tuple[list[dict], dict]:
               "height_m"):
         if k in summ:
             facts[k] = summ[k]
+    if "n_nodes" not in facts and meta.get("mesh"):       # still running: the mesh's own report has the counts
+        rep = _read_json(Path(meta["mesh"]).parent / "report.json") or {}
+        facts.update({k: v for k, v in (("n_nodes", rep.get("n_nodes")), ("n_cells", rep.get("n_elements"))) if v})
     if isinstance(summ.get("first_failure"), dict):
         facts["first_failure_height_fraction"] = summ["first_failure"].get("height_fraction")
     label = f"crush: {facts.get('system') or 'mesh'} / {part or '?'} ({facts.get('platen') or 'bonded'}, " \
@@ -491,6 +494,8 @@ def meshes(store_root: Path) -> list[dict]:
                     "h_mm": round(rep["knobs"]["h"] * 1e3, 3) if isinstance(rep.get("knobs"), dict)
                     and rep["knobs"].get("h") else None,
                     "straight": (rep.get("knobs") or {}).get("straight_edges"),
+                    "gates": {g["id"]: g["status"] for g in rep.get("gates") or []
+                              if isinstance(g, dict) and g.get("status") in ("fail", "warn")},
                     "imperfection": {"amp_mm": imp.get("amplitude_mm"), "mode": imp.get("mode"),
                                      "platen": imp.get("platen"), "critical_load_N": crit[0] if crit else None}
                     if imp else None,
