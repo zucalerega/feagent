@@ -82,21 +82,24 @@ def test_teacher_prompt_and_mock(png):
     runs = [_run(k) for k in range(4)]
     reports = [_report(r, png) for r in runs]
     reports[3] = {"run_id": runs[3]["run_id"], "error": "report failed"}     # a failed report still gets taught
-    user = dt.build_user(TASK, reports, runs, {"a0": "[mesh-0001] my note"}, "shared text", None)
+    # The shared prefix of every teacher call (one call per run plus a cross-run call on it, since 23e680a).
+    user, pairs = dt.build_prefix(TASK, reports, runs, {"a0": "[mesh-0001] my note"}, "shared text", None, None, None)
     text = "\n".join(b["text"] for b in user if b["type"] == "text")
     assert dt.PROCESS_BRIEF in dt.SYSTEM
     for r in runs:
         assert r["run_id"] in text
+    assert {run["run_id"] for run, _ in pairs} == {r["run_id"] for r in runs}
     assert "mesh(" in text and "edge_inner" in text          # the trace excerpt
     assert "region grid" in text and "no report (report failed)" in text
     images = [b for b in user if b["type"] == "image"]
     assert len(images) == min(dt.MAX_IMAGES, 3 * 3)           # 3 runs with pictures, 3 each
+    assert user[-1]["cache_control"] == {"type": "ephemeral"}  # the end of the cached prefix
 
     records: list = []
     fb = dt.teach(TASK, reports, runs, {}, "", None, MockLLM(), records)
     assert isinstance(fb, dt.TeacherFeedback) and fb.task == TASK
     assert {a.run_id for a in fb.per_agent} == {r["run_id"] for r in runs}
-    assert len(records) == 1 and records[0]["role"] == "teacher"
+    assert len(records) == len(runs) + 1 and {r["role"] for r in records} == {"teacher"}   # per run + cross-run
 
 
 def test_self_reflect_prompt_and_mock(png):
@@ -115,7 +118,7 @@ def test_organizer_keeps_known_ids_only():
     assert org.PROCESS_BRIEF in org.SYSTEM
     out = org.organize_private("a1", current, incoming, MockLLM(), [])
     assert [n["id"] for n in out] == ["a1-mesh-0001", "a1-bc-0001", None]
-    assert out[2]["content"] == "new"
+    assert out[2]["content"] == "[general] new"        # clean_notes puts the task tag into the text
 
     class Liar:   # returns an unknown id and a repeated id: both must become new notes
         def structured(self, role, system, user, schema, records=None):

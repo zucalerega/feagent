@@ -63,8 +63,10 @@ def test_aliases_rename_groups_everywhere_without_changing_the_physics(requireme
 
 
 def test_task_prompt_gives_requirements_and_hides_the_problem_id(requirements_mode):
-    from ace.agent import task_prompt
-    for pid in ELASTIC:
+    from ace.agent import is_nonlinear, task_prompt
+    # A nonlinear task (abc_00000065_compression) is mesh-only: its prompt states the frozen test setup
+    # in plain words for every statement mode (ace.agent._nonlinear_task_prompt), so nothing is hidden.
+    for pid in (p for p in ELASTIC if not is_nonlinear(p)):
         prompt = task_prompt(pid)
         assert R.agent_text(pid) in prompt and R.label_for(pid) in prompt
         assert pid not in prompt

@@ -5,6 +5,8 @@ from feagent.meshdata import MeshData
 from feagent.render import RenderResult, render_faces, render_field, render_groups, render_quality
 from feagent.types import FaceInfo, GeometryModel, Tessellation
 
+pytestmark = pytest.mark.usefixtures("renderer")   # every test here renders off-screen
+
 
 def _face(tag, center, area):
     return FaceInfo(tag=tag, kind="plane", area=area, center=center, bbox=(center, center),

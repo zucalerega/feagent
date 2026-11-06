@@ -91,7 +91,8 @@ def test_single_loop_mock(tmp_path):
             assert {x["input"]["task"] for x in r["trace"] if x["type"] == "tool_call"} == {t}
             assert r["playbook_text"] == (out / f"gen{g}" / "context" / "big.md").read_text()
             assert (out / f"gen{g}" / "reports" / f"{r['run_id']}.json").exists()
-        assert recs[0]["usage"] and not recs[1]["usage"]             # one conversation, counted once
+        # one conversation per task (run_big, since 2c796da): each record carries its own usage
+        assert recs[0]["usage"] and recs[1]["usage"]
     for t in TASKS:                                                  # gen 0 learned, gen 1 only evaluated
         assert (out / "gen0" / f"teacher_{t}.json").exists()
         assert (out / "gen0" / "reflections" / f"g0-{t}-big.json").exists()
