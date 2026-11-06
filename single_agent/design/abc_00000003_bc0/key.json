@@ -1,0 +1,13 @@
+{
+  "problem_id": "abc_00000003_bc0",
+  "questions": [
+    {"id": "Q1", "qoi": "u_mean_f18", "expect": "converge"},
+    {"id": "Q2", "qoi": "vm_mean", "expect": "converge"}
+  ],
+  "idealization": [
+    {"reference": "fixed on f21", "implied_by": "stand post bonded in full contact to the bore's flat end face under the cap"},
+    {"reference": "displacement x = 0 on f19", "implied_by": "guide plate stops motion of the +x shoulder along x, free in y and z"},
+    {"reference": "force (-7800, 0, 0) N on f18", "implied_by": "tie bracket bonded over the whole -x shoulder pulls along -x with 7.8 kN, equal force per area"}
+  ],
+  "notes": "vm_max has a converged gold reference here but is not asked: an agent refining the re-entrant edges (support rim f20/f21, pin/shoulder corners) can see a singular peak exceed it."
+}

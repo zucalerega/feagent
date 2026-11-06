@@ -1,0 +1,14 @@
+{
+  "problem_id": "abc_00000065_bc0",
+  "questions": [
+    {"id": "Q1", "qoi": "u_mean_f7", "expect": "converge"},
+    {"id": "Q2", "qoi": "u_max", "expect": "converge"},
+    {"id": "Q3", "qoi": "strain_energy", "expect": "converge"},
+    {"id": "Q4", "qoi": "vm_mean", "expect": "converge"},
+    {"id": "Q5", "qoi": "vm_max", "expect": "diverge"}
+  ],
+  "idealization": [
+    {"reference": "fixed on f12", "implied_by": "back face bonded over its whole area to a rigid base plate"},
+    {"reference": "pressure 2.1 MPa on f7", "implied_by": "pad presses 2.1 MPa on the whole convex outer flank of the jaw on the +x side"}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "problem_id": "abc_00000003_bc4",
+  "questions": [
+    {"id": "Q1", "qoi": "u_mean_f3", "expect": "converge"},
+    {"id": "Q2", "qoi": "strain_energy", "expect": "converge"},
+    {"id": "Q3", "qoi": "vm_mean", "expect": "converge"},
+    {"id": "Q4", "qoi": "vm_max", "expect": "diverge"}
+  ],
+  "idealization": [
+    {"reference": "fixed on f20", "implied_by": "bore wall bonded over its whole area to a rigid arbour (not the end face)"},
+    {"reference": "pressure 10.8 MPa on f3", "implied_by": "collet squeezes the whole +x pin surface at 10.8 MPa"}
+  ]
+}
