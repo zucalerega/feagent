@@ -7,8 +7,8 @@ gates passes. Solving is out of scope; a separate solver consumes the exports an
 
 ## Quick start
 
-The package is shipped by the repo's single root `pyproject.toml` (together with `feacore` and
-`feabench`); `uv run` works from the repo root or from this directory.
+The package is shipped by the repo's single root `pyproject.toml` (together with `feacore`, `ace`,
+`feabench` and `wsp`); `uv run` works from the repo root or from this directory.
 
 ```bash
 uv sync                                             # from the repo root

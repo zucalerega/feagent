@@ -31,9 +31,9 @@ fi
 echo "== Python extras: ace, cfd"
 UV=$(command -v uv || echo "$HOME/.local/bin/uv")
 if [ "$PY" = "$PWD/.venv/bin/python" ] && [ -x "$UV" ]; then
-  "$UV" pip install -q --python "$PY" -e ".[dev,ace,cfd]"
+  "$UV" pip install -q --python "$PY" -e ".[ui,ace,cfd]" --group dev   # dev is a dependency group, not an extra
 elif [ "$PY" = "$PWD/.venv/bin/python" ]; then
-  "$PY" -m pip install -q -e ".[dev,ace,cfd]"
+  "$PY" -m pip install -q -e ".[ui,ace,cfd]" pytest matplotlib sympy httpx
 else   # aarch64 conda env: gmsh came from conda-forge, so only add the extras' packages
   "$PY" -m pip install -q anthropic "pydantic>=2" rapidfuzz matplotlib foamlib
 fi

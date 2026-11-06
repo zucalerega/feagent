@@ -13,7 +13,7 @@ share a part must not overwrite each other, and the part's directory may be read
 Tool descriptions and the workflow are improver-editable files, read when the server is built:
 ``<context dir>/tools.yaml`` (tool name -> description; must list exactly the registered tools)
 and ``<context dir>/SKILL.md`` (served as the MCP prompt ``meshing_workflow``). The context dir is
-``$FEAGENT_CONTEXT_DIR`` if set, else ``agent_context/`` at the repository root.
+``$FEAGENT_CONTEXT_DIR`` if set, else ``meshing-harness/agent_context/``.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ _STDERR_TAIL = 2000
 
 
 def context_dir() -> Path:
-    """``$FEAGENT_CONTEXT_DIR`` (resolved) if set, else the repository's ``agent_context/``."""
+    """``$FEAGENT_CONTEXT_DIR`` (resolved) if set, else ``meshing-harness/agent_context/``."""
     env = os.environ.get(CONTEXT_ENV)
     return Path(env).resolve() if env else _DEFAULT_CONTEXT
 
