@@ -304,7 +304,7 @@ def test_inspect_geometry_tool_returns_digest(parts_dir):
     assert text.startswith("GEOMETRY") and "FEATURES" in text and "HAZARDS" in text
 
 
-def test_render_view_tool_returns_caption_and_image(parts_dir, tmp_path, monkeypatch):
+def test_render_view_tool_returns_caption_and_image(parts_dir, tmp_path, monkeypatch, renderer):
     monkeypatch.chdir(tmp_path)
     caption, image = mcp_server.render_view(str(parts_dir / "plate_hole.step"),
                                             query={"kind": "cylinder"})
@@ -332,7 +332,7 @@ def test_automesh_tool_writes_into_the_server_cwd(parts_dir, tmp_path, monkeypat
     assert sorted(p.name for p in part_dir.iterdir()) == ["cantilever.step"]
 
 
-def test_automesh_then_check_mesh_tools(parts_dir, tmp_path, state_file):
+def test_automesh_then_check_mesh_tools(parts_dir, tmp_path, state_file, renderer):
     step = tmp_path / "cantilever.step"
     shutil.copy(parts_dir / "cantilever.step", step)
     text = mcp_server.automesh(str(step), output=str(tmp_path / "cantilever_mesh"))

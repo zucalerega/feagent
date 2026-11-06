@@ -36,7 +36,7 @@ def cli(*args: str, env: dict | None = None) -> subprocess.CompletedProcess:
 
 
 @pytest.fixture(scope="module")
-def cantilever(tmp_path_factory, parts_dir):
+def cantilever(tmp_path_factory, parts_dir, renderer):
     d = tmp_path_factory.mktemp("cantilever")
     spec = write_spec(d / "proj", parts_dir / "cantilever.step", CANTILEVER)
     with pytest.MonkeyPatch.context() as mp:
@@ -144,7 +144,7 @@ def test_cli_spec_error_exit2(tmp_path, parts_dir):
     assert "solve" in p.stderr and "bcs" in p.stderr
 
 
-def test_cli_render_faces(tmp_path, parts_dir):
+def test_cli_render_faces(tmp_path, parts_dir, renderer):
     out = tmp_path / "f.png"
     p = cli("render", str(parts_dir / "bracket.step"), "--view", "faces",
             "--query", '{"feature":"hole","radius":5}', "-o", str(out), "--json")
@@ -166,7 +166,7 @@ def test_cli_mesh_then_waive(tmp_path, parts_dir):
     assert (entry["status"], entry["waiver"]) == ("unchecked", "smoke test")
 
 
-def test_cli_automesh_bracket(tmp_path, parts_dir):
+def test_cli_automesh_bracket(tmp_path, parts_dir, renderer):
     env = {**os.environ, "FEAGENT_STATE": str(tmp_path / "state.json")}
     out = tmp_path / "auto"
     p = cli("automesh", str(parts_dir / "bracket.step"), "-o", str(out), env=env)
