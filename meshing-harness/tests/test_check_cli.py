@@ -10,7 +10,9 @@ import yaml
 
 from feagent.check import CheckReport, record_state, report_markdown, run_check, state_path
 
-FEAGENT = str(Path(sys.executable).parent / "feagent")
+# The installed console script, else the module (conftest.py puts this checkout's feagent on PYTHONPATH).
+_SCRIPT = Path(sys.executable).parent / "feagent"
+FEAGENT = [str(_SCRIPT)] if _SCRIPT.is_file() else [sys.executable, "-m", "feagent.cli"]
 
 CANTILEVER = {
     "analysis": "fea",
@@ -30,7 +32,7 @@ def write_spec(d: Path, geometry: Path, body: dict) -> Path:
 
 
 def cli(*args: str, env: dict | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run([FEAGENT, *args], capture_output=True, text=True, timeout=600, env=env)
+    return subprocess.run([*FEAGENT, *args], capture_output=True, text=True, timeout=600, env=env)
 
 
 @pytest.fixture(scope="module")
