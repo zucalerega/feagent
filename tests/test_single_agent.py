@@ -188,3 +188,23 @@ def test_mock_loop_runs_and_learns(tmp_path):
     assert rows[0]["train"]["submitted"] == 1
     assert Rulebook.load(out / "rulebook_gen1.json").learned       # the learning step added a rule
     assert (out / "gen0" / "cards" / f"{PID}.json").exists() and (out / "summary.md").exists()
+
+
+def test_duplicate_solve_is_refused_and_ratio_reported(tmp_path):
+    """From the Sonnet pilot: a solve that repeats a mesh and setup is refused without using a solve, and the mesh
+    tools report the representative element size and the effective refinement ratio."""
+    ws = workspace.make(PID, tmp_path)
+    s = Session(ws)
+    m1, err = s.call("mesh", {"h": 0.012, "order": 2})
+    assert not err and m1["h_rep"] > 0
+    m2, err = s.call("refine_mesh", {"mesh": 1, "factor": 1.5})
+    assert not err and m2["effective_ratio"] > 1.0
+    setup = reference_setup(PID)
+    out, err = s.call("solve", {"mesh": 1, **setup})
+    assert not err
+    out, err = s.call("solve", {"mesh": 1, **setup})
+    assert err and "already ran this setup" in out["error"]
+    assert len(s.state["solves"]) == 1                       # the refused call did not use a solve
+    out, err = s.call("solve", {"mesh": 2, **setup})
+    assert not err and out["solve"] == 2
+    assert math.isclose(out["h_rep"], m2["h_rep"], rel_tol=0.02)   # the mesh tool's h_rep is the study's h

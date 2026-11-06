@@ -132,7 +132,9 @@ TOOLS = [
         "name": "refine_mesh",
         "description": "Re-mesh with the recipe of mesh `mesh` and every element size (global h and the refinement "
                        "sizes) divided by `factor` (refinement radii and groups unchanged). The systematic way to "
-                       "build a convergence study: factors of 1.3-2 between levels.",
+                       "build a convergence study: factors of 1.3-2 between levels. Returns the new mesh's h_rep and the "
+                       "effective ratio (it can be well below `factor`: curvature sizing and small features do not "
+                       "scale).",
         "input_schema": {"type": "object", "properties": {"mesh": {"type": "integer"}, "factor": {"type": "number"}},
                          "required": ["mesh", "factor"]},
     },
@@ -436,6 +438,16 @@ class Session:
             full = {**fea.geometry_summary(self.part), **geometry_info.describe(self.part)}
         return geometry_info.for_agent(full), False
 
+    def _volume(self) -> float:
+        if "volume" not in self.state:
+            import gmsh
+
+            from feacore.geometry.gmsh_tools import gmsh_session
+            with quiet(), gmsh_session(self.part.id + "-volume"):
+                self.part.build_geometry()
+                self.state["volume"] = sum(gmsh.model.occ.getMass(3, t) for _, t in gmsh.model.getEntities(3))
+        return self.state["volume"]
+
     def _feagent_model(self):
         if self._fmodel is None:
             from feagent.geometry import analyze
@@ -518,6 +530,9 @@ class Session:
             self.part.groups = {}
         m = {k2: v for k2, v in m.items() if k2 not in ("sha256", "gmsh")}
         m.update(number=k, request=request)
+        if m.get("ok") and m.get("elements"):
+            # the study's representative size (volume / cells)^(1/3), as the solver computes it after a solve
+            m["h_rep"] = float(f"{(self._volume() / m['elements']) ** (1 / 3):.4g}")
         self.state["meshes"].append(m)
         out = {"mesh": k, **{k2: v for k2, v in m.items() if k2 not in ("path", "request", "number")}}
         if not m.get("ok"):
@@ -549,6 +564,13 @@ class Session:
         resolved = {name: self._resolve_faces(faces)[0] for name, faces in req["groups"].items()}
         out, err = self._make_mesh(req, resolved)
         out["refined_from"] = {"mesh": k, "factor": f}
+        h0, h1 = meshes[k - 1].get("h_rep"), out.get("h_rep")
+        if h0 and h1:
+            out["effective_ratio"] = float(f"{h0 / h1:.3g}")
+            if h0 / h1 < 1.15:
+                out["note"] = (f"the representative element size changed by only {h0 / h1:.2f}x (curvature sizing, the "
+                               f"size floor and small features do not scale): a study needs about 1.3x per level, so use "
+                               f"a larger factor or coarsen the base mesh")
         return out, err
 
     # ------------------------------------------------------------------ solving
@@ -580,6 +602,14 @@ class Session:
         names = [q.get("name") for q in setup["qois"]]
         if len(set(names)) != len(names) or not all(isinstance(n, str) and n for n in names):
             return {"error": "every QoI needs a unique, non-empty name (this did not use a solve)"}, True
+        key = canonical_setup(setup) + json.dumps(sorted(json.dumps(q, sort_keys=True) for q in setup["qois"]))
+        dup = next((r for r in self.state["solves"] if r["mesh"] == mesh["number"] and r["ok"]
+                    and canonical_setup(r["setup"]) + json.dumps(sorted(json.dumps(q, sort_keys=True)
+                                                                        for q in r["setup"]["qois"])) == key), None)
+        if dup is not None:
+            return {"error": f"solve {dup['number']} already ran this setup on mesh {mesh['number']}: nothing new to "
+                             f"compute (this did not use a solve). Did you mean another mesh? `mesh` defaults to the "
+                             f"latest one ({len(self.state['meshes'])})."}, True
         result, err = solve_setup(mesh, setup)
         n = n_ok + 1
         rec = {"number": n, "mesh": mesh["number"], "setup": setup, "ok": result is not None}
