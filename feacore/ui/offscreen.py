@@ -19,7 +19,9 @@ import tempfile
 from pathlib import Path
 
 SOFTWARE_GL = {"LIBGL_ALWAYS_SOFTWARE": "1", "GALLIUM_DRIVER": "llvmpipe", "__GLX_VENDOR_LIBRARY_NAME": "mesa"}
-SCREEN = "-screen 0 1920x1080x24"
+# -noreset: an X server resets when its last client leaves, and a renderer that opens a window per frame (several
+# worker processes at once) can then connect in the middle of the reset and crash
+SCREEN = "-screen 0 1920x1080x24 -noreset"
 
 
 def ffmpeg_dir() -> str | None:

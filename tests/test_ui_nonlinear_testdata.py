@@ -247,6 +247,18 @@ def test_meshes_and_capabilities(client, store_root):
     assert set(caps) >= {"ccx", "ffmpeg", "display", "pyvista", "notes"}
 
 
+def test_the_offscreen_launcher_picks_a_display():
+    import sys
+
+    from feacore.ui import offscreen
+
+    assert offscreen.display_mode({"DISPLAY": ":5"}) == "display"
+    assert offscreen.command("x.py", ["a"], {"DISPLAY": ":5"}) == [sys.executable, "x.py", "a"]
+    if shutil.which("xvfb-run"):
+        cmd = offscreen.command("x.py", ["a"], {})
+        assert cmd[:2] == ["xvfb-run", "-a"] and "-noreset" in cmd[3] and cmd[-2:] == ["x.py", "a"]
+
+
 # --------------------------------------------------------------------------- test data
 
 
