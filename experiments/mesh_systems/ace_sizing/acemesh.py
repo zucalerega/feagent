@@ -46,8 +46,11 @@ def build_geometry(step: str, axis: str) -> dict:
     return {"bottom": bottom, "top": top, "bbox": bb, "diag": diag}
 
 
-def make_mesh(step, axis, path, h, order=2, refinements=None, floor_div=100.0, write_inp=None, verbosity=0, high_order_opt=False):
-    """ace.fea.make_mesh, reproduced. Returns stats dict (ok False + error on failure)."""
+def make_mesh(step, axis, path, h, order=2, refinements=None, floor_div=100.0, write_inp=None, verbosity=0, high_order_opt=False,
+              straight=False):
+    """ace.fea.make_mesh, reproduced. Returns stats dict (ok False + error on failure).
+    straight: order 2 with every midside node at its straight edge midpoint (C3D10 with straight edges, which
+    CalculiX accepts at any size; curved boundary edges at a coarse h put midside nodes too far off)."""
     refinements = refinements or []
     with gmsh_session("ace_sizing", verbosity):
         gmsh.option.setNumber("General.NumThreads", 4)
@@ -83,6 +86,8 @@ def make_mesh(step, axis, path, h, order=2, refinements=None, floor_div=100.0, w
         gmsh.option.setNumber("Mesh.RandomFactor", 1e-9)
         gmsh.model.mesh.generate(3)
         if order == 2:
+            if straight:
+                gmsh.option.setNumber("Mesh.SecondOrderLinear", 1)
             gmsh.model.mesh.setOrder(2)
             if high_order_opt:   # deviation from ace.fea: untangle tets inverted by curving boundary edges
                 gmsh.model.mesh.optimize("HighOrder")

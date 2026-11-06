@@ -16,6 +16,7 @@ Reference meshes (all P2):
 
 Writes results/real_data_finetune/baselines/<name>/ (run_curve's curve.csv, summary.json, series/, pngs, mesh.msh),
 baselines/baselines.json and baselines/error_vs_nodes.png. Points added with --add are kept in baselines.json.
+--out DIR writes all of it to DIR instead (a scratch study that leaves the committed baselines alone).
 """
 from __future__ import annotations
 
@@ -169,7 +170,7 @@ def table(auto_ref: dict | None) -> dict:
             rows[name] = {"label": LABELS[name], "nodes": s["nodes"], "dofs": s["dofs"],
                           "mean_rel_err": s["mean_rel_err"], "rel_err": s["rel_err"],
                           "force_sim_N": s["force_sim_N"], "wall_s": s.get("wall_s"),
-                          "straightened": s.get("straightened", False), "dir": str((OUT / name).relative_to(ROOT))}
+                          "straightened": s.get("straightened", False), "dir": _rel(OUT / name)}
     auto = rows.get("auto") or auto_ref
     for r in rows.values():
         if auto:
@@ -220,9 +221,16 @@ def _pct(e) -> str:
     return "-" if e is None else f"{e * 100:.2f} %"
 
 
+def _rel(p: Path) -> str:
+    """A path relative to the repo when it is inside it (the committed baselines), else absolute (--out)."""
+    p = Path(p).resolve()
+    return str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p)
+
+
 # --------------------------------------------------------------------------- main
 
 def main() -> None:
+    global OUT
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", nargs="+", choices=list(BASELINES), help="baselines to (re)solve")
     ap.add_argument("--force", action="store_true", help="re-solve even if a summary exists")
@@ -232,7 +240,13 @@ def main() -> None:
     ap.add_argument("--plot-only", action="store_true", help="no solves: table and plot from the saved summaries")
     ap.add_argument("--add", action="append", default=[], metavar="LABEL=SUMMARY_JSON",
                     help="add a run's point (a run_curve summary.json) to the plot; kept in baselines.json")
+    ap.add_argument("--out", type=Path, default=None,
+                    help="write the meshes, runs, table and plot here instead of results/real_data_finetune/baselines")
     a = ap.parse_args()
+    if a.out is not None and a.calibrate:
+        ap.error("--calibrate rewrites the frozen nonlinear_spec.json from the committed baselines: not with --out")
+    if a.out is not None:
+        OUT = a.out.resolve()
     from ace import nonlinear
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -294,7 +308,7 @@ def main() -> None:
     for r in rows.values():
         print(f"{r['label']:16} {r['nodes']:7d} {r['dofs']:7d} {_pct(r['mean_rel_err']):>8} "
               f"{r.get('score', float('nan')):6.2f}  " + " ".join(f"{x * 100:5.1f}" for x in r["rel_err"]))
-    print("wrote", (OUT / "baselines.json").relative_to(ROOT), "and error_vs_nodes.png")
+    print("wrote", _rel(OUT / "baselines.json"), "and error_vs_nodes.png")
 
 
 if __name__ == "__main__":
