@@ -15,7 +15,7 @@ Check the fixed solver, and the agents' setups, against Instron measurements on 
 - `.step` (mm) is for FEA.
 - Only grip ends were added. Everything the tests measure is the original geometry.
 - The repo's gold set has only these two parts (its 10 BC sets are on them). More gold parts are
-  in the H100 goldgen archives (`scripts/pull_gold_batches.sh` on `gold-benchmarks`).
+  in the H100 goldgen archives (`scripts/pull_gold_batches.sh`).
 - **The gold reference values do not apply here.** They belong to the generated support/load
   sets, not to these pull setups. Each test needs an FEA of the setup as tested.
 
@@ -29,7 +29,7 @@ Breakerspace Instron 68TM-50: 5 kN load cell, wedge grips, video extensometer.
 | `abc_00000065_pull` | base tab in flat wedge jaws | M6 bolt through the clamp-bolt hole, finger-tight (a pin, not a clamp), through a steel tongue in the slot | arm vs base block; a transverse pair across the bore | tongue: 6 mm steel flat bar, at most 16 mm wide, Ø6.5 hole |
 | `mounting_bracket_vertical` | base bolted with 4 × M8 (at x ±38, y ±25 mm) to a steel plate of at least 10 mm with a tongue for the grip | Ø14 pin through the load hole, in a U-clevis over the 8 mm web | web near the load hole vs base near the web root | base plate, U-clevis |
 
-FEA of the `abc_00000003_pull` test (problem `abc_00000003_pull`, branch `ace-requirements`, PR #20):
+FEA of the `abc_00000003_pull` test (problem `abc_00000003_pull`, `feacore/problems/physical.py`):
 - **Expected signal:** the dots at x = ±27 mm separate by 0.158 µm per newton, about 47 µm at 300 N
   with E = 10 GPa. Use the video extensometer; the crosshead cannot resolve this.
 - **Keep the elastic runs at or below 300 N.** The highest stress away from the grips is at the sharp

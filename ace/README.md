@@ -596,8 +596,7 @@ Processed evidence is kept in `<out>/evidence_active/`; each run's comparison is
 ### The pull test of the printed gold part: `abc_00000003_pull`
 
 `feacore/problems/physical.py` defines this problem: the gold part `abc_00000003` with both stubs
-lengthened by 40 mm for wedge grips (the print files of `physical_tests/` on the
-`physical-validation` branch).
+lengthened by 40 mm for wedge grips (the print files are in `physical_tests/parts/`).
 - **Setup:** the −x stub is held, the +x stub is pulled with 300 N along x and held sideways,
   Rigid 10K (E = 10 GPa, ν = 0.35).
 - **Scored quantity:** `ext_marks`, the x-elongation between video-extensometer marks at x = ±27 mm
@@ -645,8 +644,8 @@ python -m ace.compare ace_runs/cbracket_swarm ace_runs/cbracket_single
 ```
 
 **Past yield: `scripts/ccx_compression_ramp.py`.** The loop's solver is linear. This script ramps the part
-on feacore's opt-in elastoplastic CalculiX path (J2 plasticity, NLGEOM; from the `nonlinear-setup`
-branch): the prong tops pushed down by a rigid platen, the bottom held. It uses two calibrations of
+on feacore's opt-in elastoplastic CalculiX path (J2 plasticity, NLGEOM;
+`docs/solver_ccx_nonlinear.md`): the prong tops pushed down by a rigid platen, the bottom held. It uses two calibrations of
 the same dogbone (`dogbone1.pdf`, an ASTM D638 Type I, 13 x 3.2 mm, measured by crosshead):
 - **team:** `experiments/material/alpha_fast_dogbone1.json`, strain = crosshead / 115 mm, so the
   modulus is the apparent 1880 MPa;

@@ -2,8 +2,7 @@
 
 Real third-party CAD with generated supports and loads, and reference values certified by a
 nested-mesh convergence study on the fixed solver. The parts come from the ABC dataset, rescaled
-to a 100 mm bounding-box diagonal. The gold-benchmark generator (`feacore.goldgen`, branch
-`gold-benchmarks`) produced them on an H100, and `scripts/gold.py import` brought them in from its
+to a 100 mm bounding-box diagonal. The gold-benchmark generator (`feacore.goldgen`) produced them on an H100, and `scripts/gold.py import` brought them in from its
 archives.
 
 | | |
@@ -109,7 +108,7 @@ deformed shape from two views, with the supports and loads marked. It also write
   Spot-checked on L1 too.
 - Every STEP re-imports with the part's 25 / 55 faces at the recorded areas and centroids, to
   1e-11.
-- The fixed solver needs the curved-mesh fixes from `gold-benchmarks` (robust inverse
+- The fixed solver needs its curved-mesh fixes (robust inverse
   isoparametric map, Jacobian-based validity for curved cells, reduced SVD in the rigid-body
   checks). Without them, skfem rejects some of these tet10 meshes ("Newton iteration didn't
   converge").

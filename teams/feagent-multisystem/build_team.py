@@ -2,11 +2,11 @@
 
 Many agents in parallel, each running a slightly different mesh system on the same contract, each writing its own
 analysis; a verifier gates their evidence; a synthesis agent builds the consensus and the final brief. It mirrors the
-mesh-system study of 2026-11-01 (experiments/mesh_systems/ and experiments/physical/ on branch nonlinear-setup).
+mesh-system study of 2026-11-01 (experiments/mesh_systems/ and experiments/physical/).
 
     uv run --no-sync python teams/feagent-multisystem/build_team.py             # write the JSON
     uv run --no-sync python teams/feagent-multisystem/build_team.py --install   # write it and load it into Sculptured
-        [--worktree PATH]   checkout of branch nonlinear-setup the agents work in (default: ../FEAgent-setup)
+        [--worktree PATH]   checkout of this repo (main) the agents work in (default: ../FEAgent-setup)
         [--photo PATH]      photo of the broken print, copied to RUN/inputs/abc_00000065_real_break.png
 
 The Spark's ssh target comes from FEAGENT_SPARK (e.g. user@host); without it the prompts say <spark-host>.
@@ -41,7 +41,7 @@ CONTEXT = f"""TEAM: FEAgent, parallel mesh systems -> synthesis. Seven agents ea
 the same contract (same parts, material, loads, node budget, crush recipe); each writes its own analysis; a Verifier
 gates the evidence; the Synthesis agent builds the consensus and compares it with the physical test.
 
-WORK = {WORK} (checkout of branch nonlinear-setup; read CLAUDE.md, experiments/mesh_systems/CONTRACT.md and
+WORK = {WORK} (a checkout of this repo's main; read CLAUDE.md, experiments/mesh_systems/CONTRACT.md and
 experiments/physical/CRUSH_RUNS.md first). Starter scripts and reference figures: {TEAM_DIR}/starter/.
 RUN = {RUN} (shared run folder, git-ignored; write only under RUN/<your folder> unless your job says otherwise).
 The contract for this run is RUN/plan/contract.md, owned by the Study lead: follow it; ask the lead to change it.

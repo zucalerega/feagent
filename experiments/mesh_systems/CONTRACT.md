@@ -9,7 +9,7 @@ depend on the mesh system, and which system gets there cheapest?
 | `harness_auto` | the mesh harness, zero-config `feagent automesh` + groups by query | `meshing-harness/` (baseline, already used) |
 | `harness_expert` | the mesh harness driven like an expert: digest + hazards → local refinement, thin-wall layers, curvature | `meshing-harness/` (`inspect`, `refine`, `size.*`) |
 | `ace_sizing` | the ACE loop's mesher: global `h` + refinements at groups/points (`ace/fea.make_mesh` style) on `feacore.geometry.gmsh_tools` | `ace/fea.py`, `feacore/geometry/` |
-| `gold_nested` | the gold generator's approach: one base mesh, uniformly refined by splitting (`gmsh mesh.refine`) into nested levels | `feacore/goldgen` (branch gold-benchmarks), `feacore/verification` (`nested=True`) |
+| `gold_nested` | the gold generator's approach: one base mesh, uniformly refined by splitting (`gmsh mesh.refine`) into nested levels | `feacore/goldgen`, `feacore/verification` (`nested=True`) |
 | `netgen` | an independent mesh generator: Netgen (`netgen-mesher`, OCC geometry) | new; Netgen also optimises gmsh meshes in the harness |
 | `harness_hex` | the harness's gmsh with hex-dominant / subdivision meshing where it works, else tets with Netgen optimisation | `meshing-harness/` + gmsh options |
 

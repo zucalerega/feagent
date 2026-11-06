@@ -1,6 +1,6 @@
 # gold_nested
 
-The gold-benchmark generator's meshing (`feacore/goldgen/mesh.py`, branch `gold-benchmarks`) re-implemented in `build.py`
+The gold-benchmark generator's meshing (`feacore/goldgen/mesh.py`) re-implemented in `build.py`
 (feacore.goldgen is not on this branch). One base tet mesh (gmsh Delaunay, global size F x bbox diagonal, curvature
 sizing, 12 elements per 2 pi) is split uniformly (`gmsh.model.mesh.refine()`: 8x cells per level, new boundary nodes
 snapped to the CAD) into nested levels L0, L1, ..., each made quadratic (tet10, boundary midside nodes on the CAD).

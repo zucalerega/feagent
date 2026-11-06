@@ -1,6 +1,6 @@
 # ace_sizing: the ACE loop's mesher
 
-**Approach.** `acemesh.make_mesh` reproduces `ace/fea.make_mesh` (branch `ace-harness`) on
+**Approach.** `acemesh.make_mesh` reproduces `ace/fea.make_mesh` on
 `feacore.geometry.gmsh_tools`: STEP imported with gmsh OCC, physical groups `bottom` / `top` / `domain`
 named by geometry (planar faces flat along the axis, at the min / max position), one global size `h`, a
 `Min` background field of `Distance+Threshold` (group refinements) and `Ball` (point refinements), a size

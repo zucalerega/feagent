@@ -3,7 +3,7 @@
 
     build.py PART_STEP AXIS OUT_DIR --purpose linear|nonlinear [--h0-frac F] [--levels N] [--select K]
 
-Follows the gold-benchmark generator (branch gold-benchmarks, feacore/goldgen/mesh.py): level k = the base
+Follows the gold-benchmark generator (feacore/goldgen/mesh.py): level k = the base
 mesh (Delaunay, global size F x bbox diagonal, curvature sizing) split k times, made quadratic (tet10, boundary
 midside nodes on the CAD, interior edges straight). Faces are chosen by geometry (planar, normal along AXIS, at
 the extreme position), carried through the refinement as physical groups bottom/top/domain.

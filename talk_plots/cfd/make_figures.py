@@ -523,12 +523,12 @@ python talk_plots/cfd/make_figures.py            # --resolve to solve again
 ```
 
 The ACE learning loop runs on these problems too, as the `cfd` and `cfd3d` suites (`python -m ace.run_loop
---suite cfd`, PR #21).
+--suite cfd`; `ace/README.md`).
 
 ## Supersonic flow: the swarm's first generation
 
 [supersonic_g0.md](supersonic_g0.md): generation 0 of a 6-agent swarm run on a supersonic suite, with compressible
-flow from PR #24 (the run is in progress). The target flow around a Mach 3 blunted wedge
+flow (generation 0 only; its swarm-side code was on a branch that was never pushed). The target flow around a Mach 3 blunted wedge
 ([png](fig_supersonic_reference.png)), agent a0's first mesh with the reference bow shock over it
 ([png](fig_supersonic_mesh_g0.png)), and a0's run report as the teacher saw it ([`supersonic_g0/`](supersonic_g0/)).
 `make_supersonic_figures.py` rebuilds them from the run folder and its field references, which are not in git.

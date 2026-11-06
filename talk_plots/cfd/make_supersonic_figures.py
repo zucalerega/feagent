@@ -2,8 +2,8 @@
 """Supersonic figures for the README: the swarm's first generation on a Mach 3 blunted wedge.
 
 Inputs are a run folder of the supersonic suite and the field references it was scored against. Neither is in git:
-the run is `ace_runs/supersonic-deep-blunt` (6 agents, compressible flow from PR #24, on the work-in-progress
-branch claude/supersonic-blunt-swarm), and the references are that checkout's `ace/field_refs/`. Writes:
+the run is `ace_runs/supersonic-deep-blunt` (6 agents; its swarm-side code was on the branch
+claude/supersonic-blunt-swarm, which was never pushed), and the references are that checkout's `ace/field_refs/`. Writes:
 
   fig_supersonic_mesh_g0       agent a0's generation-0 mesh, with the reference bow shock drawn over it
   fig_supersonic_reference     the target: Mach number of the reference flow, with the sonic line
@@ -186,8 +186,10 @@ linear (Gouraud) interpolation on a Delaunay triangulation of the mesh points.
 
 **Run.** `ace_runs/supersonic-deep-blunt`: {agents} Claude Sonnet agents, the `--deep` loop (Claude Opus teacher, self-reflection,
 organizer), field scoring. Training tasks: {', '.join(f'`{t}`' for t in cfg['train'])}; held out:
-{', '.join(f'`{t}`' for t in cfg['holdout'])}. Compressible flow and the blunted wedge come from PR #24; the run itself
-is work in progress on the branch `claude/supersonic-blunt-swarm`. Generation 0 only.
+{', '.join(f'`{t}`' for t in cfg['holdout'])}. Compressible flow and the blunted wedge are in `feacore/` (`feacore/solver/_foam_compressible.py`,
+`feacore/problems/supersonic/`). The swarm-side code of the run (the wedge suite and the agents' compressible-flow
+tasks) was on the branch `claude/supersonic-blunt-swarm`, which was never pushed, so it is not in this repository.
+Generation 0 only.
 
 **Agent {AGENT}, generation {GEN}, on `{PID}`** (`gen{GEN}/runs/{run_id}.json`, `checks`)
 - Mesh: {sub['nodes']:,} nodes, {sub['elements']:,} linear triangles, {c['dofs']:,} DOFs, first-order (upwind)

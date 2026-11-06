@@ -3,7 +3,7 @@
 A [Sculptured](https://usesculptured.com) team that shows how FEAgent works. Many agents run in parallel, each on a
 slightly different mesh system but under one contract. Each writes its own analysis. A verifier gates the evidence,
 and a synthesis agent builds the consensus and compares it with the physical test. The team mirrors the mesh-system
-study of 2026-11-01 on branch `nonlinear-setup` (`experiments/mesh_systems/`, `experiments/physical/CRUSH_RUNS.md`).
+study of 2026-11-01 (`experiments/mesh_systems/`, `experiments/physical/CRUSH_RUNS.md`).
 
 ```
                               Study lead (contract)
@@ -36,13 +36,13 @@ harness_auto harness_expert ace_sizing gold_nested netgen harness_hex harness_ne
 The study's numbers are in the prompts as the expected outputs. With the neck recipe, all seven crack at the arm necks
 (height fraction 0.60-0.63, like the photo), at a peak of 5.79-6.00 kN (spread 3.6 %, tets only 1.3 %).
 
-`RUN` is `runs/multisystem-<date>/` in the `nonlinear-setup` checkout the agents work in (git-ignored).
+`RUN` is `runs/multisystem-<date>/` in the checkout of this repo the agents work in (git-ignored).
 [`starter/`](starter/) holds the synthesis scripts (`refine_maps.py`, `neck_hf.py`, `make_figs.py`) and reference
 figures from the study.
 
 ## Install and view
 
-Needs a running Sculptured (port 4410), Claude Code signed in, a checkout of `nonlinear-setup` (default
+Needs a running Sculptured (port 4410), Claude Code signed in, a checkout of this repo's `main` (default
 `../FEAgent-setup`) and the harness on `PATH` (`uv tool install --editable <checkout>`).
 
 ```bash
