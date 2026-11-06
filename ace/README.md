@@ -713,8 +713,9 @@ ACE_HARNESS=1 .venv/bin/python -m ace.run_loop ...
 
 ## Not done yet
 
-- Mesh-refinement convergence check (GCI) as a diagnostic: TODO in `checks.py`.
 - A rediscovered lesson counts as a helpful vote on the existing bullet. That rewards ideas the
   Reflector keeps finding, not ideas shown to help; cited-bullet votes are the stronger signal.
-- The agent works on the problem's own named geometry, not raw STEP. Swapping its tools for
-  the `feagent` mesh-harness MCP is the natural next step.
+- The agent works on the problem's own named geometry, not raw STEP. The `feagent` digest and
+  mesh gates are wired in behind `ACE_HARNESS=1` (above); swapping its tools for the full
+  mesh-harness MCP (YAML specs, STEP import) is still to do. Uploaded CAD reaches the agents as a
+  registered problem (the dashboard's Your CAD section), not as raw STEP.
