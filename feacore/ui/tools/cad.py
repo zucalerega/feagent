@@ -7,16 +7,9 @@ from __future__ import annotations
 
 import os
 
-from feacore.ui.tasks import Param, Tool, ToolArgsError, register_tool
+from feacore.ui.tasks import Param, Tool, register_tool
 
 CPUS = os.cpu_count() or 4
-
-
-def _infer_argv(a: dict) -> list[str]:
-    if str(a["swarm"]).startswith("@runs/"):
-        raise ToolArgsError(["swarm: an exported swarm in the repository, e.g. results/trained_swarms/div_s2"])
-    return ["--swarm", a["swarm"], "--problem", a["problem"], "--agents", a["agents"] or "all",
-            *(["--mock"] if a.get("mock") else []), "--out", a["out"]]
 
 
 register_tool(Tool(
@@ -29,7 +22,8 @@ register_tool(Tool(
             Param("sets", help="comma-separated problem ids (default: every BC set of the upload)"),
             Param("levels", "int", 3, min=3, max=4, help="nested levels (each split has 8x the cells)"),
             Param("max_cells", "int", 30_000, min=500, max=2_000_000,
-                  help="cap on the finest level's cells: 30k cells is about 140k DOFs, a minute and ~3 GB per solve"),
+                  help="cap on the finest level's cells (holes and fillets set a floor): ~40k cells are ~175k DOFs, "
+                       "about 6 min and 6 GB per solve on a 4-core CPU"),
             Param("h0_frac", "float", 0.237, min=0.02, max=2.0, advanced=True,
                   help="base size / bounding-box diagonal before the cap enlarges it (the gold generator's value)"),
             Param("threads", "int", 1, min=1, max=CPUS, advanced=True, help="gmsh threads")],
@@ -37,7 +31,7 @@ register_tool(Tool(
 
 register_tool(Tool(
     name="cad.infer", title="Run trained agents on a problem", group="cad",
-    command=["-m", "ace.infer"], build=_infer_argv,
+    command=["-m", "ace.infer"],
     description="An exported swarm's agents set up and solve the problem, each in its own process, with no "
                 "learning (python -m ace.infer). Without a reference value the result is the agents' consensus "
                 "and each run's own ZZ error estimate.",

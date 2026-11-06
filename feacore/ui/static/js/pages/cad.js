@@ -84,7 +84,8 @@ function uploadCard(d) {
 function usageCard(d, problem) {
   const id = problem ? problem.id : '<problem id>';
   const upload = problem ? problem.id.replace(/_(bc|m)\d+$/, '') : '<upload id>';
-  const swarm = (d.swarms.find(s => (s.agents || []).length > 1) || d.swarms[0] || { path: 'results/trained_swarms/div_s2' }).path;
+  const multi = d.swarms.filter(s => (s.agents || []).length > 1).sort((a, b) => a.agents.length - b.agents.length);
+  const swarm = (multi[0] || d.swarms[0] || { path: 'results/trained_swarms/div_s2' }).path;   // the smallest swarm: cheapest
   const hasRef = problem && problem.references.length;
   const lines = [
     `export FEACORE_RUNS_DIR=${d.runs_dir}    # this server's run store: its cad/ holds the uploads`,
@@ -147,7 +148,7 @@ async function detail(el, uid) {
     h('div', { class: 'card-head' }, h('h2', {}, 'Problems from this part'),
       h('button', { class: 'btn small', type: 'button', onclick: () => reload() }, 'Refresh')), problemsBox));
   el.append(h('div', { style: { height: '24px' } }), usageBox);
-  const tasks = taskTable({ group: 'cad' }, { empty: 'No reference study or agent run started from this page yet.', limit: 20 });
+  const tasks = liveTasks({ group: 'cad' }, { empty: 'No reference study or agent run started from this page yet.', limit: 20 });
   el.append(h('div', { style: { height: '24px' } }), h('div', { class: 'card flush' },
     h('div', { class: 'card-head', style: { padding: '16px 22px 0' } }, h('h2', {}, 'Tasks')), tasks.el));
 
@@ -162,7 +163,7 @@ async function detail(el, uid) {
         return h('tr', { class: 'click', style: f.tag === state.selected ? { background: 'var(--accent-wash)' } : null, onclick: () => select(f.tag) },
           h('td', { class: 'mono' }, `f${f.tag}`), h('td', {}, f.kind),
           h('td', { class: 'num' }, `${fmt(f.area * 1e6, 4)} mm²`),
-          h('td', { class: 'small mono' }, f.centroid.map(v => fmt(v * 1000, 3)).join(', ')),
+          h('td', { class: 'small mono' }, f.centroid.map(mm).join(', ')),
           h('td', { class: 'small' }, r ? roleText(r) : ''));
       }))));
   };
@@ -182,13 +183,14 @@ async function detail(el, uid) {
   let openPanel = null;
   const drawProblems = () => {
     shown = JSON.stringify(up.sets);
-    clear(problemsBox).append(problemsTable(up, overview, { reload, isOpen: k => openPanel === k, toggle: k => { openPanel = openPanel === k ? null : k; drawProblems(); } }));
+    clear(problemsBox).append(problemsTable(up, overview, { reload, onTask: () => tasks.restart(), isOpen: k => openPanel === k, toggle: k => { openPanel = openPanel === k ? null : k; drawProblems(); } }));
     const chosen = up.sets.find(s => s.id === openPanel?.split(':')[1]) || up.sets[0] || null;
     clear(usageBox).append(usageCard(overview, chosen));
   };
   drawBuilder();
   drawFaces();
   drawProblems();
+  let wasBusy = false;
   const poll = async () => {
     if (!state.alive) return;
     let busy = false;
@@ -197,13 +199,25 @@ async function detail(el, uid) {
       busy = t.tasks.some(x => x.state === 'queued' || x.state === 'running');
     } catch { /* shown by the task table */ }
     busy = busy || up.sets.some(s => s.studies.some(x => x.status === 'queued' || x.status === 'running'));
-    if (busy) await reload(false);
+    if (busy || wasBusy) await reload(false);      // once more after the last task ends: its result
+    wasBusy = busy;
     if (state.alive) state.timer = setTimeout(poll, busy ? 4000 : 15000);
   };
   state.timer = setTimeout(poll, 4000);
 
   faceViewer(vp, msg, uid, select).then(v => { state.viewer = v; paint(); }).catch(e => { msg.textContent = `Preview unavailable: ${e.message}`; });
   return () => { state.alive = false; clearTimeout(state.timer); tasks.stop(); if (state.viewer) state.viewer.dispose(); hideTip(); };
+}
+
+/** A coordinate in metres as mm; the CAD kernel's round-off (1e-15) shows as 0. */
+const mm = v => (Math.abs(v) < 1e-9 ? '0' : fmt(v * 1000, 4));
+
+/** taskTable whose list can be restarted (it polls slowly while nothing runs). */
+function liveTasks(filter, opts) {
+  const box = h('div');
+  let t = taskTable(filter, opts);
+  box.append(t.el);
+  return { el: box, restart: () => { t.stop(); t = taskTable(filter, opts); clear(box).append(t.el); }, stop: () => t.stop() };
 }
 
 function roleText(r) {
@@ -251,7 +265,7 @@ function drawBuilderInto(box, up, faces, state, bs, fx) {
     sel.append(
       h('div', { class: 'strong' }, `f${f.tag} · ${f.kind} · ${fmt(f.area * 1e6, 4)} mm²`,
         cur ? h('span', { class: 'secondary' }, ` · now: ${roleText(cur)}`) : null),
-      h('div', { class: 'small muted' }, `centroid (${f.centroid.map(v => fmt(v * 1000, 4)).join(', ')}) mm`,
+      h('div', { class: 'small muted' }, `centroid (${f.centroid.map(mm).join(', ')}) mm`,
         f.normal ? ` · outward normal (${f.normal.map(v => fmt(v, 3)).join(', ')})` : '', f.axis ? ` · axis (${f.axis.map(v => fmt(v, 3)).join(', ')}), radius ${fmt((f.radius || 0) * 1000, 4)} mm` : ''),
       h('div', { class: 'row', style: { gap: '8px', marginTop: '12px' } },
         h('button', { class: 'btn small', type: 'button', onclick: () => assign({ role: 'fixed' }) }, 'Clamp'),
@@ -373,10 +387,10 @@ function problemsTable(up, d, ui) {
 function panel(kind, s, up, done, ui) {
   if (kind === 'ref') {
     return h('div', {}, h('p', { class: 'small secondary' }, 'Meshes the part with the gold generator’s nested pipeline (the finest level capped), solves this problem on every level, and certifies each QoI with the gold rules. Each solve is recorded for the field viewer. Small parts only: the finest level is solved on this machine’s CPU.'),
-      toolForm('cad.reference', { defaults: { upload: up.id, sets: s.id }, hide: ['upload'], submitLabel: 'Start the reference study', onStarted: () => ui.reload() }));
+      toolForm('cad.reference', { defaults: { upload: up.id, sets: s.id }, hide: ['upload'], submitLabel: 'Start the reference study', onStarted: () => { ui.onTask(); ui.reload(); } }));
   }
   if (kind === 'agents') {
-    return toolForm('cad.infer', { defaults: { problem: s.id }, hide: ['problem'], submitLabel: 'Run the agents', onStarted: () => ui.reload() });
+    return toolForm('cad.infer', { defaults: { problem: s.id }, hide: ['problem'], submitLabel: 'Run the agents', onStarted: () => { ui.onTask(); ui.reload(); } });
   }
   const pick = h('select', {}, done.map(x => h('option', { value: x.study_id }, `${x.study_id} (${x.nested ? 'nested' : 'remeshed'}, ${x.n_sizes} meshes, ${timeAgo(x.created_at)})`)));
   const out = h('div');
@@ -385,11 +399,11 @@ function panel(kind, s, up, done, ui) {
     clear(out);
     try {
       const r = await postJSON(`/api/cad/problems/${s.id}/adopt`, { study_id: pick.value });
-      out.append(h('p', { class: 'small' }, r.references.length ? `Certified: ${r.references.map(x => x.qoi).join(', ')}.` : 'No QoI converged within the gold tolerance: still no reference.',
-        r.singular.length ? ` Singular: ${r.singular.join(', ')}.` : ''));
+      toast(r.references.length ? `Certified ${r.references.map(x => x.qoi).join(', ')}`
+        : 'No QoI converged within the gold tolerance on this study: still no reference', 6000);
+      ui.toggle(`adopt:${s.id}`);       // closes the panel; the table shows the outcome
       await ui.reload();
-    } catch (e) { out.append(errorBox(e)); }
-    go.disabled = false;
+    } catch (e) { out.append(errorBox(e)); go.disabled = false; }
   } }, 'Certify as the reference');
   return h('div', {}, h('p', { class: 'small secondary' }, 'The study’s levels go through the gold certification: a QoI becomes a reference when it converges and its fine-grid GCI is within the gold tolerance. Independently remeshed studies scatter the observed order; nested ones certify more.'),
     h('div', { class: 'row', style: { gap: '10px', alignItems: 'center' } }, pick, go), out);

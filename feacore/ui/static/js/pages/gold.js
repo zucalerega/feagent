@@ -25,8 +25,9 @@ export async function render(el) {
   const tiles = h('div', { class: 'tiles' });
   const partsBox = h('div', { class: 'stack' });
   el.append(tiles, h('div', { style: { height: '24px' } }), partsBox);
-  el.append(h('div', { style: { height: '24px' } }), importCard(), h('div', { style: { height: '24px' } }), nonlinearCard());
-  const tasks = taskTable({ group: 'gold' }, { empty: 'No gold task has run on this server yet.', limit: 30 });
+  const tasks = liveTasks({ group: 'gold' }, { empty: 'No gold task has run on this server yet.', limit: 30 });
+  const onTask = () => { tasks.restart(); refresh(true); };     // a form started a task: show it at once
+  el.append(h('div', { style: { height: '24px' } }), importCard(onTask), h('div', { style: { height: '24px' } }), nonlinearCard(onTask));
   el.append(h('div', { style: { height: '24px' } }), h('div', { class: 'card flush' },
     h('div', { class: 'card-head', style: { padding: '16px 22px 0' } }, h('h2', {}, 'Gold tasks')), tasks.el));
 
@@ -41,7 +42,7 @@ export async function render(el) {
     }
     for (const p of d.parts) {
       if (!cards.has(p.part)) {
-        const c = partCard(p, d, () => refresh(true));
+        const c = partCard(p, d, () => refresh(true), onTask);
         cards.set(p.part, c);
         partsBox.append(c.el);
       }
@@ -64,6 +65,14 @@ export async function render(el) {
   return () => { alive = false; clearTimeout(timer); tasks.stop(); };
 }
 
+/** taskTable whose list can be restarted (it polls slowly while nothing runs). */
+function liveTasks(filter, opts) {
+  const box = h('div');
+  let t = taskTable(filter, opts);
+  box.append(t.el);
+  return { el: box, restart: () => { t.stop(); t = taskTable(filter, opts); clear(box).append(t.el); }, stop: () => t.stop() };
+}
+
 function drawTiles(el, d) {
   const tile = (label, value, sub) => h('div', { class: 'tile' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), sub ? h('div', { class: 'sub' }, sub) : null);
   const regen = d.parts.reduce((n, p) => n + p.meshes.filter(m => m.regenerated && m.regenerated.available).length, 0);
@@ -75,7 +84,7 @@ function drawTiles(el, d) {
 }
 
 // ------------------------------------------------------------------ one part
-function partCard(p0, d0, onChange) {
+function partCard(p0, d0, onChange, onTask) {
   const meshesBox = h('div');
   const setsBox = h('div');
   const panel = h('div');
@@ -85,7 +94,7 @@ function partCard(p0, d0, onChange) {
     if (openTool === name) { openTool = null; return; }
     openTool = name;
     panel.append(h('div', { class: 'card tight', style: { marginTop: '16px', background: 'var(--surface-2)' } },
-      toolForm(name, { ...opts, onStarted: () => { toast('Started: see Gold tasks below'); onChange(); } })));
+      toolForm(name, { ...opts, onStarted: () => { toast('Started: see Gold tasks below'); onTask(); } })));
   };
   const head = h('div', { class: 'card-head' });
   const el = h('div', { class: 'card' }, head, h('div', { class: 'section-title' }, 'Study meshes'), meshesBox, panel,
@@ -202,13 +211,13 @@ function agreement(mine, gold) {
 }
 
 // ------------------------------------------------------------------ import + nonlinear
-function importCard() {
+function importCard(onTask) {
   const list = h('div', { class: 'small' });
   const file = h('input', { type: 'file', accept: '.tgz,.tar.gz,.tar' });
   const status = h('span', { class: 'small muted' });
   const formBox = h('div');
   const showForm = path => clear(formBox).append(h('div', { class: 'card tight', style: { marginTop: '14px', background: 'var(--surface-2)' } },
-    toolForm('gold.import', { defaults: { archive: path }, submitLabel: 'Import', onStarted: () => toast('Import started: see Gold tasks') })));
+    toolForm('gold.import', { defaults: { archive: path }, submitLabel: 'Import', onStarted: () => { toast('Import started: see Gold tasks'); onTask(); } })));
   const loadList = async () => {
     try {
       const d = await api('/api/gold/archives');
@@ -240,9 +249,8 @@ function importCard() {
     h('div', { class: 'section-title', style: { marginTop: '18px' } }, 'Archives in this run store'), list, formBox);
 }
 
-function nonlinearCard() {
+function nonlinearCard(onTask) {
   return h('div', { class: 'card' },
     h('h2', {}, 'Nonlinear gold sets'),
-    h('p', { class: 'secondary' }, 'scripts/gold_nonlinear.py turns linear gold sets into J2-plastic CalculiX benchmarks: S355 steel with linear hardening, loads scaled past first yield, a load ramp on every mesh level, and the gold certification over the levels. CalculiX runs on the CPU; certifying needs three levels, and L2 needs a large machine. Results go to the task’s folder in the run store.'),
-    toolForm('gold.nonlinear', { submitLabel: 'Start' }));
+    toolForm('gold.nonlinear', { submitLabel: 'Start', onStarted: onTask }));
 }

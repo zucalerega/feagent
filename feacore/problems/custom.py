@@ -64,7 +64,7 @@ MAX_FACES = 2000
 DEFAULT_NODE_CAP = 40_000      # as ace.infer.DEFAULT_NODE_CAP: about the gold L1 meshes
 STEEL = {"E": 210e9, "nu": 0.3}
 H0_FRAC = 0.237                # the gold generator's base size / bbox diagonal (scripts/goldgen_h100.sh)
-H0_FRAC_MAX = 0.5              # the largest base size a cell cap may ask for (half the diagonal)
+H0_FRAC_MAX = 1.0              # base sizes above the diagonal are kept only if the nested splits work there
 INSPECT_TIMEOUT = 240.0        # s for reading, checking and previewing one upload (FEACORE_CAD_INSPECT_TIMEOUT)
 UPLOAD_RE = re.compile(r"^cad_[a-z0-9_]{1,60}$")
 SET_RE = re.compile(r"^(cad_[a-z0-9_]{1,60})_(bc|m)(\d{1,4})$")
@@ -523,7 +523,8 @@ class _StepGeometry:
 def describe(step: Path, part_id: str, source: str):
     """The part in ``step`` (scale 1) as a feacore.goldgen.parts.Part: volume, bounding box and every
     face (tag, kind, area, centroid, outward normal of planes, axis and radius of cylinders). A coarse
-    tet mesh must succeed."""
+    tet mesh must succeed; its surface triangles give each plane a point on the face to orient its
+    normal from (the face's centroid can lie off the face, inside the solid, e.g. under a rib)."""
     import gmsh
     import numpy as np
 
@@ -540,21 +541,6 @@ def describe(step: Path, part_id: str, source: str):
         tags = [t for _, t in gmsh.model.getBoundary([(3, vol)], oriented=False)]
         if len(tags) > MAX_FACES:
             raise CadError(f"the part has {len(tags)} faces; at most {MAX_FACES} are supported")
-        faces = []
-        for t in tags:
-            c = np.asarray(gmsh.model.occ.getCenterOfMass(2, t))
-            f = Face(tag=t, kind="other", area=gmsh.model.occ.getMass(2, t), centroid=c.tolist())
-            try:
-                typ = gmsh.model.getType(2, t)
-                if typ == "Plane" or (typ != "Cylinder" and _is_flat(t, diag)):
-                    f.normal = _outward_normal(t, c, vol, diag).round(9).tolist()
-                    f.kind = "plane"
-                elif typ == "Cylinder":
-                    axis, radius = _cylinder_axis(t)
-                    f.axis, f.radius, f.kind = axis, (radius if math.isfinite(radius) else None), "cylinder"
-            except Exception:  # noqa: BLE001 - a face the kernel cannot classify stays "other"
-                f.normal = f.axis = f.radius = None
-            faces.append(f)
         gmsh.option.setNumber("Mesh.MeshSizeMax", diag / 8)
         try:
             gmsh.model.mesh.generate(3)
@@ -562,7 +548,38 @@ def describe(step: Path, part_id: str, source: str):
             raise CadError(f"gmsh could not mesh the solid (is it closed and valid?): {e}") from None
         if len(gmsh.model.mesh.getElementsByType(4)[0]) == 0:
             raise CadError("gmsh produced no tetrahedra for this solid (is it closed?)")
+        faces = []
+        for t in tags:
+            c = np.asarray(gmsh.model.occ.getCenterOfMass(2, t))
+            f = Face(tag=t, kind="other", area=gmsh.model.occ.getMass(2, t), centroid=c.tolist())
+            try:
+                typ = gmsh.model.getType(2, t)
+                if typ == "Plane" or (typ != "Cylinder" and _is_flat(t, diag)):
+                    f.normal = _outward_normal(t, _point_on_face(t, c), vol, diag).round(9).tolist()
+                    f.kind = "plane"
+                elif typ == "Cylinder":
+                    axis, radius = _cylinder_axis(t)
+                    f.axis, f.radius, f.kind = axis, (radius if math.isfinite(radius) else None), "cylinder"
+            except Exception:  # noqa: BLE001 - a face the kernel cannot classify stays "other"
+                f.normal = f.axis = f.radius = None
+            faces.append(f)
     return Part(id=part_id, source=source, scale=1.0, volume=mass, bbox=bbox, faces=faces)
+
+
+def _point_on_face(tag: int, fallback):
+    """The centroid of the face's largest mesh triangle: a point on the (trimmed) face."""
+    import gmsh
+    import numpy as np
+
+    types, _, nodes = gmsh.model.mesh.getElements(2, tag)
+    ntags, x, _ = gmsh.model.mesh.getNodes(2, tag, includeBoundary=True)
+    if not len(types) or not len(ntags):
+        return np.asarray(fallback)
+    at = dict(zip(np.asarray(ntags, dtype=np.int64).tolist(), np.asarray(x, float).reshape(-1, 3)))
+    tri = np.asarray(nodes[0], dtype=np.int64).reshape(-1, 3)
+    p = np.array([[at[int(n)] for n in row] for row in tri])
+    area = np.linalg.norm(np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]), axis=1)
+    return p[int(np.argmax(area))].mean(axis=0)
 
 
 def _is_flat(tag: int, diag: float, tol: float = 1e-7) -> bool:
@@ -848,7 +865,7 @@ def study_meshes(updir: Path, levels: int, max_cells: int, h0_frac: float, threa
     up = read_upload(updir)
     part = _part(up)
     mdir = updir / "_meshes" / up["id"]
-    plan = {"levels": levels, "max_cells": max_cells, "h0_frac": h0_frac}
+    plan = {"levels": levels, "max_cells": max_cells, "h0_frac": h0_frac, "h0_frac_max": H0_FRAC_MAX}
     sides = [mdir / f"L{k}.json" for k in range(levels)]
     if (mdir / "plan.json").is_file() and json.loads((mdir / "plan.json").read_text()) == plan and \
             all(s.is_file() and s.with_suffix(".msh").is_file() for s in sides):
@@ -858,13 +875,16 @@ def study_meshes(updir: Path, levels: int, max_cells: int, h0_frac: float, threa
     (mdir / "plan.json").unlink(missing_ok=True)
     frac = fit_h0(updir / "geometry.step", part, h0_frac, levels - 1, max_cells, mdir, threads=threads) \
         if max_cells else h0_frac
-    if frac > H0_FRAC_MAX:       # curved faces set the coarse mesh: a larger base size no longer helps
-        log(f"meshes: the cell cap needs a base size above {H0_FRAC_MAX} x diagonal; the curved faces set the "
-            f"coarse mesh, so the finest level will have more than {max_cells} cells")
-        frac = max(h0_frac, H0_FRAC_MAX)
     log(f"meshes: base size {frac:.4g} x diagonal ({frac * part.diag * 1000:.2f} mm), {levels} nested levels")
     t0 = time.perf_counter()
     metas = mesh_part(updir / "geometry.step", part, list(range(levels)), mdir, threads=threads, h0_frac=frac)
+    if frac > H0_FRAC_MAX and not all(m.get("nested", True) for m in metas):
+        # the cap asked for a base size above the part's size and splitting such a mesh failed (goldgen fell
+        # back to remeshing, whose levels barely refine there): mesh again from the diagonal
+        log(f"meshes: splitting failed at a base size of {frac:.3g} x the diagonal; meshing again at "
+            f"{H0_FRAC_MAX:g} x (the finest level will have more cells than the cap)")
+        frac = max(h0_frac, H0_FRAC_MAX)
+        metas = mesh_part(updir / "geometry.step", part, list(range(levels)), mdir, threads=threads, h0_frac=frac)
     out = []
     for k, m in enumerate(metas):
         path = Path(m["path"])
@@ -874,10 +894,17 @@ def study_meshes(updir: Path, levels: int, max_cells: int, h0_frac: float, threa
         out.append(m)
         log(f"  L{k}: {m['cells']} cells, h {m['h'] * 1000:.2f} mm, {m['scheme']}, min scaled Jacobian "
             f"{m['min_sj']:.3f}")
+    if max_cells and out[-1]["cells"] > max_cells:   # the part's faces and edges set a floor
+        log(f"meshes: the finest level has {out[-1]['cells']} cells, above the cap of {max_cells}: the coarsest mesh "
+            f"of this part already has {out[0]['cells']} cells (its faces and edges set that floor)")
+    nested = all(m.get("nested", True) for m in out)
+    if not nested:
+        log("meshes: splitting failed the curved-mesh checks, so each level was meshed on its own (sizes halved): "
+            "a less clean refinement than nested splits (feacore.goldgen.mesh.mesh_part)")
     _write_json(mdir / "plan.json", plan)
     up["meshes"] = {f"L{m['mesh_level']}": {k: m.get(k) for k in ("file", "h", "cells", "scheme", "min_sj", "bytes",
-                                                                    "sha256")} for m in out}
-    up["mesh_plan"] = {**plan, "h0_frac_used": frac, "seconds": round(time.perf_counter() - t0, 1)}
+                                                                    "sha256", "nested")} for m in out}
+    up["mesh_plan"] = {**plan, "h0_frac_used": frac, "nested": nested, "seconds": round(time.perf_counter() - t0, 1)}
     _write_json(updir / "upload.json", up)
     return out
 
