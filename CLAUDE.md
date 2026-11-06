@@ -61,20 +61,32 @@ Never committed: `runs/` (the run store), `ace_runs/`, `swarms/`, `benchmarks/go
 `python -m feacore.ui --port 8000` (add `--host 0.0.0.0 --token auto` to share it). Sections:
 
 - **Benchmarks**: every registered problem (statement, 3D CAD preview, evaluator view), convergence studies, batches.
-- **Gold**: the gold sets and their nested study meshes (local status, regeneration, re-solves).
-- **Your CAD**: upload a STEP and turn it into a registered problem (tag `custom`) that the solver and the agents can use.
+- **Gold**: the gold sets and their nested study meshes: local status against `index.json`, regeneration with
+  `feacore.goldgen` (gmsh is not bitwise reproducible, so a regenerated mesh never matches the stored sha256; it
+  is fine to view and solve), verify / render / import, *Solve L<k>* into the viewer.
+- **Your CAD**: upload a STEP (`feacore/problems/custom.py`, `feacore/ui/cad_api.py`). Each upload is a mini gold
+  root under `<runs>/cad/<upload>/`; its BC sets (picked on the 3D view, or generated with the gold rules) are
+  registered problems `<upload>_bc<k>` / `<upload>_m<k>`, tag `custom`, found by every process whose
+  `FEACORE_RUNS_DIR` (or `FEACORE_CAD_DIR`) points there, with an `ace.config.TASKS` entry. `ace.infer` works on
+  them reference-free (ZZ, agreement between agents); the training loops need a certified reference first (the
+  page's reference study, or adopting a finished P2 study).
 - **Agents**: train a swarm or a single agent, watch it live (the `ace.watch` tracker), stop it, browse runs,
   compare swarm vs single, export a trained swarm and run it on any problem (`ace.infer`). `#/swarm` is the live
   per-solve view fed by the run-store bridge (`ace/ui_bridge.py`).
-- **Nonlinear**: elastoplastic CalculiX ramps and crush-to-fracture runs, force-displacement curves against the
-  test, videos and the gallery.
-- **Test data**: the physical tests and machine-export uploads that feed `--evidence`.
+- **Nonlinear**: the agents' scoring ramp, the elastoplastic ramp and crush to fracture (with *Resume* from a
+  checkpoint), each run's force-travel curve over the Instron test (or an uploaded one) with the scoring error,
+  renders to stills and videos, and the committed gallery. Outputs: `<runs>/nonlinear/<kind>/<tool>-<task>/`.
+- **Test data**: the physical tests and printable parts; a machine export (CSV / TXT, read by
+  `ace.evidence.read_table`) is checked and saved as `<runs>/testdata/<id>/`, a ready `--evidence` folder.
 - **Runs**, **Tasks**, **Solve**, **Connect** (API examples), **Health**.
 
 Long jobs run on the **task lane** (`feacore/ui/tasks.py`): a tool is a whitelisted command with typed
 parameters, registered by a module in `feacore/ui/tools/`; the browser only names a tool and fills its form.
 To expose a new command, add a `Tool` there (and a page section if it needs one). Tasks get
-`FEACORE_RUNS_DIR` = the server's run store, and `/api/health` counts them as active jobs.
+`FEACORE_RUNS_DIR` = the server's run store, and `/api/health` counts them as active jobs. A tool that renders
+with pyvista / VTK sets `display=True`: VTK segfaults (it does not raise) without an OpenGL context, so such tools
+start through `feacore/ui/offscreen.py` (`xvfb-run` when the server has no display). Run renders by hand on a
+headless box the same way: `xvfb-run -a python ...`.
 
 ## What's where (features and how to run them)
 
@@ -169,6 +181,9 @@ Decisions:
   - The study meshes (`benchmarks/gold/_meshes/`) are not in git.
   - `scripts/gold.py verify` re-solves a stored level against the study. `scripts/gold.py render`
     records runs for the UI viewer, and `--png` writes images.
+  - Known issue (not fixed): goldgen's `parts._outward_normal` probes at the face centroid, which can lie
+    inside the solid, so the statements of `abc_00000003`'s faces f18 and f19 give the wrong outward-normal
+    sign. Only the words are affected (forces carry explicit vectors). Uploaded CAD probes a point on the face.
 - **Verification** = Richardson extrapolation / Grid Convergence Index (Celik et al. 2008),
   `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to
