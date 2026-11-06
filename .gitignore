@@ -46,3 +46,5 @@ wsp_runs/
 
 # Claude Code subagent worktrees
 .claude/worktrees/
+# swarms exported from the dashboard or ace.export_swarm (curated ones are committed under results/trained_swarms/)
+swarms/
