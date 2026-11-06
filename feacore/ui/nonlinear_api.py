@@ -366,6 +366,8 @@ def _status(kind: str, d: Path, task: dict | None) -> str:
         log = d / "progress.log"
         if time.time() - _mtime(log if log.exists() else d / "force_displacement.csv") < 300 and not state:
             return "running"                 # a CLI run still writing
+        if (d / "checkpoint.json").exists():
+            return "stopped"                 # killed or failed after a finished block: it can be resumed
         return "failed" if state == "failed" else "stopped"
     if state == "failed":
         return "failed"
@@ -432,7 +434,7 @@ def run_record(d: Path, kind: str, store_root: Path, task: dict | None = None, r
     if kind == "crush":
         rec.update({k: facts.get(k) for k in ("travel_mm", "n_failed", "separated", "stop_reason")})
         # stopped or killed before its end, with the checkpoint of its last block: crush.py --resume continues it
-        rec["resumable"] = rec["status"] in ("stopped", "failed") and (d / "checkpoint.json").exists()
+        rec["resumable"] = rec["status"] == "stopped" and (d / "checkpoint.json").exists()
     if not full:
         return rec
     for c in curves:

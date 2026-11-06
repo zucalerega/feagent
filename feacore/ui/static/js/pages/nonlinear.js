@@ -317,7 +317,7 @@ async function runPage(el, ref) {
         return h('tr', {},
           h('td', {}, h('div', { class: 'strong' }, c.label), c.failed ? h('div', { class: 'muted small' }, c.failed) : null),
           h('td', { class: 'num' }, F.length), h('td', { class: 'num' }, ip >= 0 ? kN(F[ip]) : '–'),
-          h('td', { class: 'num' }, ip >= 0 ? mm(u[ip]) : '–'), h('td', { class: 'num' }, pct(c.error)),
+          h('td', { class: 'num' }, ip >= 0 ? mm(u[ip]) : '–'), h('td', { class: 'num' }, pct(rec.status === 'running' ? null : c.error)),
           h('td', { class: 'small' }, c.has_series && c.abs ? h('button', { class: 'btn small', type: 'button', onclick: () => showRender('nonlinear.render_score', c.abs) }, 'Video') : null));
       }))) : h('p', { class: 'muted' }, rec.status === 'running' ? 'No curve yet: the run writes it as it goes (crush) or at the end (ramps).' : 'No curve.'));
   };
