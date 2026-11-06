@@ -39,6 +39,18 @@ One train iteration: agents solve → evaluator ranks and summarizes → improve
   always scored against the test (`physical_tests/abc_00000065_compression/`). `--split` also runs on
   one task. feacore's elastoplastic ccx path (`nonlinear-setup` 9978510, cherry-picked) drives
   `scripts/ccx_compression_ramp.py`, the test past yield.
+- `single-agent` branch (off `main`): `single_agent/` (see `single_agent/README.md`). ONE agent per arm (Opus or
+  Sonnet) does the whole analysis layer from component design data: design packages (component, system
+  context, review notes, questions; faces described by feature, never by tag) for the 10 gold BC sets, a blind
+  harness (STEP + package only; the ace geometry/feedback helpers would leak the gold statement's supports), a
+  deterministic scorecard (setup equivalence on the agent's mesh, answers vs gold, calibration of stated
+  uncertainty, singular peaks, study), and a rulebook = a general handbook + rules the arm learns from its
+  training scorecards (holdout never reflected on). `single_agent.oracle` is the non-LLM baseline. Findings:
+  the gold references of `abc_00000003_bc3` violate the FE energy bound by 12% (excluded); feacore's `gci3`
+  misclassifies unequal refinement ratios (the harness uses a ratio-corrected test). Pilot (Claude Code subagents
+  through `single_agent.cli`, holdout `abc_00000065_bc1`, handbook only): Opus and Sonnet both scored 1.00; Opus
+  was more precise and also found a converged ring-root stress above yield that fails the part
+  (`single_agent/pilots/`). The API loop itself has not run on real models yet.
 - `diagnostics` branch (off `main`): `feacore/diagnostics/` on top of the fixed skfem solver:
   deterministic failure-mode flags (a precheck before solving plus post-solve checks), reference-free
   accuracy (ZZ estimate, a refinement study of the agent's own setup, P1 vs P2) and the speed / accuracy

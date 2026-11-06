@@ -21,6 +21,9 @@ benchmarks/gold/_meshes/
 *.12d
 spooles.out
 ace_runs/
+# single_agent: loop outputs and analyst workspaces (meshes, pictures)
+sa_runs/
+sa_workspaces/
 runs/
 models/*
 !models/.gitignore
