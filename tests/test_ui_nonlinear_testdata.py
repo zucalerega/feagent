@@ -197,6 +197,31 @@ def test_run_listing_and_curves(client, store_root):
     assert test["delta_mm"] == pytest.approx(0.2335)
 
 
+def test_a_resumed_crush_shows_its_parents_rows_until_it_finishes(client, store_root):
+    parent = store_root / "nonlinear" / "crush" / "parent1"
+    _fake_crush(parent, finished=False)
+    (parent / "progress.log").write_text("old\n")
+    os.utime(parent / "progress.log", (time.time() - 3600, time.time() - 3600))
+    (parent / "checkpoint.json").write_text("{}")          # the restart point of its last block
+    child = store_root / "nonlinear" / "crush" / "child1"
+    child.mkdir(parents=True)
+    with open(child / "force_displacement.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(CRUSH_COLS)
+        for k in range(31, 46):                      # continues at step 30, a little further than the parent
+            w.writerow([k, f"{0.05 * k:.4g}", "1000", 90, 1, 0.1, 3, k // 4])
+    (child / "run.json").write_text(json.dumps({"system": "test_mesh", "part": "abc_00000065",
+                                                "continued_from": str(parent), "continued_at_step": 30}))
+    runs = {r["ref"]: r for r in client.get("/api/nonlinear/runs").json()["runs"]}
+    assert runs["@runs/nonlinear/crush/parent1"]["status"] == "stopped"          # killed: offers Resume
+    assert runs["@runs/nonlinear/crush/parent1"]["resumable"] and not runs["@runs/nonlinear/crush/fake1"]["resumable"]
+    c = client.get("/api/nonlinear/run", params={"ref": "@runs/nonlinear/crush/child1"}).json()["curves"][0]
+    assert len(c["u"]) == 1 + 30 + 15 and c["u"][30] == pytest.approx(1.5)      # the parent's step 30
+    (child / "force_displacement_full.csv").write_text((child / "force_displacement.csv").read_text())
+    c = client.get("/api/nonlinear/run", params={"ref": "@runs/nonlinear/crush/child1"}).json()["curves"][0]
+    assert len(c["u"]) == 1 + 15                     # crush.py's full CSV at the end is taken as it is
+
+
 def test_gallery_has_captions_and_the_committed_videos(client):
     g = client.get("/api/nonlinear/gallery").json()
     items = [it for s in g["sections"] for it in s["items"]]

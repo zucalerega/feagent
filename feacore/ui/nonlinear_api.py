@@ -207,13 +207,28 @@ def _thin(*cols, keep=()):
     return tuple([c[i] for i in idx] for c in cols)
 
 
-def crush_curves(d: Path) -> tuple[list[dict], dict]:
-    f = d / "force_displacement_full.csv"
-    f = f if f.exists() else d / "force_displacement.csv"
+def _crush_rows(d: Path, store_root: Path, depth: int = 0) -> list[dict]:
+    """A crush run's CSV rows; a resumed run that has not finished yet (no force_displacement_full.csv) gets its
+    parents' rows up to the step it continues from, as crush.py writes them at the end. Parents are followed
+    only inside the run store or the repo."""
+    full = d / "force_displacement_full.csv"
     try:
-        rows = list(csv.DictReader(open(f, newline="")))
+        rows = list(csv.DictReader(open(full if full.exists() else d / "force_displacement.csv", newline="")))
     except OSError:
-        rows = []
+        return []
+    meta = _read_json(d / "run.json") or {}
+    parent, at = meta.get("continued_from"), meta.get("continued_at_step")
+    if full.exists() or not parent or at is None or depth > 20:
+        return rows
+    p = Path(parent)
+    if not p.is_dir() or to_ref(p, store_root) is None:
+        return rows
+    older = [r for r in _crush_rows(p, store_root, depth + 1) if _floats([r], "step")[0] <= float(at)]
+    return older + rows
+
+
+def crush_curves(d: Path, store_root: Path) -> tuple[list[dict], dict]:
+    rows = _crush_rows(d, store_root)
     u, F, nf = _floats(rows, "platen_travel_mm"), _floats(rows, "force_N"), _floats(rows, "n_failed")
     ok = [i for i in range(len(u)) if np.isfinite(u[i]) and np.isfinite(F[i])]
     u, F, nf = [u[i] for i in ok], [F[i] for i in ok], [nf[i] if np.isfinite(nf[i]) else 0 for i in ok]
@@ -397,7 +412,7 @@ def _files(d: Path, store_root: Path) -> list[dict]:
 def run_record(d: Path, kind: str, store_root: Path, task: dict | None = None, renders=(), full: bool = False) -> dict:
     ref = to_ref(d, store_root)
     if kind == "crush":
-        curves, facts = crush_curves(d)
+        curves, facts = crush_curves(d, store_root)
     elif kind == "ramp":
         curves, facts = ramp_curves(d)
     else:
@@ -416,6 +431,8 @@ def run_record(d: Path, kind: str, store_root: Path, task: dict | None = None, r
                              "error": c.get("error"), "failed": c.get("failed")} for c in curves]}
     if kind == "crush":
         rec.update({k: facts.get(k) for k in ("travel_mm", "n_failed", "separated", "stop_reason")})
+        # stopped or killed before its end, with the checkpoint of its last block: crush.py --resume continues it
+        rec["resumable"] = rec["status"] in ("stopped", "failed") and (d / "checkpoint.json").exists()
     if not full:
         return rec
     for c in curves:

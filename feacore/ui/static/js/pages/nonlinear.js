@@ -280,7 +280,7 @@ async function runPage(el, ref) {
         h('p', { class: 'lede' }, `${KIND[rec.kind] || rec.kind} · ${rec.source || ''}`, rec.part ? ` · part ${rec.part}` : ''),
         h('p', { class: 'muted small' }, h('code', {}, ref), t ? [' · task ', h('a', { href: `#/tasks/${t.id}` }, t.id), ' ', taskChip(t.state)] : null)),
       h('div', { class: 'row', style: { gap: '8px' } },
-        rec.kind === 'crush' && rec.status === 'stopped' ? h('a', { class: 'btn', href: `#/nonlinear?tab=analyses&resume=${encodeURIComponent(rec.abs)}&part=${encodeURIComponent(rec.part || '')}` }, 'Resume') : null,
+        rec.resumable ? h('a', { class: 'btn', href: `#/nonlinear?tab=analyses&resume=${encodeURIComponent(rec.abs)}&part=${encodeURIComponent(rec.part || '')}` }, 'Resume') : null,
         (rec.curves || []).length ? h('button', { class: 'btn', type: 'button', onclick: () => { const v = loadView(); saveView({ ...v, sel: [...new Set([...(v.sel || []), ref])] }); location.hash = '#/nonlinear?tab=runs'; } }, 'Compare with other runs') : null,
         h('a', { class: 'btn', href: '#/nonlinear?tab=runs' }, 'All runs'))));
   };
