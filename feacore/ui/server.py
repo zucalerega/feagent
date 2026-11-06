@@ -431,6 +431,11 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
 
     app.mount("/static", NoCacheStatic(directory=STATIC_DIR), name="static")
 
+    from feacore.ui import nonlinear_api, testdata_api      # the Nonlinear and Test data sections (docs/ui.md)
+
+    app.include_router(nonlinear_api.router(store, tasks))   # #/nonlinear: runs, curves vs the test, gallery
+    app.include_router(testdata_api.router(store))           # #/testdata: physical tests and uploads
+
     # ------------------------------------------------------------------ health
     @app.get("/api/health")
     def health(request: Request, wait: bool = False, refresh: bool = False):

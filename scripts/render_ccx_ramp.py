@@ -8,7 +8,8 @@ Optionally the same increments as .vtu files for ParaView.
     python scripts/render_ccx_ramp.py --runs corrected_stick --vtu
 
 Reads <work>/<run>/job.inp + job.frd (streamed) and <work>/<run>.json; writes
-physical_tests/abc_00000065_compression/ccx_ramp/render_<run>.png and, with --vtu, <work>/<run>/vtu/*.vtu.
+physical_tests/abc_00000065_compression/ccx_ramp/render_<run>.png (or --out DIR) and, with --vtu,
+<work>/<run>/vtu/*.vtu.
 """
 from __future__ import annotations
 
@@ -90,7 +91,7 @@ def principal_max(S: np.ndarray) -> np.ndarray:
     return np.linalg.eigvalsh(T)[:, -1]
 
 
-def render(run: str, work: Path, vtu: bool) -> Path:
+def render(run: str, work: Path, vtu: bool, out_dir: Path = OUT_DIR) -> Path:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -150,7 +151,8 @@ def render(run: str, work: Path, vtu: bool) -> Path:
     fig.suptitle(f"abc_00000065 compression, CalculiX J2 + NLGEOM ({run}: E {r['material']['E']:.0f} MPa, "
                  f"{r['platen']} platen); deformed shape at true scale, two opposite views", fontsize=10)
     fig.tight_layout()
-    out = OUT_DIR / f"render_{run}.png"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"render_{run}.png"
     fig.savefig(out)
     plt.close(fig)
     return out
@@ -161,11 +163,12 @@ def main(argv=None) -> int:
     ap.add_argument("--work", type=Path, default=ROOT / "runs" / "ccx_ramp")
     ap.add_argument("--runs", default="", help="comma-separated run names (default: every finished run)")
     ap.add_argument("--vtu", action="store_true", help="also write the rendered increments as .vtu (ParaView)")
+    ap.add_argument("--out", type=Path, default=OUT_DIR, help="where render_<run>.png goes (default: the committed ccx_ramp)")
     a = ap.parse_args(argv)
     runs = [x for x in a.runs.split(",") if x] or sorted(
         p.stem for p in a.work.glob("*_s*.json") if p.stem.rsplit("_", 1)[-1] in ("slide", "stick"))
     for run in runs:
-        print(render(run, a.work, a.vtu))
+        print(render(run, a.work, a.vtu, a.out))
     return 0
 
 

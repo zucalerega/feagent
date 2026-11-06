@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 """ace_sizing: ACE-style mesh (global h + refinements at bottom/top and stress hotspots).
 
-build.py PART_STEP AXIS OUT_DIR --purpose linear|nonlinear [--h H] [--no-hotspots]
+build.py PART_STEP AXIS OUT_DIR --purpose linear|nonlinear [--h H] [--no-hotspots] [--straight]
+
+--straight: midside nodes on the straight edges (C3D10 with straight edges), so a coarse nonlinear mesh (a short
+crush run) passes CalculiX's midside check.
 """
 from __future__ import annotations
 
@@ -40,6 +43,8 @@ def main(argv=None):
     ap.add_argument("--ho-opt", action="store_true", help="gmsh HighOrder optimise after curving (can abort gmsh)")
     ap.add_argument("--node-cap", type=int, default=NL_NODE_CAP,
                     help=f"nonlinear: attempts above this node count are skipped (default {NL_NODE_CAP})")
+    ap.add_argument("--straight", action="store_true",
+                    help="straight-edged quadratic tets (midside nodes at the edge midpoints): any h passes CalculiX")
     a = ap.parse_args(argv)
     t0 = time.time()
     part = Path(a.step).resolve().parents[1].name.removesuffix("_bc0")
@@ -53,7 +58,7 @@ def main(argv=None):
 
     def attempt(h, frac):
         s = make_mesh(a.step, a.axis, out / "mesh.msh", h, 2, refinements(h, spots, frac),
-                      write_inp=out / "mesh.inp", high_order_opt=a.ho_opt)
+                      write_inp=out / "mesh.inp", high_order_opt=a.ho_opt, straight=a.straight)
         groups = {n: GroupResult(name=n, dim=2, tags=g["tags"], elements=g["elements"], area=g["area"])
                   for n, g in s["groups"].items()}
         groups["domain"] = GroupResult(name="domain", dim=3, tags=[1], elements=s["elements"], area=None)
@@ -84,7 +89,8 @@ def main(argv=None):
     d = rep.to_dict()
     d.update(system="ace_sizing", part=part, purpose=a.purpose, n_nodes=s["nodes"], n_elements=s["elements"],
              order=2, dofs=3 * s["nodes"], build_s=round(build_s, 2),
-             knobs={"h": h, "floor": s["floor"], "contact_frac": frac, "refinements": refinements(h, spots, frac), "attempts": tried},
+             knobs={"h": h, "floor": s["floor"], "contact_frac": frac, "refinements": refinements(h, spots, frac), "attempts": tried,
+                    "straight_edges": a.straight},
              hotspots=[{"point": p, "vm_Pa": v} for p, v in spots])
     d["face_counts"] = {n: len(g["tags"]) for n, g in s["groups"].items()}
     (out / "report.json").write_text(json.dumps(d, indent=1, default=float))

@@ -320,6 +320,20 @@ Per agent run, the leaderboard shows:
 
 Agents without a submission yet are listed as running. ACE submissions also appear in the regular Consensus view of each problem.
 
+## Nonlinear and Test data pages
+
+**Nonlinear** `#/nonlinear` (`feacore/ui/nonlinear_api.py`, tools in `feacore/ui/tools/nonlinear.py`) has three tabs:
+
+- **Runs**: every nonlinear run found in the run store (`<runs>/nonlinear/`, `<runs>/ccx_ramp/`) and in the committed results, with its force-travel curves over the Instron test of the printed C-bracket (or an uploaded test). The simulated travel is mapped to the crosshead with the frozen seating gap and compliance of `nonlinear_spec.json` (editable), and each curve gets the mean force error at the test's checkpoints, as the agents are scored. `#/nonlinear/run/<ref>` shows one run: facts, curves, its pictures and videos, render buttons, files and the live `progress.log`.
+- **Run an analysis**: the tools, with small defaults timed on a 4-core box: the agents' frozen scoring ramp (`scripts/nl_baselines.py --out`, automesher + 4 mm in about 1 min), the elastoplastic ramp of the test (`scripts/ccx_compression_ramp.py --straight`, about 30 s at 5 mm), and crush to fracture in three steps (a straight-edged crush mesh from `mesh_systems/ace_sizing --straight`, an optional buckling imperfection, `experiments/physical/crush.py`: about 6 min at 8 mm, hours for the 40k-node study meshes). Renderers turn a finished run into stills (`scripts/render_ccx_ramp.py`) or videos (`experiments/physical/render_crush.py`, `scripts/nl_video.py ramp`); the pyvista ones run through `python -m feacore.ui.offscreen`, which uses `xvfb-run` when there is no display and imageio-ffmpeg when there is no system ffmpeg.
+- **Gallery**: the committed figures and videos (`talk_plots/act3_real_data/`, `docs/gallery/`, `physical_tests/.../ccx_ramp/`, the scoring baselines) with the captions of their READMEs and HTML pages. The Omniverse RTX renders need the DGX Spark: committed media only.
+
+Dashboard outputs: `<runs>/nonlinear/{score,ramp,crush,meshes,renders}/<tool>-<task id>/`. A crush run keeps a checkpoint when it is killed; *Resume* continues it into a new run directory.
+
+**Test data** `#/testdata` (`feacore/ui/testdata_api.py`) lists the physical tests (committed evidence specs under `physical_tests/`, uploads under `<runs>/testdata/<id>/`) with their curves, and the printable test parts (STL / STEP). An upload is a machine export (CSV / TXT as Bluehill writes it) read with the loop's own `ace.evidence.read_table`: the columns and units are detected and can be changed, the curve and the loop's processing (`process_test`: loadings, fitted compliance, uncertainty budget) are shown before it is saved. A saved record is `test.json` (an evidence spec plus a `lab` block) next to the export, a ready `--evidence` folder: `python -m ace.run_loop --problems <problem> --evidence <runs>/testdata/<id>`.
+
+API: `GET /api/nonlinear/{runs,run?ref=,test,meshes,gallery,capabilities,file?ref=}`; `GET /api/testdata`, `GET|DELETE /api/testdata/item?id=`, `POST /api/testdata/parse` and `POST /api/testdata` (multipart `file` + fields), `GET /api/testdata/file?ref=`. Files are served only from the run store's `nonlinear/`, `ccx_ramp/` and `testdata/` and from the committed media folders, with a known media type (never HTML); links carry `?token=` when the server has one.
+
 ## Run-record format (for the harness and the evaluator)
 
 Root: `$FEACORE_RUNS_DIR`, else `<repo>/runs`. The store writes `runs/.gitignore` containing `*`, so nothing in it is ever committed. Every write is atomic (temp file + rename).

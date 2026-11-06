@@ -24,7 +24,7 @@ Usage:
     python scripts/ccx_compression_ramp.py --materials corrected --platen stick --threads 4
     python scripts/ccx_compression_ramp.py --post-only                       # redo the comparison
 Outputs (small, committed): physical_tests/abc_00000065_compression/ccx_ramp/{summary.json, curve_<run>.csv,
-material_corrected.csv, compare.png}. CalculiX work dirs and (--vtu) the ParaView series stay in --work.
+material_corrected.csv, compare.png}, or --out DIR. CalculiX work dirs and (--vtu) the ParaView series stay in --work.
 """
 from __future__ import annotations
 
@@ -207,11 +207,11 @@ def nearest_faces(points_mm: list, tol_mm: float = 0.05) -> list[list[str]]:
         gmsh.finalize()
 
 
-def compare(runs: list[dict]) -> dict:
+def compare(runs: list[dict], out_dir: Path = OUT_DIR) -> dict:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     tr = test_reference()
     summary = {"test": {k: tr[k] for k in ("slope", "toe_mm", "peak_N", "peak_mm")},
                "note": "test displacement is crosshead travel; the toe is removed by shifting it to the intercept "
@@ -239,7 +239,7 @@ def compare(runs: list[dict]) -> dict:
         for (k, f), faces in zip(spots, nearest_faces([r[k][f]["at_mm"] for k, f in spots])):
             s[k][f]["faces"] = faces
         summary["runs"][r["name"]] = s
-        with open(OUT_DIR / f"curve_{r['name']}.csv", "w", newline="") as f:
+        with open(out_dir / f"curve_{r['name']}.csv", "w", newline="") as f:
             w = csv.writer(f)
             w.writerow([f"# CalculiX J2 + NLGEOM ramp ({r['name']}): platen travel, force, max PEEQ; last column adds "
                         f"the series compliance {C_s:.3e} mm/N that matches the test's straight-part slope"])
@@ -257,14 +257,14 @@ def compare(runs: list[dict]) -> dict:
     ax.set_title("abc_00000065 compression: Instron vs CalculiX (J2 plasticity, NLGEOM); triangles = first yield",
                  fontsize=9)
     ax.legend(fontsize=7.5, loc="lower right")
-    fig.tight_layout(); fig.savefig(OUT_DIR / "compare.png")
+    fig.tight_layout(); fig.savefig(out_dir / "compare.png")
     mc = corrected_material()
-    with open(OUT_DIR / "material_corrected.csv", "w", newline="") as f:
+    with open(out_dir / "material_corrected.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow([f"# {mc['source']}; E = {mc['E']:.0f} MPa, nu = {mc['nu']}"])
         w.writerow(["true_stress_MPa", "true_plastic_strain"])
         w.writerows([[f"{s:.3f}", f"{e:.6f}"] for s, e in mc["table"]])
-    (OUT_DIR / "summary.json").write_text(json.dumps(summary, indent=1, default=float))
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=1, default=float))
     return summary
 
 
@@ -277,7 +277,14 @@ def main(argv=None) -> int:
     ap.add_argument("--platen", choices=["slide", "stick"], default="slide")
     ap.add_argument("--threads", type=int, default=2, help="threads per CalculiX run (runs go in parallel)")
     ap.add_argument("--work", type=Path, default=ROOT / "runs" / "ccx_ramp")
+    ap.add_argument("--out", type=Path, default=OUT_DIR,
+                    help="where the comparison goes (summary.json, curve_<run>.csv, compare.png); "
+                         "default: the committed physical_tests/abc_00000065_compression/ccx_ramp")
     ap.add_argument("--vtu", action="store_true", help="also write the per-increment .vtu series (ParaView)")
+    ap.add_argument("--straight", action="store_true",
+                    help="straight-edged quadratic tets (a linear mesh; the ccx backend adds the midside nodes at the "
+                         "edge midpoints): any --h runs, where coarse curved tets fail CalculiX's checks, but the "
+                         "faceted bore reads a few %% stiff")
     ap.add_argument("--post-only", action="store_true", help="re-read <work>/<run>.json and redo the comparison")
     a = ap.parse_args(argv)
     mats = {"team": team_material, "corrected": corrected_material}
@@ -285,9 +292,9 @@ def main(argv=None) -> int:
     a.work.mkdir(parents=True, exist_ok=True)
     if not a.post_only:
         from feacore.problems.registry import get
-        mesh = a.work / f"mesh_h{a.h:g}.msh"
+        mesh = a.work / f"mesh_h{a.h:g}{'_straight' if a.straight else ''}.msh"
         if not mesh.exists():
-            get(PID).mesh(mesh, a.h / 1000.0, geom_order=2)
+            get(PID).mesh(mesh, a.h / 1000.0, geom_order=1 if a.straight else 2)
         jobs = [(n, mats[n.rsplit("_", 1)[0]]()) for n in names]
         with ThreadPoolExecutor(len(jobs)) as pool:
             futs = [pool.submit(run_one, n, mesh, m, a.platen, a.umax, a.increments, a.threads, a.work, a.vtu)
@@ -298,7 +305,7 @@ def main(argv=None) -> int:
     # every finished run in the work dir (both platens), so one plot holds them all
     runs = [json.loads(f.read_text()) for f in sorted(a.work.glob("*_s*.json"))
             if f.stem.rsplit("_", 1)[-1] in ("slide", "stick")]
-    s = compare(runs)
+    s = compare(runs, a.out)
     print(json.dumps(s, indent=1, default=float))
     return 0
 
