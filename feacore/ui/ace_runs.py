@@ -323,11 +323,28 @@ class AceRuns:
         self._tracker_lock = threading.Lock()
 
     # ------------------------------------------------------------------ keys and folders
+    def _real_roots(self) -> list[tuple[str, Path]]:
+        return [(n.rstrip("/"), resolve_out(n, self.store).resolve()) for n in RUN_ROOTS + SWARM_ROOTS]
+
     def key_of(self, path: Path) -> str:
+        """The key of a folder: through a root's name when it is under one (a root may be a symlink to
+        another disk), else relative to the repository, else @runs/... (ValueError: none of those)."""
         p = path.resolve()
+        for name, real in self._real_roots():
+            if _inside(p, real) and p != real:
+                return f"{name}/{p.relative_to(real).as_posix()}"
         if _inside(p, REPO_ROOT.resolve()):
             return p.relative_to(REPO_ROOT.resolve()).as_posix()
         return "@runs/" + p.relative_to(self.store.root.resolve()).as_posix()
+
+    def _task_out_ok(self, p: Path) -> bool:
+        """A task's output folder counts when it is inside a root or the run store, or at least two
+        levels below the repository: never the repository, the store or a top-level folder of the
+        repository (feacore/, ace/, ...), whatever a task was told to write to."""
+        store, repo = self.store.root.resolve(), REPO_ROOT.resolve()
+        if any(_inside(p, real) and p != real for _, real in self._real_roots()) or (_inside(p, store) and p != store):
+            return True
+        return _inside(p, repo) and len(p.relative_to(repo).parts) >= 2
 
     def _key_path(self, key: str) -> Path:
         if not isinstance(key, str) or not key or len(key) > 600 or "\\" in key or key.startswith("/") \
@@ -356,15 +373,17 @@ class AceRuns:
             for c in children:
                 if c.is_dir() and SAFE_NAME.match(c.name) and _inside(c.resolve(), real):
                     found.setdefault(c.resolve(), {"key": f"{name.rstrip('/')}/{c.name}", "task": None})
-        allowed = [REPO_ROOT.resolve(), self.store.root.resolve(),
-                   *(resolve_out(n, self.store).resolve() for n in SWARM_ROOTS + RUN_ROOTS)]
         for t in sorted(self._tasks(), key=lambda t: t.get("created_at") or ""):   # the newest task wins
             if not t.get("out_abs") or (t.get("tool") == "ace.export_swarm") != swarms:
                 continue
             p = Path(t["out_abs"]).resolve()
-            if any(_inside(p, r) for r in allowed):
+            if not self._task_out_ok(p):
+                continue
+            try:
                 key = found.get(p, {}).get("key") or self.key_of(p)
-                found[p] = {"key": key, "task": t}
+            except ValueError:
+                continue
+            found[p] = {"key": key, "task": t}
         return found
 
     def folder(self, key: str, swarms: bool = False) -> tuple[Path, dict]:

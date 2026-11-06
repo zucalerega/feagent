@@ -243,6 +243,28 @@ def test_paths_outside_the_known_folders_are_refused(client, tmp_path):
     assert client.get("/api/ace/agent-run", params={"dir": "@runs/ace_runs/fake", "run_id": "../../x"}).status_code == 404
 
 
+def test_task_outputs_and_a_symlinked_root(tmp_path, monkeypatch):
+    """A task's output folder counts only inside a root, the run store or two levels below the
+    repository; a root may be a symlink to another disk (folders are then named through it)."""
+    store = tmp_path / "store"
+    disk = tmp_path / "bigdisk" / "ace_runs"
+    make_run(disk)
+    store.mkdir()
+    (store / "ace_runs").symlink_to(disk, target_is_directory=True)
+    monkeypatch.setattr(ace_runs, "RUN_ROOTS", ["@runs/ace_runs"])
+    ts = T.TaskStore(RunStore(store))
+    for tid, out in [("task-a1", T.REPO_ROOT / "feacore"), ("task-a2", store / "ace_runs" / "queued"),
+                     ("task-a3", tmp_path / "elsewhere")]:
+        ts.save({"id": tid, "tool": "ace.swarm", "group": "agents", "state": "queued", "args": {"generations": 3},
+                 "out": str(out), "out_abs": str(out), "created_at": "2026-11-05T10:00:00Z"})
+    with TestClient(create_app(runs_dir=store, token="")) as c:
+        runs = {r["key"]: r for r in c.get("/api/ace/runs").json()["runs"]}
+        assert set(runs) == {"@runs/ace_runs/fake", "@runs/ace_runs/queued"}
+        assert runs["@runs/ace_runs/queued"]["status"] == "interrupted"   # the server restarted: marked at startup
+        assert c.get("/api/ace/run", params={"dir": "@runs/ace_runs/fake"}).json()["summary"]["generations_scored"] == 2
+        assert c.get("/api/ace/run", params={"dir": "feacore"}).status_code == 404
+
+
 def test_the_tracker_is_served_under_the_api_and_carries_the_token(tmp_path, roots):
     store = tmp_path / "store"
     make_run(store / "ace_runs")
