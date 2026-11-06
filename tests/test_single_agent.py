@@ -208,3 +208,31 @@ def test_duplicate_solve_is_refused_and_ratio_reported(tmp_path):
     out, err = s.call("solve", {"mesh": 2, **setup})
     assert not err and out["solve"] == 2
     assert math.isclose(out["h_rep"], m2["h_rep"], rel_tol=0.02)   # the mesh tool's h_rep is the study's h
+
+
+def test_gci_uses_well_spaced_meshes():
+    """From the Opus pilot: with intermediate levels the three finest meshes are ~1.1x apart and the verdict is noise;
+    the GCI takes the finest mesh and two coarser ones at least 1.3x apart."""
+    from single_agent.harness import gci_triplet
+    h = [3.0, 2.48, 2.17, 1.94, 1.73, 1.56]                    # Opus's self-similar family, h_rep in mm
+    assert sorted(gci_triplet(h)) == [0, 2, 5]                 # 1.56 -> 2.17 (1.39x) -> 3.0 (1.38x)
+    h = [1.0, 1.05, 1.1]                                       # no well-spaced triple: the three finest
+    assert sorted(gci_triplet(h)) == [0, 1, 2]
+
+
+def test_study_readings_by_kind():
+    """Small trendless changes are scatter, not divergence; only a peak stress reads as singular."""
+    from single_agent.harness import _reading
+    reaction = {"name": "Rx", "type": "reaction", "group": "f9", "component": 0}
+    peak = {"name": "vm", "type": "max", "field": "von_mises"}
+    assert _reading({"convergence": "divergent", "spread": 0.008}, reaction).startswith("scatter")
+    assert "singularity" in _reading({"convergence": "divergent", "spread": 0.12}, peak)
+    r = _reading({"convergence": "divergent", "spread": 0.3}, reaction)
+    assert "singularity" not in r and "absolute terms" in r
+
+
+def test_size_floor_is_reported(tmp_path):
+    ws = workspace.make(PID, tmp_path)
+    s = Session(ws)
+    out, err = s.call("mesh", {"h": 0.012, "order": 2, "refinements": [{"edge": 40, "size": 0.0003, "radius": 0.004}]})
+    assert not err and "warning_size_floor" in out and "0.0003 -> 0.001" in out["warning_size_floor"]

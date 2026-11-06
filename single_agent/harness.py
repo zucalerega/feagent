@@ -47,7 +47,7 @@ VIEW_ENUM = ["iso", "x", "y", "z", "-x", "-y", "-z"]
 QOI_HELP = (
     "Quantities of interest, each {name, type, field, group, point, component}: "
     "strain_energy (total, J); max / min / max_abs of a nodal field over a face group (group null = whole part); "
-    "mean / integral of a field over a face group or the solid; reaction = support force on the part summed over "
+    "mean / integral of a field over a face group or the whole part (group \"solid\"); reaction = support force on the part summed over "
     "a supported group, `component` 0/1/2 = x/y/z (N); point = a field at `point` [x, y, z]. "
     "Fields: ux, uy, uz, u_mag, sxx, syy, szz, sxy, syz, sxz, von_mises, tresca, s1, s2, s3. "
     "Stresses come from a recovered continuous field."
@@ -103,7 +103,8 @@ TOOLS = [
                        "(min / 1st percentile / median minSICN; 0 = degenerate), the mean element size near each face, "
                        "and for order 2: curved cells that had to be straightened (repaired_cells, automatic) and cells "
                        "still folded (folded_cells, must be 0). Optionally defines named groups (unions of faces) for "
-                       "supports, loads, QoIs and refinements. Node counts change in steps.",
+                       "supports, loads, QoIs and refinements. Node counts change in steps. Element sizes below 1% of "
+                       "the part's bounding-box diagonal are clamped to that floor (the result warns when it happens).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -144,7 +145,8 @@ TOOLS = [
                        "the solve number, your QoIs, DOFs and feedback without any reference: support reactions vs "
                        "applied loads (equilibrium), the largest displacement and von Mises stress and where, and a "
                        "ZZ error estimate (relative energy-norm error and the hotspots holding most of it, with the "
-                       "nearest face, re-entrant edge, the rim of your own supports, and the local element size). "
+                       "nearest face, re-entrant edge, the rim of your own supports, and the local element size; a "
+                       "guide to where the error is, which tends to underestimate it next to singular edges). "
                        + BC_HELP + " " + QOI_HELP,
         "input_schema": {
             "type": "object",
@@ -324,6 +326,20 @@ def evaluate_qois(result, qois: list[dict]) -> dict:
             out[q["name"]] = None
             out.setdefault("_errors", {})[q["name"]] = f"{type(e).__name__}: {e}"
     return out
+
+
+def gci_triplet(h: list[float], min_ratio: float = 1.3) -> list[int]:
+    """Indices of the three meshes for the three-mesh GCI: the finest, then each time the next coarser mesh at least
+    `min_ratio` larger in h, so that intermediate levels (ratios ~1.1) do not turn the verdict into noise. The three
+    finest when the sequence does not allow it."""
+    order_ = [int(i) for i in np.argsort(h)]          # fine -> coarse
+    chosen = [order_[0]]
+    for i in order_[1:]:
+        if h[i] >= min_ratio * h[chosen[-1]]:
+            chosen.append(i)
+            if len(chosen) == 3:
+                return chosen
+    return order_[:3]
 
 
 def gci_unequal(h: list[float], phi: list[float], p_theory: float | None, safety: float = 1.25) -> dict | None:
@@ -537,6 +553,16 @@ class Session:
         out = {"mesh": k, **{k2: v for k2, v in m.items() if k2 not in ("path", "request", "number")}}
         if not m.get("ok"):
             return out, True
+        clamped = [(float(r["size"]), u) for r, u in zip(request["refinements"], m.get("sizes_used") or [])
+                   if u > float(r["size"]) * (1 + 1e-6)]
+        if clamped or m["h_used"] > float(request["h"]) * (1 + 1e-6):
+            floor = max([u for _, u in clamped] + ([m["h_used"]] if m["h_used"] > float(request["h"]) else []))
+            out["warning_size_floor"] = (
+                f"sizes below the mesher's floor of {floor:.4g} m (1% of the part's diagonal) were clamped to it: "
+                + ", ".join(f"{a:.3g} -> {b:.4g}" for a, b in clamped)
+                + (f"; h {float(request['h']):.3g} -> {m['h_used']:.4g}" if m["h_used"] > float(request["h"]) else "")
+                + ". Refining there below the floor changes nothing, so a study that keeps those sizes at the floor "
+                  "is not a systematic refinement: refine the rest of the mesh, or widen the refined region instead.")
         cap = self.limits["node_cap"]
         out["node_cap"] = cap
         if m["nodes"] > cap:
@@ -708,7 +734,7 @@ class Session:
 
     # ------------------------------------------------------------------ verification
     def _study(self, args: dict) -> tuple[dict, bool]:
-        from feacore.verification.gci import analyze
+        from feacore.verification.gci import fit_power_law, gci3
         nums = args.get("solves")
         if not isinstance(nums, list) or len(nums) < 2:
             return {"error": "give at least 2 solve numbers (3+ for a GCI)"}, True
@@ -733,7 +759,8 @@ class Session:
         ratios = [h[i] / h[i + 1] for i in range(len(h) - 1)]
         out = {"solves": [r["number"] for r in recs], "h_rep": [_sig(x) for x in h], "dofs": [r["dofs"] for r in recs],
                "refinement_ratios": [_sig(x, 3) for x in ratios], "qois": {}}
-        notes = []
+        notes = ["each QoI's GCI uses the finest mesh and two coarser ones at least 1.3x apart when the sequence "
+                 "allows it (gci_solves); the power fit uses all of them"] if len(recs) > 3 else []
         if order is None:
             notes.append("the solves mix element orders: not a systematic refinement, the orders below are unreliable")
         if min(ratios) < 1.15:
@@ -744,25 +771,31 @@ class Session:
             p_th = expected_order(q, order) if order else None
             row = {"values": [_sig(v, 6) for v in phi], "p_theory": p_th}
             if len(recs) >= 3:
+                tri = gci_triplet(h)                       # the finest mesh and two coarser ones, well spaced
+                ht, ft = [h[i] for i in tri], [phi[i] for i in tri]
                 try:
-                    a = analyze(h, phi, p_theory=p_th)
-                    g = a["gci"]
+                    g = gci3(ht, ft, p_theory=p_th).to_dict()
                 except (ValueError, OverflowError, ZeroDivisionError) as e:
                     # feacore's gci3 can fail on unequal ratios (math domain error in its fixed-point order);
                     # the ratio-corrected test below still decides the case.
-                    a, g = {}, {"convergence": "indeterminate", "p": None, "phi_ext": None, "gci_fine": None,
-                                "e_a21": None, "flags": [f"gci3 failed: {type(e).__name__}: {e}"]}
-                idx = np.argsort(h)[:3]                        # the three finest, as feacore's analyze uses
-                fix = gci_unequal([h[i] for i in idx], [phi[i] for i in idx], p_th)
+                    g = {"convergence": "indeterminate", "p": None, "phi_ext": None, "gci_fine": None,
+                         "e_a21": None, "flags": [f"gci3 failed: {type(e).__name__}: {e}"]}
+                fix = gci_unequal(ht, ft, p_th)
                 if fix:                                        # unequal ratios: the ratio-corrected verdict wins
                     g = {**g, **fix}
-                row.update(convergence=g["convergence"], p_observed=_sig(g["p"], 3), extrapolated=_sig(g["phi_ext"], 6),
+                row.update(gci_solves=[recs[i]["number"] for i in sorted(tri, key=lambda i: -h[i])],
+                           convergence=g["convergence"], p_observed=_sig(g["p"], 3), extrapolated=_sig(g["phi_ext"], 6),
                            gci_fine=_sig(g["gci_fine"], 3), gci_conservative=_sig(g.get("gci_fine_conservative"), 3),
                            change_fine_vs_medium=_sig(g["e_a21"], 3), flags=g["flags"])
-                if a.get("fit"):
-                    f = a["fit"]
+                vals = np.asarray(phi, float)
+                row["spread"] = _sig(float(np.ptp(vals[np.argsort(h)[:3]])) / max(abs(vals[np.argmin(h)]), 1e-300), 3)
+                f = fit_power_law(h, phi) if len(h) >= 4 else None
+                if f and f["p"] >= 0.5:
                     row["power_fit"] = {"limit": _sig(f["phi0"], 6), "p": _sig(f["p"], 3), "n": f["n"]}
-                row["reading"] = _reading(row)
+                elif f:
+                    row["power_fit"] = {"note": f"no meaningful power-law fit over the {f['n']} meshes (order "
+                                                f"{f['p']:.2g}): the values do not follow phi0 + a h^p"}
+                row["reading"] = _reading(row, q)
             else:
                 ch = abs(phi[1] - phi[0]) / max(abs(phi[1]), 1e-300)
                 row["change"] = _sig(ch, 3)
@@ -835,12 +868,32 @@ class Session:
         return {"submitted": True, "message": "report received; the analysis is over"}, False
 
 
-def _reading(row: dict) -> str:
-    """One sentence on what a study row means for reporting the QoI."""
+SCATTER = 0.02     # trendless mesh-to-mesh changes below this are scatter, not divergence (as the feacore UI reads them)
+
+
+def _reading(row: dict, q: dict | None = None) -> str:
+    """One sentence on what a study row means for reporting the QoI `q`."""
     conv, p, pt, gci = row.get("convergence"), row.get("p_observed"), row.get("p_theory"), row.get("gci_fine")
+    spread = row.get("spread")
+    q = q or {}
+    peak = q.get("type") in ("max", "min", "max_abs") and q.get("field") not in ("ux", "uy", "uz", "u_mag")
+    if conv != "monotone" and spread is not None and spread < SCATTER:
+        s = (f"scatter: the values move by {spread:.2%} at most over the three meshes, without a clean trend, so no order "
+             f"can be fitted. Treat the quantity as converged within that scatter and use the spread (or a little more) "
+             f"as its uncertainty")
+        return s + ("; a peak stress that keeps creeping up as its location is refined is still suspect: check where "
+                    "it sits" if peak else "")
     if conv in ("divergent", "oscillatory_divergent"):
-        return ("diverging: the changes grow under refinement. For a stress this is the signature of a singularity "
-                "(re-entrant edge, support rim, point load); no mesh gives a trustworthy value")
+        if peak:
+            return ("diverging: the changes grow under refinement. For a peak stress this is the signature of a "
+                    "singularity (re-entrant edge, support rim, point load); no mesh gives a trustworthy value")
+        s = ("diverging: the changes do not shrink under refinement. Energies, displacements, averages and reactions "
+             "converge even next to singular edges, so check the mesh sequence (systematic refinement, ratios of 1.3 "
+             "or more, sizes held at the floor) before reporting it")
+        if q.get("type") == "reaction":
+            s += ("; a reaction component that is near zero next to the applied load has meaningless relative changes: "
+                  "judge it in absolute terms")
+        return s
     if conv == "converged":
         return f"converged within round-off (uncertainty {gci:.2g})" if gci is not None else "converged within round-off"
     if conv == "oscillatory":
@@ -854,8 +907,11 @@ def _reading(row: dict) -> str:
             s += f"; the finest value is uncertain by about {gci:.2%} (GCI)"
         cons = row.get("gci_conservative")
         if pt and p < 0.5 * pt:
-            s += ". The order is far below theory: a singularity nearby is polluting it, or the meshes are not in the " \
-                 "asymptotic range; treat the GCI as optimistic"
+            s += (". The order is far below the smooth-solution theory. Near a singular edge (re-entrant, or the rim of a "
+                  "rigid support) that is expected: energies and mean displacements then converge at about order 1-2. "
+                  "If the three meshes are well spaced (ratios of 1.3 or more) the extrapolation and the GCI at this "
+                  "order are usable; if not, or if p is below about 0.7, the meshes are not in the asymptotic range "
+                  "and the GCI is optimistic")
         elif pt and p > 1.5 * pt + 0.5:
             s += (". The order is far ABOVE theory: the meshes are not yet in the asymptotic range or the refinement "
                   "ratios are too close, so the extrapolation and the GCI are unreliable and usually optimistic")

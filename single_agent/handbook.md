@@ -47,11 +47,13 @@ These rules apply to any part and any load case. Cite a rule by its id (e.g. A2)
 
 - **D1.** Every reported value rests on at least three meshes with the same setup, refined systematically
   (refine_mesh with a factor of 1.3 to 1.6), analysed with the study tool.
-- **D2.** Monotone convergence with an observed order near the theoretical one: report the extrapolated value,
-  with the GCI as its uncertainty.
-- **D3.** Oscillating values, or an order far from theory (below half of it, or well above it): report the finest
+- **D2.** Monotone convergence on three well-spaced meshes (ratios of 1.3 or more) with a plausible order: report
+  the extrapolated value, with the GCI as its uncertainty. Plausible means near the theoretical order, or the lower
+  order a nearby singular edge allows (energies and mean displacements then converge at about order 1 to 2).
+- **D3.** Oscillating values, or an implausible order (well above theory, or below about 0.7): report the finest
   value, with the largest of the spread of the last three values, the GCI and the conservative GCI as its
-  uncertainty.
+  uncertainty. Values that only scatter by a few tenths of a percent without a trend are converged within that
+  scatter: use the spread.
 - **D4.** Global quantities (strain energy, reactions, mean displacements, volume averages) converge even where
   peak stresses do not. Prefer them for decisions.
 - **D5.** Make the finest mesh as fine as the node cap allows. The coarsest mesh of the study must still resolve

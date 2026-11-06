@@ -66,8 +66,16 @@ def main(argv: list[str] | None = None) -> int:
             "submitted": st["report"] is not None, "limits": st["limits"]}, indent=1, default=float))
         return 0
     out, err = s.call(tool, _args(argv[2] if len(argv) > 2 else None))
-    print(json.dumps(out, indent=1, default=float))
+    print(compact(out))
     return 1 if err else 0
+
+
+def compact(out) -> str:
+    """One line per top-level key: short enough to read whole (a pretty-printed solve result runs ~150 lines and
+    gets cut by `head`), still easy to scan."""
+    if not isinstance(out, dict):
+        return json.dumps(out, default=float)
+    return "{\n" + ",\n".join(f" {json.dumps(k)}: {json.dumps(v, default=float)}" for k, v in out.items()) + "\n}"
 
 
 if __name__ == "__main__":
