@@ -421,11 +421,46 @@ Derived flags:
 
 Each flag carries a one-paragraph explanation (`feacore/ui/analysis.py`, `FLAG_INFO`).
 
+## Gold and Your CAD pages
+
+Routes `#/gold` and `#/cad` (`#/cad/<upload>`). Server side: `feacore/ui/gold_api.py` (mounted once by
+`create_app`; it also mounts `feacore/ui/cad_api.py`), tools in `feacore/ui/tools/gold.py` and `cad.py`.
+
+```bash
+curl $S/api/gold                                   # parts -> BC sets, study meshes with their status here
+curl -OJ $S/api/gold/meshes/abc_00000003/L0         # a stored study mesh (404 when not on this machine)
+curl -X POST $S/api/gold/solve -H 'Content-Type: application/json' \
+     -d '{"set_id": "abc_00000003_bc0", "level": 0, "source": "regenerated"}'    # a run for the viewer
+curl -T goldgen-l2_0001.tgz $S/api/gold/archives/goldgen-l2_0001.tgz              # then the gold.import tool
+curl -F file=@part.step -F units=si $S/api/cad/uploads                            # a STEP upload -> its faces
+curl -X POST $S/api/cad/uploads/<upload>/sets -H 'Content-Type: application/json' \
+     -d '{"mode": "manual", "fixed": ["f12"], "loads": [{"group": "f7", "type": "pressure", "value": 2e6}]}'
+```
+
+- **Mesh status** on the Gold page: `ok` (the sha256 of index.json), `mismatch`, `missing` (the meshes are
+  not in git), `unlisted`. Tools: `gold.regenerate` (`python -m feacore.goldgen.local regenerate PART
+  --levels 0,1`: the generator's settings into `<runs>/gold_regen/<part>/`, sha256 and cells compared with
+  the index; `--install` only for a byte-identical level), `gold.verify` / `gold.render`
+  (`scripts/gold.py`), `gold.import`, `gold.nonlinear` (`scripts/gold_nonlinear.py` on a view of the gold
+  root). Regenerated meshes do not reproduce the stored bytes: gmsh is not even bitwise reproducible from
+  run to run, and the input is the rescaled public STEP (cells within ~0.5 % at L0).
+- **Uploads** (`feacore/problems/custom.py`): checked (size limit `FEACORE_CAD_MAX_BYTES`, default 30 MB;
+  STEP header and end; exactly one solid; a coarse tet mesh), read by the CAD kernel in its own process,
+  stored in the gold layout under `<runs>/cad/<upload>/`. Each BC set (generated with the gold rules, or
+  picked on the 3D view) is a registered problem `<upload>_bc<k>` / `<upload>_m<k>`, tag `custom`, found by
+  every process whose `FEACORE_RUNS_DIR` (or `FEACORE_CAD_DIR`) points there, and by ACE
+  (`ace.config.TASKS` entry: scored QoI and node cap). Without a reference its runs are judged
+  reference-free (`ace.infer`: ZZ estimate, agreement); the `cad.reference` tool or a finished P2 study
+  (`POST /api/cad/problems/<id>/adopt`) certifies references with the gold rules.
+
 ## Tests and screenshots
 
 ```bash
 python -m pytest tests/test_ui_api.py -q
-python -m pytest tests/test_ui_agents.py -q    # Agents section: tools, folders API, one mock train/export/infer run
+python -m pytest tests/test_ui_tasks.py -q              # the task lane: tools, arguments, stop / kill, the offscreen launcher
+python -m pytest tests/test_ui_agents.py -q             # Agents section: tools, folders API, one mock train/export/infer run
+python -m pytest tests/test_ui_gold_cad.py -q           # Gold + Your CAD (temporary gold root, a STEP upload)
+python -m pytest tests/test_ui_nonlinear_testdata.py -q # Nonlinear + Test data (fake run folders, one short ccx scoring run)
 ```
 
 The tests use FastAPI's TestClient on a temporary store and cover every endpoint. That includes real solves through `POST /api/solve`, a real three-level study, a benchmark batch (run, CSV / JSON, cancel), submissions, consensus and the token auth. They skip if no 2D elasticity problem is registered or `skfem` does not import.

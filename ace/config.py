@@ -98,6 +98,22 @@ TASKS = {
     # gets under 2 % with half the nodes (ace/README.md, "The CFD suite").
     "backward_facing_step_2d": {"qoi": "u_bubble", "node_cap": 12000},
 }
+
+
+def _custom_tasks() -> dict:
+    """Problems made from uploaded CAD (the dashboard's Your CAD page, feacore/problems/custom.py) bring
+    their own entry: the certified quantity (else strain energy, scored reference-free) and the node cap
+    set on the page. Read when this module is imported, so every ACE process started after the problem
+    was made has it (they find it through FEACORE_RUNS_DIR / FEACORE_CAD_DIR)."""
+    try:
+        from feacore.problems.custom import ace_tasks
+        return ace_tasks()
+    except Exception:  # noqa: BLE001  a broken upload must not stop the loop
+        return {}
+
+
+for _pid, _task in _custom_tasks().items():
+    TASKS.setdefault(_pid, _task)
 TRAIN = ["nafems_le10", "nafems_le11_axisym", "cooks_membrane"]
 HOLDOUT = ["nafems_le1", "nafems_le11_3d"]   # evaluated every generation, never reflected on
 # The CFD suite (run_loop --suite cfd): held out is a new topology, external flow past a cylinder,
