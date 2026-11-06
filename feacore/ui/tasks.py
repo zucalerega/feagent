@@ -99,6 +99,9 @@ class Tool:
     output directory to ask the tool to stop gracefully (ACE loops stop before the next generation).
     ``requires_env``: environment variables the tool needs unless ``unless_param`` is true (e.g. an
     API key unless ``mock``). ``build``: optional custom argv builder from the validated args.
+    ``build_env``: optional extra environment variables from the validated args, for settings a tool
+    reads from its environment rather than its command line (e.g. ACE's ``ACE_SCORE=field``). Both
+    builders may raise ToolArgsError to refuse a combination of arguments.
     """
 
     name: str
@@ -115,6 +118,7 @@ class Tool:
     timeout: float | None = None          # seconds; None = no limit (training runs)
     build: Callable[[dict], list[str]] | None = None
     env: dict[str, str] = field(default_factory=dict)
+    build_env: Callable[[dict], dict[str, str]] | None = None
 
     def schema(self) -> dict:
         missing = [k for k in self.requires_env if not os.environ.get(k)]
@@ -423,9 +427,16 @@ class TaskRunner:
             if missing:
                 hint = f" (or set {tool.unless_param})" if tool.unless_param else ""
                 raise ToolArgsError([f"the server has no {', '.join(missing)} in its environment{hint}"])
-        argv = build_argv(tool, {**clean, **({tool.out_param: str(resolve_out(out, self.store))} if out else {})})
+        # "@runs/..." means nothing to the tool itself: give it the path inside the run store
+        types = {p.name: p.type for p in tool.params}
+        resolved = {k: str(resolve_out(v, self.store)) if types.get(k) == "path" and isinstance(v, str)
+                    and v.startswith("@runs/") else v for k, v in clean.items()}
+        if out:
+            resolved[tool.out_param] = str(resolve_out(out, self.store))
+        argv = build_argv(tool, resolved)
+        extra_env = {str(k): str(v) for k, v in (tool.build_env(resolved) if tool.build_env else {}).items()}
         rec = {"id": tid, "tool": tool.name, "title": tool.title, "group": tool.group, "args": clean,
-               "argv": argv, "out": out, "out_abs": str(resolve_out(out, self.store)) if out else None,
+               "argv": argv, "env": extra_env, "out": out, "out_abs": str(resolve_out(out, self.store)) if out else None,
                "state": "queued", "created_at": now_iso(), "started_at": None, "finished_at": None,
                "pid": None, "returncode": None, "error": None, "cancel": None}
         self.tasks.save(rec)
@@ -485,6 +496,7 @@ class TaskRunner:
         tool = get_tool(rec["tool"])
         env = os.environ.copy()
         env.update(tool.env)
+        env.update(rec.get("env") or {})
         env["FEACORE_RUNS_DIR"] = str(self.store.root.resolve())
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONPATH"] = os.pathsep.join([str(REPO_ROOT / "meshing-harness" / "src"), str(REPO_ROOT),

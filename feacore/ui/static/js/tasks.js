@@ -62,13 +62,13 @@ export function toolForm(name, { defaults = {}, hide = [], submitLabel = 'Start'
       }
       btn.disabled = false;
     };
-    clear(box).append(
+    clear(box).append(...[   // DOM append() would print a null as the text "null"
       t.description ? h('p', { class: 'muted' }, t.description) : null,
       h('div', { class: 'row wrap', style: { gap: '18px' } }, basic.map(field)),
       adv.length ? h('details', {}, h('summary', {}, 'More options'), h('div', { class: 'row wrap', style: { gap: '18px' } }, adv.map(field))) : null,
       envNote,
       h('div', { class: 'row', style: { alignItems: 'center', gap: '12px' } }, btn, h('code', { class: 'muted small' }, t.command)),
-      err);
+      err].filter(Boolean));
   })();
   return box;
 }
