@@ -575,7 +575,7 @@ def _point_on_face(tag: int, fallback):
     ntags, x, _ = gmsh.model.mesh.getNodes(2, tag, includeBoundary=True)
     if not len(types) or not len(ntags):
         return np.asarray(fallback)
-    at = dict(zip(np.asarray(ntags, dtype=np.int64).tolist(), np.asarray(x, float).reshape(-1, 3)))
+    at = dict(zip(np.asarray(ntags, dtype=np.int64).tolist(), np.asarray(x, float).reshape(-1, 3), strict=True))
     tri = np.asarray(nodes[0], dtype=np.int64).reshape(-1, 3)
     p = np.array([[at[int(n)] for n in row] for row in tri])
     area = np.linalg.norm(np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]), axis=1)

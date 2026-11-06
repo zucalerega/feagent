@@ -132,7 +132,7 @@ def test_gold_listing_and_mesh_status(client, env):
 def test_gold_downloads_are_path_safe(client, env):
     r = client.get(f"/api/gold/meshes/{PART}/L0")
     assert r.status_code == 200 and r.content == b"stored L0"
-    for url in (f"/api/gold/meshes/{PART}/L2", f"/api/gold/meshes/..%2F..%2Fetc/L0", f"/api/gold/meshes/{PART}/..%2Findex",
+    for url in (f"/api/gold/meshes/{PART}/L2", "/api/gold/meshes/..%2F..%2Fetc/L0", f"/api/gold/meshes/{PART}/..%2Findex",
                 f"/api/gold/meshes/{PART}/L0%2F..%2F..%2Findex", "/api/gold/meshes/..%2F..%2F..%2Fetc%2Fpasswd/L0",
                 "/api/gold/regenerated/..%2Fx/L0", "/api/cad/uploads/..%2F..%2Fetc", "/api/cad/uploads/cad_nope_000000/geometry"):
         assert client.get(url).status_code == 404, url
