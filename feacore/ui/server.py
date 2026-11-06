@@ -394,6 +394,8 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
     app.state.runner = runner
     app.state.tasks = tasks
     app.include_router(tasks_router(tasks))
+    from feacore.ui.gold_api import router as gold_router   # Gold + Your CAD pages: feacore/ui/gold_api.py
+    app.include_router(gold_router(store, runner))
 
     # ------------------------------------------------------------------ frontend
     @app.get("/", include_in_schema=False)
