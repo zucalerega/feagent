@@ -19,7 +19,7 @@ Navigation: **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **
 | Gold `#/gold` | the gold sets per part: BC sets with references and singular QoIs, the nested study meshes with their local status (missing / ok / mismatch against `index.json`), regenerate / verify / render / import / nonlinear tools, *Solve L<k>* into the field viewer. See "Gold and Your CAD pages" below |
 | Your CAD `#/cad` | upload a STEP, pick support and load faces on the 3D view (or generate BC sets with the gold rules), and get a registered problem (tag `custom`) for studies, the solver and the agents; reference studies; run trained agents on it |
 | Runs `#/runs` | tabs for convergence studies, benchmark batches, solves (opens the field viewer) and consensus views; "New study" and "Run benchmarks" start new work |
-| Agents `#/agents` | the ACE loops from the dashboard: train swarms and the single-agent baseline, runs with their training curve, per-agent views and the live tracker, then compare, export and run a trained swarm on any problem. See "Agents section" below |
+| Agents `#/agents` | the ACE loops from the dashboard: train swarms and the single-agent baseline, runs with their training curve, per-agent views and the live tracker, then compare, export and run a trained swarm on any problem; also the single analyst agent (`single_agent`). See "Agents section" below |
 | Swarm `#/swarm` | the ACE agent loop, live: loop and generation selectors, score distribution per generation, per-problem leaderboards (score, QoI vs reference, mesh, DOFs, solves, gates) linking to the field viewer and the problem's Consensus view. Empty state until the ACE bridge writes records |
 | Nonlinear `#/nonlinear` | nonlinear runs with their force-travel curves over the Instron test, run pages with videos and *Resume*, the analysis tools (scoring ramp, elastoplastic ramp, crush to fracture, renderers), the gallery. See "Nonlinear and Test data pages" below |
 | Test data `#/testdata` | the physical tests and printable parts; upload a machine export, check its parsing and save it as an `--evidence` folder |
@@ -92,7 +92,7 @@ The page shell and static files stay open, so the UI can load. Share the UI as `
 - `feacore/ui/worker.py`: job bodies. A study calls the contract `feacore.verification.study.convergence_study` and wraps the solver it uses, so that each level's `Result` is stored (fields for the viewer) and progress is reported while the study runs.
 - `feacore/ui/viewdata.py`: viewer data. For 3D, the boundary faces of the volume mesh (oriented outward); for 2D, every cell. Quadratic faces are split into 4 display triangles. Nodal values are matched to the solution-space nodes with a KD-tree; `probe` fills in the rest.
 - `feacore/ui/analysis.py`: verdicts, flag explanations, submission analysis, consensus (pure numpy).
-- `feacore/ui/tasks.py`: the **task lane** for long-running command-line tools. A tool is a whitelisted command with typed parameters (`Tool`, `Param`), registered by a module of `feacore/ui/tools/` (`agents.py`, `gold.py`, `cad.py`, `nonlinear.py`, `testdata.py`; auto-discovered). The browser names a tool and fills its form; arguments are checked (types, ranges, choices, registered problem ids, paths inside the repo or the run store, nothing that starts with `-`) and turned into an argv, so no command line ever comes from the client. Each task is a child process in its own process group (cwd = the repo, `FEACORE_RUNS_DIR` = this store) with its record and log under `<runs>/tasks/<id>/`; at most `FEACORE_UI_TASK_WORKERS` run at once. *Stop* writes the tool's stop file (ACE loops stop before the next generation); *Kill* terminates the group. Tasks count in `/api/health`'s `active_jobs`, so `serve.sh` never restarts the service mid-run. Tools marked `display` (they render with pyvista / VTK) start through `feacore/ui/offscreen.py`, which uses `xvfb-run` when there is no display.
+- `feacore/ui/tasks.py`: the **task lane** for long-running command-line tools. A tool is a whitelisted command with typed parameters (`Tool`, `Param`), registered by a module of `feacore/ui/tools/` (`agents.py`, `single_agent.py`, `gold.py`, `cad.py`, `nonlinear.py`, `testdata.py`; auto-discovered). The browser names a tool and fills its form; arguments are checked (types, ranges, choices, registered problem ids, paths inside the repo or the run store, nothing that starts with `-`) and turned into an argv, so no command line ever comes from the client. Each task is a child process in its own process group (cwd = the repo, `FEACORE_RUNS_DIR` = this store) with its record and log under `<runs>/tasks/<id>/`; at most `FEACORE_UI_TASK_WORKERS` run at once. *Stop* writes the tool's stop file (ACE loops stop before the next generation); *Kill* terminates the group. Tasks count in `/api/health`'s `active_jobs`, so `serve.sh` never restarts the service mid-run. Tools marked `display` (they render with pyvista / VTK) start through `feacore/ui/offscreen.py`, which uses `xvfb-run` when there is no display.
 - Section routers: `feacore/ui/ace_runs.py` (Agents), `feacore/ui/gold_api.py` + `cad_api.py` (Gold, Your CAD), `feacore/ui/nonlinear_api.py`, `feacore/ui/testdata_api.py` and `feacore/ui/media.py` (Nonlinear, Test data). Every file they serve is resolved against a fixed list of roots, with symlinks out of a root refused.
 
 ## API
@@ -284,6 +284,16 @@ symlink that leaves its root is refused too. The report and the tracker pages ar
 Content-Security-Policy that lets them run only their own inline code and talk only to this
 server. The tracker polls its data without headers, so when the server has a token the page is
 served with its data URL carrying the token it was opened with (`?token=`).
+
+### The single analyst agent (Train tab)
+
+A separate card runs `single_agent/` (`single_agent/README.md`): one agent per arm (Opus or Sonnet) does the whole
+analysis layer from a design package, graded by a deterministic scorecard, and learns rules from its training
+scorecards. Its tools (`feacore/ui/tools/single_agent.py`, group `single_agent`) are the loop
+(`single_agent.loop`), the non-LLM oracle baseline (`single_agent.oracle`) and the comparison of arms
+(`single_agent.compare`); problems must have a design package (the ten gold BC sets). Outputs go to
+`sa_runs/<tool>-<task>/` (`summary.md`, rulebooks, scorecards), shown through the Tasks page and its log. The loop
+has no graceful stop: *Kill* ends it, and `--budget-usd` bounds a real run.
 
 ## ACE swarm records (Swarm page)
 
@@ -484,6 +494,7 @@ Each flag carries a one-paragraph explanation (`feacore/ui/analysis.py`, `FLAG_I
 python -m pytest tests/test_ui_api.py -q
 python -m pytest tests/test_ui_tasks.py -q              # the task lane: tools, arguments, stop / kill, the offscreen launcher
 python -m pytest tests/test_ui_agents.py -q             # Agents section: tools, folders API, one mock train/export/infer run
+python -m pytest tests/test_ui_single_agent.py -q       # the single analyst agent's tools, one mock run and its comparison
 python -m pytest tests/test_ui_gold_cad.py -q           # Gold + Your CAD (temporary gold root, a STEP upload)
 python -m pytest tests/test_ui_nonlinear_testdata.py -q # Nonlinear + Test data (fake run folders, one short ccx scoring run)
 ```

@@ -75,13 +75,33 @@ async function trainTab(el) {
   try { [cat, runs] = await Promise.all([api('/api/ace/catalog'), api('/api/ace/runs').then(d => d.runs)]); }
   catch (e) { fill(el, errorBox(e)); return; }
   const tasks = taskTable({ group: 'agents' }, { link: taskHref, limit: 30, empty: 'No agent tasks yet: start a training run above.' });
+  const analyst = analystCard();
   fill(el, 
     h('div', { class: 'grid-2', style: { marginBottom: '24px' } }, swarmCard(cat), singleCard(cat, runs)),
-    h('div', { class: 'card flush' },
+    h('div', { class: 'card flush', style: { marginBottom: '24px' } },
       h('div', { style: { padding: '16px 22px 0' } }, h('h2', {}, 'Agent tasks'),
         h('p', { class: 'muted small' }, 'Training runs, reports, exports, comparisons and inference started here. Stop asks a training run to end after its current generation (it writes STOP into the run folder, and the summary is still written); Kill ends it now.')),
-      tasks.el));
-  return tasks.stop;
+      tasks.el),
+    analyst.el);
+  return () => { tasks.stop(); analyst.stop(); };
+}
+
+/** The single analyst agent (single_agent/): one agent per arm, from design data to a verified analysis.
+ *  Its own tools and task table (group single_agent); results are in each task's output folder. */
+function analystCard() {
+  const tasks = taskTable({ group: 'single_agent' }, { limit: 20, empty: 'No analyst runs yet.' });
+  const open = t => { location.hash = `#/tasks/${t.id}`; };
+  const el = h('div', { class: 'card' },
+    h('div', { class: 'card-head' }, h('h2', {}, 'Single analyst agent: design data to a verified analysis'),
+      h('code', { class: 'muted small' }, 'single_agent.loop')),
+    h('p', { class: 'muted small' }, 'A different question from the swarm: can one agent (Opus or Sonnet) do the whole analysis layer from a design package? It decides the supports and loads from functional descriptions, meshes a complex part, runs its own convergence study and answers the design review with stated uncertainties. Ten gold load cases, a deterministic scorecard, and rules the arm learns from its training scorecards (single_agent/README.md). Kill stops a run; the budget bounds a real one.'),
+    h('div', { class: 'ag-form' }, toolForm('single_agent.loop', { submitLabel: 'Start the analyst', onStarted: open })),
+    h('details', { style: { margin: '14px 0' } }, h('summary', {}, 'Oracle baseline and comparison of arms'),
+      h('div', { class: 'grid-2', style: { marginTop: '12px' } },
+        h('div', {}, h('h3', {}, 'Oracle baseline (no LLM)'), toolForm('single_agent.oracle', { submitLabel: 'Run the oracle', onStarted: open })),
+        h('div', {}, h('h3', {}, 'Compare arms'), toolForm('single_agent.compare', { submitLabel: 'Compare', onStarted: open })))),
+    h('h3', {}, 'Analyst tasks'), tasks.el);
+  return { el, stop: tasks.stop };
 }
 
 function swarmCard(cat) {

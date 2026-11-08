@@ -74,7 +74,8 @@ Never committed: `runs/` (the run store), `ace_runs/`, `swarms/`, `benchmarks/go
   page's reference study, or adopting a finished P2 study).
 - **Agents**: train a swarm or a single agent, watch it live (the `ace.watch` tracker), stop it, browse runs,
   compare swarm vs single, export a trained swarm and run it on any problem (`ace.infer`). `#/swarm` is the live
-  per-solve view fed by the run-store bridge (`ace/ui_bridge.py`).
+  per-solve view fed by the run-store bridge (`ace/ui_bridge.py`). The Train tab also runs the single analyst
+  agent (`single_agent`: loop, oracle, comparison; tools in `feacore/ui/tools/single_agent.py`).
 - **Nonlinear**: the agents' scoring ramp, the elastoplastic ramp and crush to fracture (with *Resume* from a
   checkpoint), each run's force-travel curve over the Instron test (or an uploaded one) with the scoring error,
   renders to stills and videos, and the committed gallery. Outputs: `<runs>/nonlinear/<kind>/<tool>-<task>/`.
