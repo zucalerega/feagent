@@ -1,0 +1,12 @@
+{
+  "problem_id": "abc_00000003_bc5",
+  "questions": [
+    {"id": "Q1", "qoi": "vm_mean", "expect": "converge"},
+    {"id": "Q2", "qoi": "vm_max", "expect": "diverge"}
+  ],
+  "idealization": [
+    {"reference": "fixed on f3", "implied_by": "rigid bearing block bonded over the whole +x pin surface"},
+    {"reference": "force (-6600, 0, 0) N on f18", "implied_by": "tie bracket bonded over the whole -x shoulder pulls along -x with 6.6 kN, equal force per area"},
+    {"reference": "pressure 1.5 MPa on f21", "implied_by": "elastomer pad presses the bore's flat end face with a uniform 1.5 MPa"}
+  ]
+}

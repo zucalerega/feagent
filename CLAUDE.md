@@ -49,12 +49,14 @@ their 3D tool results (`ace/harness.py`).
 | `experiments/` | Reproducible studies: mesh systems, crush to fracture, neck break, material fit, wingbox, DGX Spark scripts. `experiments/README.md` |
 | `results/`, `talk_plots/`, `docs/gallery/` | Run summaries and exported trained swarms (`results/trained_swarms/`), every presentation figure with its script, the image/video gallery |
 | `wsp/` | Teaching a small open model to mesh (weight-space programming, LoRA distillation). `wsp/README.md` |
+| `single_agent/` | One analyst agent per arm (Opus or Sonnet) from component design data to a verified analysis, with a deterministic scorecard and a learned rulebook. `single_agent/README.md` |
 | `teams/` | Sculptured team definitions (wingbox; parallel mesh systems → synthesis) |
 | `scripts/` | Setup (`setup_gpu_box.sh`, `bootstrap.sh`, `serve.sh`), the gold pipeline, nonlinear runs and videos, figures |
 | `docs/` | Solver, benchmark, UI and Brev docs |
 | `tests/` | The root test suite (`meshing-harness/tests/` has the harness's) |
 
-Never committed: `runs/` (the run store), `ace_runs/`, `swarms/`, `benchmarks/gold/_meshes/`, `wsp_runs/`.
+Never committed: `runs/` (the run store), `ace_runs/`, `swarms/`, `benchmarks/gold/_meshes/`, `wsp_runs/`,
+`sa_runs/`, `sa_workspaces/`.
 
 ## The dashboard (`feacore/ui/`, `docs/ui.md`)
 
@@ -130,6 +132,17 @@ headless box the same way: `xvfb-run -a python ...`.
 - **Open-model study** (`wsp/`): a teacher (Claude Opus) teaches `Qwen/Qwen3.5-0.8B` (CPU fp32) one-shot mesh
   recipes, scored like the swarm; weight-space programming, LoRA distillation, RFT, best-of-k by ZZ, the
   playbook. `bash scripts/wsp_study.sh`; huggingface.co must be reachable for the model.
+- **Single analyst agent** (`single_agent/`, `single_agent/README.md`): ONE agent per arm (Opus or Sonnet) does
+  the whole analysis layer from component design data. Design packages (component, system context, review notes,
+  questions; faces described by feature, never by tag) for the 10 gold BC sets; a blind harness (STEP + package
+  only: the ace geometry/feedback helpers would leak the gold statement's supports); a deterministic scorecard
+  (setup equivalence on the agent's mesh, answers vs gold, calibration of stated uncertainty, singular peaks,
+  study); a rulebook = a general handbook + rules the arm learns from its training scorecards (holdout never
+  reflected on). `python -m single_agent.loop --mock` is free; `single_agent.oracle` is the non-LLM baseline and
+  `single_agent.compare` compares arms. Pilot (Claude Code subagents through `single_agent.cli`, holdout
+  `abc_00000065_bc1`, handbook only): Opus and Sonnet both scored 1.00; Opus was more precise and also found a
+  converged ring-root stress above yield that fails the part (`single_agent/pilots/`). The API loop has not run
+  on real models yet. Also in the dashboard (Agents section).
 - **Sculptured teams** (`teams/`): the wingbox team and the parallel-mesh-systems → synthesis team.
 - `make_problem.py`: prints a unique, seeded problem statement per (agent number, call number).
 
@@ -181,6 +194,8 @@ Decisions:
   - The study meshes (`benchmarks/gold/_meshes/`) are not in git.
   - `scripts/gold.py verify` re-solves a stored level against the study. `scripts/gold.py render`
     records runs for the UI viewer, and `--png` writes images.
+  - Known issue (not fixed): the references of `abc_00000003_bc3` violate the FE energy bound by 12 %
+    (found by `single_agent`, which excludes the set).
   - Known issue (not fixed): goldgen's `parts._outward_normal` probes at the face centroid, which can lie
     inside the solid, so the statements of `abc_00000003`'s faces f18 and f19 give the wrong outward-normal
     sign. Only the words are affected (forces carry explicit vectors). Uploaded CAD probes a point on the face.
@@ -244,6 +259,9 @@ Decisions:
   - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
     or thermal-load interfaces. Don't use point stresses right at an interface.
   - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
+  - `feacore.verification.gci.gci3` classifies convergence by R = e21 / e32 alone, which is exact only for equal
+    refinement ratios: with unequal ratios a converging QoI can read divergent, or a stalling one monotone.
+    `single_agent/harness.py` (`gci_unequal`) has a ratio-corrected test; `gci3` itself is unchanged.
   - 3D flow on tets: fixed by the skew-consistent schemes (CFD bullet above). The old +15 % pressure gradient
     on tets was a solver bias. The apparent force imbalance came from the wall force dividing by |Cf - C|
     instead of the wall-normal distance. Point velocities at a smooth maximum still read 2-5 % low on coarse
