@@ -1,0 +1,16 @@
+{
+  "problem_id": "abc_00000065_bc1",
+  "questions": [
+    {"id": "Q1", "qoi": "u_mean_f13", "expect": "converge"},
+    {"id": "Q2", "qoi": "u_max", "expect": "converge"},
+    {"id": "Q3", "qoi": "Rz_f9", "expect": "converge", "sign_free": true},
+    {"id": "Q4", "qoi": "Rx_f9", "expect": "converge", "sign_free": true},
+    {"id": "Q5", "qoi": "vm_mean", "expect": "converge"},
+    {"id": "Q6", "qoi": "vm_max", "expect": "diverge"}
+  ],
+  "idealization": [
+    {"reference": "fixed on f9", "implied_by": "rigid pin bonded over the whole +x waist notch"},
+    {"reference": "fixed on f18", "implied_by": "rigid pin bonded over the whole -x waist notch"},
+    {"reference": "pressure 21.5 MPa on f13", "implied_by": "press platen bears uniformly on the whole front face at 21.5 MPa"}
+  ]
+}

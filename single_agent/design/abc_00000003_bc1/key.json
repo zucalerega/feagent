@@ -1,0 +1,13 @@
+{
+  "problem_id": "abc_00000003_bc1",
+  "questions": [
+    {"id": "Q1", "qoi": "Rz_f23", "expect": "converge", "sign_free": true},
+    {"id": "Q2", "qoi": "vm_mean", "expect": "converge"},
+    {"id": "Q3", "qoi": "vm_max", "expect": "diverge"}
+  ],
+  "idealization": [
+    {"reference": "fixed on f23", "implied_by": "rigid split clamp bonded over the whole plain outer cylinder of the body"},
+    {"reference": "fixed on f19", "implied_by": "+x shoulder bolted flat to a rigid bracket, no slip, no separation"},
+    {"reference": "force (0, 0, 13800) N on f25", "implied_by": "lifting plate bonded to the flat top face pulls +z with 13.8 kN, spread evenly"}
+  ]
+}

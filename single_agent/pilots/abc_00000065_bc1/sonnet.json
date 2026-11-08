@@ -1,0 +1,1186 @@
+{
+ "model": "claude-sonnet-5-5",
+ "driver": "Claude Code subagent through single_agent.cli (handbook rules, no learned rules)",
+ "problem": "abc_00000065_bc1",
+ "label": "part-ebe39b46",
+ "report": {
+  "idealization": [
+   {
+    "design_item": "Rigid dowel pin in +x waist notch, bonded over whole notch surface, no slip no separation",
+    "faces": [
+     "f9"
+    ],
+    "model": "fixed (all 3 displacements zero) over the full cylindrical notch face",
+    "why": "A2: bonded rigid pin over whole surface"
+   },
+   {
+    "design_item": "Rigid dowel pin in -x waist notch, bonded likewise",
+    "faces": [
+     "f18"
+    ],
+    "model": "fixed (all 3 displacements zero) over the full notch face",
+    "why": "A2"
+   },
+   {
+    "design_item": "Press platen bearing uniformly on the front face at z=+8.1 mm with 21.5 MPa",
+    "faces": [
+     "f13"
+    ],
+    "model": "pressure 21.5e6 Pa, into the part (-z), normal to the face; total 52160 N",
+    "why": "A4/A5; checked applied total = 21.5e6 x 0.002426 m2"
+   },
+   {
+    "design_item": "Material S355",
+    "faces": [
+     "solid"
+    ],
+    "model": "E=210 GPa, nu=0.30",
+    "why": "package"
+   },
+   {
+    "design_item": "Nothing else touches the part",
+    "faces": [],
+    "model": "all other faces free; no extra supports",
+    "why": "A1, A7"
+   }
+  ],
+  "final_solve": 2,
+  "study_solves": [
+   1,
+   5,
+   6,
+   2
+  ],
+  "answers": [
+   {
+    "id": "Q1",
+    "quantity": "mean u_mag over f13",
+    "value": 8.699e-05,
+    "units": "m",
+    "uncertainty": 0.02,
+    "status": "converged",
+    "comment": "4 meshes 5.3k-62k nodes, monotone, changes 0.7% per step and shrinking; study GCI (22%) is polluted by the support-rim singularity and the low ratios, power-fit limit 8.70e-5; 2% is my judged band."
+   },
+   {
+    "id": "Q2",
+    "quantity": "max u_mag",
+    "value": 0.0004358,
+    "units": "m",
+    "uncertainty": 0.03,
+    "status": "converged",
+    "comment": "at the back-face (z=-8.1 mm) near the top of a prong; monotone, last change 0.6%; GCI 6.5% (optimistic order 0.52)."
+   },
+   {
+    "id": "Q3",
+    "quantity": "reaction f9 z",
+    "value": 26086,
+    "units": "N",
+    "uncertainty": 0.002,
+    "status": "converged",
+    "comment": "force on the part from +x pin along z; positive z; scatter between meshes 0.05%. Equals half of the 52160 N press load."
+   },
+   {
+    "id": "Q4",
+    "quantity": "reaction f9 x",
+    "value": -742.7,
+    "units": "N",
+    "uncertainty": 0.02,
+    "status": "converged",
+    "comment": "oscillatory over coarse meshes (-750, -729, -743.1, -742.7); last two differ 0.05%, spread of all four 2.8%. Sign: pin pushes the part toward -x."
+   },
+   {
+    "id": "Q5",
+    "quantity": "mean von_mises over solid",
+    "value": 110100000.0,
+    "units": "Pa",
+    "uncertainty": 0.02,
+    "status": "converged",
+    "comment": "monotone, 0.5% last change; the slow trend comes from the pin-rim singularity's small energy contribution; GCI 25% is pessimistic, power-fit limit 1.101e8."
+   },
+   {
+    "id": "Q6",
+    "quantity": "max von_mises",
+    "value": null,
+    "units": "Pa",
+    "uncertainty": null,
+    "status": "singular",
+    "verdict": "cannot_tell",
+    "comment": "Peak grows 1.9, 2.9, 3.2, 3.6 GPa under refinement (divergent), located on the front face at the rim of the rigid pin notch. This is a stress singularity of the fully fixed rigid-pin idealization; no converged value. The peak far exceeds 220 MPa as modelled but that is an artefact; the allowable cannot be judged from this model."
+   }
+  ],
+  "assumptions": [
+   "Pins are perfectly rigid and fully bonded, so the notch is a fully fixed support (as stated).",
+   "Linear elastic, small displacement; no contact friction or yielding.",
+   "Pressure acts on the whole of f13 including edges near the rims."
+  ],
+  "rules_used": [
+   "A1",
+   "A2",
+   "A4",
+   "A5",
+   "A6",
+   "A7",
+   "A8",
+   "B1",
+   "C1",
+   "C3",
+   "D1",
+   "D3",
+   "D4",
+   "E1",
+   "E2"
+  ],
+  "recommendations": [
+   "Assess the notch-rim stress with a compliant pin/contact model (elastic pin, bond with finite stiffness) or read stress at a distance from the rim; the rigid-pin peak is not a design number.",
+   "Use the pin forces (about 26.1 kN along z, 0.74 kN along x per pin) for dowel selection; the x force is small and mesh-sensitive at 2%.",
+   "Mean stress 110 MPa is well below 355 MPa yield; the bulk of the part is safe, local rim behaviour needs the better model."
+  ],
+  "summary": "Press 21.5 MPa on the front face, both waist notches fixed. Four-mesh quadratic study (5k to 31k nodes). Equilibrium closes. Global quantities converge to about 1-2%; the peak von Mises is singular at the pin-notch rim."
+ },
+ "harness_calls": [
+  "inspect_geometry",
+  "view_geometry",
+  "mesh",
+  "solve",
+  "refine_mesh",
+  "refine_mesh",
+  "refine_mesh",
+  "solve",
+  "solve",
+  "solve",
+  "study",
+  "solve",
+  "solve",
+  "study",
+  "submit_report"
+ ],
+ "meshes": [
+  {
+   "number": 1,
+   "nodes": 5347,
+   "order": 2,
+   "min_quality": 0.1104,
+   "h_used": 0.006,
+   "request": {
+    "h": 0.006,
+    "order": 2,
+    "refinements": [
+     {
+      "group": "f9",
+      "size": 0.003,
+      "radius": 0.008
+     },
+     {
+      "group": "f18",
+      "size": 0.003,
+      "radius": 0.008
+     }
+    ],
+    "groups": {}
+   }
+  },
+  {
+   "number": 2,
+   "nodes": 8935,
+   "order": 2,
+   "min_quality": 0.1998,
+   "h_used": 0.004285714285714286,
+   "request": {
+    "h": 0.004285714285714286,
+    "order": 2,
+    "refinements": [
+     {
+      "group": "f9",
+      "size": 0.002142857142857143,
+      "radius": 0.008
+     },
+     {
+      "group": "f18",
+      "size": 0.002142857142857143,
+      "radius": 0.008
+     }
+    ],
+    "groups": {}
+   }
+  },
+  {
+   "number": 3,
+   "nodes": 17369,
+   "order": 2,
+   "min_quality": 0.2522,
+   "h_used": 0.0031578947368421056,
+   "request": {
+    "h": 0.0031578947368421056,
+    "order": 2,
+    "refinements": [
+     {
+      "group": "f9",
+      "size": 0.0015789473684210528,
+      "radius": 0.008
+     },
+     {
+      "group": "f18",
+      "size": 0.0015789473684210528,
+      "radius": 0.008
+     }
+    ],
+    "groups": {}
+   }
+  },
+  {
+   "number": 4,
+   "nodes": 31250,
+   "order": 2,
+   "min_quality": 0.2533,
+   "h_used": 0.0025,
+   "request": {
+    "h": 0.0025,
+    "order": 2,
+    "refinements": [
+     {
+      "group": "f9",
+      "size": 0.00125,
+      "radius": 0.008
+     },
+     {
+      "group": "f18",
+      "size": 0.00125,
+      "radius": 0.008
+     }
+    ],
+    "groups": {}
+   }
+  }
+ ],
+ "solves": [
+  {
+   "number": 1,
+   "mesh": 1,
+   "dofs": 16041,
+   "h_rep": 0.0023420225025471758,
+   "qois": {
+    "mean_u_front": 8.372068006836571e-05,
+    "max_u": 0.00041969827884362395,
+    "Rz_pinx": 26092.843639339233,
+    "Rx_pinx": -749.9347025423281,
+    "Rz_pinm": 26068.976189721998,
+    "vm_mean": 106907103.07904388,
+    "vm_max": 1911966232.9033191,
+    "energy": 2.031928049204887
+   },
+   "setup": {
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    },
+    "bcs": [
+     {
+      "type": "fixed",
+      "group": "f9"
+     },
+     {
+      "type": "fixed",
+      "group": "f18"
+     },
+     {
+      "type": "pressure",
+      "group": "f13",
+      "value": 21500000.0
+     }
+    ],
+    "loads": [],
+    "qois": [
+     {
+      "name": "mean_u_front",
+      "type": "mean",
+      "field": "u_mag",
+      "group": "f13"
+     },
+     {
+      "name": "max_u",
+      "type": "max",
+      "field": "u_mag"
+     },
+     {
+      "name": "Rz_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 2
+     },
+     {
+      "name": "Rx_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 0
+     },
+     {
+      "name": "Rz_pinm",
+      "type": "reaction",
+      "group": "f18",
+      "component": 2
+     },
+     {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises"
+     },
+     {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises"
+     },
+     {
+      "name": "energy",
+      "type": "strain_energy"
+     }
+    ]
+   }
+  },
+  {
+   "number": 2,
+   "mesh": 4,
+   "dofs": 93750,
+   "h_rep": 0.0012386322521680294,
+   "qois": {
+    "mean_u_front": 8.699149150415605e-05,
+    "max_u": 0.00043577616460239467,
+    "Rz_pinx": 26085.819359749647,
+    "Rx_pinx": -742.7355898707327,
+    "Rz_pinm": 26081.670086162507,
+    "vm_mean": 110111732.07148802,
+    "vm_max": 3643178088.9647293,
+    "energy": 2.1112947699449895
+   },
+   "setup": {
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    },
+    "bcs": [
+     {
+      "type": "fixed",
+      "group": "f9"
+     },
+     {
+      "type": "fixed",
+      "group": "f18"
+     },
+     {
+      "type": "pressure",
+      "group": "f13",
+      "value": 21500000.0
+     }
+    ],
+    "loads": [],
+    "qois": [
+     {
+      "name": "mean_u_front",
+      "type": "mean",
+      "field": "u_mag",
+      "group": "f13"
+     },
+     {
+      "name": "max_u",
+      "type": "max",
+      "field": "u_mag"
+     },
+     {
+      "name": "Rz_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 2
+     },
+     {
+      "name": "Rx_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 0
+     },
+     {
+      "name": "Rz_pinm",
+      "type": "reaction",
+      "group": "f18",
+      "component": 2
+     },
+     {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises"
+     },
+     {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises"
+     },
+     {
+      "name": "energy",
+      "type": "strain_energy"
+     }
+    ]
+   }
+  },
+  {
+   "number": 3,
+   "mesh": 4,
+   "dofs": 93750,
+   "h_rep": 0.0012386322521680294,
+   "qois": {
+    "mean_u_front": 8.699149150415605e-05,
+    "max_u": 0.00043577616460239467,
+    "Rz_pinx": 26085.819359749647,
+    "Rx_pinx": -742.7355898707327,
+    "Rz_pinm": 26081.670086162507,
+    "vm_mean": 110111732.07148802,
+    "vm_max": 3643178088.9647293,
+    "energy": 2.1112947699449895
+   },
+   "setup": {
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    },
+    "bcs": [
+     {
+      "type": "fixed",
+      "group": "f9"
+     },
+     {
+      "type": "fixed",
+      "group": "f18"
+     },
+     {
+      "type": "pressure",
+      "group": "f13",
+      "value": 21500000.0
+     }
+    ],
+    "loads": [],
+    "qois": [
+     {
+      "name": "mean_u_front",
+      "type": "mean",
+      "field": "u_mag",
+      "group": "f13"
+     },
+     {
+      "name": "max_u",
+      "type": "max",
+      "field": "u_mag"
+     },
+     {
+      "name": "Rz_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 2
+     },
+     {
+      "name": "Rx_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 0
+     },
+     {
+      "name": "Rz_pinm",
+      "type": "reaction",
+      "group": "f18",
+      "component": 2
+     },
+     {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises"
+     },
+     {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises"
+     },
+     {
+      "name": "energy",
+      "type": "strain_energy"
+     }
+    ]
+   }
+  },
+  {
+   "number": 4,
+   "mesh": 4,
+   "dofs": 93750,
+   "h_rep": 0.0012386322521680294,
+   "qois": {
+    "mean_u_front": 8.699149150415589e-05,
+    "max_u": 0.00043577616460239603,
+    "Rz_pinx": 26085.819359749876,
+    "Rx_pinx": -742.7355898708338,
+    "Rz_pinm": 26081.67008616234,
+    "vm_mean": 110111732.07148787,
+    "vm_max": 3643178088.96469,
+    "energy": 2.1112947699444917
+   },
+   "setup": {
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    },
+    "bcs": [
+     {
+      "type": "fixed",
+      "group": "f9"
+     },
+     {
+      "type": "fixed",
+      "group": "f18"
+     },
+     {
+      "type": "pressure",
+      "group": "f13",
+      "value": 21500000.0
+     }
+    ],
+    "loads": [],
+    "qois": [
+     {
+      "name": "mean_u_front",
+      "type": "mean",
+      "field": "u_mag",
+      "group": "f13"
+     },
+     {
+      "name": "max_u",
+      "type": "max",
+      "field": "u_mag"
+     },
+     {
+      "name": "Rz_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 2
+     },
+     {
+      "name": "Rx_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 0
+     },
+     {
+      "name": "Rz_pinm",
+      "type": "reaction",
+      "group": "f18",
+      "component": 2
+     },
+     {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises"
+     },
+     {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises"
+     },
+     {
+      "name": "energy",
+      "type": "strain_energy"
+     }
+    ]
+   }
+  },
+  {
+   "number": 5,
+   "mesh": 2,
+   "dofs": 26805,
+   "h_rep": 0.0019417716110269087,
+   "qois": {
+    "mean_u_front": 8.576720217886353e-05,
+    "max_u": 0.00043049310060944954,
+    "Rz_pinx": 26098.322153847275,
+    "Rx_pinx": -729.4106081980935,
+    "Rz_pinm": 26069.245215612576,
+    "vm_mean": 109013779.25743718,
+    "vm_max": 2926635243.2182283,
+    "energy": 2.0803660122930587
+   },
+   "setup": {
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    },
+    "bcs": [
+     {
+      "type": "fixed",
+      "group": "f9"
+     },
+     {
+      "type": "fixed",
+      "group": "f18"
+     },
+     {
+      "type": "pressure",
+      "group": "f13",
+      "value": 21500000.0
+     }
+    ],
+    "loads": [],
+    "qois": [
+     {
+      "name": "mean_u_front",
+      "type": "mean",
+      "field": "u_mag",
+      "group": "f13"
+     },
+     {
+      "name": "max_u",
+      "type": "max",
+      "field": "u_mag"
+     },
+     {
+      "name": "Rz_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 2
+     },
+     {
+      "name": "Rx_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 0
+     },
+     {
+      "name": "Rz_pinm",
+      "type": "reaction",
+      "group": "f18",
+      "component": 2
+     },
+     {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises"
+     },
+     {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises"
+     },
+     {
+      "name": "energy",
+      "type": "strain_energy"
+     }
+    ]
+   }
+  },
+  {
+   "number": 6,
+   "mesh": 3,
+   "dofs": 52107,
+   "h_rep": 0.0015325574686987041,
+   "qois": {
+    "mean_u_front": 8.640095147690382e-05,
+    "max_u": 0.0004331362835304303,
+    "Rz_pinx": 26086.37448925581,
+    "Rx_pinx": -743.0906738804869,
+    "Rz_pinm": 26081.12977515212,
+    "vm_mean": 109585592.6480412,
+    "vm_max": 3226265192.406394,
+    "energy": 2.0964588069596477
+   },
+   "setup": {
+    "material": {
+     "E": 210000000000.0,
+     "nu": 0.3
+    },
+    "bcs": [
+     {
+      "type": "fixed",
+      "group": "f9"
+     },
+     {
+      "type": "fixed",
+      "group": "f18"
+     },
+     {
+      "type": "pressure",
+      "group": "f13",
+      "value": 21500000.0
+     }
+    ],
+    "loads": [],
+    "qois": [
+     {
+      "name": "mean_u_front",
+      "type": "mean",
+      "field": "u_mag",
+      "group": "f13"
+     },
+     {
+      "name": "max_u",
+      "type": "max",
+      "field": "u_mag"
+     },
+     {
+      "name": "Rz_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 2
+     },
+     {
+      "name": "Rx_pinx",
+      "type": "reaction",
+      "group": "f9",
+      "component": 0
+     },
+     {
+      "name": "Rz_pinm",
+      "type": "reaction",
+      "group": "f18",
+      "component": 2
+     },
+     {
+      "name": "vm_mean",
+      "type": "mean",
+      "field": "von_mises"
+     },
+     {
+      "name": "vm_max",
+      "type": "max",
+      "field": "von_mises"
+     },
+     {
+      "name": "energy",
+      "type": "strain_energy"
+     }
+    ]
+   }
+  }
+ ],
+ "studies": [
+  {
+   "solves": [
+    1,
+    5,
+    6,
+    2
+   ],
+   "qois": {
+    "mean_u_front": {
+     "values": [
+      8.37207e-05,
+      8.57672e-05,
+      8.6401e-05,
+      8.69915e-05
+     ],
+     "p_theory": 3.0,
+     "convergence": "monotone",
+     "p_observed": 0.174,
+     "extrapolated": 0.000102599,
+     "gci_fine": 0.224,
+     "gci_conservative": 0.181,
+     "change_fine_vs_medium": 0.00679,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "p_far_below_theory"
+     ],
+     "power_fit": {
+      "limit": 8.70424e-05,
+      "p": 4.7,
+      "n": 4
+     },
+     "reading": "monotone, observed order 0.174 (theory 3); the finest value is uncertain by about 22.40% (GCI). The order is far below theory: a singularity nearby is polluting it, or the meshes are not in the asymptotic range; treat the GCI as optimistic"
+    },
+    "max_u": {
+     "values": [
+      0.000419698,
+      0.000430493,
+      0.000433136,
+      0.000435776
+     ],
+     "p_theory": 3.0,
+     "convergence": "monotone",
+     "p_observed": 0.52,
+     "extrapolated": 0.000458325,
+     "gci_fine": 0.0647,
+     "gci_conservative": 0.155,
+     "change_fine_vs_medium": 0.00606,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "p_far_below_theory"
+     ],
+     "power_fit": {
+      "limit": 0.000435567,
+      "p": 5.64,
+      "n": 4
+     },
+     "reading": "monotone, observed order 0.52 (theory 3); the finest value is uncertain by about 6.47% (GCI). The order is far below theory: a singularity nearby is polluting it, or the meshes are not in the asymptotic range; treat the GCI as optimistic"
+    },
+    "Rz_pinx": {
+     "values": [
+      26092.8,
+      26098.3,
+      26086.4,
+      26085.8
+     ],
+     "p_theory": 4.0,
+     "convergence": "monotone",
+     "p_observed": 12.9,
+     "extrapolated": 26085.8,
+     "gci_fine": 1.83e-06,
+     "gci_conservative": 4.75e-05,
+     "change_fine_vs_medium": 2.13e-05,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "p_above_theory"
+     ],
+     "power_fit": {
+      "limit": 26054.4,
+      "p": 0.428,
+      "n": 4
+     },
+     "reading": "monotone, observed order 12.9 (theory 4); the finest value is uncertain by about 0.00% (GCI). The order is far ABOVE theory: the meshes are not yet in the asymptotic range or the refinement ratios are too close, so the extrapolation and the GCI are unreliable and usually optimistic; the conservative GCI (safety 3, order capped at theory) is 0.00%"
+    },
+    "Rx_pinx": {
+     "values": [
+      -749.935,
+      -729.411,
+      -743.091,
+      -742.736
+     ],
+     "p_theory": 4.0,
+     "convergence": "oscillatory",
+     "p_observed": 15.5,
+     "extrapolated": -742.722,
+     "gci_fine": 2.3e-05,
+     "gci_conservative": 0.00107,
+     "change_fine_vs_medium": 0.000478,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "oscillatory",
+      "p_above_theory"
+     ],
+     "power_fit": {
+      "limit": -738.36,
+      "p": 8.0,
+      "n": 4
+     },
+     "reading": "oscillating between meshes: use the spread of the values as the uncertainty; the extrapolation is not reliable"
+    },
+    "Rz_pinm": {
+     "values": [
+      26069.0,
+      26069.2,
+      26081.1,
+      26081.7
+     ],
+     "p_theory": 4.0,
+     "convergence": "monotone",
+     "p_observed": 13.0,
+     "extrapolated": 26081.7,
+     "gci_fine": 1.74e-06,
+     "gci_conservative": 4.63e-05,
+     "change_fine_vs_medium": 2.07e-05,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "p_above_theory"
+     ],
+     "power_fit": {
+      "limit": 26122.7,
+      "p": 0.5,
+      "n": 4
+     },
+     "reading": "monotone, observed order 13 (theory 4); the finest value is uncertain by about 0.00% (GCI). The order is far ABOVE theory: the meshes are not yet in the asymptotic range or the refinement ratios are too close, so the extrapolation and the GCI are unreliable and usually optimistic; the conservative GCI (safety 3, order capped at theory) is 0.00%"
+    },
+    "vm_mean": {
+     "values": [
+      106907000.0,
+      109014000.0,
+      109586000.0,
+      110112000.0
+     ],
+     "p_theory": 3.0,
+     "convergence": "monotone",
+     "p_observed": 0.112,
+     "extrapolated": 131998000.0,
+     "gci_fine": 0.248,
+     "gci_conservative": 0.128,
+     "change_fine_vs_medium": 0.00478,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "p_far_below_theory"
+     ],
+     "power_fit": {
+      "limit": 110100000.0,
+      "p": 5.34,
+      "n": 4
+     },
+     "reading": "monotone, observed order 0.112 (theory 3); the finest value is uncertain by about 24.80% (GCI). The order is far below theory: a singularity nearby is polluting it, or the meshes are not in the asymptotic range; treat the GCI as optimistic"
+    },
+    "vm_max": {
+     "values": [
+      1911970000.0,
+      2926640000.0,
+      3226270000.0,
+      3643180000.0
+     ],
+     "p_theory": 2.0,
+     "convergence": "divergent",
+     "p_observed": null,
+     "extrapolated": null,
+     "gci_fine": null,
+     "gci_conservative": null,
+     "change_fine_vs_medium": 0.114,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "divergent"
+     ],
+     "power_fit": {
+      "limit": 3723730000.0,
+      "p": 3.81,
+      "n": 4
+     },
+     "reading": "diverging: the changes grow under refinement. For a stress this is the signature of a singularity (re-entrant edge, support rim, point load); no mesh gives a trustworthy value"
+    },
+    "energy": {
+     "values": [
+      2.03193,
+      2.08037,
+      2.09646,
+      2.11129
+     ],
+     "p_theory": 4.0,
+     "convergence": "monotone",
+     "p_observed": 0.121,
+     "extrapolated": 2.67896,
+     "gci_fine": 0.336,
+     "gci_conservative": 0.188,
+     "change_fine_vs_medium": 0.00703,
+     "flags": [
+      "refinement_ratio_below_1.3",
+      "p_far_below_theory"
+     ],
+     "power_fit": {
+      "limit": 2.11354,
+      "p": 4.4,
+      "n": 4
+     },
+     "reading": "monotone, observed order 0.121 (theory 4); the finest value is uncertain by about 33.60% (GCI). The order is far below theory: a singularity nearby is polluting it, or the meshes are not in the asymptotic range; treat the GCI as optimistic"
+    }
+   }
+  }
+ ],
+ "scorecard": {
+  "problem_id": "abc_00000065_bc1",
+  "submitted": true,
+  "parts": {
+   "setup": 1.0,
+   "answers": 1.0,
+   "calibration": 1.0,
+   "study": 1.0
+  },
+  "cost": {
+   "solves": 6,
+   "solved_dofs_total": 376203,
+   "max_dofs": 93750,
+   "turns": null,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "usd": 0,
+   "wall_s": null
+  },
+  "final_solve": 2,
+  "final_mesh": {
+   "number": 4,
+   "nodes": 31250,
+   "order": 2,
+   "min_quality": 0.2533,
+   "h_used": 0.0025,
+   "dofs": 93750
+  },
+  "setup": {
+   "material_ok": true,
+   "qoi_differences": {
+    "strain_energy": 3.633e-13,
+    "u_max": 4.964e-14,
+    "vm_mean": 1.628e-13,
+    "u_mean_f13": 1.824e-13
+   },
+   "max_difference": 3.633e-13,
+   "equivalent": true,
+   "match": {
+    "items": [
+     {
+      "reference": "fixed on f9",
+      "status": "match"
+     },
+     {
+      "reference": "fixed on f18",
+      "status": "match"
+     },
+     {
+      "reference": "pressure 21500000.0 on f13",
+      "status": "match"
+     }
+    ],
+    "extra": [],
+    "matched": 3,
+    "of": 3
+   }
+  },
+  "meshing": {
+   "dofs": 93750,
+   "by_qoi": {
+    "u_max": {
+     "error": 0.01151,
+     "tolerance": 0.03272,
+     "uniform_error_same_dofs": 0.04261,
+     "gain_vs_uniform": 3.702
+    },
+    "vm_mean": {
+     "error": 0.008647,
+     "tolerance": 0.03,
+     "uniform_error_same_dofs": 0.01979,
+     "gain_vs_uniform": 2.289
+    },
+    "u_mean_f13": {
+     "error": 0.01268,
+     "tolerance": 0.03049,
+     "uniform_error_same_dofs": 0.04121,
+     "gain_vs_uniform": 3.249
+    },
+    "Rx_f9": {
+     "error": 0.01124,
+     "tolerance": 0.02,
+     "uniform_error_same_dofs": 0.001888,
+     "gain_vs_uniform": 0.168
+    },
+    "Rz_f9": {
+     "error": 0.0001578,
+     "tolerance": 0.02,
+     "uniform_error_same_dofs": 0.0003829,
+     "gain_vs_uniform": 2.427
+    },
+    "Rx_f18": {
+     "error": 0.01124,
+     "tolerance": 0.02,
+     "uniform_error_same_dofs": 0.001888,
+     "gain_vs_uniform": 0.168
+    },
+    "Rz_f18": {
+     "error": 0.0001049,
+     "tolerance": 0.02,
+     "uniform_error_same_dofs": 0.0002842,
+     "gain_vs_uniform": 2.709
+    }
+   },
+   "within_tolerance": 7,
+   "of": 7
+  },
+  "answers": [
+   {
+    "id": "Q1",
+    "qoi": "u_mean_f13",
+    "expect": "converge",
+    "reference": 8.810910180769013e-05,
+    "tolerance": 0.030492729278662676,
+    "value": 8.699e-05,
+    "error": 0.0127,
+    "credit": 1.0,
+    "uncertainty": 0.02,
+    "covered": true,
+    "honest": true,
+    "status": "converged",
+    "supported": true,
+    "verdict": "within tolerance"
+   },
+   {
+    "id": "Q2",
+    "qoi": "u_max",
+    "expect": "converge",
+    "reference": 0.00044085028726995176,
+    "tolerance": 0.03271973759990582,
+    "value": 0.0004358,
+    "error": 0.01146,
+    "credit": 1.0,
+    "uncertainty": 0.03,
+    "covered": true,
+    "honest": true,
+    "status": "converged",
+    "supported": true,
+    "verdict": "within tolerance"
+   },
+   {
+    "id": "Q3",
+    "qoi": "Rz_f9",
+    "expect": "converge",
+    "reference": 26089.935924886384,
+    "tolerance": 0.02,
+    "value": 26086,
+    "error": 0.0001509,
+    "credit": 1.0,
+    "uncertainty": 0.002,
+    "covered": true,
+    "honest": true,
+    "status": "converged",
+    "supported": true,
+    "verdict": "within tolerance"
+   },
+   {
+    "id": "Q4",
+    "qoi": "Rx_f9",
+    "expect": "converge",
+    "reference": -734.4805578184654,
+    "tolerance": 0.02,
+    "value": -742.7,
+    "error": 0.01119,
+    "credit": 1.0,
+    "uncertainty": 0.02,
+    "covered": true,
+    "honest": true,
+    "status": "converged",
+    "supported": true,
+    "verdict": "within tolerance"
+   },
+   {
+    "id": "Q5",
+    "qoi": "vm_mean",
+    "expect": "converge",
+    "reference": 111072154.46217473,
+    "tolerance": 0.03,
+    "value": 110100000.0,
+    "error": 0.008752,
+    "credit": 1.0,
+    "uncertainty": 0.02,
+    "covered": true,
+    "honest": true,
+    "status": "converged",
+    "supported": true,
+    "verdict": "within tolerance"
+   },
+   {
+    "id": "Q6",
+    "qoi": "vm_max",
+    "expect": "diverge",
+    "status": "singular",
+    "credit": 1.0,
+    "verdict": "recognised as mesh-dependent"
+   }
+  ],
+  "study": {
+   "meshes_with_final_setup": 4,
+   "studies_on_final_setup": [
+    [
+     1,
+     5,
+     6,
+     2
+    ]
+   ],
+   "score": 1.0,
+   "h_rep_ratios": [
+    1.21,
+    1.27,
+    1.24,
+    1.0,
+    1.0
+   ]
+  },
+  "score": 1.0
+ }
+}

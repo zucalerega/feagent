@@ -233,6 +233,7 @@ caption and numbers are in [`talk_plots/cfd/`](talk_plots/cfd/README.md).
 | [`meshing-harness/`](meshing-harness/README.md) | The YAML-spec gmsh mesh harness (package `feagent`): STEP → a named, quality-gated mesh, with an MCP server and a skill for Claude Code agents. |
 | [`experiments/`](experiments/README.md) | The mesh-system study and crush-to-failure runs of Result 4, the material fit, the wingbox, the DGX Spark scripts. |
 | [`wsp/`](wsp/README.md) | Teaching a small open model to mesh: weight-space programming and LoRA distillation, scored like the swarm. |
+| [`single_agent/`](single_agent/README.md) | One analyst agent (Opus or Sonnet) from component design data to a verified analysis, graded by a deterministic scorecard; no swarm. |
 | `feabench/`, `teams/`, `docs/` | The benchmark-suite runner; Sculptured team definitions; solver, benchmark and dashboard docs. |
 | `scripts/` | Setup, baselines, figure and video scripts, and the gold pipeline. |
 
