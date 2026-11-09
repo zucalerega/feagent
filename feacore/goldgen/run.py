@@ -121,7 +121,8 @@ def certify(bcset: BCSet, runs: list[dict]) -> tuple[list[Reference], dict]:
     energy breaks the energy bound (``energy_drop``): the entries then say why (``rejected``)."""
     h = [r["h_rep"] for r in runs]
     refs, study = [], {}
-    drop = energy_drop(bcset.bcs, [], [r["qois"].get("strain_energy") for r in runs])
+    coarse_to_fine = sorted(range(len(runs)), key=lambda i: -h[i])      # analyze sorts by h too
+    drop = energy_drop(bcset.bcs, [], [runs[i]["qois"].get("strain_energy") for i in coarse_to_fine])
     for q, family in qois_for(bcset):
         vals = [r["qois"][q.name] for r in runs]
         if len(runs) < 3:                   # a convergence study needs three levels: record, certify nothing
