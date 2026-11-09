@@ -56,7 +56,7 @@
     ],
     "words": [
       "Clamped (all displacements zero): face f23 (centroid (0.00, -0.00, 29.58) mm, area 4434.0 mm^2).",
-      "Clamped (all displacements zero): planar face f19 (outward normal (-1.000, -0.000, -0.000), centroid (19.54, -0.00, 30.59) mm, area 412.5 mm^2).",
+      "Clamped (all displacements zero): planar face f19 (outward normal (1.000, 0.000, 0.000), centroid (19.54, -0.00, 30.59) mm, area 412.5 mm^2).",
       "Total force (0.0, 0.0, 13800.0) N spread uniformly over planar face f25 (outward normal (0.000, -0.000, 1.000), centroid (0.00, -0.00, 61.25) mm, area 630.2 mm^2)."
     ]
   },
@@ -483,9 +483,9 @@
           0.03058801404758823
         ],
         "normal": [
-          1.0,
-          0.0,
-          0.0
+          -1.0,
+          -0.0,
+          -0.0
         ],
         "axis": null,
         "radius": null
@@ -500,9 +500,9 @@
           0.03058801404758823
         ],
         "normal": [
-          -1.0,
-          -0.0,
-          -0.0
+          1.0,
+          0.0,
+          0.0
         ],
         "axis": null,
         "radius": null

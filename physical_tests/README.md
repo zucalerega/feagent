@@ -14,7 +14,7 @@ Check the fixed solver, and the agents' setups, against Instron measurements on 
 - `.stl` is for printing: millimetres (STL has no units, so check PreForm shows the sizes above).
 - `.step` (mm) is for FEA.
 - Only grip ends were added. Everything the tests measure is the original geometry.
-- The repo's gold set has only these two parts (its 10 BC sets are on them). More gold parts are
+- The repo's gold set has only these two parts (its 9 BC sets are on them). More gold parts are
   in the H100 goldgen archives (`scripts/pull_gold_batches.sh`).
 - **The gold reference values do not apply here.** They belong to the generated support/load
   sets, not to these pull setups. Each test needs an FEA of the setup as tested.

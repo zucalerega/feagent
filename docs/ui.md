@@ -291,7 +291,7 @@ A separate card runs `single_agent/` (`single_agent/README.md`): one agent per a
 analysis layer from a design package, graded by a deterministic scorecard, and learns rules from its training
 scorecards. Its tools (`feacore/ui/tools/single_agent.py`, group `single_agent`) are the loop
 (`single_agent.loop`), the non-LLM oracle baseline (`single_agent.oracle`) and the comparison of arms
-(`single_agent.compare`); problems must have a design package (the ten gold BC sets). Outputs go to
+(`single_agent.compare`); problems must have a design package (the nine gold BC sets). Outputs go to
 `sa_runs/<tool>-<task>/` (`summary.md`, rulebooks, scorecards), shown through the Tasks page and its log. The loop
 has no graceful stop: *Kill* ends it, and `--budget-usd` bounds a real run.
 

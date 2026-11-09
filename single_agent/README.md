@@ -57,7 +57,7 @@ The tools also work from a shell, for any agent or a person (`single_agent/cli.p
 .venv/bin/python -m single_agent.cli sa_workspaces/part-xxxxxxxx solve @setup.json
 ```
 
-## The problems: ten load cases on two complex parts
+## The problems: nine load cases on two complex parts
 
 The geometry is the two gold ABC parts (`benchmarks/gold/`): a trunnion cap (a cup with two trunnion pins on
 bosses, 25 faces) and a split clamp body (a jaw with prongs, cross holes, nut pockets and waist notches, 55
@@ -70,7 +70,6 @@ held along x only; a shrink-fit is "a uniform contact pressure on the bore wall,
 | `abc_00000003_bc0` | TC-35 / LC-07: side pull on the −x trunnion shoulder (rig test) | 3 | 2 | 1.00 |
 | `abc_00000003_bc1` | TC-35 / LC-02: lift-out of the actuator by the cap | 3 | 3 (1 singular) | 1.00 |
 | `abc_00000003_bc2` | TC-35 / LC-04: trunnion clamp rings during transport | 4 | 6 (1 singular) | 0.90 |
-| `abc_00000003_bc3` | TC-35 / LC-11: shrink-fitting the bore bushing (**suspect reference**, see below) | 3 | 5 (1 singular) | 0.51 |
 | `abc_00000003_bc4` | TC-35 / LC-12: grinding the +x trunnion pin | 2 | 4 (1 singular) | 1.00 |
 | `abc_00000003_bc5` | TC-35 / LC-09: cantilevered test of the cap with an internal spring pad | 3 | 2 (1 singular) | 1.00 |
 | `abc_00000003_bc6` | TC-35 / LC-14: sensor carrier side load during −x pin grinding | 3 | 3 (1 singular) | 1.00 |
@@ -192,16 +191,18 @@ subagents (Opus 5.5 and Sonnet 5.5) drove the same harness through `single_agent
 
 ## Findings so far (from building and validating the benchmark)
 
-1. **The gold references of `abc_00000003_bc3` look wrong.** For a pressure-loaded part with rigid supports, the
-   FE strain energy is a lower bound that rises with refinement.
+1. **The gold references of `abc_00000003_bc3` were wrong; the set and its package (LC-11) are retired.** For a
+   pressure-loaded part with rigid supports, the FE strain energy is a lower bound that rises with refinement.
    - Independent P2 meshes give 2.111, 2.163, 2.176, 2.184 J (uniform) and 2.190, 2.194, 2.195 J (edge-refined,
      up to 118k DOFs). The mesh volume is within 1e-4 of the CAD.
    - The gold nested sequence falls instead: 2.166, 1.983, 1.940 J. Its reference is 1.927 J, 12% below values
      that bound it from below.
    - u_max, vm_mean and Rx_f16 are off by 7-18% the same way.
 
-   The likely cause is in the nested L1/L2 meshes (split, snapped, then tet and high-order optimisation). They are
-   not in git, so they could not be checked here. bc3 stays packaged but is in neither default list.
+   The cause was in the nested L1/L2 meshes, as suspected: splitting put vertices of the 1 mm ring under the bore
+   into the bore, and the mesh folds into it, which reverses the bore pressure on some facets
+   (`benchmarks/gold/README.md`, "Retired"). The generator is fixed. The other sets on these meshes stay within
+   tolerance, but bc0's (train) and bc7's (holdout) references lean up to ~1.4% low until the part is regenerated.
 2. **The shared three-mesh GCI (`feacore.verification.gci.gci3`) misread unequal refinement ratios**, which
    independently remeshed sequences always have:
    - It classified by R = e21/e32 alone. With h ratios 1.34 (fine) and 1.21 (coarse), a strain energy converging
@@ -228,7 +229,7 @@ subagents (Opus 5.5 and Sonnet 5.5) drove the same harness through `single_agent
 | `evaluate.py`, `oracle.py` | the scorecard; the scripted baseline |
 | `handbook.md`, `rulebook.py`, `reflect.py` | the general rules; learned rules and their lint/merge; the learning step |
 | `loop.py`, `compare.py`, `mock.py` | the generations; arms side by side; the free mock |
-| `design/` | the ten design packages and their evaluator keys |
+| `design/` | the nine design packages and their evaluator keys |
 | `pilots/` | the real-model pilot runs: reports, solves, studies, scorecards |
 
 Run outputs go to `sa_runs/` and workspaces to `sa_workspaces/`; both are git-ignored.
@@ -244,7 +245,7 @@ is about 7x slower at the cap.
 
 ## Limitations and next steps
 
-- **Two parts, ten load cases.** That is enough to see whether rules transfer to a new installation of the same
+- **Two parts, nine load cases.** That is enough to see whether rules transfer to a new installation of the same
   part (bc7) and to a new part (the clamp). It is not enough for statistics. More gold parts would need the
   generator (`feacore.goldgen`, an H100) and a design package each.
 - **The design packages are hand-written** by the person who knew the reference setup; the lint and the oracle

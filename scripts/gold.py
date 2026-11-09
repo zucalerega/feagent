@@ -3,17 +3,23 @@
     python scripts/gold.py import ARCHIVE.tgz|DIR [...] [--root benchmarks/gold] [--no-meshes]
     python scripts/gold.py list
     python scripts/gold.py verify [ID ...] [--level 0]
+    python scripts/gold.py restate [ID ...] [--check]
     python scripts/gold.py render [ID ...] [--level 1] [--runs-dir DIR] [--png DIR] [--no-store]
 
 import  copies every BC set of a goldgen archive (out/<id>/public|private, out/_meshes/<part>/L<k>.msh,
         logs/) into the gold root after checking it: files present, ids consistent, nothing private in
         public/, reference case readable, references among the stated QoIs, every group a face of the
-        part, and the STEP's face tags equal to the part's faces (what agents name groups by). Sets
-        without a reference QoI are skipped (nothing to score). STEP copies of one part that differ
-        only in their export timestamp are stored byte-identical, so git keeps one blob per part.
+        part, the study's strain energy rising level to level as the energy bound requires
+        (feacore.goldgen.run.energy_drop), and the STEP's face tags equal to the part's faces (what
+        agents name groups by). Sets without a reference QoI are skipped (nothing to score). STEP
+        copies of one part that differ only in their export timestamp are stored byte-identical, so
+        git keeps one blob per part.
         index.json records every set and mesh (sha256, cells, h) and the archive it came from.
 verify  re-solves sets on a stored mesh level with the fixed solver and compares every QoI with the
         generator's value on that level: the solver and the import reproduce the study.
+restate describes every planar face again (statement, BC set words, the part's faces) with goldgen's
+        outward-normal probe, which samples points on the face; sets generated before it probed at the
+        face's centroid, off the face for a ring, and could state the normal inward. --check only reports.
 render  re-solves sets on a stored mesh level and records each solve in the run store, where the
         UI's field viewer shows it (source "gold", agent "gold:L<level>"); --png also writes a PNG
         per set (von Mises on the deformed shape, supports and loads marked) and a contact sheet.
@@ -95,6 +101,14 @@ def check_set(d: Path) -> list[str]:
     groups = {b["group"] for b in ref["reference_case"]["bcs"] if b.get("group")}
     groups |= {q["group"] for q in st.get("qois", []) if q.get("group")}
     errs += [f"group {g} is not a face of the part" for g in sorted(groups - faces)]
+    if ref.get("references"):
+        from feacore.goldgen.run import energy_drop
+
+        runs = sorted(json.loads((d / "private" / "study.json").read_text()).get("runs", []), key=lambda r: r["level"])
+        drop = energy_drop(ref["reference_case"]["bcs"], ref["reference_case"].get("loads"),
+                           [r["qois"].get("strain_energy") for r in runs])
+        if drop:
+            errs.append(drop)
     return errs
 
 
@@ -302,6 +316,63 @@ def cmd_verify(a) -> int:
         for k, v, g, _ in bad:
             print(f"    {k}: {v:.6e} here vs {g:.6e} in the study")
     return 1 if n_bad else 0
+
+
+# --------------------------------------------------------------------------- restate
+
+
+def restated(st: dict, ref: dict, normals: dict[int, list | None]) -> tuple[dict, dict, list[str]]:
+    """A set's statement and reference data with its planar faces described by ``normals`` ({tag:
+    outward normal}; None keeps the stored one): the part's faces, the BC set's words and the statement's
+    lines that quote them. Returns (statement, reference, what changed)."""
+    from feacore.goldgen.bcgen import _describe
+    from feacore.goldgen.parts import Face
+
+    st, ref = json.loads(json.dumps(st)), json.loads(json.dumps(ref))
+    changes = []
+    for f in ref["part"]["faces"]:
+        new = normals.get(f["tag"])
+        if f["kind"] != "plane" or new is None or np.allclose(new, f["normal"], atol=1e-6):
+            continue
+        old_words, old = _describe(Face(**f)), f["normal"]
+        f["normal"] = new
+        new_words = _describe(Face(**f))
+        lines = st["description"].count(old_words)
+        st["description"] = st["description"].replace(old_words, new_words)
+        ref["bcset"]["words"] = [w.replace(old_words, new_words) for w in ref["bcset"]["words"]]
+        changes.append(f"f{f['tag']} outward normal {old} -> {new} (quoted in {lines} statement line"
+                       f"{'' if lines == 1 else 's'})")
+    return st, ref, changes
+
+
+def cmd_restate(a) -> int:
+    """Describe every planar face again with goldgen's current outward-normal probe (a point on the face;
+    sets generated before it probed at the face's centroid, which can lie off the face, e.g. in a ring's
+    hole, where the sign was arbitrary). Forces carry explicit vectors, so only words change."""
+    from feacore.goldgen.parts import plane_normals
+
+    by_part: dict[str, list] = {}
+    for p in _selected(a):
+        by_part.setdefault(p.family, []).append(p)
+    n_changed = 0
+    for part, problems in sorted(by_part.items()):
+        tags = [f["tag"] for f in problems[0].part["faces"] if f["kind"] == "plane"]
+        normals = plane_normals(problems[0].step_path, tags)
+        for t in sorted(t for t, n in normals.items() if n is None):
+            print(f"{part}: no point on f{t} decides its side; its stored normal is kept")
+        for p in problems:
+            files = {"st": p.dir / "public" / "problem.json", "ref": p.dir / "private" / "reference.json"}
+            st, ref, changes = restated(json.loads(files["st"].read_text()), json.loads(files["ref"].read_text()),
+                                        normals)
+            if not changes:
+                continue
+            n_changed += 1
+            print(f"{p.id}: {'; '.join(changes)}")
+            if not a.check:
+                files["st"].write_text(json.dumps(st, indent=2))
+                files["ref"].write_text(json.dumps(ref, indent=2))
+    print(f"{n_changed} set(s) {'would change' if a.check else 'changed'}")
+    return 1 if a.check and n_changed else 0
 
 
 # --------------------------------------------------------------------------- render
@@ -601,6 +672,10 @@ def main(argv=None) -> int:
     s.add_argument("ids", nargs="*")
     s.add_argument("--level", type=int, default=0)
     s.set_defaults(func=cmd_verify)
+    s = sub.add_parser("restate", help="describe planar faces again with goldgen's outward-normal probe")
+    s.add_argument("ids", nargs="*", help="set or part ids (default: all)")
+    s.add_argument("--check", action="store_true", help="only report; exit 1 if a set would change")
+    s.set_defaults(func=cmd_restate)
     s = sub.add_parser("render", help="re-solve on a stored level; record runs for the UI, PNGs")
     s.add_argument("ids", nargs="*")
     s.add_argument("--level", type=int, default=1)

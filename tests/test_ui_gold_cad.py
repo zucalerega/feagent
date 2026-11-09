@@ -327,7 +327,9 @@ def test_reference_study_certifies_a_small_part(client, env):
 
 def test_adopting_a_finished_study_certifies_it(client, env):
     """A finished P2 study of the problem (here a stored record whose QoIs converge at the theoretical
-    order) goes through the gold certification and becomes the reference at once."""
+    order, from below as the strain energy must under its loads and clamps) goes through the gold
+    certification and becomes the reference at once. The same study converging from above breaks the
+    energy bound and certifies nothing."""
     from feacore.problems import registry
     from feacore.runstore import RunStore
     from feacore.verification.study import default_expected_order
@@ -337,19 +339,23 @@ def test_adopting_a_finished_study_certifies_it(client, env):
     pid = made["pid"]
     assert client.post(f"/api/cad/problems/{pid}/adopt", json={"study_id": "study-nope"}).status_code == 404
     store, hs = RunStore(env["runs"]), [0.02, 0.01, 0.005]
-    runs = [{"h_nominal": h, "info": {"h_rep": h, "n_dofs": 1000 * 8**i, "wall_time": 1.0},
-             "qois": {q.name: 1.0 + 0.02 * (h / hs[0]) ** default_expected_order(q, 2) for q in registry.get(pid).qois()}}
-            for i, h in enumerate(hs)]
 
-    def study(order=2, status="succeeded", problem=pid):
+    def levels(sign):
+        return [{"h_nominal": h, "info": {"h_rep": h, "n_dofs": 1000 * 8**i, "wall_time": 1.0},
+                 "qois": {q.name: 1.0 + sign * 0.02 * (h / hs[0]) ** default_expected_order(q, 2)
+                          for q in registry.get(pid).qois()}} for i, h in enumerate(hs)]
+
+    def study(order=2, status="succeeded", problem=pid, sign=-1):
         sid = store.create_study(problem, order=order, sizes=hs)["study_id"]
-        store.update_study(sid, status=status, result={"runs": runs})
+        store.update_study(sid, status=status, result={"runs": levels(sign)})
         return sid
 
     for sid, needle in ((study(order=1), "P2"), (study(status="running"), "not succeeded"),
                         (study(problem="cooks_membrane"), "cooks_membrane")):
         r = client.post(f"/api/cad/problems/{pid}/adopt", json={"study_id": sid})
         assert r.status_code == 422 and needle in r.text, r.text
+    r = client.post(f"/api/cad/problems/{pid}/adopt", json={"study_id": study(sign=1)})
+    assert r.status_code == 200 and r.json()["references"] == [], r.text
     r = client.post(f"/api/cad/problems/{pid}/adopt", json={"study_id": study()})
     assert r.status_code == 200, r.text
     certified = {x["qoi"] for x in r.json()["references"]}

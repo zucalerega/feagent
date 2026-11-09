@@ -76,15 +76,71 @@ def import_scaled(step: str | Path, scale: float = 1.0) -> list[tuple[int, int]]
     return ents
 
 
-def _outward_normal(tag: int, centroid: np.ndarray, vol_tag: int, diag: float) -> np.ndarray:
-    """Outward unit normal of a planar face: the side where a small step leaves the solid."""
-    uv = gmsh.model.getParametrization(2, tag, centroid.tolist())
-    n = np.asarray(gmsh.model.getNormal(tag, uv), float)[:3]
-    n /= np.linalg.norm(n)
-    probe = gmsh.model.getClosestPoint(2, tag, centroid.tolist())[0]
-    p = np.asarray(probe) + 1e-4 * diag * n
-    inside = gmsh.model.isInside(3, vol_tag, p.tolist())
-    return -n if inside else n
+# where face_points samples each mesh triangle (barycentric): the centroid, then near each corner
+_SAMPLES = np.array([[1 / 3, 1 / 3, 1 / 3], [2 / 3, 1 / 6, 1 / 6], [1 / 6, 2 / 3, 1 / 6], [1 / 6, 1 / 6, 2 / 3]])
+
+
+def face_points(tag: int, n: int = 8) -> list[np.ndarray]:
+    """Up to ``n`` points on the trimmed face ``tag`` (the model must be meshed): points of its mesh
+    triangles (largest first; centroid, then near each corner), projected onto the surface, kept only
+    where the kernel puts them inside the face. The face's own centroid is no such point (a ring's
+    centroid lies in its hole), and neither is every triangle centroid (a coarse triangle of a thin
+    ring can span the hole's edge: abc_00000003's 1 mm ring f24 has every centroid in the bore)."""
+    types, _, nodes = gmsh.model.mesh.getElements(2, tag)
+    if not len(types):
+        return []
+    ntags, x, _ = gmsh.model.mesh.getNodes(2, tag, includeBoundary=True)
+    at = dict(zip(np.asarray(ntags, dtype=np.int64).tolist(), np.asarray(x, float).reshape(-1, 3), strict=True))
+    npe = gmsh.model.mesh.getElementProperties(int(types[0]))[3]          # nodes per triangle (3 or 6)
+    tri = np.asarray(nodes[0], dtype=np.int64).reshape(-1, npe)[:, :3]
+    p = np.array([[at[int(k)] for k in row] for row in tri])
+    area = np.linalg.norm(np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]), axis=1)
+    out = []
+    for i in np.argsort(-area, kind="stable"):
+        for w in _SAMPLES:
+            q = gmsh.model.getClosestPoint(2, tag, (w @ p[i]).tolist())[0]
+            if gmsh.model.isInside(2, tag, list(q)):
+                out.append(np.asarray(q, float))
+                if len(out) == n:
+                    return out
+                break                       # one point per triangle: spread the probes over the face
+    return out
+
+
+def _outward_normal(tag: int, vol_tag: int, diag: float) -> np.ndarray:
+    """Outward unit normal of a planar face (the model must be meshed): at a point on the face
+    (``face_points``), the side where a small step leaves the solid. A point counts only if exactly one
+    side is inside; off the face (e.g. at a ring's centroid, in its hole) both sides can be inside, and
+    the sign would be arbitrary. ValueError if no point on the face decides."""
+    step = 1e-4 * diag
+    for p in face_points(tag):
+        uv = gmsh.model.getParametrization(2, tag, p.tolist())
+        n = np.asarray(gmsh.model.getNormal(tag, uv), float)[:3]
+        n /= np.linalg.norm(n)
+        ahead = gmsh.model.isInside(3, vol_tag, (p + step * n).tolist())
+        behind = gmsh.model.isInside(3, vol_tag, (p - step * n).tolist())
+        if ahead != behind:
+            return -n if ahead else n
+    raise ValueError(f"face {tag}: no point on it with the solid on exactly one side")
+
+
+def plane_normals(step: str | Path, tags: list[int], scale: float = 1.0) -> dict[int, list[float] | None]:
+    """Outward normals of the planar faces ``tags`` of a STEP, as ``screen`` computes them (rounded the
+    same way); None for a face no point decides. For re-deriving stored normals, e.g. those written
+    before the probe moved from the face's centroid onto the face."""
+    with gmsh_session("plane_normals"):
+        (_, vol), = [e for e in import_scaled(step, scale) if e[0] == 3]
+        bbox = gmsh.model.getBoundingBox(3, vol)
+        diag = float(np.linalg.norm(np.subtract(bbox[3:], bbox[:3])))
+        gmsh.option.setNumber("Mesh.MeshSizeMax", diag / 8)
+        gmsh.model.mesh.generate(3)
+        out: dict[int, list[float] | None] = {}
+        for t in tags:
+            try:
+                out[t] = _outward_normal(t, vol, diag).round(9).tolist()
+            except ValueError:
+                out[t] = None
+    return out
 
 
 def screen(step: str | Path, part_id: str) -> Part:
@@ -115,6 +171,15 @@ def screen(step: str | Path, part_id: str) -> Part:
         if not (LIMITS["faces"][0] <= len(tags) <= LIMITS["faces"][1]):
             raise Rejected(f"{len(tags)} faces outside {LIMITS['faces']}")
         total = sum(gmsh.model.occ.getMass(2, t) for t in tags)
+        # a coarse mesh must succeed, otherwise the fine ones will not; its surface triangles also give
+        # each plane points on the face to orient its normal from (_outward_normal)
+        gmsh.option.setNumber("Mesh.MeshSizeMax", diag / 8)
+        try:
+            gmsh.model.mesh.generate(3)
+        except Exception as e:  # noqa: BLE001
+            raise Rejected(f"coarse mesh failed: {e}") from e
+        if len(gmsh.model.mesh.getElementsByType(4)[0]) == 0:
+            raise Rejected("coarse mesh produced no tetrahedra")
         faces = []
         for t in tags:
             area = gmsh.model.occ.getMass(2, t)
@@ -124,20 +189,15 @@ def screen(step: str | Path, part_id: str) -> Part:
             typ = gmsh.model.getType(2, t)
             f = Face(tag=t, kind="other", area=area, centroid=c.tolist())
             if typ == "Plane":
-                f.kind = "plane"
-                f.normal = _outward_normal(t, c, vol, diag).round(9).tolist()
+                try:
+                    f.normal = _outward_normal(t, vol, diag).round(9).tolist()
+                    f.kind = "plane"
+                except ValueError:          # no point decides the side: no normal, so no directed loads
+                    pass
             elif typ == "Cylinder":
                 f.kind = "cylinder"
                 f.axis, f.radius = _cylinder_axis(t)
             faces.append(f)
-        # a coarse mesh must succeed, otherwise the fine ones will not
-        gmsh.option.setNumber("Mesh.MeshSizeMax", diag / 8)
-        try:
-            gmsh.model.mesh.generate(3)
-        except Exception as e:  # noqa: BLE001
-            raise Rejected(f"coarse mesh failed: {e}") from e
-        if len(gmsh.model.mesh.getElementsByType(4)[0]) == 0:
-            raise Rejected("coarse mesh produced no tetrahedra")
     return Part(id=part_id, source=Path(step).name, scale=scale, volume=mass, bbox=bbox, faces=faces)
 
 

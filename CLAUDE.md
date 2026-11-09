@@ -135,7 +135,7 @@ headless box the same way: `xvfb-run -a python ...`.
   playbook. `bash scripts/wsp_study.sh`; huggingface.co must be reachable for the model.
 - **Single analyst agent** (`single_agent/`, `single_agent/README.md`): ONE agent per arm (Opus or Sonnet) does
   the whole analysis layer from component design data. Design packages (component, system context, review notes,
-  questions; faces described by feature, never by tag) for the 10 gold BC sets; a blind harness (STEP + package
+  questions; faces described by feature, never by tag) for the 9 gold BC sets; a blind harness (STEP + package
   only: the ace geometry/feedback helpers would leak the gold statement's supports); a deterministic scorecard
   (setup equivalence on the agent's mesh, answers vs gold, calibration of stated uncertainty, singular peaks,
   study); a rulebook = a general handbook + rules the arm learns from its training scorecards (holdout never
@@ -195,11 +195,16 @@ Decisions:
   - The study meshes (`benchmarks/gold/_meshes/`) are not in git.
   - `scripts/gold.py verify` re-solves a stored level against the study. `scripts/gold.py render`
     records runs for the UI viewer, and `--png` writes images.
-  - Known issue (not fixed): the references of `abc_00000003_bc3` violate the FE energy bound by 12 %
-    (found by `single_agent`, which excludes the set).
-  - Known issue (not fixed): goldgen's `parts._outward_normal` probes at the face centroid, which can lie
-    inside the solid, so the statements of `abc_00000003`'s faces f18 and f19 give the wrong outward-normal
-    sign. Only the words are affected (forces carry explicit vectors). Uploaded CAD probes a point on the face.
+  - `abc_00000003_bc3` is retired: its references were 12 % under the FE energy bound. Cause: the part's nested
+    L1/L2 meshes fold into the bore, because splitting snapped vertices of the coarse base's 1 mm ring f24 onto
+    its plane but outside the ring. goldgen now refines such faces before splitting (`mesh._base_mesh`), rejects
+    levels with nodes off their faces (`mesh._face_leaks`), and certifies nothing when the strain energy falls
+    between levels (`run.energy_drop`, also an import check). The sibling sets stay within tolerance, but bc0's
+    and bc7's references lean up to ~1.4 % low. Regenerating abc_00000003 with the fixed generator (GPU box for
+    L2) fixes them and can restore bc3 (`benchmarks/gold/README.md`, "Retired").
+  - Plane outward normals are probed at points on the face (`goldgen.parts.face_points`, shared with uploaded
+    CAD), not at the centroid, which for a ring lies in its hole and had stated abc_00000003's f18/f19 inward.
+    `scripts/gold.py restate` rewrote those words (forces carry explicit vectors); `restate --check` finds none.
 - **Verification** = Richardson extrapolation / Grid Convergence Index (Celik et al. 2008),
   `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to

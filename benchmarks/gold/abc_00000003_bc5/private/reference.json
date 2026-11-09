@@ -48,7 +48,7 @@
     ],
     "words": [
       "Clamped (all displacements zero): face f3 (centroid (27.19, 0.00, 30.59) mm, area 736.6 mm^2).",
-      "Total force (-6600.0, 0.0, 0.0) N spread uniformly over planar face f18 (outward normal (1.000, 0.000, 0.000), centroid (-19.54, 0.00, 30.59) mm, area 412.5 mm^2).",
+      "Total force (-6600.0, 0.0, 0.0) N spread uniformly over planar face f18 (outward normal (-1.000, -0.000, -0.000), centroid (-19.54, 0.00, 30.59) mm, area 412.5 mm^2).",
       "Uniform pressure 1.5 MPa pushing into the part on planar face f21 (outward normal (0.000, -0.000, -1.000), centroid (-0.00, 0.00, 55.12) mm, area 678.8 mm^2)."
     ]
   },
@@ -435,9 +435,9 @@
           0.03058801404758823
         ],
         "normal": [
-          1.0,
-          0.0,
-          0.0
+          -1.0,
+          -0.0,
+          -0.0
         ],
         "axis": null,
         "radius": null
@@ -452,9 +452,9 @@
           0.03058801404758823
         ],
         "normal": [
-          -1.0,
-          -0.0,
-          -0.0
+          1.0,
+          0.0,
+          0.0
         ],
         "axis": null,
         "radius": null
