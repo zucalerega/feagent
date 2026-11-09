@@ -2,9 +2,14 @@
 
 Three-mesh procedure of Celik et al. (2008), "Procedure for estimation and reporting of
 uncertainty due to discretization in CFD applications", J. Fluids Eng. 130(7) 078001,
-which follows Roache (1994/1998). Non-uniform refinement ratios are handled by the
-fixed-point iteration for the observed order p. For four or more meshes a least-squares
-fit phi = phi0 + a h^p is also reported.
+which follows Roache (1994/1998). For four or more meshes a least-squares fit
+phi = phi0 + a h^p is also reported.
+
+Non-uniform refinement ratios (r21 != r32, the norm for independently remeshed sequences) are
+handled by Celik's equation for the observed order p with both ratios, solved by bisection
+(``_observed_order``). The convergence class follows from whether a positive p exists, not from
+the convergence ratio R = e21 / e32 alone: same-sign changes converge iff R < ln r21 / ln r32,
+which is the familiar R < 1 only when r21 = r32.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ class GCIResult:
     phi: list[float]               # matching solutions
     r21: float
     r32: float
-    R: float | None                # convergence ratio eps21 / eps32
+    R: float | None                # convergence ratio eps21 / eps32 (monotone iff 0 < R < ln r21 / ln r32)
     convergence: str               # monotone | oscillatory | divergent | oscillatory_divergent | exact | converged | indeterminate
     p: float | None                # observed order
     p_theory: float | None
@@ -38,19 +43,72 @@ class GCIResult:
         return asdict(self)
 
 
+_EQUAL_RATIOS = 1e-9  # r21 and r32 closer than this (relative) count as equal: closed-form p
+
+
+def _log_expm1(x: float) -> float:
+    """ln(e^x - 1) for x > 0, without overflow or cancellation."""
+    return x + math.log1p(-math.exp(-x)) if x > 1.0 else math.log(math.expm1(x))
+
+
+def _log1p_exp(x: float) -> float:
+    """ln(1 + e^x), without overflow."""
+    return x + math.log1p(math.exp(-x)) if x > 0.0 else math.log1p(math.exp(x))
+
+
+def _pow_m1(r: float, p: float) -> float:
+    """r^p - 1, inf where r^p overflows (an absurd order, e.g. from two nearly coincident meshes)."""
+    x = p * math.log(r)
+    return math.expm1(x) if x < 709.0 else math.inf
+
+
 def _observed_order(e21: float, e32: float, r21: float, r32: float, s: float,
-                    max_iter: int = 500, tol: float = 1e-12) -> float | None:
-    ratio = abs(e32 / e21)
-    p = abs(math.log(ratio)) / math.log(r21)
+                    max_iter: int = 200, tol: float = 1e-12) -> float | None:
+    """Observed order p > 0 from Celik et al. (2008) eqs. (3)-(5), or None when no positive p fits.
+
+    Without Celik's outer absolute value the equations say
+
+        |e32 / e21| = r21^p (r32^p - s) / (r21^p - s),
+
+    the ratio of successive changes of phi = phi_ext + C h^p (s = 1, same-sign changes) or of an
+    error that alternates in sign (s = -1). The right side increases strictly with p and tends to
+    ln r32 / ln r21 (s = 1) or to 1 (s = -1) as p -> 0+. So a positive root exists iff |e32 / e21|
+    exceeds that limit; it is then bracketed and found by bisection. With r21 = r32 this reduces to
+    p = ln|e32 / e21| / ln r21, positive iff |e21 / e32| < 1.
+
+    Celik's fixed-point form p = |ln|e32 / e21| + q(p)| / ln r21 is not used: its absolute value
+    turns the negative root of a diverging sequence into a spurious positive order, and for some
+    unequal ratios the iteration itself diverges (overflow, then a math domain error).
+    """
+    target = math.log(abs(e32 / e21))
+    if not math.isfinite(target):
+        return None
+    a, b = math.log(r21), math.log(r32)
+    if math.isclose(r21, r32, rel_tol=_EQUAL_RATIOS):
+        p = target / a
+        return p if p > 0 else None
+    if s > 0:
+        def model(p):  # ln[r21^p (r32^p - 1) / (r21^p - 1)]
+            return p * a + _log_expm1(p * b) - _log_expm1(p * a)
+        at_zero = math.log(b / a)
+        hi = _log1p_exp(target) / b       # model(p) > ln(r32^p - 1), which equals target here
+    else:
+        def model(p):  # ln[r21^p (r32^p + 1) / (r21^p + 1)]
+            return p * a + _log1p_exp(p * b) - _log1p_exp(p * a)
+        at_zero = 0.0
+        hi = (math.log(2.0) + target) / b  # model(p) > ln((r32^p + 1) / 2) > target here
+    if target <= at_zero:
+        return None
+    lo = 0.0
     for _ in range(max_iter):
-        num, den = r21**p - s, r32**p - s
-        if num <= 0 or den <= 0:
-            return None
-        p_new = abs(math.log(ratio) + math.log(num / den)) / math.log(r21)
-        if abs(p_new - p) < tol * max(1.0, p):
-            return p_new
-        p = 0.5 * (p + p_new) if p_new > 20 else p_new
-    return p
+        mid = 0.5 * (lo + hi)
+        if model(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo <= tol * hi:
+            break
+    return 0.5 * (lo + hi)
 
 
 def gci3(h, phi, p_theory: float | None = None, safety: float = 1.25,
@@ -98,33 +156,26 @@ def gci3(h, phi, p_theory: float | None = None, safety: float = 1.25,
         flags.append("two_solutions_identical")
         return result(convergence="indeterminate")
 
+    # Converging iff a positive order fits both changes with both ratios: 0 < R < ln r21 / ln r32
+    # for same-sign changes, -1 < R < 0 for alternating ones. With unequal ratios, R < 1 alone
+    # calls some converging sequences divergent (r21 > r32) and some stalling ones monotone.
     R = e21 / e32
-    if 0 < R < 1:
-        convergence = "monotone"
-    elif -1 < R < 0:
-        convergence = "oscillatory"
-        flags.append("oscillatory")
-    elif R >= 1:
-        convergence = "divergent"
-        flags.append("divergent")
-    else:
-        convergence = "oscillatory_divergent"
-        flags.append("divergent")
-    if convergence in ("divergent", "oscillatory_divergent"):
-        return result(R=R, convergence=convergence)
-
     s = 1.0 if R > 0 else -1.0
     p = _observed_order(e21, e32, r21, r32, s)
-    if p is None or p <= 0:
-        flags.append("order_undefined")
-        return result(R=R, convergence=convergence)
+    if p is None:
+        flags.append("divergent")
+        return result(R=R, convergence="divergent" if s > 0 else "oscillatory_divergent")
+    convergence = "monotone" if s > 0 else "oscillatory"
+    if s < 0:
+        flags.append("oscillatory")
 
-    phi_ext = (r21**p * f1 - f2) / (r21**p - 1)
+    d21 = _pow_m1(r21, p)
+    phi_ext = f1 - e21 / d21  # = (r21^p f1 - f2) / (r21^p - 1)
     e_ext21 = abs((phi_ext - f1) / phi_ext) if phi_ext != 0 else math.inf
-    gci_fine = safety * e_a21 / (r21**p - 1)
+    gci_fine = safety * e_a21 / d21
     e_a32 = abs(e32 / f2) if f2 != 0 else math.inf
-    gci_medium = safety * e_a32 / (r32**p - 1)
-    asym = gci_medium / (r21**p * gci_fine) if gci_fine > 0 else None
+    gci_medium = safety * e_a32 / _pow_m1(r32, p)
+    asym = gci_medium / ((d21 + 1.0) * gci_fine) if gci_fine > 0 else None
 
     p_lim = p
     if p_theory is not None:
@@ -135,7 +186,7 @@ def gci3(h, phi, p_theory: float | None = None, safety: float = 1.25,
             flags.append("p_below_theory")
         elif p > 1.5 * p_theory + 0.5:
             flags.append("p_above_theory")
-    gci_cons = 3.0 * e_a21 / (r21**p_lim - 1)
+    gci_cons = 3.0 * e_a21 / _pow_m1(r21, p_lim)
     if asym is not None and abs(asym - 1.0) > 0.2:
         flags.append("not_asymptotic")
     return result(R=R, convergence=convergence, p=p, phi_ext=phi_ext, e_ext21=e_ext21,
