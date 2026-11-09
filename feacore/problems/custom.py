@@ -523,8 +523,9 @@ class _StepGeometry:
 def describe(step: Path, part_id: str, source: str):
     """The part in ``step`` (scale 1) as a feacore.goldgen.parts.Part: volume, bounding box and every
     face (tag, kind, area, centroid, outward normal of planes, axis and radius of cylinders). A coarse
-    tet mesh must succeed; its surface triangles give each plane a point on the face to orient its
-    normal from (the face's centroid can lie off the face, inside the solid, e.g. under a rib)."""
+    tet mesh must succeed; its surface triangles give each plane points on the face to orient its
+    normal from (feacore.goldgen.parts._outward_normal: the face's centroid can lie off the face, inside
+    the solid, e.g. under a rib)."""
     import gmsh
     import numpy as np
 
@@ -555,7 +556,7 @@ def describe(step: Path, part_id: str, source: str):
             try:
                 typ = gmsh.model.getType(2, t)
                 if typ == "Plane" or (typ != "Cylinder" and _is_flat(t, diag)):
-                    f.normal = _outward_normal(t, _point_on_face(t, c), vol, diag).round(9).tolist()
+                    f.normal = _outward_normal(t, vol, diag).round(9).tolist()
                     f.kind = "plane"
                 elif typ == "Cylinder":
                     axis, radius = _cylinder_axis(t)
@@ -564,22 +565,6 @@ def describe(step: Path, part_id: str, source: str):
                 f.normal = f.axis = f.radius = None
             faces.append(f)
     return Part(id=part_id, source=source, scale=1.0, volume=mass, bbox=bbox, faces=faces)
-
-
-def _point_on_face(tag: int, fallback):
-    """The centroid of the face's largest mesh triangle: a point on the (trimmed) face."""
-    import gmsh
-    import numpy as np
-
-    types, _, nodes = gmsh.model.mesh.getElements(2, tag)
-    ntags, x, _ = gmsh.model.mesh.getNodes(2, tag, includeBoundary=True)
-    if not len(types) or not len(ntags):
-        return np.asarray(fallback)
-    at = dict(zip(np.asarray(ntags, dtype=np.int64).tolist(), np.asarray(x, float).reshape(-1, 3), strict=True))
-    tri = np.asarray(nodes[0], dtype=np.int64).reshape(-1, 3)
-    p = np.array([[at[int(n)] for n in row] for row in tri])
-    area = np.linalg.norm(np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]), axis=1)
-    return p[int(np.argmax(area))].mean(axis=0)
 
 
 def _is_flat(tag: int, diag: float, tol: float = 1e-7) -> bool:

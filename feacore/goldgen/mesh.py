@@ -7,17 +7,27 @@ remeshed sequences scatter them (see CLAUDE.md, "Mesh sequences for GCI"). The b
 deterministic, so each level can be regenerated on its own. One sequence serves every BC set.
 
 Pipeline per level (``mesh_level``):
+  0. base mesh fine enough to split (``_base_mesh``): a split snaps each new vertex onto the surface
+     its edge lies on, not into the trimmed face, so a coarse triangle that cuts across a hole puts
+     vertices in the hole, and the mesh folds into it from then on. abc_00000003's 1 mm ring f24
+     under a 10-segment bore did this: its L1/L2 meshes put 0.1-0.2 % of the part's volume into the
+     bore, which flipped the pressure on 18-81 bore facets and gave the falling (12 % low) strain
+     energy of abc_00000003_bc3. So NESTED_SPLITS splits are simulated on the base first (one for a
+     remeshed level: its midside nodes); a face that leaks gets a finer size and the base is
+     generated again (in a nested plan, the same base for every level);
   1. after EVERY split, repair the linear tets with gmsh's tet optimizer + Relocate3D: snapping new
      boundary vertices onto curved CAD flattens a few tets (mean-ratio quality ~0.003 on the pilot
      part), and their children inherit the defect at every later level;
   2. curve to order 2 (isoparametric: boundary midside nodes on the CAD);
   3. if any cell is folded or nearly so (min scaled Jacobian < SJ_MIN), run gmsh's high-order
      optimizer (``curved-opt``, elastic + optimisation);
-  4. validate what the solver needs: min scaled Jacobian >= SJ_MIN everywhere, and the solver's own
-     curved mesh (``feacore.solver._skfem_mesh``) can locate every boundary quadrature point.
+  4. validate what the solver needs: min scaled Jacobian >= SJ_MIN everywhere, every node on a face
+     inside that (trimmed) face (``_face_leaks``), and the solver's own curved mesh
+     (``feacore.solver._skfem_mesh``) can locate every boundary quadrature point.
 For a curved cell the scaled Jacobian is the validity measure; the mean-ratio quality of its corner
 tet is not (the high-order optimizer may move a vertex so the chord tet is flat while the curved
-cell is fine), so corner quality is only gated on the linear mesh, before curving.
+cell is fine), so corner quality is only gated on the linear mesh, before curving. Neither measure
+sees a mesh that folds into a hole (every cell there is well shaped), hence the face check.
 
 gmsh's high-order optimizer can abort the whole process (an uncaught C++ exception), so each
 attempt runs in a subprocess (``mesh_level_safe``). Fallbacks, in order (``STRATEGIES``, then straight):
@@ -53,6 +63,9 @@ QUALITY_MIN = 0.002       # linear (pre-curving) corner-tet quality: only true d
                           # validity is gated by SJ_MIN and solver_check, which bad slivers also fail)
 ALGORITHMS = (10, 1)      # gmsh 3D meshers: HXT (fast, parallel), then Delaunay (HXT segfaults on some CAD)
 REPAIR_TARGET = 0.05      # repair passes stop once the linear mesh reaches this quality
+NESTED_SPLITS = 2         # splits simulated on the base mesh before any level (the gold study's finest is L2)
+FACE_REFINES = 4          # rounds of halving the size of faces whose split vertices leave the face
+LEAK_TOL = 1e-5           # x bbox diagonal: a face node this far outside its trimmed face is a leak
 
 
 class MeshFailed(RuntimeError):
@@ -102,6 +115,90 @@ def _repair_linear() -> float:
         if q >= REPAIR_TARGET:
             break
     return q
+
+
+def _face_leaks(tol: float) -> dict[int, tuple[int, float]]:
+    """Faces with mesh nodes (vertices and midside nodes classified on the face) whose projection onto the
+    face's surface lies outside the trimmed face by more than ``tol``: {face tag: (nodes, largest
+    distance)}. Projecting first lets a straightened midside node (``curved-local``: off the surface by
+    its edge's sagitta) pass; what fails is a node in a hole or past the face's edge."""
+    out = {}
+    for _, tag in gmsh.model.getEntities(2):
+        _, x, _ = gmsh.model.mesh.getNodes(2, tag, includeBoundary=False)
+        if not len(x):
+            continue
+        q = np.asarray(gmsh.model.getClosestPoint(2, tag, list(x))[0], float).reshape(-1, 3)
+        if gmsh.model.isInside(2, tag, q.ravel().tolist()) == len(q):
+            continue
+        curves = [abs(c) for _, c in gmsh.model.getBoundary([(2, tag)], oriented=False)]
+        n, worst = 0, 0.0
+        for p in q:
+            if gmsh.model.isInside(2, tag, p.tolist()):
+                continue
+            d = min((float(np.linalg.norm(np.asarray(gmsh.model.getClosestPoint(1, c, p.tolist())[0]) - p))
+                     for c in curves), default=float("inf"))
+            if d > tol:
+                n, worst = n + 1, max(worst, d)
+        if n:
+            out[tag] = (n, worst)
+    return out
+
+
+def _face_h(tag: int) -> float:
+    """Longest edge of the face's current (linear) surface triangles."""
+    types, _, nodes = gmsh.model.mesh.getElements(2, tag)
+    if not len(types):
+        return 0.0
+    ntags, x, _ = gmsh.model.mesh.getNodes(2, tag, includeBoundary=True)
+    at = dict(zip(np.asarray(ntags, dtype=np.int64).tolist(), np.asarray(x, float).reshape(-1, 3), strict=True))
+    npe = gmsh.model.mesh.getElementProperties(int(types[0]))[3]
+    p = np.array([[at[int(k)] for k in row] for row in np.asarray(nodes[0], dtype=np.int64).reshape(-1, npe)[:, :3]])
+    return float(max(np.linalg.norm(p[:, i] - p[:, j], axis=1).max() for i, j in ((0, 1), (1, 2), (0, 2))))
+
+
+def _set_face_sizes(sizes: dict[int, float], fields: list[int]) -> list[int]:
+    """Background size field: ``sizes[tag]`` on each face (and its edges), the usual sizes elsewhere
+    (gmsh meshes with the smallest of all size sources). Replaces the fields of an earlier round."""
+    for f in fields:
+        gmsh.model.mesh.field.remove(f)
+    fields = []
+    for tag, s in sorted(sizes.items()):
+        f = gmsh.model.mesh.field.add("Constant")
+        gmsh.model.mesh.field.setNumbers(f, "SurfacesList", [tag])
+        gmsh.model.mesh.field.setNumber(f, "VIn", s)
+        gmsh.model.mesh.field.setNumber(f, "VOut", 1e22)
+        fields.append(f)
+    m = gmsh.model.mesh.field.add("Min")
+    gmsh.model.mesh.field.setNumbers(m, "FieldsList", fields)
+    gmsh.model.mesh.field.setAsBackgroundMesh(m)
+    return [*fields, m]
+
+
+def _base_mesh(diag: float, splits: int) -> dict[str, float]:
+    """Generate the base (linear) mesh such that ``splits`` splits of it keep every face node in its face:
+    simulate them, give every face that leaks (``_face_leaks``) half its size, regenerate, up to
+    FACE_REFINES rounds. A nested plan simulates NESTED_SPLITS whatever the level, so every level splits
+    the same base; a remeshed level simulates one, which is where its order-2 midside nodes go (a straight
+    edge's midpoint). Returns {f<tag>: size} of the faces refined (empty: the plain base)."""
+    sizes: dict[int, float] = {}
+    fields: list[int] = []
+    factor = gmsh.option.getNumber("Mesh.MeshSizeFactor")      # scales field sizes too: measure without it
+    for _ in range(FACE_REFINES + 1):
+        gmsh.model.mesh.generate(3)
+        h = {t: _face_h(t) / factor for _, t in gmsh.model.getEntities(2)}
+        for _ in range(splits):
+            gmsh.model.mesh.refine()
+        leaks = _face_leaks(LEAK_TOL * diag)
+        gmsh.model.mesh.clear()
+        if not leaks:
+            gmsh.model.mesh.generate(3)
+            break
+        for t in leaks:
+            sizes[t] = 0.5 * min(sizes.get(t, h[t]), h[t])
+        fields = _set_face_sizes(sizes, fields)
+    else:
+        raise MeshFailed(f"faces {sorted(leaks)} still leak after {FACE_REFINES} size halvings")
+    return {f"f{t}": s for t, s in sorted(sizes.items())}
 
 
 def _straighten(cells: np.ndarray) -> None:
@@ -155,7 +252,7 @@ def mesh_level(step: str | Path, part: Part, k: int, out: str | Path, threads: i
         opt("General.NumThreads", threads)
         opt("Mesh.SecondOrderLinear", 1 if scheme == "straight" else 0)
         opt("Mesh.HighOrderOptimize", 0)     # optimise explicitly below, only if needed
-        gmsh.model.mesh.generate(3)
+        face_sizes = _base_mesh(part.diag, NESTED_SPLITS if nested else 1)
         quality = _min_quality()
         if quality < REPAIR_TARGET:
             quality = _repair_linear()
@@ -184,13 +281,17 @@ def mesh_level(step: str | Path, part: Part, k: int, out: str | Path, threads: i
         if remaining:
             raise MeshFailed(f"L{k} {scheme}: {remaining} cells below scaled Jacobian {SJ_MIN} remain "
                              f"(of {folded} before fixing)")
+        leaks = _face_leaks(LEAK_TOL * part.diag)
+        if leaks:
+            raise MeshFailed(f"L{k} {scheme}: mesh nodes outside their CAD face on "
+                             + ", ".join(f"f{t} ({n}, up to {d * 1e3:.3g} mm)" for t, (n, d) in sorted(leaks.items())))
         sj = _min_sj()
         cells = len(gmsh.model.mesh.getElementsByType(11)[0])   # tet10
         gmsh.write(str(out))
     solver_check(out)
     return {"path": str(out), "h": h0 / RATIO**k, "cells": cells, "seconds": time.perf_counter() - t0,
             "fix_seconds": round(t_fix, 1), "scheme": used, "nested": nested, "alg3d": alg3d, "h0_frac": h0_frac,
-            "folded_before_fix": folded,
+            "folded_before_fix": folded, "face_sizes": face_sizes,
             "min_sj": sj, "min_linear_quality": quality}
 
 

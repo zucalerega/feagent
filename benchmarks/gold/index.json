@@ -67,34 +67,6 @@
     78.42
    ]
   },
-  "abc_00000003_bc3": {
-   "part": "abc_00000003",
-   "archive": "goldgen-l2_0000",
-   "references": [
-    "strain_energy",
-    "u_max",
-    "vm_mean",
-    "Rx_f16"
-   ],
-   "singular": [
-    "vm_max",
-    "u_mean_f20",
-    "Rx_f3",
-    "Ry_f3",
-    "Ry_f16",
-    "Rz_f16"
-   ],
-   "dofs": [
-    22920,
-    146481,
-    1032318
-   ],
-   "seconds": [
-    4.26,
-    10.92,
-    73.42
-   ]
-  },
   "abc_00000003_bc4": {
    "part": "abc_00000003",
    "archive": "goldgen-l2_0000",

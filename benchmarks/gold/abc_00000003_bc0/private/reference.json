@@ -66,8 +66,8 @@
     ],
     "words": [
       "Clamped (all displacements zero): planar face f21 (outward normal (0.000, -0.000, -1.000), centroid (-0.00, 0.00, 55.12) mm, area 678.8 mm^2).",
-      "Roller (zero x-displacement only): planar face f19 (outward normal (-1.000, -0.000, -0.000), centroid (19.54, -0.00, 30.59) mm, area 412.5 mm^2).",
-      "Total force (-7800.0, 0.0, 0.0) N spread uniformly over planar face f18 (outward normal (1.000, 0.000, 0.000), centroid (-19.54, 0.00, 30.59) mm, area 412.5 mm^2)."
+      "Roller (zero x-displacement only): planar face f19 (outward normal (1.000, 0.000, 0.000), centroid (19.54, -0.00, 30.59) mm, area 412.5 mm^2).",
+      "Total force (-7800.0, 0.0, 0.0) N spread uniformly over planar face f18 (outward normal (-1.000, -0.000, -0.000), centroid (-19.54, 0.00, 30.59) mm, area 412.5 mm^2)."
     ]
   },
   "reference_case": {
@@ -479,9 +479,9 @@
           0.03058801404758823
         ],
         "normal": [
-          1.0,
-          0.0,
-          0.0
+          -1.0,
+          -0.0,
+          -0.0
         ],
         "axis": null,
         "radius": null
@@ -496,9 +496,9 @@
           0.03058801404758823
         ],
         "normal": [
-          -1.0,
-          -0.0,
-          -0.0
+          1.0,
+          0.0,
+          0.0
         ],
         "axis": null,
         "radius": null

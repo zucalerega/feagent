@@ -232,7 +232,7 @@ def cmd_run(a) -> int:
                     for m in meshes:
                         meshlog.write(json.dumps({k: m.get(k) for k in (
                             "part", "mesh_level", "h", "h0_frac", "cells", "seconds", "scheme", "nested", "alg3d",
-                            "folded_before_fix", "min_sj", "min_linear_quality", "failed_attempts",
+                            "folded_before_fix", "face_sizes", "min_sj", "min_linear_quality", "failed_attempts",
                             "fallback_reason")}) + "\n")
                         print(f"[{pid}] L{m['mesh_level']}: {m['cells']} cells, {m['seconds']:.1f}s, {m['scheme']}"
                               f"{'' if m.get('nested', True) else ' remesh'}", flush=True)

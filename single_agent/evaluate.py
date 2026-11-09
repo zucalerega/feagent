@@ -60,7 +60,8 @@ def _faces(group: str | None, groups: dict) -> frozenset:
 @functools.lru_cache(maxsize=16)
 def _face_info(problem_id: str) -> dict:
     """{f<tag>: {area, outward normal (flat faces) or None}}, computed from the CAD by ace.geometry_info on the
-    part's STEP (the gold part data lists some normals inward, e.g. both boss shoulders of abc_00000003)."""
+    part's STEP, independently of the gold part data (which stated both boss shoulders of abc_00000003 inward
+    until `scripts/gold.py restate`)."""
     from ace import geometry_info
     from feacore.problems import registry
     from single_agent.part import BlindPart, label_for, register

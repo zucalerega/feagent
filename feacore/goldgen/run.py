@@ -32,6 +32,39 @@ from feacore.verification.study import default_expected_order
 
 STEEL = Material(E=210e9, nu=0.3)
 GOLD_TOL = {"strain_energy": 0.01, "displacement": 0.02, "stress": 0.03, "reaction": 0.02}
+ENERGY_DROP_TOL = 1e-3   # relative strain-energy loss from one level to the next that rejects a study
+
+
+def energy_drop(bcs, loads, energies) -> str | None:
+    """Why a study breaks the energy bound, or None. With given loads (pressure, force, traction) and
+    zero-displacement supports only, the FE strain energy of a displacement method is a lower bound of
+    the exact one and rises as nested meshes are refined. A level that loses more than ENERGY_DROP_TOL
+    of it means the meshes are not one consistent refinement for this set, whatever its GCI says:
+    abc_00000003_bc3 fell 2.166, 1.983, 1.940 J (a mesh folding into the bore flipped the pressure on
+    some facets) while independent meshes rise to 2.20 J. ``bcs``/``loads``: BC objects or dicts;
+    ``energies``: strain energy per level, coarse to fine. None also when the bound does not apply
+    (prescribed nonzero displacements, thermal or body loads) or a value is missing."""
+    def get(b, k):
+        return b.get(k) if isinstance(b, dict) else getattr(b, k, None)
+
+    if loads:
+        return None
+    for b in bcs:
+        t, v = get(b, "type"), get(b, "value")
+        if t in ("fixed", "symmetry", "pressure", "force", "traction"):
+            continue
+        vals = v if isinstance(v, list) else [v]
+        if t != "displacement" or not all(isinstance(x, (int, float)) and x == 0 for x in vals):
+            return None
+    e = [float(x) if x is not None else float("nan") for x in energies]
+    if len(e) < 2 or not all(x == x and x > 0 for x in e):
+        return None
+    for k in range(1, len(e)):
+        if e[k] < e[k - 1] * (1 - ENERGY_DROP_TOL):
+            return (f"strain energy falls from L{k - 1} to L{k} ({e[k - 1]:.6g} -> {e[k]:.6g} J, "
+                    f"{e[k] / e[k - 1] - 1:+.2%}): it must rise under nested refinement with these loads "
+                    f"and supports, so the meshes are not a consistent refinement for this set")
+    return None
 
 
 def _fmt(v, spec: str) -> str:
@@ -84,9 +117,11 @@ def statement(part: Part, bcset: BCSet) -> dict:
 
 
 def certify(bcset: BCSet, runs: list[dict]) -> tuple[list[Reference], dict]:
-    """GCI per QoI over the levels; references for the QoIs that qualify."""
+    """GCI per QoI over the levels; references for the QoIs that qualify. None qualifies when the strain
+    energy breaks the energy bound (``energy_drop``): the entries then say why (``rejected``)."""
     h = [r["h_rep"] for r in runs]
     refs, study = [], {}
+    drop = energy_drop(bcset.bcs, [], [r["qois"].get("strain_energy") for r in runs])
     for q, family in qois_for(bcset):
         vals = [r["qois"][q.name] for r in runs]
         if len(runs) < 3:                   # a convergence study needs three levels: record, certify nothing
@@ -99,7 +134,10 @@ def certify(bcset: BCSet, runs: list[dict]) -> tuple[list[Reference], dict]:
         entry = {"values": vals, "h": h, "kind": kind, "p": g.get("p"), "p_theory": p_th,
                  "phi_ext": g.get("phi_ext"), "gci_fine": g.get("gci_fine"), "fit": a.get("fit")}
         tol = GOLD_TOL[family]
-        if kind in ("converged", "reduced_order") and g.get("gci_fine") is not None and g["gci_fine"] <= tol:
+        qualifies = kind in ("converged", "reduced_order") and g.get("gci_fine") is not None and g["gci_fine"] <= tol
+        if qualifies and drop:
+            entry.update(gold=False, rejected=drop)
+        elif qualifies:
             value = g["phi_ext"] if g.get("phi_ext") is not None else vals[-1]
             refs.append(Reference(q.name, float(value), "converged_numerical",
                                   source=f"feacore goldgen: {len(runs)} refined tet10 meshes, GCI (Celik 2008)",
@@ -152,6 +190,9 @@ def run_bcset(step, part: Part, bcset: BCSet, meshes: list[dict], out: Path,
     summary.update(result="ok", gold=[r.qoi for r in refs],
                    singular=[k for k, v in study.items() if v["kind"] == "singular"],
                    dofs=[r["n_dofs"] for r in runs], seconds=[round(r["total_s"], 2) for r in runs])
+    rejected = next((v["rejected"] for v in study.values() if v.get("rejected")), None)
+    if rejected:
+        summary["rejected"] = rejected
     return summary
 
 

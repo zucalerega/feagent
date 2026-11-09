@@ -32,9 +32,8 @@ MIN_QUALITY = 0.1        # minimum element quality (gmsh minSICN) of a mesh a re
 # (abc_00000003_bc7) and a different part (abc_00000065_*), to see whether the rules transfer.
 TRAIN = ["abc_00000003_bc0", "abc_00000003_bc1", "abc_00000003_bc2", "abc_00000003_bc5"]
 HOLDOUT = ["abc_00000003_bc7", "abc_00000065_bc0", "abc_00000065_bc1"]
-# Spares: abc_00000003_bc4 and _bc6 (use them with --problems / --holdout). abc_00000003_bc3 is packaged but its
-# gold references look wrong (its key's "suspect" note: the strain energy violates the FE lower bound by 12%), so it
-# is in neither list until the gold meshes are checked.
+# Spares: abc_00000003_bc4 and _bc6 (use them with --problems / --holdout). abc_00000003_bc3 (the shrink-fit, LC-11)
+# is retired with its package: its gold meshes fold into the bore (benchmarks/gold/README.md, "Retired").
 
 # --------------------------------------------------------------------------- evaluation
 EQUIV_TOL = 2e-3         # setups giving the same QoIs on the same mesh to this are equivalent
