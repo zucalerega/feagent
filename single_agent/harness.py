@@ -342,54 +342,6 @@ def gci_triplet(h: list[float], min_ratio: float = 1.3) -> list[int]:
     return order_[:3]
 
 
-def gci_unequal(h: list[float], phi: list[float], p_theory: float | None, safety: float = 1.25) -> dict | None:
-    """Three-mesh analysis for UNEQUAL refinement ratios, where feacore's gci3 misreads convergence.
-
-    gci3 classifies by R = e21 / e32 alone, which is exact only when r21 = r32. With h1 < h2 < h3,
-    e21 = f2 - f1, e32 = f3 - f2 and phi = phi0 + C h^p, the changes satisfy
-        e32 / e21 = F(p) = r21^p (r32^p - 1) / (r21^p - 1),
-    which tends to ln(r32) / ln(r21) as p -> 0 and grows with p. So a sequence of same-sign changes converges
-    (some p > 0 fits) iff e32 / e21 > ln(r32) / ln(r21); with r21 = 1.34 and r32 = 1.21 a converging QoI can
-    have R > 1, which gci3 calls divergent; and with r21 < r32 a stalling QoI can have R < 1, which gci3 calls
-    monotone. Returns the gci3-shaped fields decided by the ratio-corrected test (bisection on p), or None when it
-    does not apply (opposite-sign changes or nearly equal ratios: gci3 is right there)."""
-    order_ = np.argsort(h)
-    (h1, h2, h3), (f1, f2, f3) = np.asarray(h, float)[order_], np.asarray(phi, float)[order_]
-    r21, r32 = h2 / h1, h3 / h2
-    e21, e32 = f2 - f1, f3 - f2
-    if e21 * e32 <= 0 or abs(r21 - r32) <= 0.05 * r21 or min(r21, r32) <= 1.0:
-        return None
-    e_a21 = abs(e21 / f1) if f1 else math.inf
-    target = e32 / e21
-    F = lambda p: r21 ** p * (r32 ** p - 1) / (r21 ** p - 1)   # noqa: E731
-    lo, hi = 1e-6, 30.0
-    flags = ["unequal_ratios: classified with the ratio-corrected test"]
-    if min(r21, r32) < 1.3:
-        flags.append("refinement_ratio_below_1.3")
-    if target <= F(lo):                              # no positive order fits: not converging
-        return {"convergence": "divergent", "p": None, "phi_ext": None, "gci_fine": None, "e_a21": e_a21,
-                "gci_fine_conservative": None, "flags": flags + ["divergent"]}
-    if target >= F(hi):
-        lo = hi = 30.0
-    for _ in range(200):
-        mid = 0.5 * (lo + hi)
-        lo, hi = (mid, hi) if F(mid) < target else (lo, mid)
-    p = 0.5 * (lo + hi)
-    phi_ext = f1 + (f1 - f2) / (r21 ** p - 1)
-    gci_fine = safety * e_a21 / (r21 ** p - 1)
-    p_lim = min(max(p, 0.5), p_theory) if p_theory else p
-    gci_cons = 3.0 * e_a21 / (r21 ** p_lim - 1)
-    if p_theory:
-        if p < 0.5 * p_theory:
-            flags.append("p_far_below_theory")
-        elif p < 0.8 * p_theory:
-            flags.append("p_below_theory")
-        elif p > 1.5 * p_theory + 0.5:
-            flags.append("p_above_theory")
-    return {"convergence": "monotone", "p": p, "phi_ext": phi_ext, "gci_fine": gci_fine, "e_a21": e_a21,
-            "gci_fine_conservative": gci_cons, "flags": flags}
-
-
 def expected_order(q: dict, order: int) -> float | None:
     """A-priori order in h of a QoI for P_order elements (feacore.verification.study)."""
     from feacore.case import QoI
@@ -773,16 +725,11 @@ class Session:
             if len(recs) >= 3:
                 tri = gci_triplet(h)                       # the finest mesh and two coarser ones, well spaced
                 ht, ft = [h[i] for i in tri], [phi[i] for i in tri]
-                try:
+                try:                                       # gci3 handles unequal refinement ratios itself
                     g = gci3(ht, ft, p_theory=p_th).to_dict()
-                except (ValueError, OverflowError, ZeroDivisionError) as e:
-                    # feacore's gci3 can fail on unequal ratios (math domain error in its fixed-point order);
-                    # the ratio-corrected test below still decides the case.
+                except ValueError as e:                    # two meshes of the triplet share one h_rep
                     g = {"convergence": "indeterminate", "p": None, "phi_ext": None, "gci_fine": None,
                          "e_a21": None, "flags": [f"gci3 failed: {type(e).__name__}: {e}"]}
-                fix = gci_unequal(ht, ft, p_th)
-                if fix:                                        # unequal ratios: the ratio-corrected verdict wins
-                    g = {**g, **fix}
                 row.update(gci_solves=[recs[i]["number"] for i in sorted(tri, key=lambda i: -h[i])],
                            convergence=g["convergence"], p_observed=_sig(g["p"], 3), extrapolated=_sig(g["phi_ext"], 6),
                            gci_fine=_sig(g["gci_fine"], 3), gci_conservative=_sig(g.get("gci_fine_conservative"), 3),

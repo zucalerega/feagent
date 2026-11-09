@@ -209,6 +209,11 @@ Decisions:
   `feacore/verification/`. Proposed scoring input for the evaluator: QoI error vs the reference, plus
   self-consistency from mesh refinement (observed order, GCI band, and divergence flags that point to
   singularities or setup errors). The evaluator owns the final rubric.
+  `gci3` handles unequal refinement ratios (r21 != r32, the norm for independent remeshing): same-sign
+  changes are monotone only if a positive order fits Celik's equation with both ratios, i.e.
+  R = e21 / e32 < ln r21 / ln r32 (the familiar R < 1 only when r21 = r32); p comes from bisection on
+  that equation (`tests/test_gci.py`). The single_agent study tool uses `gci3` directly (its
+  `gci_unequal` workaround is gone).
 - Setup on a fresh Ubuntu / Brev box / DGX Spark: `bash scripts/setup_gpu_box.sh` (system libs,
   CalculiX, a Python >= 3.12 venv, and GPU extras when `nvidia-smi` works). Brev walkthrough (shell,
   GPU check, validation, UI tunnel on port 8000): `docs/brev.md`. Check the GPU solve with
@@ -265,9 +270,6 @@ Decisions:
   - The stress recovery is a global continuous L2 projection, so it smears stress jumps at material
     or thermal-load interfaces. Don't use point stresses right at an interface.
   - Cook's membrane: the literature 23.96 is uy at the loaded-edge midpoint (48, 52), not the corner.
-  - `feacore.verification.gci.gci3` classifies convergence by R = e21 / e32 alone, which is exact only for equal
-    refinement ratios: with unequal ratios a converging QoI can read divergent, or a stalling one monotone.
-    `single_agent/harness.py` (`gci_unequal`) has a ratio-corrected test; `gci3` itself is unchanged.
   - 3D flow on tets: fixed by the skew-consistent schemes (CFD bullet above). The old +15 % pressure gradient
     on tets was a solver bias. The apparent force imbalance came from the wall force dividing by |Cf - C|
     instead of the wall-normal distance. Point velocities at a smooth maximum still read 2-5 % low on coarse

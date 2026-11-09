@@ -203,15 +203,17 @@ subagents (Opus 5.5 and Sonnet 5.5) drove the same harness through `single_agent
    into the bore, and the mesh folds into it, which reverses the bore pressure on some facets
    (`benchmarks/gold/README.md`, "Retired"). The generator is fixed. The other sets on these meshes stay within
    tolerance, but bc0's (train) and bc7's (holdout) references lean up to ~1.4% low until the part is regenerated.
-2. **The shared three-mesh GCI (`feacore.verification.gci.gci3`) misreads unequal refinement ratios**, which
+2. **The shared three-mesh GCI (`feacore.verification.gci.gci3`) misread unequal refinement ratios**, which
    independently remeshed sequences always have:
-   - It classifies by R = e21/e32 alone. With h ratios 1.34 (fine) and 1.21 (coarse), a strain energy converging
-     at p ≈ 1.7 has R ≈ 1.02 and is called "divergent". An agent would then call a converging quantity singular.
-   - With the small step on the fine side, a stalled sequence can be called "monotone".
-   - It raises a math domain error on some diverging unequal-ratio sequences.
+   - It classified by R = e21/e32 alone. With h ratios 1.34 (fine) and 1.21 (coarse), a strain energy converging
+     at p ≈ 1.7 has R ≈ 1.02 and was called "divergent". An agent would then call a converging quantity singular.
+   - With the small step on the fine side, a stalled sequence could be called "monotone".
+   - It raised a math domain error on some diverging unequal-ratio sequences.
 
-   The study tool uses the ratio-corrected test: some p > 0 fits iff e32/e21 > ln r32 / ln r21. It is in
-   `harness.gci_unequal`, with tests; feacore is not modified.
+   Fixed in feacore: `gci3` now uses the ratio-corrected test (some p > 0 fits iff e32/e21 > ln r32 / ln r21)
+   and brackets Celik's equation for p (`tests/test_gci.py`). The study tool carried this test as
+   `harness.gci_unequal` until then. It now takes `gci3`'s verdict as is, which also keeps gci3's round-off
+   floor: changes below 1e-6 |phi| read as converged.
 3. **Small ratios on coarse meshes make the GCI optimistic.** Observed orders of 6-9 against a theory of 3-4
    came with GCIs of about 2% when the true error was 8%. The study tool now reports the conservative GCI and says
    so in words, and handbook rule D3 tells the agent to use the largest estimate.

@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("gmsh")
 
 from single_agent import config, workspace  # noqa: E402
-from single_agent.harness import Session, gci_unequal  # noqa: E402
+from single_agent.harness import Session  # noqa: E402
 from single_agent.oracle import reference_setup  # noqa: E402
 from single_agent.rulebook import Rulebook, lint  # noqa: E402
 
@@ -44,19 +44,23 @@ def test_default_split_is_packaged_and_disjoint():
 # --------------------------------------------------------------------------- the study's GCI
 
 
-def test_gci_unequal_ratios():
-    # converging at p = 1 on unequal ratios (fine step 1.34, coarse 1.21): feacore's gci3 calls R > 1 divergent
-    h = [1.0, 1.34, 1.34 * 1.21]
-    phi = [2.0 - 0.1 * x for x in h]
-    r = gci_unequal(h, phi, 2.0)
-    assert r["convergence"] == "monotone"
-    assert math.isclose(r["p"], 1.0, rel_tol=1e-6)
-    assert math.isclose(r["phi_ext"], 2.0, rel_tol=1e-9)
-    # diverging (a singular peak) with the small step on the fine side
-    h = [1.0, 1.1, 1.1 * 1.6]
-    assert gci_unequal(h, [x ** -0.3 for x in h], 2.0)["convergence"] == "divergent"
-    # equal ratios: gci3 is right, nothing to correct
-    assert gci_unequal([1.0, 1.5, 2.25], [1.0, 1.1, 1.3], 2.0) is None
+def test_study_reads_unequal_ratios(tmp_path):
+    """The study tool takes feacore's gci3 verdict, which handles unequal refinement ratios (tests/test_gci.py).
+    From the pilot: h ratios 1.34 (fine) and 1.21 (coarse), a strain energy converging at p = 1.7 has
+    R = e21 / e32 = 1.02 > 1 and must read monotone, not divergent; a singular peak must read divergent."""
+    s = Session(workspace.make(PID, tmp_path))
+    qois = [{"name": "U", "type": "strain_energy"}, {"name": "vm", "type": "max", "field": "von_mises"}]
+    setup = {"material": {"E": 2.0e11, "nu": 0.3}, "bcs": [], "loads": [], "qois": qois}
+    h = [1.34 * 1.21, 1.34, 1.0]                                           # coarse -> fine
+    for n, x in enumerate(h, 1):                                           # recorded solves, no FE run needed
+        s.state["solves"].append({"number": n, "mesh": n, "setup": setup, "ok": True, "order": 2, "dofs": 1000 * n,
+                                  "h_rep": x, "qois": {"U": 2.0 - 0.1 * x ** 1.7, "vm": 100.0 * x ** -0.3}})
+    out, err = s.call("study", {"solves": [1, 2, 3]})
+    assert not err, out
+    u, vm = out["qois"]["U"], out["qois"]["vm"]
+    assert u["convergence"] == "monotone" and math.isclose(u["p_observed"], 1.7, rel_tol=1e-3)
+    assert math.isclose(u["extrapolated"], 2.0, rel_tol=1e-5) and u["reading"].startswith("monotone")
+    assert vm["convergence"] == "divergent" and "singularity" in vm["reading"]
 
 
 # --------------------------------------------------------------------------- rulebook
