@@ -205,6 +205,15 @@ def solve(case: Case, **options) -> "OpenFOAMResult":
         return _foam_compressible.solve(case, **options)
     if a.physics != "flow":
         raise CaseError(f"the openfoam backend solves physics 'flow' and 'compressible' only (got {a.physics!r})")
+    if a.transient is not None:               # pimpleFoam (feacore/solver/_foam_transient.py)
+        try:
+            from feacore.solver import _foam_transient
+        except ModuleNotFoundError as e:
+            if e.name != "feacore.solver._foam_transient":
+                raise
+            raise NotImplementedError("openfoam backend: transient flow is not installed in this version "
+                                      "(feacore.solver._foam_transient)") from e
+        return _foam_transient.solve(case, **options)
     if fio.FOAMLIB_ERROR is not None:
         raise ImportError(f"the openfoam backend needs foamlib (pip install foamlib): {fio.FOAMLIB_ERROR}")
     mat = _fluid_material(case)

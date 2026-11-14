@@ -40,7 +40,8 @@ from feacore.solver._skfem_mesh import MeshData, MeshError, read_mesh
 from feacore.solver.base import Result, SolveInfo
 from feacore.solver.linsolve import solve_linear
 
-KNOWN_OPTIONS = ("linear_solver", "stress_recovery", "intorder", "axis_constraint", "assembly")
+KNOWN_OPTIONS = ("linear_solver", "stress_recovery", "intorder", "axis_constraint", "assembly",
+                 "transient", "modal", "damping")
 _ELEMS = {(2, 1): ElementTriP1, (2, 2): ElementTriP2, (3, 1): ElementTetP1, (3, 2): ElementTetP2}
 _VTK = {(2, 1): "triangle", (2, 2): "triangle6", (3, 1): "tetra", (3, 2): "tetra10"}
 TWO_PI = 2.0 * math.pi
@@ -680,9 +681,33 @@ def _check_rigid_modes(md: _Model, D: np.ndarray, has_robin: bool = False) -> No
                       f"{' / temperature or convection' if md.physics == 'heat' else ''}) that remove it.")
 
 
+# Time-dependent and modal analyses live in their own modules; each has solve(case, **options).
+_ANALYSIS_MODULES = {
+    "modal": ("feacore.solver._skfem_modal", "modal analysis (natural frequencies)"),
+    "transient heat": ("feacore.solver._skfem_transient", "transient heat conduction"),
+    "transient elasticity": ("feacore.solver._skfem_dynamics", "transient dynamics"),
+}
+
+
+def _dispatch(kind: str, case: Case, options: dict):
+    import importlib
+    module, what = _ANALYSIS_MODULES[kind]
+    try:
+        mod = importlib.import_module(module)
+    except ModuleNotFoundError as e:
+        if e.name != module:
+            raise
+        raise NotImplementedError(f"skfem backend: {what} is not installed in this version ({module})") from e
+    return mod.solve(case, **options)
+
+
 def solve(case: Case, **options) -> "SkfemResult":
     t0 = time.perf_counter()
     case.check()
+    if case.analysis.modal is not None:
+        return _dispatch("modal", case, options)
+    if case.analysis.transient is not None:
+        return _dispatch(f"transient {case.analysis.physics}", case, options)
     if case.analysis.nonlinear:
         raise NotImplementedError(
             "skfem backend: nonlinear analyses (analysis.options.nonlinear / material plasticity) are not "
