@@ -161,7 +161,9 @@ bending at the two ends.
 Every `ResultValue` has a `status`: `converged` (the discretization uncertainty from the mesh study is under
 `policy.max_uncertainty`), `not_converged`, `singular` (the value grows without bound under refinement: a
 peak at a sharp re-entrant edge or at the rim of a rigid support), `estimate` (a hand calculation or a
-bound), `not_run`. `uncertainty` is relative (0.02 = 2 %). `per_level` holds the value on each mesh.
+bound), `not_run`. `uncertainty` is relative (0.02 = 2 %). `uncertainty_abs` is the same in the unit of the
+value; a temperature result gives `uncertainty_abs` (in K), and when it is given the compliance stage uses it
+in place of the relative one. `per_level` holds the value on each mesh.
 
 Fields for later engines (fatigue): for the two finest meshes write `fields_L<k>.npz` in the workdir with
 `x` (n, 3) node coordinates, `stress` (n, 6) = sxx, syy, szz, sxy, syz, sxz in Pa, `u` (n, 3) in m, and for

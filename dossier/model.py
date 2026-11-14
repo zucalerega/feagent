@@ -797,6 +797,8 @@ class ResultValue(Model):
     value: float | None             # SI
     unit: str = ""
     uncertainty: float | None = None    # relative discretization uncertainty (0.02 = 2 %)
+    uncertainty_abs: float | None = None   # the same in the unit of the value; when given it is the one to use
+    #                                        (temperatures: a relative error of an absolute temperature hides the error)
     status: ResultStatus = "not_run"
     location: list[float] | None = None    # where the extreme is, m
     near: str = ""                  # the feature or edge it is at
