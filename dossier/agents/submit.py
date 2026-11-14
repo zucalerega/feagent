@@ -276,7 +276,8 @@ class Numbers:
 
 
 # keys of the stage files (JSON): which unit a number under the key has
-_SIBLING_UNIT = ("si", "value", "per_level", "extrapolated", "conservative_value", "limit")   # the "unit" next to it
+_SIBLING_UNIT = ("si", "value", "per_level", "extrapolated", "conservative_value", "limit",
+                 "uncertainty_abs")                                 # these have the "unit" that is next to them
 _KEY_UNIT = {"h_si": "W/(m^2*K)", "at_si": "m", "location": "m", "h": "m", "h_rep": "m", "uncertainty": "",
              "order": "", "factor": "", "margin": "", "ratio": "", "band": "", "scale": "", "count": "",
              "min_quality": "", "runtime_s": "s"}

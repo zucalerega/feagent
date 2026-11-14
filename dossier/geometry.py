@@ -863,16 +863,18 @@ def _reentrant_edges(j: Journal, comp, facts: dict, problems: list[str]) -> list
                         f"(CAD edge {', '.join(map(str, facts['unmeasured_edges'][:LIST_MAX]))}). "
                         f"A re-entrant edge can be among them.")
     tags = [str(e["tag"]) for e in reentrant]
-    if reentrant:
-        listed = tags[0] if len(tags) == 1 else ", ".join(tags[:LIST_MAX][:-1]) + " and " + tags[:LIST_MAX][-1]
-        more = f" The file geometry.json lists all of them." if len(tags) > LIST_MAX else ""
-        choice = (f"The geometry stage marks {_count(len(reentrant), 'edge')} of the CAD model as re-entrant. "
-                  f"The CAD edge tags are {listed}.{more}" if len(tags) > 1 else
-                  f"The geometry stage marks 1 edge of the CAD model as re-entrant. The CAD edge tag is {listed}.")
-        worst = max(e["angle_deg"] for e in reentrant)
-        extra = f" The largest material angle of this part is {worst:g} deg."
-    else:
+    shown = tags[:LIST_MAX]
+    if not reentrant:
         choice, extra = "The geometry stage marks no edge of the CAD model as re-entrant.", ""
+    else:
+        if len(tags) == 1:
+            choice = f"The geometry stage marks 1 edge of the CAD model as re-entrant. The CAD edge tag is {tags[0]}."
+        else:
+            listed = ", ".join(shown[:-1]) + " and " + shown[-1]
+            choice = (f"The geometry stage marks {len(tags)} edges of the CAD model as re-entrant. "
+                      + (f"The CAD edge tags are {listed}." if len(tags) <= LIST_MAX else
+                         f"The first CAD edge tags are {listed}. The file geometry.json lists all of them."))
+        extra = f" The largest material angle of this part is {max(e['angle_deg'] for e in reentrant):g} deg."
     j.decide(
         subject=comp.id, key="reentrant-edges", title="Re-entrant edges of the part", choice=choice,
         rationale=f"An edge is re-entrant when the material angle between its two faces is more than "
@@ -952,13 +954,16 @@ def _unit_records(j: Journal, problems: list[str], comp, cad: SiCad, extent: lis
 # =========================================================================== pictures
 
 
-def _clip(tri: np.ndarray, origin: np.ndarray, n: np.ndarray) -> list[np.ndarray]:
-    """The parts of triangles (m, 3, 3) on the side (x - origin) . n <= 0, as polygons of 3 or 4 points."""
+def _clip(tri: np.ndarray, origin: np.ndarray, n: np.ndarray) -> tuple[list[np.ndarray], np.ndarray]:
+    """The parts of triangles (m, 3, 3) on the side (x - origin) . n <= 0, as polygons of 3 or 4 points,
+    and the index of the triangle each polygon comes from."""
     d = (tri - origin) @ n
-    keep = (d <= 0).all(axis=1)
-    out = [t for t in tri[keep]]
-    for t, dt in zip(tri[~keep & (d <= 0).any(axis=1)], d[~keep & (d <= 0).any(axis=1)]):
-        poly = []
+    inside = d <= 0
+    whole = inside.all(axis=1)
+    polys = [t for t in tri[whole]]
+    index = list(np.nonzero(whole)[0])
+    for i in np.nonzero(~whole & inside.any(axis=1))[0]:
+        t, dt, poly = tri[i], d[i], []
         for k in range(3):
             p, q, dp, dq = t[k], t[(k + 1) % 3], dt[k], dt[(k + 1) % 3]
             if dp <= 0:
@@ -966,8 +971,9 @@ def _clip(tri: np.ndarray, origin: np.ndarray, n: np.ndarray) -> list[np.ndarray
             if (dp <= 0) != (dq <= 0):
                 poly.append(p + (q - p) * (dp / (dp - dq)))
         if len(poly) >= 3:
-            out.append(np.asarray(poly))
-    return out
+            polys.append(np.asarray(poly))
+            index.append(i)
+    return polys, np.asarray(index, dtype=int)
 
 
 def _draw(ax, P, tris: dict, colour: dict, view: tuple[float, float], cut: np.ndarray | None, diag: float,
@@ -1000,9 +1006,10 @@ def _draw(ax, P, tris: dict, colour: dict, view: tuple[float, float], cut: np.nd
             if not len(part):
                 continue
             shade = 0.45 + 0.55 * np.abs(facing[sel])
-            pieces = _clip(part, cut, cam) if cut is not None else list(part)
-            if cut is not None:                     # the shade of a clipped piece: that of its triangle (same face)
-                shade = np.full(len(pieces), float(shade.mean()))
+            pieces = list(part)
+            if cut is not None:
+                pieces, index = _clip(part, cut, cam)
+                shade = shade[index]
             for p, s in zip(pieces, shade):
                 polys.append(p)
                 cols.append((*(base * s), 1.0) if front else (0.30, 0.30, 0.33, 1.0))

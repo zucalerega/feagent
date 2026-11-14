@@ -80,13 +80,14 @@ def _series(values: list[float], unit: str | None) -> str:
     return " → ".join(parts)
 
 
-def _written(v: model.Value | None, names: dict | None = None) -> str:
-    """A quantity of an input file as its author wrote it; an expression with its value."""
+def _value(v: model.Value | None, names: dict | None = None) -> str:
+    """A quantity of an input file in the form the dossier shows (dossier.units.display); an expression
+    with its value."""
     if v is None:
         return ""
     if v.is_literal:
         try:
-            return units.fmt(v.quantity())
+            return units.display(v.quantity())
         except Exception:  # noqa: BLE001
             return f"{v.value} {v.unit}".strip()
     expr = _expr(v)
@@ -100,8 +101,13 @@ def _expr(v: model.Value | None) -> str:
     if v is None or v.expr is None:
         return ""
     if isinstance(v.expr, list):
-        return "[" + ", ".join(str(x) for x in v.expr) + "]"
+        return "[" + ", ".join(f"{x:g}" if isinstance(x, (int, float)) else str(x) for x in v.expr) + "]"
     return str(v.expr)
+
+
+def _s(text: Any) -> str:
+    """A text of an input file inside a sentence of the brief: one line, no full stop at its end."""
+    return _c(text).rstrip(". ")
 
 
 def _pct(x: float | None) -> str:
@@ -131,7 +137,9 @@ class _Brief:
         self.role = role
         self.focus = set(focus or ())
         self.compact = compact
-        self.ctx = context_mod.load(project)
+        # evaluated now from the input files (not read from out/context.json): the numbers are the same, and
+        # the display texts are then the ones of this version of dossier.units
+        self.ctx = context_mod.build(project)
         self.names = self.ctx.names()
         self.comp = project.subject
         self.inputs = project.inputs()
@@ -142,6 +150,11 @@ class _Brief:
         for e in self.graph["edges"]:
             if e["rel"] in ("derives_from", "uses") and e["from"] not in self.used_by.setdefault(e["to"], []):
                 self.used_by[e["to"]].append(e["from"])
+        for r in project.reqs():                         # an explicit check reads context names too
+            for prm in r.parameters.values():
+                for n in units.names_in(prm.check.against) if prm.check else ():
+                    if n in self.ctx.params and r.id not in self.used_by.setdefault(n, []):
+                        self.used_by[n].append(r.id)
         self.rec = {k: project.collection(k) for k in ("findings", "decisions", "assumptions", "load_cases",
                                                          "hand_calcs", "analyses", "compliance", "verdicts")}
         self.reviews = project.reviews()
@@ -243,7 +256,7 @@ class _Brief:
     def project(self) -> list[str]:
         f, c = self.p.file, self.comp
         return ["### Project", "",
-                f"{_id(f.id)}: {_c(f.name)}. {_c(f.description)}", "",
+                f"{_id(f.id)}: {_s(f.name)}. {_c(f.description)}", "",
                 f"The component under verification is {_id(c.id)} ({_c(c.name)}). It realizes the element "
                 f"{_id(c.element)} of the system {_id(self.p.system.id)} ({_c(self.p.system.name)}).", ""]
 
@@ -262,7 +275,7 @@ class _Brief:
             rows.append([_id(cn.id), cn.name, f"{_id(cn.from_)} → {_id(cn.to)}",
                          cn.kind + (f", {cn.medium}" if cn.medium else ""),
                          _id(it.id) if it else "",
-                         f"{len(on_subject)} on the component, {len(cn.effects)} in total" if cn.effects else "none",
+                         (f"{len(cn.effects)}, {len(on_subject)} of them on the component" if cn.effects else "none"),
                          cn.description])
         out += _table(["connection", "name", "from → to", "kind", "interface of the component", "effects",
                        "description"], rows)
@@ -282,8 +295,9 @@ class _Brief:
                         cyclic[ph].append(r.id)
         rows = []
         for ph in s.phases:
-            reqs = _ids(direct[ph.id]) + ("; through a duty cycle: " + _ids(cyclic[ph.id]) if cyclic[ph.id] else "")
-            rows.append([_id(ph.id), ph.name, ph.category, _written(ph.duration) if ph.duration else "",
+            reqs = "; ".join(x for x in (_ids(direct[ph.id]), "through a duty cycle: " + _ids(cyclic[ph.id])
+                                         if cyclic[ph.id] else "") if x)
+            rows.append([_id(ph.id), ph.name, ph.category, _value(ph.duration) if ph.duration else "",
                          ", ".join(f"{k}: {v}" for k, v in ph.state.items()), reqs or "NONE", ph.description])
         out = ["### Phases", "",
                "A phase is an operating state of the system. The effects of one phase act together.", "",
@@ -326,6 +340,10 @@ class _Brief:
 
     def effects(self) -> list[str]:
         c = self.comp
+        if self.role.name == "analysis-checker" and self.rec["load_cases"]:
+            return ["### Effects on the component", "",
+                    "The loads of each phase are in the load cases below (section \"Load-case plan\"), with their "
+                    "effect ids. The plan reviewer checks the load cases against the effects of the phases.", ""]
         out = ["### Effects on the component, phase by phase", "",
                f"Each row is one effect on {_id(c.element)}: what a connection does to the component in the phase. "
                "\"from\" is the expression that gives the value: its names are in the table of the named numbers, "
@@ -355,7 +373,7 @@ class _Brief:
         out += _table(["name", "value", "expression", "basis", "source", "title and note", "used by"],
                       [[_id(x.name), x.display, x.expr or "", x.basis, x.source or ("NO SOURCE" if not x.expr else ""),
                         x.title + (f". Note: {x.note}" if x.note else ""),
-                        _ids(self.used_by.get(x.name, []), 6) or "nothing"] for x in system])
+                        _ids(self.used_by.get(x.name, []), 4) or "nothing"] for x in system])
         out += ["", "Numbers that the requirements state. A number of a requirement is a claim; the rules compare it "
                 "with the context when it has a role or a check.", ""]
         rows = []
@@ -364,7 +382,7 @@ class _Brief:
             chk = (f"{x.name} {prm.check.relation} {prm.check.against}"
                    + (f" ({_c(prm.check.why)})" if prm.check.why else "")) if prm.check else ""
             rows.append([_id(x.name), x.display, _id(x.origin), prm.role or "", chk,
-                         _ids(self.used_by.get(x.name, []), 6) or "nothing"])
+                         _ids(self.used_by.get(x.name, []), 4) or "nothing"])
         out += _table(["name", "value", "stated by", "role", "explicit check", "used by"], rows)
         out += ["", "Material properties as names of expressions: "
                 + "; ".join(f"{_id(x.name)} = {x.display}" for x in material) + ".", ""]
@@ -374,7 +392,7 @@ class _Brief:
         c, geo = self.comp, self.geo or {}
         out = ["### Component", "",
                f"{_id(c.id)}: {_c(c.name)}, drawing {_c(c.drawing) or 'not given'}, material {_id(c.material)}, "
-               f"stress-free at {_written(c.reference_temperature)}, CAD file `{self.p.cad_path(c.id)}`.", "",
+               f"stress-free at {_value(c.reference_temperature)}, CAD file `{self.p.cad_path(c.id)}`.", "",
                _c(c.description), ""]
         if c.notes:
             out += [f"Notes: {_c(c.notes)}", ""]
@@ -386,8 +404,9 @@ class _Brief:
                 f"{len(g.get('faces', []))} face(s)" if g.get("faces") else "",
                 f"area {_show(g.get('area'), 'm^2')}" if g.get("area") else "",
                 f"radius {_show(g.get('radius'), 'm')}" if g.get("radius") else "") if x)
-            rows.append([_id(fid), f.description, measured or ("" if geo else "not measured")])
-        out += ["Features (named sets of CAD faces):", "", *_table(["feature", "description", "geometry stage"], rows), ""]
+            rows.append([_id(fid), f.description, measured] if geo else [_id(fid), f.description])
+        out += ["Features (named sets of CAD faces" + ("" if geo else "; the geometry stage has not measured them") + "):",
+                "", *_table(["feature", "description", "measured"] if geo else ["feature", "description"], rows), ""]
         out += ["Interfaces (how the component realizes a connection; the role says what the faces do: `wetted` "
                 "takes pressure and fluid temperature, `seat` takes forces, moments and supports, `bolts`, "
                 "`external`):", ""]
@@ -399,17 +418,17 @@ class _Brief:
         if c.scls:
             ok = geo.get("scls", {})
             out += ["Stress classification lines (straight lines through a wall; the criteria at `scls` use them):", ""]
-            out += _table(["line", "description", "start → end", "geometry stage"],
-                          [[_id(s.id), s.description, f"{_show(list(s.start), 'm')} → {_show(list(s.end), 'm')}",
-                            ("ok" if ok[s.id].get("ok") else f"PROBLEM: {ok[s.id].get('message', '')}") if s.id in ok
-                            else ""] for s in c.scls])
+            out += _table(["line", "description", "start → end"] + (["geometry stage"] if ok else []),
+                          [[_id(s.id), s.description, f"{_show(list(s.start), 'm')} → {_show(list(s.end), 'm')}"]
+                           + ([("ok" if ok[s.id].get("ok") else f"PROBLEM: {ok[s.id].get('message', '')}")
+                               if s.id in ok else ""] if ok else []) for s in c.scls])
             out.append("")
         if c.hand_calcs and "hand_calc_specs" not in self.role.sections:
             out += ["Hand-calculation models of the component: "
                     + "; ".join(f"{_id(h.id)} ({h.model}: {_c(h.title)})" for h in c.hand_calcs) + ".", ""]
         if c.flow is not None:
             out += [f"Flow domain: {_c(c.flow.description)} Fluid: "
-                    + ", ".join(f"{k} = {_written(v, self.names)}" for k, v in c.flow.fluid.items()) + ".", ""]
+                    + ", ".join(f"{k} = {_value(v, self.names)}" for k, v in c.flow.fluid.items()) + ".", ""]
         return out
 
     def hand_calc_specs(self) -> list[str]:
@@ -425,12 +444,12 @@ class _Brief:
                 f"analysis types: {', '.join(h.when.analysis)}" if h.when.analysis else "",
                 f"needs the loads: {', '.join(h.when.needs)}" if h.when.needs else "",
                 f"phases: {_ids(h.when.phases)}" if h.when.phases else "") if x) or "any load case"
-            inputs = "; ".join(f"{k} = {_written(v, self.names)}" for k, v in h.inputs.items())
+            inputs = "; ".join(f"{k} = {_value(v, self.names)}" for k, v in h.inputs.items())
             out.append(f"- {_id(h.id)} [model `{h.model}`] **{_c(h.title)}.** {_c(h.description)} Applies to: {when}. "
                        f"Inputs: {inputs}.")
             for cmp in h.compare:
                 band = (f"band {cmp.band[0]:g} to {cmp.band[1]:g}" if cmp.band else
-                        f"tolerance {_written(cmp.tolerance, self.names)}" if cmp.tolerance else "the default band")
+                        f"tolerance {_value(cmp.tolerance, self.names)}" if cmp.tolerance else "the default band")
                 out.append(f"  - compares `{cmp.output}` with `{cmp.with_}`, {band}. Why: {_c(cmp.why) or 'not given'}")
         return out + [""]
 
@@ -443,9 +462,9 @@ class _Brief:
             factor = "" if c.factor == 1.0 else f"{c.factor:g} × "
         if c.allowable:
             v = getattr(self.p.material_of(), c.allowable, None)
-            limit = f"{c.allowable} of the material" + (f" ({_written(v)})" if isinstance(v, model.Value) else "")
+            limit = f"{c.allowable} of the material" + (f" ({_value(v)})" if isinstance(v, model.Value) else "")
         else:
-            limit = _written(c.limit, self.names)
+            limit = _value(c.limit, self.names)
         return (f"`{c.id or 'criterion'}`: {factor}`{c.key()}` {c.comparator} {limit}"
                 + (f". Note: {_c(c.note)}" if c.note else ""))
 
@@ -481,12 +500,11 @@ class _Brief:
                     f"- Rationale of the specification: {_c(r.rationale) or 'not given'}"]
             if r.parameters:
                 out.append("- Numbers it states: " + "; ".join(
-                    f"{_id(k)} = {_written(v_, self.names)}" + (f" (role `{v_.role}`)" if v_.role else "")
+                    f"{_id(k)} = {_value(v_, self.names)}" + (f" (role `{v_.role}`)" if v_.role else "")
                     + (f" [check: {k} {v_.check.relation} {v_.check.against}]" if v_.check else "")
                     + (f" [note: {_c(v_.note)}]" if v_.note else "") for k, v_ in r.parameters.items()) + ".")
             out.append(f"- Applies to: {applies}.")
-            out.append("- Criteria: " + ("NONE (the pipeline cannot verify this requirement by analysis)" if not crit
-                                         else "") + ("" if not crit else ""))
+            out.append("- Criteria:" + ("" if crit else " NONE (the pipeline gets no margin from this requirement)"))
             out += [f"  - {x}" for x in crit]
             if verdict:
                 out.append(f"-{verdict}")
@@ -496,13 +514,13 @@ class _Brief:
     def policy(self) -> list[str]:
         pol = self.p.policy
         out = ["### Factor policy", "",
-               f"{_id(pol.id)}: {_c(pol.name)}. Source: {_c(pol.source) or 'NOT GIVEN'}." + (f" {_c(pol.note)}" if pol.note else ""),
+               f"{_id(pol.id)}: {_s(pol.name)}. Source: {_s(pol.source) or 'NOT GIVEN'}." + (f" {_c(pol.note)}" if pol.note else ""),
                ""]
         out += _table(["factor", "value", "source", "note"],
                       [[f"`{k}`", f"{f.value:g}", f.source, f.note] for k, f in pol.factors.items()])
         out += ["", f"Accepted ratio analysis / hand calculation: {pol.handcalc_band[0]:g} to {pol.handcalc_band[1]:g}. "
                 f"A result with a discretization uncertainty above {_pct(pol.max_uncertainty)} is not converged. A phase "
-                f"whose temperatures differ from the stress-free temperature by more than {_written(pol.thermal_delta)} "
+                f"whose temperatures differ from the stress-free temperature by more than {_value(pol.thermal_delta)} "
                 f"needs a thermal analysis.", ""]
         return out
 
@@ -511,20 +529,20 @@ class _Brief:
         props = [("E", m.E), ("density", m.rho), ("thermal expansion", m.alpha), ("thermal conductivity", m.k),
                  ("specific heat", m.cp), ("yield strength", m.yield_strength), ("ultimate strength", m.ultimate_strength)]
         out = ["### Material", "",
-               f"{_id(m.id)}: {_c(m.name)}, specification {_c(m.spec) or 'not given'}. Source of the numbers: "
-               f"{_c(m.source) or 'NOT GIVEN'}." + (f" Note: {_c(m.note)}" if m.note else ""), "",
-               "Properties: " + "; ".join(f"{k} = {_written(v)}" for k, v in props if v is not None)
+               f"{_id(m.id)}: {_s(m.name)}, specification {_s(m.spec) or 'not given'}. Source of the numbers: "
+               f"{_s(m.source) or 'NOT GIVEN'}." + (f" Note: {_c(m.note)}" if m.note else ""), "",
+               "Properties: " + "; ".join(f"{k} = {_value(v)}" for k, v in props if v is not None)
                + f"; Poisson's ratio = {m.nu:g}."
-               + (f" The properties apply at {_written(m.properties_temperature)}." if m.properties_temperature else "")
-               + (f" Allowed service temperature: {_written(m.service_temperature[0])} to "
-                  f"{_written(m.service_temperature[1])}." if m.service_temperature else "")
+               + (f" The properties apply at {_value(m.properties_temperature)}." if m.properties_temperature else "")
+               + (f" Allowed service temperature: {_value(m.service_temperature[0])} to "
+                  f"{_value(m.service_temperature[1])}." if m.service_temperature else "")
                + (" Compatibility: " + ", ".join(f"{k}: {v}" for k, v in m.compatibility.items()) + "."
                   if m.compatibility else " Compatibility: not given."), ""]
         if m.fatigue:
             f = m.fatigue
-            out += [f"Fatigue: {f.model}, sigma_f = {_written(f.sigma_f)}, b = {f.b:g}, mean stress: {f.mean_stress}"
-                    + (f", endurance limit {_written(f.endurance_limit)}" if f.endurance_limit else "")
-                    + f". Source: {_c(f.source) or 'NOT GIVEN'}." + (f" Note: {_c(f.note)}" if f.note else ""), ""]
+            out += [f"Fatigue: {f.model}, sigma_f = {_value(f.sigma_f)}, b = {f.b:g}, mean stress: {f.mean_stress}"
+                    + (f", endurance limit {_value(f.endurance_limit)}" if f.endurance_limit else "")
+                    + f". Source: {_s(f.source) or 'NOT GIVEN'}." + (f" Note: {_c(f.note)}" if f.note else ""), ""]
         return out
 
     def geometry(self) -> list[str]:
@@ -677,8 +695,10 @@ class _Brief:
                 hidden += 1
                 continue
             where = v.near + (f" at {_show(v.location, 'm')}" if v.location else "")
+            unc = getattr(v, "uncertainty_abs", None)
             rows.append([f"`{key}`", _show(v.value, v.unit), v.status.upper() if v.status != "converged" else v.status,
-                         _pct(v.uncertainty), _series(v.per_level, v.unit) if v.per_level else "",
+                         f"± {_show(unc, v.unit)}" if unc is not None else _pct(v.uncertainty),
+                         _series(v.per_level, v.unit) if v.per_level else "",
                          _show(v.extrapolated, v.unit), _num(v.order), where,
                          (v.method if v.method != "fe" else "") + (f" {v.note}" if v.note else "")])
         return rows, hidden
