@@ -32,7 +32,8 @@ from skfem import (Basis, BilinearForm, ElementTetP1, ElementTetP2, ElementTriP1
                    ElementVector, FacetBasis, Functional, LinearForm)
 from skfem.helpers import ddot, dot, grad, sym_grad, trace
 
-from feacore.case import ELASTICITY_FIELDS, HEAT_FIELDS, Case, CaseError, QoI, as_field
+from feacore.case import (ELASTICITY_FIELDS, FIELD_MATCH_TOL, HEAT_FIELDS, Case, CaseError, QoI, as_field,
+                          read_temperature_field)
 from feacore.solver import _skfem_assembly as fast
 from feacore.solver._skfem_locate import Locator
 from feacore.solver._skfem_mesh import MeshData, MeshError, read_mesh
@@ -376,7 +377,7 @@ def _assemble_elasticity(md: _Model):
 
     # body forces and thermal loads
     dT = np.zeros_like(c)
-    for ld in case.loads:
+    for i_ld, ld in enumerate(case.loads):
         E = md.cells_of(ld.group)
         mask = np.zeros(md.nel, dtype=bool)
         mask[E] = True
@@ -385,6 +386,8 @@ def _assemble_elasticity(md: _Model):
                 gi = np.zeros_like(c)
                 gi[mask] = _eval(ld.value[i], md.xq[:, mask])
                 f[md.split[i]] += _f_scalar.assemble(sb, c=c, g=gi)
+        elif ld.type == "temperature" and isinstance(ld.value, dict):   # a field file (a heat solution)
+            dT[mask] = _field_at_qp(md, ld, i_ld, E)[mask] - md.a.T_ref
         elif ld.type == "temperature":
             dT[mask] = _eval(ld.value, md.xq[:, mask]) - md.a.T_ref
     sth = _qp(sb, md.beta) * dT
@@ -458,6 +461,42 @@ def _assemble_elasticity(md: _Model):
             cons.add(md.split[0][on_axis], 0.0, None)
             md.warnings.append(f"info: axisymmetric: u_r = 0 imposed on {len(on_axis)} nodes on the axis")
     return K, f, cons
+
+
+def _field_at_qp(md: _Model, ld, i_ld: int, cells: np.ndarray) -> np.ndarray:
+    """A temperature load given as a field file (``value = {"field": path}``, see feacore/case.py) ->
+    temperatures at the quadrature points, (nel, nqp).
+
+    The file's values go to the nodes of the scalar solution space by nearest point. Every node of the
+    load's cells must have a field point within ``FIELD_MATCH_TOL`` of the bounding-box diagonal; if one
+    has none, the field is not a field on this mesh and order, and that is a ``CaseError``, not an
+    interpolation between meshes. The nodal values are then interpolated with the scalar basis, so the
+    load is the FE interpolant of the field: on straight-sided cells it reproduces a polynomial of the
+    solution order exactly, on curved (isoparametric) cells a linear field."""
+    from scipy.spatial import cKDTree
+
+    path = md.case.file_path(ld.value["field"])
+    tag = f"loads[{i_ld}] temperature field {path.name!r}"
+    xf, Tf = read_temperature_field(path, md.dim)
+    need = np.unique(md.sb.element_dofs[:, cells])
+    dist, j = cKDTree(xf).query(md.sb.doflocs[:, need].T)
+    tol = FIELD_MATCH_TOL * md.md.bbox_diag
+    miss = dist > tol
+    if miss.any():
+        where = f" on the cell group {ld.group!r}" if ld.group not in (None, "*") else ""
+        raise CaseError(
+            f"{tag} does not belong to this mesh: {int(miss.sum())} of the {len(need)} nodes{where} have no field "
+            f"point within {tol:.3g} ({FIELD_MATCH_TOL:g} of the bounding-box diagonal); the largest distance is "
+            f"{float(dist.max()):.3g}. The file has {len(xf)} points and the analysis (order {md.order}) has "
+            f"{md.sb.N} nodes. Give the temperatures at the nodes of this mesh and order: a heat solve on the same "
+            f"mesh and order has them (result.nodal('T')).")
+    Tn = np.zeros(md.sb.N)
+    Tn[need] = Tf[j]
+    if len(need):
+        md.warnings.append(f"info: {tag}: {len(xf)} points mapped to {len(need)} nodes (largest distance "
+                           f"{float(dist.max()):.1e}), T from {float(Tn[need].min()):.6g} to "
+                           f"{float(Tn[need].max()):.6g}")
+    return np.asarray(md.sb.interpolate(Tn))
 
 
 def _symmetry_axis(md: _Model, F, group, i_bc) -> int:

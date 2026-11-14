@@ -48,6 +48,19 @@ elasticity: body_force (vector, force / volume), temperature (T field for therma
             alpha * (T - analysis.T_ref))
 heat:       source (volumetric heat source / Poisson right-hand side)
 
+The ``value`` of a temperature load is a number, an expression in x, y, z, or a temperature field
+from a file: ``{"field": "<path to an .npz file>"}``. This is how the temperatures of a
+heat-conduction solve enter an elasticity case (one-way coupling). The file holds ``x`` (n, dim) node
+coordinates and ``T`` (n,) temperatures; other arrays in it are ignored. A path that is not absolute
+is relative to the folder of the case file (``base_dir``), as the mesh path is. The solver maps the
+values to its own nodes by nearest point. A node of the load's cell group with no field point within
+``FIELD_MATCH_TOL`` (1e-6) of the bounding-box diagonal is a ``CaseError``: the field does not belong
+to this mesh. The solver then interpolates the nodal values with its shape functions, so between the
+nodes the temperature is the FE interpolant, not the exact field. A heat solve on the same mesh and
+order has the same nodes: ``write_temperature_field(path, *heat_result.nodal("T"))``. A field at the
+nodes of a quadratic solve also serves an order-1 analysis of the same mesh (its nodes are the
+corners); the reverse is refused. skfem backend only: the ccx backend refuses a field file.
+
 flow (incompressible, steady by default; OpenFOAM backend):
   velocity_inlet  velocity ``value``: a vector [ux, uy(, uz)] (entries may be expressions) or a scalar
                   speed along the inward normal
@@ -166,6 +179,10 @@ STRESS_LIKE = tuple(f for f in ELASTICITY_FIELDS if f not in DISPLACEMENT_LIKE) 
 
 Value = Union[float, str, list]
 
+# A temperature load from a file: a field point counts as a node of the solver when it is within this
+# fraction of the mesh's bounding-box diagonal (see "Loads" in the module docstring).
+FIELD_MATCH_TOL = 1e-6
+
 
 class CaseError(ValueError):
     """Raised for an invalid case description."""
@@ -209,7 +226,7 @@ class BC:
 @dataclass
 class Load:
     type: str
-    value: Value
+    value: Value | dict                 # temperature: also {"field": "<.npz with x and T>"}, see module doc
     group: str = "*"
 
 
@@ -255,6 +272,14 @@ class Case:
     # ---- paths
     def mesh_path(self) -> Path:
         p = Path(self.mesh)
+        if not p.is_absolute() and self.base_dir is not None:
+            p = Path(self.base_dir) / p
+        return p
+
+    def file_path(self, name: str | Path) -> Path:
+        """A file the case refers to (a temperature field): a path that is not absolute is relative to
+        ``base_dir``, the folder of the case file, as the mesh path is."""
+        p = Path(name)
         if not p.is_absolute() and self.base_dir is not None:
             p = Path(self.base_dir) / p
         return p
@@ -405,6 +430,13 @@ class Case:
                 errs.append(f"{tag}: value must be a list of {ncomp} components")
             elif l.type == "temperature" and self.materials and all(m.alpha == 0 for m in self.materials.values()):
                 errs.append(f"{tag}: thermal load but every material has alpha = 0")
+            if isinstance(l.value, dict) and l.type in LOAD_TYPES[a.physics] and l.type != "body_force":
+                if l.type != "temperature":
+                    errs.append(f"{tag}: value must be a number or an expression (a field file is for a "
+                                f"temperature load only)")
+                elif set(l.value) != {"field"} or not isinstance(l.value["field"], str) or not l.value["field"].strip():
+                    errs.append(f'{tag}: a field value must be {{"field": "<path to an .npz file with x (n, dim) '
+                                f'and T (n,)>"}}, got {l.value!r}')
         fields = {"elasticity": ELASTICITY_FIELDS, "heat": HEAT_FIELDS, "flow": FLOW_FIELDS,
                   "compressible": COMPRESSIBLE_FIELDS}[a.physics]
         names = set()
@@ -558,4 +590,59 @@ def as_field(value: float | str, x, y, z=None) -> np.ndarray:
     """Scalar or expression -> array of values at the given coordinates."""
     if isinstance(value, str):
         return eval_expr(value, x, y, z)
+    if isinstance(value, dict):
+        raise CaseError(f"a field file ({value!r}) is not a number or an expression: only a temperature load "
+                        f"of the skfem backend takes one (it maps the field to its nodes)")
     return np.full(np.shape(x), float(value))
+
+
+# --------------------------------------------------------------------------- temperature field files
+
+
+def write_temperature_field(path: str | Path, x, T) -> Path:
+    """Write a temperature field for ``Load(type="temperature", value={"field": path})``: an .npz file
+    with ``x`` (n, dim) node coordinates and ``T`` (n,) temperatures. For a heat result of the same
+    mesh and order: ``write_temperature_field(path, *result.nodal("T"))``."""
+    x, T = np.asarray(x, dtype=float), np.asarray(T, dtype=float).ravel()
+    if x.ndim != 2 or x.shape[1] not in (2, 3) or len(x) != len(T) or len(T) == 0:
+        raise CaseError(f"a temperature field needs x (n, 2 or 3) and T (n,), got x {x.shape} and T {T.shape}")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:          # an open file: np.savez would add ".npz" to another suffix
+        np.savez(f, x=x, T=T)
+    return path
+
+
+def read_temperature_field(path: str | Path, dim: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Read a temperature field file: (x (n, dim), T (n,)). Every problem is a ``CaseError`` that names
+    the file. With ``dim`` = 2, a file with three coordinates is accepted when its third one is constant
+    (a 2D mesh lies in the xy-plane) and comes back with two."""
+    path = Path(path)
+    if not path.is_file():
+        raise CaseError(f"temperature field file not found: {str(path)!r}")
+    try:
+        with np.load(path, allow_pickle=False) as z:
+            names = list(getattr(z, "files", []))
+            if "x" not in names or "T" not in names:
+                raise CaseError(f"temperature field {str(path)!r}: an .npz file with the arrays x (n, dim) and "
+                                f"T (n,) is required; it has {names or 'no named arrays'}")
+            x, T = np.asarray(z["x"], dtype=float), np.asarray(z["T"], dtype=float)
+    except CaseError:
+        raise
+    except Exception as e:  # noqa: BLE001  numpy raises several kinds for a file that is not an .npz
+        raise CaseError(f"cannot read temperature field {str(path)!r}: {type(e).__name__}: {e}") from e
+    if T.ndim == 2 and T.shape[1] == 1:
+        T = T[:, 0]
+    if x.ndim != 2 or x.shape[1] not in (2, 3) or T.ndim != 1 or len(x) != len(T) or len(T) == 0:
+        raise CaseError(f"temperature field {str(path)!r}: need x (n, 2 or 3) and T (n,), got x {x.shape} and "
+                        f"T {T.shape}")
+    if not (np.all(np.isfinite(x)) and np.all(np.isfinite(T))):
+        raise CaseError(f"temperature field {str(path)!r}: x or T holds values that are not finite")
+    if dim is not None and x.shape[1] != dim:
+        span = float(np.ptp(x[:, :2], axis=0).max())
+        if dim == 2 and float(np.ptp(x[:, 2])) <= 1e-9 * max(span, 1e-300):
+            x = x[:, :2]
+        else:
+            raise CaseError(f"temperature field {str(path)!r}: its points have {x.shape[1]} coordinates but the "
+                            f"analysis is {dim}D")
+    return np.ascontiguousarray(x), T

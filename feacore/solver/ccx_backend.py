@@ -62,6 +62,11 @@ def solve(case: Case, **options) -> "CcxResult":
     t0 = time.perf_counter()
     case.check()
     a = case.analysis
+    if any(ld.type == "temperature" and isinstance(ld.value, dict) for ld in case.loads):
+        raise NotImplementedError(
+            "ccx backend: a temperature load from a field file (value = {'field': path}) is not implemented. "
+            "The skfem backend maps such a field to its nodes; give the ccx backend the temperature as a "
+            "number or an expression")
     if a.formulation == "axisymmetric" and a.order == 1:
         raise NotImplementedError(
             "ccx backend: axisymmetric order 1 (CAX3) is refused: CalculiX's 2-degree wedge "
