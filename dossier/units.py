@@ -172,10 +172,15 @@ def display(q: pint.Quantity, sig: int = 4) -> str:
         choices = next((c for base, c in _DISPLAY if ureg(base).dimensionality == d), ())
     if not choices:
         return fmt(q, None, sig)
+    if choices == ("K",):
+        sig = max(sig, 5)                   # 293.15 K, not 293.1 K
     big = max((abs(x) for x in _components(q.to(choices[0]))), default=0.0)
     for u in choices:
         v = big * float(Q(1.0, choices[0]).to(u).magnitude)
-        if big == 0.0 or 0.1 <= v < 10000:
+        if big == 0.0 or 0.1 <= v < 1000:
+            return fmt(q, u, sig)
+    for u in choices:                       # nothing reads well: the first unit that is not tiny
+        if big * float(Q(1.0, choices[0]).to(u).magnitude) >= 0.1:
             return fmt(q, u, sig)
     return fmt(q, choices[0], sig)
 
