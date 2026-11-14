@@ -1,0 +1,182 @@
+# The component under verification. EXAMPLE DATA.
+# CAD frame: x = flow direction (inlet at -x), z = stem axis (up), origin at the ball centre. Metres.
+id: CMP-MOV-BODY
+element: EL-MOV
+name: Main oxidizer valve body
+drawing: MOV-100-001 rev A
+description: >
+  One-piece welded body of a top-entry ball valve with an extended neck. A vertical shell holds the ball
+  cavity. Two nozzles with bolted flanges carry the flow bore. The neck moves the actuator away from the
+  cold body, and its top is the actuator mounting face. geometry.step is made by make_geometry.py.
+cad: {file: geometry.step, length_unit: m}
+material: MAT-316L
+reference_temperature: 293.15 K
+
+features:
+  FT-INLET-BORE:        {description: "Flow bore of the inlet nozzle, diameter 25 mm.", select: {kind: cylinder, radius: 0.0125, near: [-0.051, 0, 0], within: 0.03}, expect: 1}
+  FT-OUTLET-BORE:       {description: "Flow bore of the outlet nozzle, diameter 25 mm.", select: {kind: cylinder, radius: 0.0125, near: [0.051, 0, 0], within: 0.03}, expect: 1}
+  FT-SEAT-IN-WALL:      {description: "Wall of the upstream seat pocket, diameter 32 mm.", select: {kind: cylinder, radius: 0.016, near: [-0.0225, 0, 0], within: 0.02}, expect: 1}
+  FT-SEAT-OUT-WALL:     {description: "Wall of the downstream seat pocket, diameter 32 mm.", select: {kind: cylinder, radius: 0.016, near: [0.0225, 0, 0], within: 0.02}, expect: 1}
+  FT-SEAT-IN-SHOULDER:  {description: "Shoulder of the upstream seat pocket. The upstream seat ring sits on it.", select: {kind: plane, normal: [1, 0, 0], near: [-0.027, 0.014, 0], within: 0.002}, expect: 1}
+  FT-SEAT-OUT-SHOULDER: {description: "Shoulder of the downstream seat pocket. The downstream seat ring sits on it.", select: {kind: plane, normal: [-1, 0, 0], near: [0.027, 0.014, 0], within: 0.002}, expect: 1}
+  FT-CAVITY-WALL:       {description: "Wall of the ball cavity, diameter 44 mm.", select: {kind: cylinder, radius: 0.022, axis: [0, 0, 1]}, expect: 1}
+  FT-CAVITY-FLOOR:      {description: "Floor of the ball cavity with its corner radius.", select: {any: [{kind: plane, normal: [0, 0, 1], near: [0, 0, -0.022], within: 0.002}, {kind: torus, near: [0.021, 0, -0.021], within: 0.003}]}, expect: 2}
+  FT-CAVITY-ROOF:       {description: "Roof of the ball cavity, around the stem bore.", select: {kind: plane, normal: [0, 0, -1], near: [0.015, 0, 0.034], within: 0.002}, expect: 1}
+  FT-STEM-BORE:         {description: "Stem bore through the neck, diameter 16 mm.", select: {kind: cylinder, radius: 0.008, axis: [0, 0, 1]}, expect: 1}
+  FT-INLET-FLANGE-FACE: {description: "Mating face of the inlet flange.", select: {kind: plane, normal: [-1, 0, 0], at: xmin}, expect: 1}
+  FT-OUTLET-FLANGE-FACE: {description: "Mating face of the outlet flange.", select: {kind: plane, normal: [1, 0, 0], at: xmax}, expect: 1}
+  FT-INLET-BOLT-HOLES:  {description: "Six bolt holes of the inlet flange.", select: {kind: cylinder, radius: 0.0033, box: [[-0.076, -0.05, -0.05], [-0.062, 0.05, 0.05]]}, expect: 6}
+  FT-OUTLET-BOLT-HOLES: {description: "Six bolt holes of the outlet flange.", select: {kind: cylinder, radius: 0.0033, box: [[0.062, -0.05, -0.05], [0.076, 0.05, 0.05]]}, expect: 6}
+  FT-PAD-TOP:           {description: "Actuator mounting face at the top of the neck.", select: {kind: plane, normal: [0, 0, 1], at: zmax}, expect: 1}
+  FT-PAD-HOLES:         {description: "Four bolt holes of the actuator mounting face.", select: {kind: cylinder, radius: 0.00275}, expect: 4}
+  FT-NECK:              {description: "Outer surface of the neck, diameter 24 mm.", select: {kind: cylinder, radius: 0.012, axis: [0, 0, 1]}, expect: 1}
+  FT-NECK-ROOT-FILLET:  {description: "Fillet between the neck and the roof of the shell, radius 3 mm.", select: {kind: torus, near: [0.013, 0, 0.043], within: 0.004}, expect: 1}
+
+interfaces:
+  - id: INT-INLET
+    name: Inlet flange and the pressure boundary upstream of the downstream seat
+    connection: IF-PUMP-MOV
+    joint: bolted_flange
+    description: Six M6 bolts and a spiral-wound gasket join the inlet flange to the pump discharge flange. When the ball is closed, the inlet pressure acts in the inlet bore and in the cavity, because the ball floats and the downstream seat seals.
+    features:
+      wetted: [FT-INLET-BORE, FT-SEAT-IN-WALL, FT-SEAT-IN-SHOULDER, FT-CAVITY-WALL, FT-CAVITY-FLOOR, FT-CAVITY-ROOF, FT-SEAT-OUT-WALL]
+      seat: [FT-INLET-FLANGE-FACE]
+      bolts: [FT-INLET-BOLT-HOLES]
+  - id: INT-OUTLET
+    name: Outlet flange and the pressure boundary downstream of the seat
+    connection: IF-MOV-INJ
+    joint: bolted_flange
+    description: Six M6 bolts and a spiral-wound gasket join the outlet flange to the injector feed line.
+    features:
+      wetted: [FT-OUTLET-BORE, FT-SEAT-OUT-SHOULDER]
+      seat: [FT-OUTLET-FLANGE-FACE]
+      bolts: [FT-OUTLET-BOLT-HOLES]
+  - id: INT-INTERNALS
+    name: Stem bore and downstream seat pocket
+    connection: IF-INT-MOV
+    joint: contact
+    description: The downstream seat ring pushes on the shoulder of its pocket. The stem bore holds gas at the cavity pressure.
+    features:
+      wetted: [FT-STEM-BORE]
+      seat: [FT-SEAT-OUT-SHOULDER]
+  - id: INT-ACT
+    name: Actuator mounting face
+    connection: IF-ACT-MOV
+    joint: bolted_flange
+    description: Four M5 bolts hold the actuator adapter on the mounting face.
+    features:
+      seat: [FT-PAD-TOP]
+      bolts: [FT-PAD-HOLES]
+  - id: INT-ENV
+    name: Outer surfaces
+    connection: IF-ENV-MOV
+    description: Every surface that no other interface uses is in contact with the ambient air.
+    features:
+      external: ["*"]
+
+# Stress classification lines: straight lines through a wall. The section stresses along them do not
+# depend on the mesh at a sharp edge, and they are what the hand calculations predict.
+scls:
+  - {id: SCL-SHELL, description: "Through the shell wall, at the side between the nozzles, at the height of the nozzle axis.", start: [0, 0.022, 0], end: [0, 0.028, 0]}
+  - {id: SCL-NOZZLE-OUT, description: "Through the wall of the outlet nozzle, between the shell and the flange.", start: [0.048, 0, 0.0125], end: [0.048, 0, 0.020]}
+  - {id: SCL-FLOOR, description: "Through the floor of the cavity, at its centre.", start: [0, 0, -0.022], end: [0, 0, -0.030]}
+  - {id: SCL-ROOF, description: "Through the roof of the cavity, between the stem bore and the cavity wall.", start: [0.018, 0, 0.034], end: [0.018, 0, 0.042]}
+  - {id: SCL-NECK-ROOT, description: "Through the neck wall above the root fillet, on the side that the lateral actuator load puts in tension.", start: [0, -0.008, 0.052], end: [0, -0.012, 0.052]}
+
+# Hand calculations: closed-form models of regions of the body. Each is a sanity check of the analysis.
+hand_calcs:
+  - id: HC-SHELL-HOOP
+    model: thick_cylinder_pressure
+    title: Hoop stress in the shell
+    description: The shell as a long thick-walled cylinder with internal pressure.
+    when: {analysis: [static_structural], needs: ["pressure@INT-INLET"]}
+    inputs:
+      p: {expr: 'load("INT-INLET", "pressure")'}
+      r_i: 22 mm
+      r_o: 28 mm
+    compare:
+      - output: hoop_mean
+        with: "max_principal.membrane@SCL-SHELL"
+        band: [0.6, 1.5]
+        why: The mean hoop stress of a cylinder follows from equilibrium. The nozzle openings, the floor and the roof change the stress at this section, so the band is wide.
+  - id: HC-NOZZLE-HOOP
+    model: thick_cylinder_pressure
+    title: Hoop stress in the outlet nozzle
+    description: The outlet nozzle as a long thick-walled cylinder with internal pressure.
+    when: {analysis: [static_structural], needs: ["pressure@INT-OUTLET"]}
+    inputs:
+      p: {expr: 'load("INT-OUTLET", "pressure")'}
+      r_i: 12.5 mm
+      r_o: 20 mm
+    compare:
+      - output: hoop_mean
+        with: "max_principal.membrane@SCL-NOZZLE-OUT"
+        band: [0.7, 1.4]
+        why: The mean hoop stress of a cylinder follows from equilibrium. The section is between the shell and the flange, which stiffen the nozzle.
+  - id: HC-FLOOR-PLATE
+    model: circular_plate_pressure
+    title: Bending stress in the cavity floor
+    description: The cavity floor as a circular plate with uniform pressure.
+    when: {analysis: [static_structural], needs: ["pressure@INT-INLET"]}
+    inputs:
+      p: {expr: 'load("INT-INLET", "pressure")'}
+      a: 22 mm
+      t: 8 mm
+    compare:
+      - output: sigma_center_clamped
+        with: "max_principal.membrane_bending@SCL-FLOOR"
+        band: [0.8, 2.6]
+        why: The shell wall gives the floor an edge restraint between clamped and simply supported. The stress at the centre of a simply supported plate is 2.5 times that of a clamped plate.
+  - id: HC-NECK-BENDING
+    model: tube_bending_axial
+    title: Bending of the neck by the actuator inertia load
+    description: The neck as a cantilever tube. The lateral inertia force of the actuator bends it, and the stem pressure force pulls it.
+    when: {phases: [PH-FIRE], needs: ["force@INT-ACT", "moment@INT-ACT"]}
+    inputs:
+      M: {expr: 'abs(load("INT-ACT", "moment")[0]) + abs(load("INT-ACT", "force")[1]) * 76 * mm', unit: "N*m"}
+      F: {expr: 'load("INT-ACT", "force")[2]', unit: N}
+      r_o: 12 mm
+      r_i: 8 mm
+      r_eval: 10 mm
+    compare:
+      - output: sigma_tension
+        with: "szz.membrane@SCL-NECK-ROOT"
+        band: [0.75, 1.3]
+        why: Beam theory gives the axial stress at the middle of the wall. The section is 76 mm below the mounting face. The pressure in the stem bore and the temperature change along the neck add little axial stress there.
+  - id: HC-ACT-TEMP
+    model: fin_convective_tip
+    title: Temperature of the actuator mounting face
+    description: The neck as a fin between the cold shell and the mounting pad. The pad loses heat to the air as a lumped tip.
+    when: {analysis: [thermal_steady], phases: [PH-FIRE]}
+    inputs:
+      T_base: {expr: t_lox}
+      T_inf: {expr: t_amb}
+      h: {expr: h_amb}
+      k: {expr: k_th}
+      r_o: 12 mm
+      r_i: 8 mm
+      L: 78 mm
+      A_tip: 4476 mm^2
+    compare:
+      - output: T_tip
+        with: "temperature.min@INT-ACT"
+        tolerance: 15 K
+        why: The fin model has one dimension and takes the neck base at the LOX temperature. The roof of the shell also gains heat from the air, so the analysis gives a warmer mounting face.
+  - id: HC-PRESSURE-DROP
+    model: pressure_drop_minor_loss
+    title: Pressure drop of the open valve
+    description: Friction in the flow bore plus a loss coefficient for the steps at the seat pockets and the ball.
+    when: {analysis: [flow]}
+    inputs:
+      mdot: {expr: mdot_ox}
+      rho: {expr: rho_lox}
+      mu: {expr: mu_lox}
+      d: {expr: d_bore}
+      L: 150 mm
+      K: 0.2
+      roughness: 3.2 um
+    compare:
+      - output: dp_total
+        with: "pressure_drop.total@part"
+        band: [0.5, 2.0]
+        why: The loss coefficient of the seat pocket steps is an estimate.

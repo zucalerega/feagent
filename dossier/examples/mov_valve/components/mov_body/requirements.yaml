@@ -1,0 +1,119 @@
+# Requirements of the valve body. EXAMPLE DATA with six deliberate defects (see ../../README.md).
+#   text        the source text of the specification, as written
+#   parameters  the numbers the requirement states. Each is a name that expressions can read (the proof
+#               pressure in system.yaml is `proof_factor * meop`). `role` tells the validation what the
+#               number must cover in the system context; `check` gives an explicit comparison.
+#   criteria    factor x response <= allowable (or >= limit). One load case serves all criteria of a phase.
+document: MOV-SPEC-001 rev B
+requirements:
+  - id: REQ-MOV-001
+    title: Maximum expected operating pressure
+    text: The maximum expected operating pressure (MEOP) of the valve is 10.5 MPa.
+    kind: definition
+    source: "MOV-SPEC-001 rev B, 3.2.1"
+    verification: review
+    parameters:
+      meop: {value: 10.5 MPa, role: meop}
+
+  - id: REQ-MOV-002
+    title: Proof pressure
+    text: The valve body shall withstand a proof pressure of 1.5 times MEOP for 5 minutes at ambient temperature without detrimental deformation.
+    kind: strength
+    source: "MOV-SPEC-001 rev B, 3.2.2"
+    rationale: Each valve gets this test before delivery. General yield of a wall section is detrimental deformation; local yield at an edge is not.
+    parameters:
+      proof_factor: {value: 1.5, role: proof_factor}
+    applies: {phases: [PH-PROOF]}
+    criteria:
+      - {id: yield, quantity: von_mises, measure: membrane_bending, location: scls, comparator: "<=", allowable: yield_strength, factor: 1.0, note: "The proof pressure includes the proof factor."}
+
+  - id: REQ-MOV-003
+    title: Burst pressure
+    text: The valve body shall withstand a burst pressure of 2.5 times MEOP at ambient temperature without rupture.
+    kind: strength
+    source: "MOV-SPEC-001 rev B, 3.2.3"
+    parameters:
+      burst_factor: {value: 2.5, role: burst_factor}
+    applies: {phases: [PH-BURST]}
+    criteria:
+      - {id: ultimate, quantity: von_mises, measure: membrane, location: scls, comparator: "<=", allowable: ultimate_strength, factor: 1.0, note: "The burst pressure includes the burst factor."}
+
+  - id: REQ-MOV-004
+    title: Strength in operation
+    text: The valve body shall have positive margins of safety for the limit loads of all operating phases, with a factor of safety of 1.1 against yield and of 1.4 against ultimate.
+    kind: strength
+    source: "MOV-SPEC-001 rev B, 3.2.4"
+    parameters:
+      yield_factor: {value: 1.1, role: yield_factor}
+      ultimate_factor: {value: 1.4, role: ultimate_factor}
+    applies: {category: operation}
+    criteria:
+      - {id: yield, quantity: von_mises, measure: peak, location: part, comparator: "<=", allowable: yield_strength, factor: yield_factor}
+      - {id: ultimate, quantity: von_mises, measure: membrane_bending, location: scls, comparator: "<=", allowable: ultimate_strength, factor: ultimate_factor}
+
+  - id: REQ-MOV-005
+    title: Fluid temperature range
+    text: The valve shall operate with fluid temperatures from 233 K to 323 K.
+    kind: environment
+    source: "MOV-SPEC-001 rev B, 3.3.1"
+    verification: review
+    parameters:
+      t_fluid_min: {value: 233 K, role: min_temperature}
+      t_fluid_max: {value: 323 K, role: max_temperature}
+
+  - id: REQ-MOV-006
+    title: Pressure cycle life
+    text: The valve body shall withstand 4 times 200 pressure cycles without a fatigue crack.
+    kind: life
+    source: "MOV-SPEC-001 rev B, 3.4.1"
+    parameters:
+      design_cycles:
+        value: 200
+        role: design_cycles
+        check: {relation: ">=", against: n_pressure_cycles, why: "The design number of cycles must cover the pressure cycles of the engine life."}
+      life_factor: {value: 4, role: life_factor}
+    applies: {duty_cycles: [DC-RUN, DC-PROOF, DC-LEAK]}
+    criteria:
+      - {id: damage, quantity: damage, measure: total, location: part, comparator: "<=", limit: 1.0, factor: life_factor, note: "Cumulative damage of the duty cycles of the system context, with the life factor on the number of cycles."}
+
+  - id: REQ-MOV-007
+    title: Temperature of the actuator mounting face
+    text: The temperature of the actuator mounting face shall not be lower than 233 K during steady firing at an ambient temperature of 293 K.
+    kind: thermal
+    source: "MOV-SPEC-001 rev B, 3.3.2"
+    rationale: The seals of the pneumatic actuator have a lower temperature limit of 233 K.
+    parameters:
+      t_act_min: {value: 233 K}
+    applies: {phases: [PH-FIRE]}
+    criteria:
+      - {id: temperature, quantity: temperature, measure: min, location: INT-ACT, comparator: ">=", limit: {expr: t_act_min}}
+
+  - id: REQ-MOV-008
+    title: Pressure drop
+    text: The pressure drop of the open valve shall not be more than 60 kPa at the rated LOX mass flow of 5.3 kg/s.
+    kind: flow
+    source: "MOV-SPEC-001 rev B, 3.1.3"
+    parameters:
+      rated_flow: {value: 5.3 kg/s, role: rated_flow}
+      dp_max: {value: 60 kPa}
+    applies: {phases: [PH-FIRE]}
+    criteria:
+      - {id: pressure-drop, quantity: pressure_drop, measure: total, location: part, comparator: "<=", limit: {expr: dp_max}}
+
+  - id: REQ-MOV-009
+    title: Stiffness
+    text: The valve body shall be sufficiently stiff to keep the seats leak-tight under all loads.
+    kind: stiffness
+    source: "MOV-SPEC-001 rev B, 3.2.6"
+
+  - id: REQ-MOV-010
+    title: Roundness of the downstream seat pocket
+    text: The out-of-roundness of the downstream seat pocket shall not be more than 20 micrometres when the pump runs against the closed valve.
+    kind: stiffness
+    source: "MOV-SPEC-001 rev B, 3.2.7"
+    rationale: A seat pocket that is not round lets the seat ring leak.
+    parameters:
+      roundness_max: {value: 20 um}
+    applies: {phases: [PH-PRESTART]}
+    criteria:
+      - {id: roundness, quantity: radial_displacement, measure: range, location: FT-SEAT-OUT-WALL, comparator: "<=", limit: {expr: roundness_max}}

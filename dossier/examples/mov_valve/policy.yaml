@@ -1,0 +1,15 @@
+# The factor policy of the governing standard. EXAMPLE VALUES: they follow the style of common
+# space-hardware standards but are not copied from one. Replace them with the factors of the standard
+# that governs your programme, and give the clause in `source`.
+id: POLICY
+name: Example factor policy (illustrative)
+source: Illustrative values. Replace with the factors of the governing standard of the programme.
+factors:
+  yield:        {value: 1.25, note: "Minimum factor of safety against yield for limit loads."}
+  ultimate:     {value: 1.4,  note: "Minimum factor of safety against ultimate for limit loads."}
+  proof:        {value: 1.5,  note: "Minimum proof pressure factor on MEOP for pressure components."}
+  burst:        {value: 2.5,  note: "Minimum burst pressure factor on MEOP for pressure components."}
+  fatigue_life: {value: 4.0,  note: "Minimum scatter factor on the number of cycles."}
+handcalc_band: [0.8, 1.25]
+max_uncertainty: 0.05
+thermal_delta: 5 K
