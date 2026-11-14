@@ -21,7 +21,7 @@ thin-wall formulas against the Lamé solution of a thin wall.
 
 from __future__ import annotations
 
-from dossier.handcalc.base import Calc, Input, Output, model, shown
+from dossier.handcalc.base import Calc, Input, Output, model
 
 _TG = "S. P. Timoshenko and J. N. Goodier, Theory of Elasticity, 3rd edition, McGraw-Hill, 1970"
 _ROARK = "W. C. Young and R. G. Budynas, Roark's Formulas for Stress and Strain, 7th edition, McGraw-Hill, 2002"
@@ -102,7 +102,7 @@ def _thin_cylinder_validity(v) -> list[str]:
     ],
     assumptions=[
         "The wall is thin: the stress is constant across the wall.",
-        "The radial stress is negligible in comparison with the hoop stress.",
+        "The radial stress is small in comparison with the hoop stress.",
         "The cylinder is long: its ends do not change the stress at the section.",
         _ELASTIC,
     ],
@@ -160,4 +160,4 @@ def sphere_pressure(c: Calc) -> None:
           "The two equal hoop stresses and the radial stress give the von Mises stress at the inner surface.")
 
 
-__all__ = ["thick_cylinder_pressure", "thin_cylinder_pressure", "sphere_pressure", "shown"]
+__all__ = ["thick_cylinder_pressure", "thin_cylinder_pressure", "sphere_pressure"]

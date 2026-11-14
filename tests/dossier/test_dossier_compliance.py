@@ -91,7 +91,7 @@ def ste_problems(text, sentences=6):
             out.append(("long", s))
         if _BANNED.search(s) or _PASSIVE.search(s):
             out.append(("form", s))
-        if [w for w in _ING.findall(s) if w.lower() != "bending"]:      # "membrane plus bending stress" is a name
+        if [w for w in _ING.findall(s) if w.lower() not in ("bending", "finding")]:     # technical names, not verbs
             out.append(("ing", s))
     return out
 
@@ -371,7 +371,7 @@ def test_hand_calculation_is_an_estimate_when_there_is_no_analysis(workproject):
         "Hand calculation HC-PRESSURE-DROP-LC-FLOW-FIRE gives the value as its output dp_total.",
         "Analysis AN-FLOW-FIRE of load case LC-FLOW-FIRE has the status not supported.",
         'The message of the analysis is: "OpenFOAM is not on this computer."',
-        "The hand calculation has 1 warning about the limits of its formula."]
+        'The hand calculation says about the limits of its formula: "The loss coefficient K is an estimate."']
     assert item.statement == (
         "Hand calculation HC-PRESSURE-DROP-LC-FLOW-FIRE gives an estimate of 14.4 kPa for the total pressure drop in the part. "
         "The limit is 60 kPa (parameter dp_max of REQ-MOV-008). The factor of safety is 1.0 (the criterion gives no factor). "

@@ -5,7 +5,8 @@ Sources
             Transfer, 6th edition, Wiley, 2007. Section 3.3.1 (the cylinder: thermal resistances of the wall
             and of the fluid films in series). Section 3.6.2 and Table 3.4 (fins of uniform cross-section;
             case A is the fin with convection at the tip). Section 8.5, equation 8.60 (the Dittus-Boelter
-            correlation, for 0.7 <= Pr <= 160, Re >= 10 000 and L / d >= 10).
+            correlation) and Table 8.4 (its range: 0.6 <= Pr <= 160, Re >= 10 000 and L / d >= 10). Example
+            8.5 (hot air in a sheet metal duct) is a worked case: Re = 20 404, Nu = 57.9, h = 11.6 W/(m^2 K).
     [TG]    S. P. Timoshenko and J. N. Goodier, Theory of Elasticity, 3rd edition, McGraw-Hill, 1970,
             chapter 13 (Thermal stress): article "The long circular cylinder" gives the stress of a hollow
             cylinder with a steady radial heat flow.
@@ -30,7 +31,7 @@ Verification (tests): the fin against a numerical solution of the fin equation (
 and against the two cases of Table 3.4; the cylinder wall against a numerical solution of the conduction
 equation; the thermal stress of the cylinder against a numerical solution of the equilibrium equation in
 terms of the displacement, and against the integral formulas of [TG]; the Dittus-Boelter correlation against
-example 8.4 of [Inc] and against the heat transfer coefficient of the example project.
+example 8.5 of [Inc] and against the heat transfer coefficient of the example project.
 """
 
 from __future__ import annotations
@@ -98,7 +99,7 @@ def fin_convective_tip(c: Calc) -> None:
     c.require(c["r_o"] > c["r_i"], f"The outer radius r_o ({c.show('r_o')}) must be more than the inner radius "
                                    f"r_i ({c.show('r_i')}).")
     c.let("A_c", "pi * (r_o**2 - r_i**2)", "The two radii give the area of the cross-section of the fin.", unit="m^2")
-    c.let("P", "2 * pi * r_o", "The outer surface loses heat, thus its perimeter is the perimeter of the fin.",
+    c.let("P", "2 * pi * r_o", "The outer surface loses heat: its perimeter is the perimeter of the fin.",
           unit="m")
     c.let("m", "sqrt(h * P / (k * A_c))",
           "The fin parameter compares the heat loss of the surface with the conduction along the fin.")
@@ -246,7 +247,7 @@ def conduction_cylinder_wall(c: Calc) -> None:
           "The heat flow through the resistance of the wall gives the temperature difference across the wall.")
 
 
-RE_MIN, PR_MIN, PR_MAX = 1.0e4, 0.7, 160.0      # range of the Dittus-Boelter correlation [Inc, equation 8.60]
+RE_MIN, PR_MIN, PR_MAX = 1.0e4, 0.6, 160.0      # range of the Dittus-Boelter correlation [Inc, Table 8.4]
 
 
 def _dittus_boelter_validity(v) -> list[str]:
@@ -266,7 +267,7 @@ def _dittus_boelter_validity(v) -> list[str]:
 @model(
     name="dittus_boelter",
     title="Heat transfer coefficient of turbulent flow in a tube (Dittus-Boelter correlation)",
-    reference=f"{_INC}, section 8.5, equation 8.60 (Dittus-Boelter), with its range of application.",
+    reference=f"{_INC}, section 8.5, equation 8.60 (Dittus-Boelter), and Table 8.4 for its range of application.",
     inputs=[
         Input("mdot", "Mass flow in the tube", "kg/s", symbol=r"\dot{m}"),
         Input("d", "Inner diameter of the tube", "m"),

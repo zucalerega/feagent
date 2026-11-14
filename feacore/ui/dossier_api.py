@@ -392,34 +392,30 @@ def explain(text: str, root: Path, lay: dict, texts: _Texts | None = None) -> di
 # --------------------------------------------------------------------------- the log of a run
 
 
-_LOG_STAGE = re.compile(r"^== (\w+)\s*$")
-_LOG_DONE = re.compile(r"^ {3}(\w+) done in [0-9.]+ s")
-_LOG_FAIL = re.compile(r"^stage (\w+): (.*)$")
+_NAMES = "|".join(STAGES)
+_LOG = re.compile(rf"^(?:== (?P<start>{_NAMES})[ \t]*$| {{3}}(?P<done>{_NAMES}) done in [0-9.]+ s"
+                  rf"|stage (?P<fail>{_NAMES}): (?P<why>.*)$|The project has problems:\n(?P<problems>(?:  .*\n?)+))", re.M)
 
 
 def run_progress(log: str) -> dict:
-    """What the output of ``python -m dossier run`` says: ``{"done": [stages], "current": the stage that
-    started and did not end, "failed": {"stage", "message"} | None, "problems": [input problems], "last":
-    the last line}``."""
+    """What the output of ``python -m dossier run`` says (dossier/cli.py, dossier/pipeline.py):
+    ``{"done": [stages], "current": the stage that started and did not end, "failed": {"stage", "message"}
+    or None, "problems": [input problems], "last": the last line}``."""
     done: list[str] = []
-    current, failed, problems, last = None, None, [], ""
-    lines = log.splitlines()
-    for i, line in enumerate(lines):
-        if line.strip() and not line.startswith("==="):
-            last = line.strip()
-        if (m := _LOG_STAGE.match(line)) and m.group(1) in STAGES:
-            current = m.group(1)
-        elif (m := _LOG_DONE.match(line)) and m.group(1) == current:
-            done.append(current)
-            current = None
-        elif (m := _LOG_FAIL.match(line)) and m.group(1) in STAGES:
-            failed = {"stage": m.group(1), "message": m.group(2).strip()}
-        elif line.startswith("The project has problems:"):
-            for x in lines[i + 1:]:
-                if not x.startswith("  "):
-                    break
-                problems.append(x.strip())
-    return {"done": done, "current": current, "failed": failed, "problems": problems, "last": last}
+    current, failed, problems = None, None, []
+    for m in _LOG.finditer(log):
+        if m["start"]:
+            current = m["start"]
+        elif m["done"]:
+            done.append(m["done"])
+            current = None if current == m["done"] else current
+        elif m["fail"]:
+            failed = {"stage": m["fail"], "message": m["why"].strip()}
+        else:
+            problems = [x.strip() for x in m["problems"].splitlines()]
+    last = log.rstrip().rsplit("\n", 1)[-1].strip()
+    return {"done": done, "current": current, "failed": failed, "problems": problems,
+            "last": "" if last.startswith("===") else last}
 
 
 # --------------------------------------------------------------------------- projects
@@ -458,6 +454,7 @@ class Projects:
         self.lock = threading.RLock()        # dossier's unit registry, the caches and the writes: one at a time
         self._loaded: OrderedDict[str, Loaded] = OrderedDict()
         self._derived: OrderedDict[str, Derived] = OrderedDict()
+        self._logs: OrderedDict[tuple, dict] = OrderedDict()
 
     # ------------------------------------------------------------------ folders
     def dir(self, folder: str) -> Path:
@@ -669,7 +666,7 @@ class Projects:
 
     # ------------------------------------------------------------------ tasks
     def tasks_of(self, folder: str, limit: int = 8) -> list[dict]:
-        """The dossier tasks of a project, newest first; the newest one with what its log says."""
+        """The dossier tasks of a project, newest first, each with what its log says (``progress``)."""
         if self.tasks is None:
             return []
         ref, path = project_ref(folder), str((self.root / folder).resolve())
@@ -682,15 +679,29 @@ class Projects:
                                            "error", "cancel")}
             brief["args"] = ({"from": "report", "to": "report"} if t.get("tool") == "dossier.report" else
                              {k: args.get(k) for k in ("from", "to", "quick", "only", "force") if args.get(k) is not None})
+            brief["progress"] = self._progress(brief)
             out.append(brief)
             if len(out) >= limit:
                 break
-        if out:
-            try:
-                out[0]["progress"] = run_progress(tail(self.tasks.tasks.log_path(out[0]["id"]), 400_000))
-            except KeyError:
-                pass
         return out
+
+    def _progress(self, task: dict) -> dict:
+        """run_progress of a task's log. The log of a task that ended does not change: it is read once."""
+        ended = task["state"] not in ("queued", "running")
+        key = (task["id"], task["state"])
+        with self.lock:
+            if ended and key in self._logs:
+                return self._logs[key]
+        try:
+            prog = run_progress(tail(self.tasks.tasks.log_path(task["id"]), 20_000_000))
+        except KeyError:
+            prog = run_progress("")
+        if ended:
+            with self.lock:
+                self._logs[key] = prog
+                while len(self._logs) > 200:
+                    self._logs.popitem(last=False)
+        return prog
 
     def start(self, folder: str, tool: str, args: dict) -> dict:
         """Start a dossier tool on a project. One task per project at a time: two runs would write the same
@@ -710,12 +721,9 @@ class Projects:
                 raise HTTPException(422, {"detail": "invalid arguments", "errors": e.errors}) from None
 
     @staticmethod
-    def _last_run(tasks: list[dict]) -> dict | None:
-        """The newest task as the page shows it: where it is, or where it stopped and why."""
-        if not tasks:
-            return None
-        t = tasks[0]
-        prog = t.get("progress") or {"done": [], "current": None, "failed": None, "problems": [], "last": ""}
+    def _run(t: dict) -> dict:
+        """A task as the page shows it: the stage it is in, or the stage it stopped in and why."""
+        prog = t["progress"]
         run = {"task": t["id"], "tool": t["tool"], "title": t["title"], "state": t["state"], "args": t["args"],
                "started_at": t["started_at"], "finished_at": t["finished_at"], "done": prog["done"],
                "stage": None, "message": None, "problems": prog["problems"]}
@@ -735,9 +743,10 @@ class Projects:
         return run
 
     # ------------------------------------------------------------------ status
-    def _stages(self, root: Path, lp: Loaded, dv: Derived, run: dict | None) -> list[dict]:
+    def _stages(self, root: Path, lp: Loaded, dv: Derived, runs: list[dict]) -> list[dict]:
         """One entry per pipeline stage: ``state`` is done | stale | not_run | partial (some load cases are
-        not analysed) | running | failed (the last run stopped there; ``error`` says why)."""
+        not analysed) | running | failed (the last run that came to this stage stopped there; ``error`` says
+        why). ``runs`` are the project's tasks, newest first."""
         def fresh(f: dict) -> bool:        # as Project.stale: a file made from other inputs is stale
             return lp.digest is not None and f["inputs_digest"] in (None, lp.digest)
 
@@ -798,12 +807,14 @@ class Projects:
                 st.update(state="stale" if stale else "done", written=f["written"] or _iso(f["mtime"]), file=f["rel"],
                           summary=f["error"] or text + "." + (f" {inputs_changed}" if stale else ""))
             out.append(st)
-        if run and run.get("stage"):
-            st = next(x for x in out if x["stage"] == run["stage"])
-            if run["state"] in ("queued", "running"):
+        for st in out:
+            mine = next((r for r in runs if r["stage"] == st["stage"] and r["state"] != "done"), None)
+            if mine is None:
+                continue
+            if mine["state"] in ("queued", "running"):
                 st["state"] = "running"
-            elif run["state"] != "done" and stamps[run["stage"]] <= (_epoch(run["finished_at"]) or time.time()) + 1:
-                st.update(state="failed", error=run["message"])      # no later run made the stage good
+            elif stamps[st["stage"]] <= (_epoch(mine["finished_at"]) or time.time()) + 1:   # no later run made it good
+                st.update(state="failed", error=mine["message"])
         return out
 
     def status(self, folder: str, detail: bool = False) -> dict:
@@ -813,7 +824,7 @@ class Projects:
         self.context(lp)
         dv = self.derived(root)
         tasks = self.tasks_of(folder)
-        run = self._last_run(tasks)
+        runs = [self._run(t) for t in tasks]
         doc, p = lay["doc"], lp.project
         lines = lp.problems if p is None else (lp.ctx_problems or [])
         subject_id = p.file.subject if p else doc.get("subject")
@@ -837,13 +848,14 @@ class Projects:
                         "material": p.subject.material if p else comp.get("material"),
                         "drawing": p.subject.drawing if p else None},
             "ok": not lines, "n_problems": len(lines),
-            "stages": self._stages(root, lp, dv, run),
+            "stages": self._stages(root, lp, dv, runs),
             "stale": [f["rel"] for f in dv.files if lp.digest is None or f["inputs_digest"] not in (None, lp.digest)],
             "verdicts": {k: verdicts.get(k, 0) for k in VERDICTS},
             "findings": {k: severity.get(k, 0) for k in SEVERITIES},
             "reviews": {k: progress.get(k, 0) for k in ("total", "open", "accepted", "rejected", "changes_requested", "stale")},
             "report": {"built": report.is_file(), "written": _iso(report.stat().st_mtime) if report.is_file() else None},
-            "last_run": run, "active_task": next((t["id"] for t in tasks if t["state"] in ("queued", "running")), None),
+            "last_run": runs[0] if runs else None,
+            "active_task": next((t["id"] for t in tasks if t["state"] in ("queued", "running")), None),
         }
         if not detail:
             return out

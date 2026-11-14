@@ -26,26 +26,38 @@ Results (keys `<quantity>.<measure>@<location>`, SI)
   radial_displacement.max | min | mean@<cylindrical feature>   about the fixed axis of the feature
 A key of `lc.result_keys` that the engine cannot give is named in the record's `message` with the reason.
 
-Convergence rule (exact; U is the relative uncertainty of the value on the finest mesh)
+Convergence rule (exact). u is the absolute uncertainty of the value v on the finest mesh.
   h is the solver's representative element size (volume / cells)^(1/3) of each level.
   p_theory is 2 for a stress and 3 for a displacement (quadratic elements, smooth solution).
   one level      no study. Status not_converged, no uncertainty.
-  two levels     U = 3 |v2 - v1| / |v2| x max(1, 1 / (r^p - 1)), with r = h1 / h2 and p = min(p_theory, 2).
+  two levels     u = 3 |v2 - v1| x max(1, 1 / (r^p - 1)), with r = h1 / h2 and p = min(p_theory, 2).
                  (Roache's two-mesh index with the safety factor 3; never less than 3 x the change.)
-  three or more  feacore.verification.gci3 on the finest level and two coarser levels (each at least 1.3
-                 times larger in h where the sequence allows it). With `spread` = (max - min) of the three
-                 values / |v_fine|:
-                   monotone, order p    U = max(GCI with factor 1.25 and p, GCI with factor 3 and p limited
-                                        to [0.5, p_theory])
-                   oscillatory          U = max(that second GCI, spread)
-                   diverging / no order U = 3 x spread
-                   changes < 1e-6       U = 1.25 x the larger change (round-off)
-  status         converged when U <= policy.max_uncertainty, else not_converged.
+  three or more  feacore.verification.gci3 classifies the finest level and two coarser levels (each at
+                 least 1.3 times larger in h where the sequence allows it). The uncertainty is 3 times the
+                 best error estimate that the class allows:
+                   monotone, order p    the error estimate is |v_fine - v_medium| / (r^p - 1).
+                                        u = max(1.25 x that with the observed p,
+                                                3 x that with p limited to [0.5, p_theory])
+                                        (the grid convergence index, Celik et al. 2008 / Roache)
+                   monotone, p far above theory (p > 1.5 p_theory + 0.5: not in the asymptotic range)
+                                        u = max(the two values above, 3 x spread)
+                   oscillatory, the changes become smaller: the limit is between the last two values.
+                                        u = 3 x |v_fine - v_medium|
+                   diverging, or no order   u = 3 x spread, spread = max - min of the three values
+                   changes < 1e-6       u = 1.25 x the larger change (round-off)
+  status         converged when u <= policy.max_uncertainty x max(|v|, reference), else not_converged.
+                 The reference is the size of the field that a small value comes from: the largest principal
+                 stress (absolute) of the section tensor for a stress component and for max_principal on a
+                 line, and the largest displacement of the feature for a range of the radial displacement.
+                 So a component near zero in a large stress state, or a roundness near zero, can be
+                 converged. For every other result the reference is the value itself.
+  uncertainty    the field `uncertainty` of a result is u / |v| (relative to the value, as the contract
+                 says). It can be above 1 for a value near zero that is converged against its reference.
   peaks          A peak that is within NEAR_EDGE (2.5) local element sizes of a re-entrant edge, or within
                  two local element sizes of the border of the zone left out at a held face, is NEVER
                  converged: the stress there has no limit in linear elasticity, and three meshes can hide
                  the growth. It is `singular` when its magnitude grew at every refinement (by more than
-                 0.1 %), else `not_converged`.
+                 0.1 %), else `not_converged`. Its uncertainty is empty: a value without a limit has none.
   aggregate      `@scls` is the line with the largest value. Its uncertainty covers the conservative value
                  v (1 + U) of every line. Its status is the worst status among the lines whose conservative
                  value reaches the largest value. A line without a result makes the aggregate not_converged.
@@ -110,8 +122,9 @@ from dossier.records import Journal
 
 COMPONENTS = scl_mod.COMPONENTS
 P_STRESS, P_DISPLACEMENT = 2.0, 3.0
+SAFETY_GCI = 1.25               # the grid convergence index with the observed order
 SAFETY_TWO_LEVELS = 3.0
-SAFETY_SPREAD = 3.0
+SAFETY_SPREAD = 3.0             # every other error estimate
 MIN_RATIO = 1.3                 # the levels of a GCI are at least this far apart in h where possible
 GROWTH = 1e-3                   # a peak "grew" when its magnitude rose by more than this at a refinement
 EXCLUSION = 2.0                 # peak evaluation: nodes within this many coarse element sizes of a held face are left out
@@ -163,8 +176,10 @@ class Study:
     kind: str = ""                     # gci3's convergence class, or two_levels / one_level
 
 
-def study(h: list[float], values: list[float], p_theory: float, max_uncertainty: float) -> Study:
-    """The convergence of one result over the levels (coarse to fine). The rule is in the module docstring."""
+def study(h: list[float], values: list[float], p_theory: float, max_uncertainty: float,
+          reference: float | None = None) -> Study:
+    """The convergence of one result over the levels (coarse to fine). The rule is in the module docstring.
+    `reference` is the size that a small value is judged against (None: the value itself)."""
     from feacore.verification.gci import gci3
 
     v = np.asarray(values, dtype=float)
@@ -178,48 +193,62 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
                      kind="one_level")
     if np.max(np.abs(v)) == 0.0:
         return Study("converged", 0.0, extrapolated=0.0, note="The value is zero on every mesh level.", kind="exact")
-    scale = max(abs(fine), 1e-300)
+    size = max(abs(fine), abs(reference or 0.0), 1e-300)
+
+    def pct(x: float) -> str:
+        return f"{100 * x / size:.2g} %"
+
+    ext = order = None
     if n == 2:
         r = h[0] / h[1]
         p = min(p_theory, 2.0)
-        change = abs(v[1] - v[0]) / scale
+        change = abs(v[1] - v[0])
         factor = max(1.0, 1.0 / (r ** p - 1.0)) if r > 1.0 else math.inf
         u = SAFETY_TWO_LEVELS * change * factor
-        note = (f"Two mesh levels with a size ratio of {r:.2f}. The value changes by {100 * change:.2g} % between "
-                f"them. The uncertainty is {SAFETY_TWO_LEVELS:g} times this change"
+        kind = "two_levels"
+        note = (f"Two mesh levels with a size ratio of {r:.2f}. The value changes by {pct(change)} between them. "
+                f"The uncertainty is {SAFETY_TWO_LEVELS:g} times this change"
                 + (f", divided by {r ** p - 1.0:.2f} for the small size ratio." if factor > 1.0 else "."))
-        return Study("converged" if u <= max_uncertainty else "not_converged", float(u), note=note, grew=grew,
-                     kind="two_levels")
-    tri = gci_triplet(list(h))
-    ht, vt = [float(h[i]) for i in tri], [float(v[i]) for i in tri]
-    spread = (max(vt) - min(vt)) / scale
-    try:
-        g = gci3(ht, vt, p_theory=p_theory)
-    except ValueError:
-        g = None
-    conv = g.convergence if g is not None else "indeterminate"
-    ext = order = None
-    if conv in ("exact", "converged"):
-        u = float(g.gci_fine or 0.0)
-        note = "The value does not change between the mesh levels (round-off only)."
-    elif conv == "monotone":
-        u = float(max(g.gci_fine, g.gci_fine_conservative))
-        ext, order = float(g.phi_ext), float(g.p)
-        note = (f"The three values converge in one direction with the observed order {g.p:.2f} "
-                f"(theory {p_theory:g}). The uncertainty is the larger of two grid convergence indexes.")
-        if "p_above_theory" in g.flags or "p_far_below_theory" in g.flags:
-            note += " The observed order is far from the theory, so the extrapolated value is not reliable."
-    elif conv == "oscillatory":
-        u = float(max(g.gci_fine_conservative, spread))
-        order = float(g.p)
-        note = (f"The values go up and down between the mesh levels, and the changes become smaller. "
-                f"The spread of the three values is {100 * spread:.2g} %.")
     else:
-        u = SAFETY_SPREAD * spread
-        note = (f"The changes between the mesh levels do not become smaller. The spread of the three values is "
-                f"{100 * spread:.2g} %, and the uncertainty is {SAFETY_SPREAD:g} times the spread.")
-    return Study("converged" if u <= max_uncertainty else "not_converged", u, extrapolated=ext, order=order, note=note,
-                 grew=grew, kind=conv)
+        tri = gci_triplet(list(h))
+        ht, vt = [float(h[i]) for i in tri], [float(v[i]) for i in tri]
+        spread = max(vt) - min(vt)
+        last = abs(vt[2] - vt[1])
+        try:
+            g = gci3(ht, vt, p_theory=p_theory)
+        except ValueError:
+            g = None
+        kind = g.convergence if g is not None else "indeterminate"
+        if kind in ("exact", "converged"):
+            u = SAFETY_GCI * max(last, abs(vt[1] - vt[0]))
+            note = "The value does not change between the mesh levels (round-off only)."
+        elif kind == "monotone":
+            p_lim = min(max(g.p, 0.5), p_theory)
+            u = max(SAFETY_GCI * last / (g.r21 ** g.p - 1.0), SAFETY_SPREAD * last / (g.r21 ** p_lim - 1.0))
+            order = float(g.p)
+            note = (f"The three values converge in one direction with the observed order {g.p:.2f} "
+                    f"(theory {p_theory:g}).")
+            if "p_above_theory" in g.flags:
+                u = max(u, SAFETY_SPREAD * spread)
+                note += (" The observed order is far above the theory, so the meshes are not in the asymptotic range. "
+                         f"The uncertainty is {SAFETY_SPREAD:g} times the spread of the three values ({pct(spread)}).")
+            else:
+                ext = float(g.phi_ext)
+                note += " The uncertainty is the larger of two grid convergence indexes."
+        elif kind == "oscillatory":
+            u = SAFETY_SPREAD * last
+            note = (f"The values go up and down between the mesh levels, and the changes become smaller. "
+                    f"The uncertainty is {SAFETY_SPREAD:g} times the last change ({pct(last)}).")
+        else:
+            u = SAFETY_SPREAD * spread
+            note = (f"The changes between the mesh levels do not become smaller. The uncertainty is "
+                    f"{SAFETY_SPREAD:g} times the spread of the three values ({pct(spread)}).")
+    status = "converged" if u <= max_uncertainty * size else "not_converged"
+    if abs(fine) < size:
+        note += (f" The value is small against the size of its field ({size:.4g}). The uncertainty is {pct(u)} of "
+                 "that size.")
+    rel = float(u / abs(fine)) if abs(fine) > 0 else None
+    return Study(status, rel, extrapolated=ext, order=order, note=note, grew=grew, kind=kind)
 
 
 # --------------------------------------------------------------------------- locations on one mesh
@@ -402,11 +431,12 @@ class Evaluator:
             self._inv[name] = scl_mod.invariant(name, self.S)
         return self._inv[name]
 
-    def displacement(self) -> np.ndarray:
+    def displacement(self, result: bool = True) -> np.ndarray:
         """The displacement the results use: as solved for a held part; without the mean rigid-body
-        motion for a free part."""
+        motion for a free part. `result`: a displacement result uses it (the datum is then a decision)."""
         if not self.free:
             return self.U
+        self.used_datum = self.used_datum or result
         if self._U_rel is None:
             mg = self.mg
             vol, c, J = mg.volume()
@@ -416,7 +446,6 @@ class Evaluator:
             a = (w @ uq) / vol
             b = np.linalg.solve(J, w @ np.cross(xq - c, uq))
             self._U_rel = self.U - a - np.cross(b, mg.x - c)
-            self.used_datum = True
         return self._U_rel
 
     # ---- stress classification lines
@@ -449,6 +478,9 @@ class Evaluator:
             extra = {}
             if measure == "membrane_bending" and quantity in scl_mod.INVARIANTS:
                 extra["end"] = sec.governing_end(quantity)
+            if quantity != "von_mises":          # a component or a principal stress can be small in a large stress state
+                states = [sec.membrane] if measure == "membrane" else [sec.at_start(), sec.at_end()]
+                extra["ref"] = float(max(np.abs(scl_mod.principals(t)).max() for t in states))
             return sec.value(quantity, measure), None, extra
         if location == "scls":
             raise CannotServe("The engine gives the measures membrane and membrane_bending of von_mises for all "
@@ -547,8 +579,9 @@ class Evaluator:
         rigid = coef[1] * cn + coef[2] * sn + coef[3] * cn * (zn - z0) + coef[4] * sn * (zn - z0)
         form = ur - rigid
         self.used_roundness = True
+        ref = float(np.linalg.norm(self.displacement(result=False)[nodes], axis=1).max())
         return float(form.max() - form.min()), None, {"fixed_axis": fixed, "shift": float(np.hypot(coef[1], coef[2])),
-                                                      "growth": float(coef[0])}
+                                                      "growth": float(coef[0]), "ref": ref}
 
 
 # --------------------------------------------------------------------------- the engine
@@ -939,7 +972,7 @@ def _results(data: list[LevelData], keys: list[str], scls: dict, max_unc: float,
             continue
         have = [d for d in data if key in d.values]
         vals = [d.values[key] for d in have]
-        st = study([d.h for d in have], vals, p_theory_of(key), max_unc)
+        st = study([d.h for d in have], vals, p_theory_of(key), max_unc, reference=fine.info.get(key, {}).get("ref"))
         note = st.note
         if len(have) < len(data):
             note += f" {len(data) - len(have)} coarser mesh levels have no value for this result."
@@ -1056,8 +1089,10 @@ def _statement(lc: LoadCase, ideal: Idealizer, data: list[LevelData], results: d
     kinds: dict[str, int] = {}
     for ld in ideal.loads:
         kinds[ld.kind] = kinds.get(ld.kind, 0) + 1
-    word = {"pressure": "pressure loads", "force": "forces", "moment": "moments", "acceleration": "accelerations"}
-    loads = ", ".join(f"{n} {word[k]}" for k, n in kinds.items()) or "no mechanical load"
+    word = {"pressure": ("pressure load", "pressure loads"), "force": ("force", "forces"),
+            "moment": ("moment", "moments"), "acceleration": ("acceleration", "accelerations")}
+    parts = [f"{n} {word[k][n > 1]}" for k, n in kinds.items()]
+    loads = (", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else "".join(parts)) or "no mechanical load"
     s = [f"The engine analysed the load case {lc.id} with the finite element method.",
          f"The model is linear elastic with the material {ideal.material.id}.",
          f"The load case has {loads}."]

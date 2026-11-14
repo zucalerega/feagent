@@ -43,15 +43,15 @@ def _plate_validity(v) -> list[str]:
                    f"needs a ratio of {THIN_LIMIT:g} or more. The results are only a first estimate.")
     elif ratio < THIN_GOOD:
         out.append(f"The plate is moderately thick: its diameter is {ratio:.3g} times its thickness. A thin plate "
-                   f"has a ratio of {THIN_GOOD:g} or more. The thin-plate theory has no shear deflection, thus the "
-                   f"true deflection is larger. The stress is an estimate.")
+                   f"has a ratio of {THIN_GOOD:g} or more. The thin-plate theory has no shear deflection: the true "
+                   f"deflection is larger. The stress is an estimate.")
     half = 0.5 * v["t"]
     for name, edge in (("deflection_center_clamped", "clamped"), ("deflection_center_simply_supported",
                                                                  "simply supported")):
         if abs(v[name]) > half:
             out.append(f"The deflection of the plate with a {edge} edge is {shown(abs(v[name]), 'm')}. This is more "
                        f"than one half of the thickness, {shown(half, 'm')}. The linear theory has no membrane "
-                       f"stress, thus the true deflection is smaller.")
+                       f"stress: the true deflection is smaller.")
     return out
 
 
@@ -82,7 +82,7 @@ def _plate_validity(v) -> list[str]:
         "The plate is flat and thin, with a constant thickness.",
         "The deflection is small in comparison with the thickness: the plate has no membrane stress.",
         "The pressure is uniform on one side of the plate.",
-        "The edge is a circle. It is fully clamped, or it is simply supported; a real edge is between the two.",
+        "The edge is a circle. It has a clamped support or a simple support; a real edge is between the two.",
         "The material is linear elastic and isotropic.",
         "The stresses are the surface stresses from the moments. They are tensile on the side that the "
         "description of each output gives.",
@@ -91,7 +91,7 @@ def _plate_validity(v) -> list[str]:
     symbols={"D": "D"},
 )
 def circular_plate_pressure(c: Calc) -> None:
-    c.require(c["nu"] < 1.0, f"Poisson's ratio nu must be less than 1. It is {c.show('nu')}.")
+    c.require(c["nu"] <= 0.5, f"Poisson's ratio nu must be 0.5 or less. It is {c.show('nu')}.")
     c.let("D", "E * t**3 / (12 * (1 - nu**2))",
           "The thickness and the elastic constants give the flexural rigidity of the plate.", unit="N*m")
     c.let("sigma_center_clamped", "3 * (1 + nu) * p * a**2 / (8 * t**2)",

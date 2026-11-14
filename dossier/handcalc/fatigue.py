@@ -74,7 +74,7 @@ def basquin_life(c: Calc) -> None:
               "The Goodman relation gives the equivalent stress amplitude at zero mean stress.")
     else:
         c.let("sigma_ar", "sigma_a",
-              "The mean stress is not tensile, thus the equivalent stress amplitude is the stress amplitude.")
+              "The mean stress is not tensile: the equivalent stress amplitude is the stress amplitude.")
     c.let("cycles", "(sigma_ar / sigma_f)**(1 / b) / 2",
           "The Basquin relation gives the number of cycles to failure.")
 

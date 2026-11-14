@@ -1,0 +1,370 @@
+"""The structural analysis engine of dossier against closed-form solutions.
+
+The parts are small STEP files made here with gmsh's OpenCASCADE kernel, meshed with the groups of the
+mesh contract (f<tag>, feature ids, solid; quadratic tetrahedra), in a minimal project:
+
+    (a) section stresses of a stress classification line on analytic fields (exact)
+    (b) a thick-walled cylinder with internal pressure and closed-end forces, as a free part: load
+        balance, 3-2-1 restraint with negligible reactions, hoop stress against Lame
+    (c) a cantilever tube with a moment on its end face against beam theory, and the traction resultant
+    (d) the support that follows the thermal contraction: a uniform temperature change gives no stress
+    (e) the example project's proof test (slow; needs the geometry, mesh and plan engines)
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from dossier import model
+from dossier.analysis import idealize, scaled, scl, structural
+from dossier.pipeline import Options
+from dossier.project import Project
+from dossier.records import Journal
+
+gmsh = pytest.importorskip("gmsh")
+
+MPa = 1e6
+
+
+# =========================================================================== (a) section stresses
+
+
+def _lin(field, start, end, **kw):
+    return scl.section(lambda p: np.array([field(x) for x in p]), start, end, **kw)
+
+
+def test_scl_linear_field_is_exact():
+    """A stress that is linear along the line: the membrane is the mid value, the bending the half difference."""
+    a = np.array([100.0, -40.0, 20.0, 15.0, -5.0, 8.0]) * MPa        # at the start
+    b = np.array([-20.0, 60.0, 50.0, -25.0, 10.0, 0.0]) * MPa        # at the end
+    start, end = np.array([1.0, 2.0, 3.0]), np.array([1.5, 2.0, 2.0])
+
+    def field(x):
+        s = np.linalg.norm(x - start) / np.linalg.norm(end - start)
+        return a + s * (b - a)
+
+    sec = _lin(field, start, end)
+    assert sec.membrane == pytest.approx(0.5 * (a + b), rel=1e-12)
+    assert sec.bending == pytest.approx(0.5 * (a - b), rel=1e-12)
+    assert sec.at_start() == pytest.approx(a, rel=1e-12) and sec.at_end() == pytest.approx(b, rel=1e-12, abs=1e-6)
+    assert sec.length == pytest.approx(np.linalg.norm(end - start))
+    # the invariant of the TENSOR, not the mean of the invariant
+    assert sec.value("von_mises", "membrane") == pytest.approx(float(scl.von_mises(0.5 * (a + b))), rel=1e-12)
+    assert sec.value("von_mises", "membrane_bending") == pytest.approx(
+        max(float(scl.von_mises(a)), float(scl.von_mises(b))), rel=1e-12)
+    assert sec.value("max_principal", "membrane_bending") == pytest.approx(
+        max(scl.principals(a)[0], scl.principals(b)[0]), rel=1e-12)
+    assert sec.value("syy", "membrane") == pytest.approx(10.0 * MPa, rel=1e-12)
+    assert sec.value("sxx", "membrane_bending") == pytest.approx(100.0 * MPa, rel=1e-12)   # the larger end, signed
+    assert sec.governing_end("max_principal") in ("start", "end")
+
+
+def test_scl_cubic_field_and_plate_bending():
+    """A cubic stress: the rule is exact (4 Gauss points on each panel). Pure plate bending: no membrane."""
+    t = 0.008
+
+    def cubic(x):
+        z = x[2] / t                                        # 0 .. 1 through the wall
+        s = 5.0 + 3.0 * z - 7.0 * z ** 2 + 4.0 * z ** 3
+        return np.array([s, 2 * s, 0, 0, 0, 0]) * MPa
+
+    sec = _lin(cubic, [0, 0, 0], [0, 0, t], panels=3, order=4)
+    mean = 5.0 + 3.0 / 2 - 7.0 / 3 + 4.0 / 4
+    first = 6.0 * (5.0 * 0 + 3.0 * (1 / 4 - 1 / 3) - 7.0 * (1 / 6 - 1 / 4) + 4.0 * (1 / 8 - 1 / 5))
+    assert sec.membrane[0] == pytest.approx(mean * MPa, rel=1e-12)
+    assert sec.bending[0] == pytest.approx(first * MPa, rel=1e-12)
+    assert sec.membrane[1] == pytest.approx(2 * mean * MPa, rel=1e-12)
+
+    def bending(x):                                          # sigma_xx = sigma_yy = s0 (1 - 2 z / t)
+        s = 80.0 * (1 - 2 * x[2] / t)
+        return np.array([s, s, 0, 0, 0, 0]) * MPa
+
+    sec = _lin(bending, [0, 0, 0], [0, 0, t])
+    assert abs(sec.value("von_mises", "membrane")) < 1e-6 * MPa
+    assert sec.value("von_mises", "membrane_bending") == pytest.approx(80.0 * MPa, rel=1e-12)
+    assert sec.value("max_principal", "membrane_bending") == pytest.approx(80.0 * MPa, rel=1e-12)
+    assert sec.peak_ratio() == pytest.approx(1.0, abs=0.02)   # the samples do not reach the surfaces
+
+
+def test_scl_lame_cylinder_analytic():
+    """The Lame field of a thick cylinder: mean hoop stress p r_i / t, mean radial stress -p r_i / (r_i + r_o)."""
+    p, ri, ro = 10 * MPa, 0.02, 0.03
+    A, B = p * ri ** 2 / (ro ** 2 - ri ** 2), p * ri ** 2 * ro ** 2 / (ro ** 2 - ri ** 2)
+
+    def lame(x):                                             # a line along y at z = 0: radial = y, hoop = z
+        r = x[1]
+        return np.array([A, A - B / r ** 2, A + B / r ** 2, 0, 0, 0])   # closed ends: axial stress A
+
+    sec = _lin(lame, [0.05, ri, 0], [0.05, ro, 0])
+    assert sec.value("szz", "membrane") == pytest.approx(p * ri / (ro - ri), rel=1e-9)
+    assert sec.value("syy", "membrane") == pytest.approx(-p * ri / (ri + ro), rel=1e-9)
+    assert sec.value("max_principal", "membrane") == pytest.approx(p * ri / (ro - ri), rel=1e-9)
+    # bending part of the hoop stress: 6 / t^2 * integral of (A + B / r^2) (t / 2 - s) ds, in closed form
+    t = ro - ri
+    exact = 6 / t ** 2 * B * ((t / 2 + ri) * (1 / ri - 1 / ro) - math.log(ro / ri))
+    assert sec.bending[2] == pytest.approx(exact, rel=1e-8)
+    with pytest.raises(KeyError):
+        sec.value("von_mises", "peak")
+    with pytest.raises(ValueError):
+        scl.section(lambda q: np.zeros((len(q), 3)), [0, 0, 0], [1, 0, 0])
+
+
+# =========================================================================== test parts
+
+
+STEEL = dict(id="MAT-T", name="Test steel", E="200 GPa", nu=0.3, rho="7850 kg/m^3", alpha="12e-6 1/K",
+             yield_strength="250 MPa", ultimate_strength="400 MPa")
+
+
+class Part:
+    """A test part: a STEP file, meshes with the groups of the mesh contract, a project and its `geo`.
+
+    `features`: {feature id: (predicate on a face description, extra geo fields)}. A face description is
+    {"tag", "kind", "area", "centroid", "bbox"} of the imported STEP."""
+
+    def __init__(self, tmp: Path, build, features: dict, interfaces: list[dict], scls: list[dict] = (),
+                 reentrant=None, material: dict | None = None):
+        self.root = Path(tmp) / "proj"
+        (self.root / "comp").mkdir(parents=True)
+        (self.root / "out" / "meshes").mkdir(parents=True)
+        self.step = self.root / "comp" / "part.step"
+        gmsh.initialize()
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.model.add("part")
+        build(gmsh.model.occ)
+        gmsh.model.occ.synchronize()
+        gmsh.write(str(self.step))
+        gmsh.finalize()
+        self.faces = self._open()
+        gmsh.finalize()
+        self.feature_tags = {fid: [f["tag"] for f in self.faces if pred(f)] for fid, (pred, _) in features.items()}
+        for fid, tags in self.feature_tags.items():
+            assert tags, f"feature {fid} selects no face of {[(f['tag'], f['kind'], f['area']) for f in self.faces]}"
+        self.geo = {
+            "component": "CMP-T",
+            "features": {fid: {"faces": self.feature_tags[fid], **extra} for fid, (_, extra) in features.items()},
+            "interfaces": {i["id"]: {role: [t for f in feats for t in self.feature_tags[f]]
+                                     for role, feats in i["features"].items()} for i in interfaces},
+            "faces": {str(f["tag"]): {"features": [fid for fid, tags in self.feature_tags.items() if f["tag"] in tags]}
+                      for f in self.faces},
+            "edges": {"reentrant": []},
+            "scls": {s["id"]: {"start": list(s["start"]), "end": list(s["end"]), "ok": True, "message": ""} for s in scls},
+        }
+        if reentrant:
+            self.geo["edges"]["reentrant"] = reentrant(self)
+        comp = model.Component(
+            id="CMP-T", element="EL-T", name="Test part", cad={"file": "part.step"}, material="MAT-T",
+            features={fid: {"description": fid, "faces": tags} for fid, tags in self.feature_tags.items()},
+            interfaces=[model.Interface(id=i["id"], name=i["id"], connection="IF-T", joint=i.get("joint", "bolted_flange"),
+                                        features=i["features"]) for i in interfaces],
+            scls=[model.Scl(id=s["id"], description=s["id"], start=s["start"], end=s["end"]) for s in scls])
+        system = model.System(id="SYS-T", name="Test system", phases=[{"id": "PH-T", "name": "Test"}],
+                              elements=[{"id": "EL-T", "name": "Part", "component": "CMP-T"}])
+        mat = model.Material(**(material or STEEL))
+        self.project = Project(self.root, model.ProjectFile(id="PRJ-T", name="Test", components=["comp"], subject="CMP-T"),
+                               system, {"CMP-T": comp}, {"CMP-T": self.root / "comp"}, {"CMP-T": []}, {"CMP-T": ""},
+                               {mat.id: mat}, model.Policy(name="Test policy"), {})
+
+    def _open(self) -> list[dict]:
+        gmsh.initialize()
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.model.add("part")
+        gmsh.model.occ.importShapes(str(self.step))
+        gmsh.model.occ.synchronize()
+        out = []
+        for _, t in gmsh.model.getEntities(2):
+            out.append({"tag": t, "kind": gmsh.model.getType(2, t), "area": gmsh.model.occ.getMass(2, t),
+                        "centroid": np.array(gmsh.model.occ.getCenterOfMass(2, t)),
+                        "bbox": np.array(gmsh.model.getBoundingBox(2, t))})
+        return out
+
+    def levels(self, sizes: list[float], curvature: int = 12) -> list[model.MeshLevel]:
+        """Meshes of quadratic tetrahedra, coarse to fine, with the groups f<tag>, the feature ids and solid."""
+        out = []
+        for k, h in enumerate(sizes):
+            self._open()
+            gmsh.option.setNumber("Mesh.MeshSizeMax", h)
+            gmsh.option.setNumber("Mesh.MeshSizeMin", 0.2 * h)
+            gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", curvature)
+            gmsh.option.setNumber("Mesh.ElementOrder", 2)
+            gmsh.option.setNumber("Mesh.HighOrderOptimize", 2)
+            gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
+            for _, t in gmsh.model.getEntities(2):
+                gmsh.model.addPhysicalGroup(2, [t], name=f"f{t}")
+            for fid, tags in self.feature_tags.items():
+                gmsh.model.addPhysicalGroup(2, tags, name=fid)
+            gmsh.model.addPhysicalGroup(3, [t for _, t in gmsh.model.getEntities(3)], name="solid")
+            gmsh.model.mesh.generate(3)
+            path = self.root / "out" / "meshes" / f"L{k}.msh"
+            gmsh.write(str(path))
+            nodes = len(gmsh.model.mesh.getNodes()[0])
+            cells = sum(len(t) for t in gmsh.model.mesh.getElements(3)[1])
+            gmsh.finalize()
+            out.append(model.MeshLevel(level=k, h=h, nodes=nodes, cells=cells, path=f"meshes/L{k}.msh"))
+        return out
+
+    def load_case(self, lc_id: str, loads: list[dict], supports=(), analysis_type="static_structural", **kw):
+        items = [model.LoadItem(effect=x.pop("effect", f"EF-{i}"), unit="", **x) for i, x in enumerate(loads)]
+        return model.LoadCase(id=lc_id, title=lc_id, analysis_type=analysis_type, component="CMP-T", phase="PH-T",
+                              loads=items, supports=list(supports), **kw)
+
+    def run(self, lc, levels, quick=False, **kw):
+        opts = Options(quick=quick, pictures=False, log=lambda s: None)
+        return structural.run_levels(self.project, None, self.geo, lc, levels, self.project.analysis_dir(lc.id), opts, **kw)
+
+
+def _checks(rec) -> dict:
+    return {c.id.split(rec.id + "-", 1)[1]: c for c in rec.checks}
+
+
+RI, RO, LEN = 0.020, 0.030, 0.120
+
+
+def _cylinder(occ):
+    a = occ.addCylinder(0, 0, 0, LEN, 0, 0, RO)
+    b = occ.addCylinder(0, 0, 0, LEN, 0, 0, RI)
+    occ.cut([(3, a)], [(3, b)])
+
+
+def _cyl_features():
+    cyl = lambda f: f["kind"] == "Cylinder"                                   # noqa: E731
+    bore = 2 * math.pi * RI * LEN
+    return {
+        "FT-BORE": (lambda f: cyl(f) and abs(f["area"] - bore) < 0.01 * bore,
+                    {"kind": "cylinder", "axis": [1, 0, 0], "radius": RI}),
+        "FT-OUTER": (lambda f: cyl(f) and abs(f["area"] - bore) > 0.01 * bore,
+                     {"kind": "cylinder", "axis": [1, 0, 0], "radius": RO}),
+        "FT-END-A": (lambda f: f["kind"] == "Plane" and abs(f["centroid"][0]) < 1e-9, {"kind": "plane"}),
+        "FT-END-B": (lambda f: f["kind"] == "Plane" and abs(f["centroid"][0] - LEN) < 1e-9, {"kind": "plane"}),
+    }
+
+
+CYL_INTERFACES = [{"id": "INT-A", "features": {"seat": ["FT-END-A"], "wetted": ["FT-BORE"]}},
+                  {"id": "INT-B", "features": {"seat": ["FT-END-B"]}}]
+CYL_SCLS = [{"id": "SCL-WALL", "start": (0.06, RI, 0.0), "end": (0.06, RO, 0.0)},
+            {"id": "SCL-SKEW", "start": (0.045, 0.0, -RI), "end": (0.045, 0.0, -RO)}]
+
+
+@pytest.fixture(scope="module")
+def cylinder(tmp_path_factory):
+    part = Part(tmp_path_factory.mktemp("cyl"), _cylinder, _cyl_features(), CYL_INTERFACES, CYL_SCLS)
+    part.mesh3 = part.levels([0.0075, 0.0054, 0.0039])
+    return part
+
+
+def _pressure_case(part, p, lc_id="LC-PV", ends=(1.0, 1.0), keys=()):
+    thrust = p * math.pi * RI ** 2
+    loads = [dict(effect="EF-P", interface="INT-A", kind="pressure", role="wetted", features=["FT-BORE"], si=p),
+             dict(effect="EF-FA", interface="INT-A", kind="force", role="seat", features=["FT-END-A"],
+                  si=[-ends[0] * thrust, 0, 0]),
+             dict(effect="EF-FB", interface="INT-B", kind="force", role="seat", features=["FT-END-B"],
+                  si=[ends[1] * thrust, 0, 0])]
+    return part.load_case(lc_id, loads, result_keys=list(keys))
+
+
+# =========================================================================== (b) thick-walled cylinder, free
+
+
+def test_free_cylinder_against_lame(cylinder):
+    p = 10 * MPa
+    lc = _pressure_case(cylinder, p, keys=["displacement.max@part", "radial_displacement.range@FT-BORE",
+                                           "von_mises.peak@FT-OUTER", "temperature.max@part"])
+    out = cylinder.run(lc, cylinder.mesh3)
+    rec, j = out.record, out.journal
+    assert rec.status == "done" and rec.id == "AN-PV" and rec.load_case == "LC-PV"
+    assert [m.level for m in rec.mesh] == [0, 1, 2] and rec.mesh[0].h_rep > rec.mesh[1].h_rep > rec.mesh[2].h_rep
+    ck = _checks(rec)
+    # the loads of the free part balance; three nodes hold it and carry nothing
+    assert ck["BALANCE"].passed and ck["BALANCE"].value < 1e-6
+    assert ck["RESTRAINT"].passed and ck["RESTRAINT"].value < 1e-8
+    assert ck["EQUILIBRIUM"].passed and ck["ASSEMBLY"].passed and ck["MESH-QUALITY"].passed
+    assert ck["ERROR-ESTIMATE"].value is not None and ck["ERROR-ESTIMATE"].value < 0.1
+    free = [b for b in rec.bcs if b.type == "displacement"]
+    assert len(free) == 1 and [len(x["components"]) for x in free[0].value["points"]] == [3, 2, 1]
+    assert any(d.id == "DEC-LC-PV-IDEALIZE-FREE" for d in j.decisions)
+    # Lame: sigma_hoop(r) = A + B / r^2, sigma_r = A - B / r^2, axial A (closed ends)
+    A = p * RI ** 2 / (RO ** 2 - RI ** 2)
+    hoop_i, hoop_mean = A * (1 + RO ** 2 / RI ** 2), p * RI / (RO - RI)
+    vm_i = math.sqrt(0.5 * ((hoop_i + p) ** 2 + (-p - A) ** 2 + (A - hoop_i) ** 2))
+    r = rec.results
+    for sid in ("SCL-WALL", "SCL-SKEW"):
+        m = r[f"max_principal.membrane@{sid}"]
+        assert m.value == pytest.approx(hoop_mean, rel=0.01) and m.status == "converged" and len(m.per_level) == 3
+        assert r[f"sxx.membrane@{sid}"].value == pytest.approx(A, rel=0.02)
+    assert r["szz.membrane@SCL-WALL"].value == pytest.approx(hoop_mean, rel=0.01)
+    assert r["syy.membrane@SCL-WALL"].value == pytest.approx(-p * RI / (RI + RO), rel=0.03)
+    assert r["syy.membrane@SCL-SKEW"].value == pytest.approx(hoop_mean, rel=0.01)       # the hoop direction there is y
+    # membrane + bending: the linearized stress at the bore, from the closed-form integrals of the Lame field
+    B = A * RO ** 2
+    t = RO - RI
+    b_hoop = 6 / t ** 2 * B * ((t / 2 + RI) * (1 / RI - 1 / RO) - math.log(RO / RI))
+    lin_i = np.array([A, -p * RI / (RI + RO) - b_hoop, hoop_mean + b_hoop, 0, 0, 0])   # sxx, syy (radial), szz (hoop)
+    assert r["von_mises.membrane_bending@SCL-WALL"].value == pytest.approx(float(scl.von_mises(lin_i)), rel=0.02)
+    assert r["max_principal.membrane_bending@SCL-WALL"].value == pytest.approx(hoop_mean + b_hoop, rel=0.02)
+    # the peak: the von Mises stress at the bore, within a few percent; the engine says where it is
+    peak = r["von_mises.peak@part"]
+    assert peak.value == pytest.approx(vm_i, rel=0.03)
+    assert "FT-BORE" in peak.near and math.hypot(peak.location[1], peak.location[2]) == pytest.approx(RI, rel=0.02)
+    assert peak.uncertainty is not None and abs(peak.value - vm_i) / vm_i <= peak.uncertainty + 0.01
+    assert r["von_mises.peak@FT-OUTER"].value < peak.value
+    agg = r["von_mises.membrane@scls"]
+    assert agg.near in ("SCL-WALL", "SCL-SKEW") and agg.value == pytest.approx(
+        max(r["von_mises.membrane@SCL-WALL"].value, r["von_mises.membrane@SCL-SKEW"].value))
+    # a free part: displacement relative to the mean rigid-body motion; the bore stays round
+    u_i = RI / 200e9 * (hoop_i - 0.3 * (-p + A))                              # radial displacement of the bore
+    u_ax = 0.5 * LEN / 200e9 * (A - 0.3 * (hoop_i - p))                       # half the change of length (at the bore)
+    assert r["displacement.max@part"].status == "converged"
+    assert r["displacement.max@part"].value > max(u_i, abs(u_ax))
+    assert r["displacement.max@part"].value < 1.05 * math.hypot(RO / 200e9 * 2 * A, u_ax * 1.1) + u_i
+    assert r["radial_displacement.range@FT-BORE"].value < 0.02 * u_i
+    assert any(d.id == "DEC-LC-PV-DISPLACEMENT-DATUM" for d in j.decisions)
+    assert any(d.id == "DEC-LC-PV-ROUNDNESS" and d.needs_review for d in j.decisions)
+    # a key of another engine is named, not invented
+    assert "temperature.max@part" not in r and "temperature.max@part" in rec.message
+    # the fields of the two finest meshes, for the fatigue engine
+    fields = [a for a in rec.artifacts if a.kind == "field"]
+    assert [Path(a.path).name for a in fields] == ["fields_L1.npz", "fields_L2.npz"]
+    z = np.load(cylinder.project.out / fields[-1].path)
+    assert z["x"].shape == (rec.mesh[-1].nodes, 3) and z["stress"].shape == (rec.mesh[-1].nodes, 6)
+    assert z["u"].shape == (rec.mesh[-1].nodes, 3)
+    hoop = z["stress"][:, 1] * 0                                              # hoop stress at the nodes of the bore
+    rr = np.hypot(z["x"][:, 1], z["x"][:, 2])
+    c, s = z["x"][:, 1] / rr, z["x"][:, 2] / rr
+    hoop = z["stress"][:, 1] * s * s + z["stress"][:, 2] * c * c - 2 * z["stress"][:, 4] * s * c
+    mid = (abs(z["x"][:, 0] - LEN / 2) < 0.3 * LEN)
+    bore = mid & (rr < RI * 1.001)
+    outer = mid & (rr > RO * 0.999)
+    assert np.median(hoop[bore]) == pytest.approx(hoop_i, rel=0.02)
+    assert np.median(hoop[outer]) == pytest.approx(2 * A, rel=0.02)
+    assert np.abs(hoop[bore] / hoop_i - 1).max() < 0.06                        # nodal scatter of the recovered stress
+    # text for people: the statement names the method; the model is JSON
+    assert "finite element" in rec.statement and rec.material["E"] == pytest.approx(200e9)
+    json.dumps(rec.model_dump(mode="json"))
+
+
+def test_free_part_that_does_not_balance_fails(cylinder):
+    lc = _pressure_case(cylinder, 10 * MPa, lc_id="LC-UNBAL", ends=(1.0, 0.0))
+    out = cylinder.run(lc, cylinder.mesh3[:1])
+    rec = out.record
+    assert rec.status == "failed" and not rec.results
+    assert "must balance" in rec.message and "net force" in rec.message
+    assert rec.checks and rec.checks[0].passed is False and rec.checks[0].value == pytest.approx(1.0, rel=1e-3)
+
+
+def test_small_imbalance_goes_to_inertia_relief(cylinder):
+    """Loads that balance to 0.5 %: the residual becomes a rigid-body acceleration field, not a point reaction."""
+    lc = _pressure_case(cylinder, 10 * MPa, lc_id="LC-NEAR", ends=(1.0, 1.005))
+    out = cylinder.run(lc, cylinder.mesh3[:2])
+    rec = out.record
+    ck = _checks(rec)
+    assert rec.status == "done"
+    assert ck["BALANCE"].passed and ck["BALANCE"].value == pytest.approx(0.005, rel=0.02)
+    assert ck["RESTRAINT"].passed and ck["RESTRAINT"].value < 1e-8
+    assert any(b.type == "body_force" and "residual" in b.description for b in rec.bcs)
+    assert rec.results["max_principal.membrane@SCL-WALL"].value == pytest.approx(10 * MPa * RI / (RO - RI), rel=0.02)
+    assert all(v.status in ("converged", "not_converged", "singular") and len(v.per_level) == 2 for v in rec.results.values())

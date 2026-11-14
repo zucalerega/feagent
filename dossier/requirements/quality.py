@@ -12,17 +12,27 @@ from dossier.model import PARAM_ROLES, Requirement, Value
 from dossier.requirements import wording
 from dossier.requirements.base import (FIXED_LOCATIONS, MEASURES, QUANTITY_UNIT, ROLE_UNIT, ROLE_WORDS, SECTION_MEASURES,
                                        UNIT_WORDS, Env, cap, count, criterion_key, criterion_name, join, nearest, number,
-                                       quote, rule, shown, some)
+                                       quote, rule, some)
 
 # --------------------------------------------------------------------------- verifiable by analysis
 
 
 @rule("req.not_verifiable", "major", "quality", "A requirement that analysis verifies has a criterion.")
 def not_verifiable(env: Env) -> None:
+    """Key `not-verifiable`: the plan and the compliance stage link to FND-<requirement>-NOT-VERIFIABLE."""
     for r in env.reqs:
         if r.verification != "analysis" or r.criteria:
             continue
         vague = [v.word for v in wording.vague(r.text)]
+        values = {"criteria": 0, "parameters": len(r.parameters), "vague_words": vague}
+        if r.kind == "definition":                      # a definition has nothing to verify: the method is the defect
+            env.find(subject=r.id, key="not-verifiable", severity="minor", title=f"Analysis cannot verify the definition {r.id}",
+                     statement=f"{r.id} is a definition, but its verification method is analysis and it has no criterion.",
+                     rationale=[f"The kind of {r.id} is definition.",
+                                "A definition gives a name or a number, and no result that analysis can compare with a limit.",
+                                f"The text is {quote(r.text)}."],
+                     suggestion=f"Change the verification method of {r.id} to review.", values=values)
+            continue
         rationale = [f"The verification method of {r.id} is analysis.",
                      "The requirement has no criterion: no result quantity, no location and no limit."]
         if r.parameters:
@@ -36,7 +46,7 @@ def not_verifiable(env: Env) -> None:
                  rationale=rationale,
                  suggestion=[f"Add a criterion to {r.id}: a quantity, a measure, a location, a limit and the phases.",
                              f"If analysis is not the correct method, change the verification method of {r.id}."],
-                 values={"criteria": 0, "parameters": len(r.parameters), "vague_words": vague})
+                 values=values)
 
 
 # --------------------------------------------------------------------------- the text: obligation, singular, vague
@@ -116,9 +126,10 @@ def vague_word(env: Env) -> None:
         for fix in fixes[:3]:
             ws = [quote(h.word, True) for h in hits if _VAGUE_FIX[h.kind] == fix]
             suggestion.append(fix.format(words=join(ws)))
-        env.find(subject=r.id, key="vague", title=f"Words without a measure in {r.id}",
-                 statement=f"The text of {r.id} uses {quoted}, and a verification cannot measure "
-                           f"{'this word' if len(hits) == 1 and ' ' not in hits[0].word else 'these words'}.",
+        one = len(hits) == 1 and " " not in hits[0].word
+        env.find(subject=r.id, key="vague", title=f"{'Word' if one else 'Words'} without a measure in {r.id}",
+                 statement=[f"The text of {r.id} uses {quoted}.",
+                            f"{'This word gives' if one else 'These words give'} no limit that a verification can measure."],
                  rationale=rationale, suggestion=suggestion, severity="major" if major else "minor",
                  values={"words": [h.word for h in hits], "kinds": kinds, "criteria": len(r.criteria)})
 
@@ -439,6 +450,3 @@ def parameter_role(env: Env) -> None:
                                     "The validation cannot compare the parameter with the system context."],
                          suggestion=f"Correct the unit or the role of the parameter {name}.",
                          values={"role": p.role, "unit": rp.unit, "needs": unit}, links=[("about", name)])
-
-
-__all__ = ["shown"]     # (keeps the import for rule modules that format values the same way)

@@ -934,7 +934,7 @@ def _distances(zones: Zones) -> str:
 
 def _cycle_sentences(c: dict, points: list[Point]) -> list[str]:
     a, b = points[c["a"]].label, points[c["b"]].label
-    life = (f"The Basquin relation gives {_count_text(c['cycles_to_failure'])} to failure."
+    life = (f"The Basquin relation gives {_num(c['cycles_to_failure'])} cycles to failure."
             if c["cycles_to_failure"] > MIN_CYCLES else
             "The corrected stress amplitude is over the fatigue strength coefficient. "
             f"The analysis uses {_num(MIN_CYCLES)} cycles to failure.")
@@ -956,7 +956,7 @@ def _status_sentences(r: ZoneResult, zones: Zones, sn: SN, limit: float) -> list
                 "The elastic stress at a sharp re-entrant edge or at the rim of a held face has no limit.",
                 "The value depends on the mesh and is not a result of the part."]
     elif not cv:
-        out.append("The analysis has the stress fields of one mesh only, thus it gives no mesh uncertainty.")
+        out.append("The analysis has the stress fields of one mesh only. It gives no mesh uncertainty.")
     elif cv["range_change"] is None:
         out.append("The stress range of the critical cycle is zero on one of the two finest meshes.")
     else:
@@ -973,7 +973,8 @@ def _status_sentences(r: ZoneResult, zones: Zones, sn: SN, limit: float) -> list
                 "The elastic stress-life method does not apply at those nodes. "
                 "The damage there can be too small or too large."]
     if not zones.located:
-        out.append("The analysis did not find all singular zones in the mesh, thus the status cannot be converged.")
+        out.append("The analysis did not find all singular zones in the mesh. Then no result can have the status "
+                   "converged.")
     return out
 
 
@@ -1014,7 +1015,7 @@ def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], 
                "It calculates the damage on one mesh."),
               "A cycle is a pair of stress states. Its stress range is the von Mises stress of the difference between "
               "the two stress tensors.",
-              (f"The Basquin relation with the {rule} gives the cycles to failure." if rule else
+              (f"The Basquin relation gives the cycles to failure, with the {rule} for the mean stress." if rule else
                "The Basquin relation gives the cycles to failure, without a mean stress correction."),
               "The Miner rule adds the damage of all cycles at each node."]]
     p2 = [f"The largest damage in the part is {_num(part.value)}, for the specified repetitions without a life factor.",
@@ -1025,7 +1026,7 @@ def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], 
     else:
         p2.append("No cycle has a stress range at this node.")
     paras.append(p2)
-    paras.append([f"The status of this result is {part.status.replace('_', ' ')}.",
+    paras.append([f"This result has the status {part.status.replace('_', ' ')}.",
                   *_status_sentences(part, zones, sn, limit)])
     if smooth.value is not None and zones.features:
         p3 = [f"Out of the singular zones, the largest damage is {_num(smooth.value)} at {_at(smooth.location)}"
@@ -1033,7 +1034,7 @@ def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], 
               f"The singular zones are the nodes nearer than {_distances(zones)} to a sharp re-entrant edge or a held "
               f"face.",
               "This value is for information only.",
-              f"Its status is {smooth.status.replace('_', ' ')}."]
+              f"It has the status {smooth.status.replace('_', ' ')}."]
         paras.append(p3)
     elif smooth.value is None:
         paras.append([smooth.note])
@@ -1050,8 +1051,8 @@ def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], 
         paras.append([f"Duty cycle {d['duty_cycle']} has {_count_text(d['count'], 'repetition')}.",
                       f"At the critical node, its largest stress range is {_pa(d['range'])}, between {a} and {b}.",
                       f"The stress amplitude is {_pa(d['amplitude'])} and the mean stress is {_pa(d['mean_stress'])}.",
-                      f"One such cycle for each repetition gives {_count_text(d['cycles_to_failure'])} to failure and a "
-                      f"damage of {_num(d['damage_alone'])}.",
+                      f"One such cycle for each repetition gives {_num(d['cycles_to_failure'])} cycles to failure and "
+                      f"a damage of {_num(d['damage_alone'])}.",
                       f"The cycle count gives this duty cycle {_pct(d['share'])} of the damage at the critical node."])
     return "\n\n".join(" ".join(p) for p in paras)
 
@@ -1200,7 +1201,7 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
     j.decide(s, "cycle-count", "Cycle count: pairs of stress states, largest stress range first",
              choice="The cycle count pairs the two stress states with the largest stress range first. "
                     "The number of these cycles is the smaller number of repetitions of the two states. "
-                    "The count then continues with the repetitions that are left, until no pair is left. "
+                    "The count then continues with the repetitions that stay, until it finds no more pairs. "
                     "The states of all duty cycles and the unloaded state are in one count.",
              rationale="The system model gives the repetitions of each duty cycle, but not the order of the duty cycles. "
                        "This count gives the largest damage of all possible orders. "
@@ -1238,7 +1239,8 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
                  rationale="The policy limit applies to a response of the finite element analysis, which is the stress. "
                            f"The damage is in proportion to the stress range to the power {_num(sn.power)}. "
                            f"A change of the stress range of 1 % changes the damage by {_pct(1.01 ** sn.power - 1)}. "
-                           "The uncertainty of the damage includes this effect, thus the margin of safety includes it.",
+                           "The uncertainty of the damage includes this effect. Then the margin of safety includes it "
+                           "too.",
                  alternatives=[(f"Apply the policy limit of {_pct(limit)} to the damage.",
                                 f"The stress range must then change by less than {_pct((1 + limit) ** (1 / sn.power) - 1)}. "
                                 "The meshes of a part with stress concentrations do not get to this accuracy."),
@@ -1252,7 +1254,7 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
                         f"That is the endurance limit of {_pa(sn.endurance)} divided by {_num(1 + sn.margin)}. "
                         "At all other nodes, each cycle gives damage on the Basquin line, also below the endurance limit.",
                  rationale="Large cycles decrease the endurance limit of the material for the small cycles that follow. "
-                           "Thus the endurance limit is correct only for a node without a cycle above it. "
+                           "As a result, the endurance limit is correct only for a node without a cycle above it. "
                            f"The divisor is the largest mesh uncertainty of a converged stress ({_pct(sn.margin)}, policy).",
                  alternatives=[("Give no damage to each cycle below the endurance limit.",
                                 "That is not conservative when larger cycles occur at the same node."),
@@ -1262,7 +1264,7 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
 
     # ---- what the analysis takes as true
     j.assume(s, "order", "Order of the duty cycles",
-             statement="The order of the duty cycles in the life of the part is not known. "
+             statement="The system model does not give the order of the duty cycles in the life of the part. "
                        "The cycle count uses the order that gives the largest damage.",
              rationale="The system model gives the number of repetitions of each duty cycle only. "
                        "A cycle between two duty cycles occurs when they alternate.",

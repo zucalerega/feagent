@@ -637,9 +637,7 @@ def _item(req: Requirement, k: int, crit: Criterion, lc: LoadCase, item_id: str,
                 verdict, cause = ev.verdict, ev.cause
                 why = reasons
                 reasons = [ESTIMATE_REASON, f"Hand calculation {hc.id} gives the value as its output {output}.", *why]
-                if hc.warnings:
-                    n = len(hc.warnings)
-                    reasons.append(f"The hand calculation has {n} warning{'s' if n > 1 else ''} about the limits of its formula.")
+                reasons += [f'The hand calculation says about the limits of its formula: "{w}"' for w in hc.warnings]
                 if inp.is_stale(inp.project.stage_path("plan")):
                     reasons.append("The input files changed after the plan stage wrote the hand calculations.")
                 item.analysis = None
@@ -653,9 +651,8 @@ def _item(req: Requirement, k: int, crit: Criterion, lc: LoadCase, item_id: str,
                 verdict, cause = "inconclusive", blockers[0][0]
             reasons += notes
 
-    if ev is not None:
-        item.result_key = ev.key
-        item.value, item.unit = ev.value, ev.unit or item.unit
+    if ev is not None and ev.value is not None:
+        item.result_key, item.value, item.unit = ev.key, ev.value, ev.unit
         if ev.margin is not None:
             item.conservative_value = ev.conservative
             item.margin = ev.margin if math.isfinite(ev.margin) else None

@@ -350,6 +350,19 @@ class Env:
     def wetted(self, e: ResolvedEffect) -> bool:
         return (e.role or DEFAULT_ROLE.get(e.kind, "")) == "wetted"
 
+    def context_lines(self, e: ResolvedEffect, most: int = 5) -> tuple[list[str], list[str]]:
+        """Where a scalar context value is and how it comes from its parameters: (sentences, the parameters
+        they show). The sentences are the middle of a rationale: the value with its phase, effect and
+        connection; what the engineer wrote about the effect; the derivation."""
+        lines = [f"The system context gives {e.display} in the phase {e.phase} (effect {e.id}, connection {e.connection})."]
+        if e.description:
+            lines.append(f"The description of the effect is {quote(e.description)}.")
+        chain, names = derivation(self.ctx, e.expr, e.display, "The effect", most=max(most - len(lines), 1))
+        if not chain:
+            lines.append(f"The effect gives this value as a number, with the source {quote(e.source)}." if e.source
+                         else "The effect gives this value as a number, without a source.")
+        return lines + chain, names
+
     def phases_of(self, req: Requirement) -> list[str]:
         return self.project.phases_of(req)
 

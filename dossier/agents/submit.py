@@ -29,8 +29,9 @@ The submission is ACCEPTED WITH A WARNING (Result.warnings) when
     * a decision gives no alternative.
 
 Accepted records are full Finding / Decision / Assumption records:
-    id            FND-A-<subject>-<key>, DEC-A-..., ASM-A-...  (make_id; the "A" keeps them apart from the
-                  ids that rules make, and `check` refuses an id that another file already uses)
+    id            FND-A-<tag>-<subject>-<key>, DEC-A-..., ASM-A-...  (make_id; "A" keeps them apart from the ids
+                  that rules make, the two-letter tag of the role (RR, PR, AC) keeps the roles apart, and
+                  `check` refuses an id that another stage file already uses)
     origin        by = "agent:<role>" or "agent:<role> (<model name>)"; stage = validate | plan | solve by role
     links         one `evidence` link per evidence id
     decisions     basis "engineering_judgement", needs_review = True
@@ -585,7 +586,7 @@ def check(project: Project, role: "str | roles_mod.Role", data: Any, by: str = "
                 continue
             if not (isinstance(subject, str) and subject.strip() and isinstance(key, str) and key.strip()):
                 continue
-            rid = make_id(prefix, "A", subject.strip(), key.strip())
+            rid = make_id(prefix, "A", r.tag, subject.strip(), key.strip())
             if rid in seen:
                 res.errors.append(f"{where}: the subject {subject!r} and the key {key!r} give the id {rid}, which "
                                   f"{seen[rid]} of this submission also has; use another key")

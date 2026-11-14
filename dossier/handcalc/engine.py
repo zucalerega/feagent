@@ -221,11 +221,7 @@ def evaluate(spec: HandCalcSpec, project, ctx, geo: dict | None, load_case: Load
     reader = _Reader(ctx, geo, load_case)
     values: dict[str, float] = {}
     inputs: list[CalcInput] = []
-    links: list[Link] = []
-
-    def link(to: str, note: str) -> None:
-        if to != spec.id and not any(l.to == to for l in links):
-            links.append(Link(rel="uses", to=to, note=note))
+    read_by: dict[str, list[str]] = {}          # record id -> the inputs that read it
 
     for inp in model.inputs:
         got = _read_input(inp, spec, model, names, reader, ctx, project, load_case)
@@ -237,7 +233,10 @@ def evaluate(spec: HandCalcSpec, project, ctx, geo: dict | None, load_case: Load
         values[inp.name] = v
         inputs.append(CalcInput(name=inp.name, si=v, unit=inp.unit, display=units.display(q), source=source))
         for r in reads:
-            link(r, f"input {inp.name}")
+            if r != spec.id and inp.name not in read_by.setdefault(r, []):
+                read_by[r].append(inp.name)
+    links = [Link(rel="uses", to=to, note=("input " if len(by) == 1 else "inputs ") + ", ".join(by))
+             for to, by in read_by.items()]
     try:
         calc = model.calculate(values)
     except HandCalcError as e:

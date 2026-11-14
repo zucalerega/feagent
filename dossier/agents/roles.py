@@ -11,8 +11,8 @@ drives from the shell with `brief` and `submit`.
     role_of(record)      the role that proposed a record (from origin.by), or None
     model_of(record)     the model name that origin.by carries, or ""
 
-To add a role: add a Role here, give it sections of dossier.agents.brief.SECTIONS, and a canned
-submission in dossier.agents.mock.
+To add a role: add a Role here with its own tag and the sections of dossier.agents.brief.SECTIONS that it
+reads. dossier.agents.mock makes its canned submission.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ CONFIDENCES: tuple[str, ...] = ("high", "medium", "low")
 @dataclass(frozen=True)
 class Role:
     name: str                    # the short name of the command line
+    tag: str                     # two letters in the ids of its records: FND-A-<tag>-<subject>-<key>
     title: str
     stage: str                   # origin.stage (and Decision.stage / Assumption.stage) of its records
     who: str                     # who the role is and what it has in front of it
@@ -41,6 +42,7 @@ class Role:
 ROLES: dict[str, Role] = {r.name: r for r in (
     Role(
         name="requirements-reviewer",
+        tag="RR",
         title="Requirements reviewer",
         stage="validate",
         who=("You are the requirements reviewer: an experienced systems and structures engineer who reviews the "
@@ -72,6 +74,7 @@ ROLES: dict[str, Role] = {r.name: r for r in (
     ),
     Role(
         name="plan-reviewer",
+        tag="PR",
         title="Load-case plan reviewer",
         stage="plan",
         who=("You are the plan reviewer: an experienced stress engineer who reviews the load-case plan before the "
@@ -101,6 +104,7 @@ ROLES: dict[str, Role] = {r.name: r for r in (
     ),
     Role(
         name="analysis-checker",
+        tag="AC",
         title="Independent analysis checker",
         stage="solve",
         who=("You are the analysis checker: an independent stress engineer who checks each analysis before its "

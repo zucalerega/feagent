@@ -94,7 +94,7 @@ def _value(v: model.Value | None, names: dict | None = None) -> str:
     try:
         return f"{units.display(v.quantity(names or {}))} (= {expr})"
     except Exception:  # noqa: BLE001  an expression of a load case: load(), feat()
-        return f"= {expr}"
+        return f"`{expr}` (evaluated in the load case)"
 
 
 def _expr(v: model.Value | None) -> str:
@@ -466,7 +466,7 @@ class _Brief:
         else:
             limit = _value(c.limit, self.names)
         return (f"`{c.id or 'criterion'}`: {factor}`{c.key()}` {c.comparator} {limit}"
-                + (f". Note: {_c(c.note)}" if c.note else ""))
+                + (f" (note: {_s(c.note)})" if c.note else ""))
 
     def requirements(self) -> list[str]:
         p = self.p
