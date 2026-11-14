@@ -222,3 +222,17 @@ Text an engineer wrote (requirement text, descriptions in the YAML files) is quo
 - No new dependency without need. Available: numpy, scipy, pint, pydantic, pyyaml, gmsh, meshio,
   scikit-fem, pyvista, matplotlib, fastapi.
 - Do not write planning documents. Put what a user must know in your module docstrings.
+
+## Shared conventions between engines
+
+- `dossier.context.proportional(loads_a, loads_b) -> float | None`: the scale between two phases whose
+  mechanical loads are the same pattern (no thermal loads). Used by the planner (scaled load cases) and by
+  the requirement validation (a phase whose loads are a smaller multiple of a covered phase is covered).
+- Finding ids are `make_id("FND", subject, key)`. Keys other engines link to: a phase with loads that no
+  requirement covers: subject = the phase id, key `uncovered` (`FND-PH-TRANSPORT-UNCOVERED`); a requirement
+  that analysis cannot verify (no criterion): subject = the requirement id, key `not-verifiable`.
+- When an analysis is not available for a load case, the compliance stage can use the hand calculation of
+  that load case for the same result key as an *estimate*: the verdict is then inconclusive, with the margin
+  of the estimate shown.
+- Stress at a fixed support is not a result: the peak evaluation leaves out the zone next to a fixed face
+  (the structural engine records the distance as a decision).

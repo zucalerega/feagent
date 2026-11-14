@@ -274,3 +274,53 @@ def load(project: Project) -> Context:
     if doc is None or doc.get("inputs_digest") != project.inputs_digest():
         return build(project)
     return Context.model_validate(doc["context"])
+
+
+# --------------------------------------------------------------------------- comparing phases
+
+MECHANICAL = ("pressure", "force", "moment", "acceleration", "displacement")
+THERMAL = ("fluid_temperature", "temperature", "heat_flux")
+
+
+def proportional(a: list[LoadItem], b: list[LoadItem], rtol: float = 1e-6) -> float | None:
+    """The scale s with b = s x a, when the mechanical loads of two phases are the same pattern (the same
+    kinds on the same interfaces and roles, every value the same multiple, the same supports) and neither
+    phase has a thermal load. Then a linear static analysis of `a` gives `b` by scaling. None otherwise."""
+    def key(x: LoadItem):
+        return (x.interface, x.kind, x.role)
+
+    if any(x.kind in THERMAL for x in (*a, *b)):
+        return None
+    if sorted(key(x) for x in a if x.kind == "support") != sorted(key(x) for x in b if x.kind == "support"):
+        return None
+
+    def mech(items):
+        out: dict[tuple, list[float]] = {}
+        for x in items:
+            if x.kind in MECHANICAL and x.si is not None:
+                v = x.si if isinstance(x.si, list) else [x.si]
+                acc = out.setdefault(key(x), [0.0] * len(v))
+                for i, c in enumerate(v):
+                    acc[i] += c * x.factor
+        return out
+
+    ma, mb = mech(a), mech(b)
+    if set(ma) != set(mb) or not ma:
+        return None
+    scale = None
+    big = max(abs(c) for v in (*ma.values(), *mb.values()) for c in v) or 1.0
+    for k, va in ma.items():
+        vb = mb[k]
+        if len(va) != len(vb):
+            return None
+        for ca, cb in zip(va, vb):
+            if abs(ca) <= rtol * big and abs(cb) <= rtol * big:
+                continue
+            if abs(ca) <= rtol * big:
+                return None
+            s = cb / ca
+            if scale is None:
+                scale = s
+            elif abs(s - scale) > rtol * max(abs(scale), 1.0):
+                return None
+    return scale if scale is not None and scale > 0 else None
