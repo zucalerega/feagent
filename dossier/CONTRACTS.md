@@ -236,3 +236,21 @@ Text an engineer wrote (requirement text, descriptions in the YAML files) is quo
   of the estimate shown.
 - Stress at a fixed support is not a result: the peak evaluation leaves out the zone next to a fixed face
   (the structural engine records the distance as a decision).
+
+## Report, dashboard and agent roles
+
+- `dossier.trace.graph(project) -> {"nodes": {...}, "edges": [...]}` is the one trace graph (inputs, context
+  numbers and derived records, with `upstream` and `downstream`). The report and the dashboard read it; they do
+  not build their own.
+- The report is one self-contained page, `out/report/index.html` (pictures beside it in `out/report/assets/`).
+  It is also the reading surface of the dashboard: the server serves the same file and injects
+  `<script>window.DOSSIER_API = "/api/dossier/<project id>";</script>` before `</head>`. When `DOSSIER_API` is
+  set, the page turns its review controls on:
+  `GET  {DOSSIER_API}/reviews` -> `{"reviews": {record id: {"state", "by", "date", "comment", "stale"}}}`;
+  `POST {DOSSIER_API}/reviews` with `{"record", "state", "by", "comment"}` -> the stored review
+  (`state`: accepted | rejected | changes_requested | open). Without it the page shows the reviews that
+  `reviews.yaml` held when the report was built, and the command to give one.
+- Records an LLM role proposes go in `<project>/agent/<role>.json`, a stage file with the usual collections
+  (`findings`, `decisions`, `assumptions`) whose records have `origin.by = "agent:<role>"`. `Project` reads
+  them with the other stage files, so they appear in the report, marked as proposed by an agent, and a person
+  reviews them like any other record.
