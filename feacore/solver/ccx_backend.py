@@ -66,7 +66,7 @@ def solve(case: Case, **options) -> "CcxResult":
         raise NotImplementedError(
             "ccx backend: transient and modal analyses (analysis.options.transient / modal) are not "
             "implemented. Use backend='skfem' (docs/solver_transient.md)")
-    if any(ld.type == "temperature" and isinstance(ld.value, dict) for ld in case.loads):
+    if any(ld.type == "temperature" and isinstance(ld.value, dict) and "field" in ld.value for ld in case.loads):
         raise NotImplementedError(
             "ccx backend: a temperature load from a field file (value = {'field': path}) is not implemented. "
             "The skfem backend maps such a field to its nodes; give the ccx backend the temperature as a "

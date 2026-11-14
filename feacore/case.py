@@ -516,7 +516,8 @@ class Case:
                 errs.append(f"{tag}: value must be a list of {ncomp} components")
             elif l.type == "temperature" and self.materials and all(m.alpha == 0 for m in self.materials.values()):
                 errs.append(f"{tag}: thermal load but every material has alpha = 0")
-            if isinstance(l.value, dict) and l.type in LOAD_TYPES[a.physics] and l.type != "body_force":
+            if isinstance(l.value, dict) and "table" not in l.value and l.type in LOAD_TYPES[a.physics] \
+                    and l.type != "body_force":      # a time table is checked with the time-dependent values
                 if l.type != "temperature":
                     errs.append(f"{tag}: value must be a number or an expression (a field file is for a "
                                 f"temperature load only)")

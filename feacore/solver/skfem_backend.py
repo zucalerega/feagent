@@ -387,7 +387,7 @@ def _assemble_elasticity(md: _Model):
                 gi = np.zeros_like(c)
                 gi[mask] = _eval(ld.value[i], md.xq[:, mask])
                 f[md.split[i]] += _f_scalar.assemble(sb, c=c, g=gi)
-        elif ld.type == "temperature" and isinstance(ld.value, dict):   # a field file (a heat solution)
+        elif ld.type == "temperature" and isinstance(ld.value, dict) and "field" in ld.value:   # a heat solution
             dT[mask] = _field_at_qp(md, ld, i_ld, E)[mask] - md.a.T_ref
         elif ld.type == "temperature":
             dT[mask] = _eval(ld.value, md.xq[:, mask]) - md.a.T_ref

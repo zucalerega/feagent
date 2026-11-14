@@ -437,6 +437,9 @@ def create_app(runs_dir: str | Path | None = None, quick_workers: int | None = N
 
     app.include_router(nonlinear_api.router(store, tasks))   # #/nonlinear: runs, curves vs the test, gallery
     app.include_router(testdata_api.router(store))           # #/testdata: physical tests and uploads
+    from feacore.ui import dossier_api                       # the Projects section: dossier projects (docs/ui.md)
+
+    app.include_router(dossier_api.router(store, tasks))     # #/projects: inputs, runs, reviews, the report
 
     # ------------------------------------------------------------------ health
     @app.get("/api/health")
