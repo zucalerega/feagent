@@ -303,7 +303,7 @@ def test_quick_mesh_levels_cache_and_solve(built):
         assert name in md.groups and len(md.groups[name].index), name
     for m in lv:
         vol = float(Basis(read_mesh(project.out / m.path, 3, 2).mesh, ElementTetP2(), intorder=3).dx.sum())
-        assert vol == pytest.approx(geo["cad"]["volume"], rel=1e-2)       # coarse levels: a hole is a polygon
+        assert vol == pytest.approx(geo["cad"]["volume"], rel=3e-2)       # coarse levels: curved walls are cut short (1.8 % at 15 mm)
 
 
 def test_solve_on_the_coarsest_mesh(built):
