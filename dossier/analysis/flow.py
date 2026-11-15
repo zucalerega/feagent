@@ -1148,7 +1148,9 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
         text = (f"The residuals stopped decreasing on mesh {', '.join(str(i) for i in stalled)}, at {res_worst:.1e} or "
                 f"less (limit {RESIDUAL_STALL_MAX:.0e}). In the last {QOI_WINDOW} iterations the pressure drop changed "
                 f"by {_pct(max(changes), 3)} or less (limit {_pct(QOI_TOL, 1)}). Thus the iteration error of the "
-                f"result is small. The other meshes reached the residual tolerance of {setup.residual_tol:g}.")
+                f"result is small."
+                + (f" The other meshes reached the residual tolerance of {setup.residual_tol:g}."
+                   if len(stalled) < len(levels) else ""))
     else:
         text = (f"The solver reached the residual tolerance of {setup.residual_tol:g} on each mesh, after "
                 f"{', '.join(str(lv.iterations) for lv in levels)} iterations.")
