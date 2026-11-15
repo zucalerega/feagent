@@ -146,7 +146,7 @@ def _rigid_column_validity(v) -> list[str]:
     name="rigid_column_surge",
     title="Pressure surge of a slow valve closure (rigid liquid column)",
     reference="J. Parmakian, Waterhammer Analysis, Dover, 1963, chapter 2 (rigid water column theory). The "
-              "largest pressure with pressure waves is the Michaud formula; the docstring of "
+              "largest pressure with pressure waves is the Michaud formula. The documentation of "
               "dossier.handcalc.fluid gives its derivation.",
     inputs=[
         Input("rho", "Density of the liquid", "kg/m^3", symbol=r"\rho"),

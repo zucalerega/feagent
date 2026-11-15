@@ -909,7 +909,7 @@ def _solve_checks(res, mg: MeshGeom, real: Realized, ideal: Idealizer, U: np.nda
         err = max(float(np.linalg.norm(F_s - F_i) / fs), float(np.linalg.norm(about_c(F_s - F_i, M_s - M_i)) / ms))
         out["assembly"] = {
             "kind": "load_resultant", "value": err, "limit": ASSEMBLY_TOL, "passed": bool(err <= ASSEMBLY_TOL),
-            "statement": f"The solver assembled a total load of {fmt(F_s, 'N')} and a moment of "
+            "statement": f"The solver assembled a total load of {fmt(F_s, 'N')}. It assembled a moment of "
                          f"{fmt(about_c(F_s, M_s), 'N*m')} about the centre of volume. The loads of the load case give "
                          f"{fmt(F_i, 'N')} and {fmt(about_c(F_i, M_i), 'N*m')}."}
     # equilibrium: the reactions of the supports against the applied loads
@@ -921,8 +921,8 @@ def _solve_checks(res, mg: MeshGeom, real: Realized, ideal: Idealizer, U: np.nda
     err = max(float(np.linalg.norm(R + F_i) / scale_f), float(np.linalg.norm(about_c(R + F_i, M_R + M_i)) / scale_m))
     out["equilibrium"] = {
         "kind": "equilibrium", "value": err, "limit": EQUILIBRIUM_TOL, "passed": bool(err <= EQUILIBRIUM_TOL),
-        "statement": f"The reactions of the supports give a force of {fmt(R, 'N')} and a moment of "
-                     f"{fmt(about_c(R, M_R), 'N*m')} about the centre of volume. The applied loads give "
+        "statement": f"The reactions of the supports give a force of {fmt(R, 'N')}. "
+                     f"They give a moment of {fmt(about_c(R, M_R), 'N*m')} about the centre of volume. The applied loads give "
                      f"{fmt(F_i, 'N')} and {fmt(about_c(F_i, M_i), 'N*m')}. The sum must be zero."}
     if ideal.free and real.restraints:
         worst = max(float(np.abs(rn[r["node"]]).max()) for r in real.restraints)
@@ -943,8 +943,8 @@ def _solve_checks(res, mg: MeshGeom, real: Realized, ideal: Idealizer, U: np.nda
     out["mesh-quality"] = {
         "kind": "mesh_quality", "value": q, "limit": QUALITY_LIMIT, "passed": bool(q >= QUALITY_LIMIT and not bad),
         "lower_is_worse": True,
-        "statement": f"The smallest element quality is {q:.2f} (mean ratio of the corner tetrahedron; 1 is a regular "
-                     f"element)." + (" The solver reports: " + "; ".join(bad) + "." if bad else
+        "statement": f"The smallest element quality is {q:.2f} (mean ratio of the corner tetrahedron). "
+                     f"A regular element has the value 1." + (" The solver reports: " + ", ".join(bad) + "." if bad else
                                      " No element has a negative Jacobian.")}
     if last:
         try:
@@ -1046,7 +1046,7 @@ def _results(data: list[LevelData], keys: list[str], scls: dict, max_unc: float,
             note += f" The larger value is at the {extra['end']} of the line."
         if "fixed_axis" in extra:
             note += (f" The rigid-body motion of the feature is not in this value. The range about the fixed axis is "
-                     f"{fmt(extra['fixed_axis'], 'm')}; it includes a shift of the feature of {fmt(extra['shift'], 'm')}.")
+                     f"{fmt(extra['fixed_axis'], 'm')}. It includes a shift of the feature of {fmt(extra['shift'], 'm')}.")
         rv.note = note.strip()
         out[key] = rv
     # the worst line

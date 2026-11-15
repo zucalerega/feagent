@@ -120,7 +120,7 @@ def beam_bending(c: Calc) -> None:
     title="Bolt circle with an axial force and a moment (largest bolt load)",
     reference="L. E. Brownell and E. H. Young, Process Equipment Design, Wiley, 1959, chapter 10: the largest bolt "
               "load of a bolt circle with a moment is 4 M / (n d), with the diameter d of the bolt circle. The "
-              "docstring of dossier.handcalc.beams gives the derivation.",
+              "documentation of dossier.handcalc.beams gives the derivation.",
     inputs=[
         Input("F", "Axial force on the joint (tension is positive)", "N", sign="any"),
         Input("M", "Moment on the joint", "N*m", sign="any"),

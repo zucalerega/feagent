@@ -718,8 +718,8 @@ class Idealizer:
         rel_m = float(np.linalg.norm(M_c) / ms) if ms > 0 else 0.0
         real.balance = {"force": F, "moment": M_c, "force_scale": fs, "moment_scale": ms, "rel_force": rel_f,
                         "rel_moment": rel_m, "about": c_v}
-        statement = (f"The applied loads of the free part give a net force of {fmt(F, 'N')} and a net moment of "
-                     f"{fmt(M_c, 'N*m')} about the centre of volume. The largest load is {fmt(fs, 'N')}. "
+        statement = (f"The applied loads of the free part give a net force of {fmt(F, 'N')}. "
+                     f"They give a net moment of {fmt(M_c, 'N*m')} about the centre of volume. The largest load is {fmt(fs, 'N')}. "
                      f"The residual is {100 * max(rel_f, rel_m):.2g} % of the largest load.")
         real.checks["balance"] = {"kind": "load_balance", "value": max(rel_f, rel_m), "limit": BALANCE_TOL,
                                   "passed": bool(max(rel_f, rel_m) <= BALANCE_TOL), "statement": statement}

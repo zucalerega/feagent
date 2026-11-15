@@ -82,7 +82,7 @@ def _plate_validity(v) -> list[str]:
         "The plate is flat and thin, with a constant thickness.",
         "The deflection is small in comparison with the thickness: the plate has no membrane stress.",
         "The pressure is uniform on one side of the plate.",
-        "The edge is a circle. It has a clamped support or a simple support; a real edge is between the two.",
+        "The edge is a circle. It has a clamped support or a simple support. A real edge is between the two.",
         "The material is linear elastic and isotropic.",
         "The stresses are the surface stresses from the moments. They are tensile on the side that the "
         "description of each output gives.",

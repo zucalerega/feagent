@@ -66,7 +66,7 @@ def _fin_validity(v) -> list[str]:
     title="Hollow circular fin with a body at its tip that loses heat",
     reference=f"{_INC}, section 3.6.2 and Table 3.4, case A (fin of uniform cross-section with convection at the "
               f"tip). The model puts the surface area A_tip of the body at the tip in the tip condition of case A; "
-              f"the docstring of dossier.handcalc.thermal gives the solution.",
+              f"the documentation of dossier.handcalc.thermal gives the solution.",
     inputs=[
         Input("T_base", "Temperature of the base of the fin", "K", symbol=r"T_{b}"),
         Input("T_inf", "Temperature of the fluid around the fin", "K", symbol=r"T_{\infty}"),
@@ -155,7 +155,7 @@ def thermal_stress_constrained(c: Calc) -> None:
     name="hollow_cylinder_radial_gradient",
     title="Thermal stress of a hollow cylinder with a steady radial temperature difference",
     reference=f"{_TG}, chapter 13 (Thermal stress), article \"The long circular cylinder\": hollow cylinder with a "
-              f"steady heat flow. The docstring of dossier.handcalc.thermal gives the formulas at the two surfaces.",
+              f"steady heat flow. The documentation of dossier.handcalc.thermal gives the formulas at the two surfaces.",
     inputs=[
         Input("dT", "Temperature of the inner surface minus the temperature of the outer surface", "K", sign="any",
               difference=True, symbol=r"\Delta T"),

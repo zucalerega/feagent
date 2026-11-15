@@ -1144,7 +1144,7 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
                      f"The limit is {_pct(QOI_TOL, 1)}.")
     elif stalled:
         changes = [levels[i].qoi_change["change"] for i in stalled]
-        text = (f"The residuals stopped decreasing on mesh {', '.join(str(i) for i in stalled)}, at {res_worst:.1e} or "
+        text = (f"The residuals did not decrease any more on mesh {', '.join(str(i) for i in stalled)}, at {res_worst:.1e} or "
                 f"less (limit {RESIDUAL_STALL_MAX:.0e}). In the last {QOI_WINDOW} iterations the pressure drop changed "
                 f"by {_pct(max(changes), 3)} or less (limit {_pct(QOI_TOL, 1)}). Thus the iteration error of the "
                 f"result is small."

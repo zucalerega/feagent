@@ -516,7 +516,7 @@ def system_context(p: Page) -> H:
     body = join([
         head, dia, elements,
         sub(p, "Phases", "phases", len(s.phases)),
-        p.say("A phase is an operating state of the system. The effects of one phase act together."),
+        p.say("A phase is a state of operation of the system. The effects of one phase act together."),
         phases,
         sub(p, "Duty cycles", "duty-cycles", len(s.duty_cycles)), duty,
         sub(p, "Effects on the component in each phase", "effects"),

@@ -198,8 +198,8 @@ def criterion_sentence(p: Page, c: Any) -> H:
             return p.t("The {} {} must not be more than {}.", words, where, lshow)
         return p.t("The {} {} must not be less than {}.", words, where, lshow)
     if c.comparator == "<=":
-        return p.t("The {} {}, multiplied by the factor {}, must not be more than {}.", words, where, fshow, lshow)
-    return p.t("The {} {}, divided by the factor {}, must not be less than {}.", words, where, fshow, lshow)
+        return p.t("The engine multiplies the {} {} by the factor {}. The result must not be more than {}.", words, where, fshow, lshow)
+    return p.t("The engine divides the {} {} by the factor {}. The result must not be less than {}.", words, where, fshow, lshow)
 
 
 def criterion_label(req: Any, idx: int) -> str:
@@ -259,7 +259,7 @@ def requirement_card(p: Page, req: Any, doc: str, level: int = 4) -> H:
         elif d.ran("plan"):
             lines.append(tag("div", p.t("No load case serves this criterion."), cls="crit-l muted"))
         crits.append(tag("li", lines, id=f"{req.id}:c{k}"))
-    criteria = tag("ol", crits, cls="crits") if crits else p.t("The requirement has no criterion that analysis can check.")
+    criteria = tag("ol", crits, cls="crits") if crits else p.t("The requirement has no criterion that analysis can verify.")
     # ---- applies to
     phases = d.project.phases_of(req)
     applies = []
@@ -274,7 +274,7 @@ def requirement_card(p: Page, req: Any, doc: str, level: int = 4) -> H:
     if v is not None:
         bits = [p.badge("verdict", v.verdict), p.rec_text(v.statement)]
         if v.governing:
-            bits.append(tag("span", p.t("The governing item is {}.", p.ref(v.governing)), cls="muted"))
+            bits.append(tag("span", p.t("The item that governs the verdict is {}.", p.ref(v.governing)), cls="muted"))
         verdict = join(bits, " ")
     elif d.ran("assess"):
         verdict = p.t("The assess stage gave no verdict for this requirement.")
