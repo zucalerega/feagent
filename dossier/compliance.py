@@ -520,8 +520,9 @@ def _worst_line(key: str, crit: Criterion, lc: LoadCase, an: AnalysisRecord, lim
     if not usable:
         if evals:
             return evals[0]
-        return _Eval(key=key, cause=f"analysis {an.id} has no result for a stress classification line",
-                     reasons=[f"Analysis {an.id} has no result for a stress classification line ({prefix}SCL-...)."])
+        return _Eval(key=key, cause=f"analysis {an.id} has no result for {key}",
+                     reasons=[f"Analysis {an.id} has no result with the key {key}.",
+                              f"Analysis {an.id} has no result for a stress classification line."])
     worst = min(usable, key=lambda e: e.rank)
     line = worst.key.partition("@")[2]
     worst.reasons.append(f"The assessment uses each of the {len(usable)} stress classification lines by itself. "
@@ -784,7 +785,7 @@ def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | No
             mesh = " on the finest mesh" if ev.status == "singular" and ev.finest else ""
             what = _what(ev.key)
             if ev.governs:
-                what = what.replace(f" on {ev.governs}", f" on the governing line {ev.governs}")
+                what = what.replace(f" on {ev.governs}", f" on {ev.governs}, the line that governs,")
             s.append(f"The {what} is {shown}{mesh}{' with an uncertainty of ' + unc if unc else ''}.")
     else:
         s.append(f"Load case {lc.id} gives no value for the {_what(key)}.")

@@ -157,7 +157,7 @@ def test_pass_is_a_converged_result_with_a_positive_conservative_margin(workproj
     assert (item.requirement, item.criterion, item.load_case, item.analysis) == ("REQ-MOV-002", 0, "LC-PROOF", "AN-PROOF")
     assert item.result_key == MB + "SCL-SHELL" and item.origin.by == "engine:compliance" and item.origin.stage == "assess"
     assert item.statement == (
-        "The von Mises membrane plus bending stress on the governing line SCL-SHELL is 71.3 MPa "
+        "The von Mises membrane plus bending stress on SCL-SHELL, the line that governs, is 71.3 MPa "
         "with an uncertainty of 2 %. The allowable is 170 MPa (yield strength of MAT-316L). "
         "The factor of safety is 1.0 (criterion yield of REQ-MOV-002). "
         "The margin of safety is +1.34 with the uncertainty on the unsafe side. The criterion passes.")
@@ -698,7 +698,7 @@ def test_scls_two_lines_the_aggregate_of_the_engine_does_not_pass(workproject):
     # 2 x unsafe: 135 MPa, MS = -0.01481; 2 x safe: 55 MPa, MS = +1.41818: inconclusive. B governs.
     assert item.verdict == "inconclusive" and item.result_key == MB + "SCL-FLOOR"
     assert item.margin == pytest.approx(0.15652, abs=1e-5)
-    assert "on the governing line SCL-FLOOR" in item.statement
+    assert "on SCL-FLOOR, the line that governs," in item.statement
 
 
 def test_scls_a_lost_line_stops_a_pass_also_with_an_aggregate_key(workproject):
@@ -724,7 +724,7 @@ def test_scls_falls_back_to_the_worst_line(workproject):
     assert item.verdict == "pass" and item.result_key == MB + "SCL-FLOOR" and item.value == 150e6
     assert item.margin == pytest.approx(0.11111, abs=1e-5)
     assert "The assessment uses each of the 5 stress classification lines by itself. Line SCL-FLOOR governs." in item.reasons
-    assert item.statement.startswith("The von Mises membrane plus bending stress on the governing line SCL-FLOOR is 150 MPa "
+    assert item.statement.startswith("The von Mises membrane plus bending stress on SCL-FLOOR, the line that governs, is 150 MPa "
                                      "with an uncertainty of 2 %.")
     # an aggregate key without a value is a missing key
     assert run([res(MB + "scls", None, status="not_run"), *lines([96, 60, 150, 30, 20])]).result_key == MB + "SCL-FLOOR"
