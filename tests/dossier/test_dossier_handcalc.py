@@ -934,7 +934,7 @@ def test_the_six_example_specifications_end_to_end(example, example_ctx, specs, 
     assert "MAT-316L" in by_name["k"].source
     assert {l.to for l in hc.links} == {"t_lox", "t_amb", "h_amb", "k_th"} and hc.warnings == []
 
-    # ---- HC-PRESSURE-DROP: 5.3 kg/s of LOX through 150 mm of the 25 mm bore, K = 0.2
+    # ---- HC-PRESSURE-DROP: 5.3 kg/s of LOX through 150 mm of the 25 mm bore, K = 0.07
     hc = handcalc.evaluate(specs["HC-PRESSURE-DROP"], example, ctx, None, cases["flow"])
     velocity = 5.3 / (1141 * math.pi * 0.0125**2)
     o = out(hc)
@@ -942,7 +942,7 @@ def test_the_six_example_specifications_end_to_end(example, example_ctx, specs, 
     assert o["reynolds"] == approx(ctx.params["re_lox"].si)
     assert o["friction_factor"] == approx(fluid.colebrook(o["reynolds"], 3.2e-6 / 0.025)) == approx(0.01352, rel=1e-3)
     dynamic = 0.5 * 1141 * velocity**2
-    assert o["dp_friction"] == approx(o["friction_factor"] * 6 * dynamic) and o["dp_minor"] == approx(0.2 * dynamic)
+    assert o["dp_friction"] == approx(o["friction_factor"] * 6 * dynamic) and o["dp_minor"] == approx(0.07 * dynamic)
     assert o["dp_total"] == approx(14.36e3, rel=1e-3) and hc.comparisons[0].band == (0.5, 2.0)
     assert len(hc.warnings) == 1 and "6 diameters" in hc.warnings[0]
 

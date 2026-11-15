@@ -368,6 +368,31 @@ def test_benchmark_pipe_turbulent_3d(tmp_path):
 
 @needs_foam
 @pytest.mark.slow
+def test_stalled_rule_on_a_real_run(tmp_path):
+    """The window rule on real snapshots: developed pipe flow (Re 1e5, m = 4) asked for an unreachable residual
+    tolerance, so the run ends unconverged after 800 iterations. The pressure drop is read at every snapshot of
+    the last 500 iterations (one every 30); the flow is settled, so spread and trend are far under 0.1 % and the
+    run counts as solved, with the spread as its iteration part."""
+    re, m, d, rho, mu = 1e5, 4, 0.025, 1141.0, 1.95e-4
+    bore = flow.straight_bore(d, d)
+    v = re * mu / (rho * d)
+    up, down = 20 * d, 10 * d
+    setup = flow.Setup(mass_flow=rho * v * math.pi * d * d / 4, rho=rho, mu=mu, regime="turbulent", upstream=up,
+                       downstream=down, max_iterations=800, residual_tol=1e-12)
+    u_tau = v * math.sqrt(flow.colebrook(re) / 8.0)
+    mesh = flow.build_mesh(bore, m, up, down, extra_breaks=[-8 * d, -2 * d, 0.0, d, 7 * d],
+                           y_wall_min=2.0 * 1.25 * flow.VALIDATED_YPLUS[0] * (mu / rho) / u_tau)
+    lv = flow.solve_level(bore, mesh, setup, flow.write_msh(tmp_path / "pipe.msh", mesh))
+    qc = lv.qoi_change
+    print(lv.iterations, lv.residuals, qc)
+    assert not lv.converged and lv.iterations == 800
+    assert qc is not None and qc["snapshots"] >= 16 and qc["iterations"] == 500
+    assert qc["spread"] < 1e-4 and qc["trend"] < 1e-4
+    assert lv.solved
+
+
+@needs_foam
+@pytest.mark.slow
 def test_example_valve_quick(workproject, flow_lc, tmp_path):
     ctx = context_mod.build(workproject)
     an = flow.run(workproject, ctx, None, flow_lc, tmp_path / "w", Options(quick=True, log=lambda s: None))
@@ -375,12 +400,18 @@ def test_example_valve_quick(workproject, flow_lc, tmp_path):
     assert rec.status == "done", rec.message
     r = rec.results[flow.RESULT_KEY]
     assert r.unit == "Pa" and len(r.per_level) == 1
-    # the bore is 6 diameters of smooth pipe plus two narrow grooves: a little more than the friction alone
+    # the bore is 6 diameters of pipe plus two narrow grooves: a little more than the friction alone. The
+    # solver's value has smooth walls (measured 3.55 kPa against a smooth friction of 3.38 kPa); the result adds
+    # the friction of the rough wall (Ra 3.2 um, ks = 5.9 Ra), so it is compared with the rough friction.
     rho, mu, d = 1141.0, 1.95e-4, 0.025
     v = 5.3 / (rho * math.pi * d * d / 4)
-    friction = flow.colebrook(rho * v * d / mu) * 6.0 * 0.5 * rho * v * v
-    assert 0.95 * friction < r.value < 1.3 * friction      # measured: 3.55 kPa, friction 3.38 kPa
-    assert "first look" in r.note
+    re = rho * v * d / mu
+    smooth = flow.colebrook(re) * 6.0 * 0.5 * rho * v * v
+    rough = flow.colebrook(re, flow.KS_PER_RA * 3.2e-6 / d) * 6.0 * 0.5 * rho * v * v
+    print(r.value, r.uncertainty, r.note)
+    assert 0.95 * rough < r.value < 1.3 * rough
+    assert 0.95 * smooth < r.per_level[0] - (rough - smooth) * 1.0 < 1.3 * smooth     # the solver's own value
+    assert "first look" in r.note and "roughness correction" in r.note and "smooth walls" in r.note
     kinds = {c.kind for c in rec.checks}
     assert {"mass_balance", "residuals", "y_plus"} <= kinds
     shutil.rmtree(tmp_path / "w", ignore_errors=True)
