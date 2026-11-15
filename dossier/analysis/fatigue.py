@@ -90,8 +90,9 @@ Method (what is computed, and where it comes from)
    A node in a singular zone is never `converged` (the rule of the structural engine for its peaks): it is
    `singular` when the range grows by more than GROWTH (0.1 %) from the coarser to the finest mesh, else
    `not_converged`; its `uncertainty` is empty. One mesh only: `not_converged`, no uncertainty.
-   Checks follow CONTRACTS.md (passed=False blocks a pass): the convergence check of the smooth zone is
-   information only, like its result, so it has passed=None (not False) when the change is over the limit.
+   Checks follow CONTRACTS.md (passed=False blocks a pass; convergence is carried by the result's status and
+   uncertainty only): the convergence check of each zone is information, passed=None (not False), when the
+   change is over the limit.
    The yield and shakedown checks of both zones stay False when exceeded: they are real limits.
 
 9. Validity. Elastic stress-life is right only where the material stays elastic. Two checks per zone:
@@ -1167,11 +1168,15 @@ def _checks(lc: LoadCase, ctx, points: list[Point], levels: list[Level], part: Z
                     + (f"The change is {_pct(ch)}. " if ch is not None else "")
                     + f"The policy limit is {_pct(limit)}.")
             passed = cv["passed"]
-            if r.zone == "smooth" and not passed:
-                # CONTRACTS.md: passed=False blocks a pass. damage.total@smooth is information only, so its
-                # convergence is too; the result status (not_converged) already shows the problem.
+            if not passed:
+                # CONTRACTS.md: convergence is carried by the result's status and uncertainty only, never by a
+                # failed check. The status not_converged and the uncertainty of the damage show it.
                 passed = None
-                text += " The damage in the smooth zone is for information only. This check does not stop a pass."
+                if r.zone == "smooth":
+                    text += " The damage in the smooth zone is for information only. This check does not stop a pass."
+                else:
+                    text += (" The change is more than the policy limit. The status and the uncertainty of the damage "
+                             "show this. This check is information only.")
             out.append(Check(id=cid(f"convergence-{r.zone}"), kind="error_estimate", statement=text,
                              passed=passed, value=ch, limit=limit))
     return out
