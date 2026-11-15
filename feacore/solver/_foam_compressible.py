@@ -35,7 +35,17 @@ Options (``analysis.options`` or keywords): ``max_co`` (0.2), ``steady_tol`` (1e
 ``max_flow_times`` (400), ``chunk`` (10 flow times), ``flux_scheme`` ("Kurganov" or "Tadmor"),
 ``limiter`` ("vanAlbada", "vanLeer" or "Minmod": the reconstruction of rho and T; U takes its V
 version; vanAlbada at Courant 0.2 settles where vanLeer keeps a limit cycle, see DEFAULTS), ``prandtl`` (0.72), ``timeout`` (s), ``case_dir`` / ``keep_case`` (keep the OpenFOAM case),
-``init_from``.
+``init_from``, ``mass_tol`` (1e-4, internal flow).
+
+Internal flow (a ``total_inlet`` from a reservoir, ``pressure_outlet`` with a back pressure, the
+``mass_flow`` QoI; feacore/solver/_foam_internal.py, docs/solver_transient.md, "Compressible internal
+flow"): the reference state is the gas at rest in the reservoir (also the initial field), the velocity
+scale its critical speed of sound a*, one flow time L / a* with L the extent from the inlets to the
+outlets; chunks of 5 flow times and the Minmod limiter by default (INTERNAL_DEFAULTS). The pressure
+outlets impose the back pressure face by face only where the gas leaves subsonically (``OutletSwitch``,
+updated every 0.25 flow time during the first 5 flow times, then after every chunk), and a run is steady
+only when, in addition, no outlet face switched and the mass flows in and out agree to ``mass_tol``
+(to ``qoi_tol`` when the QoIs decide in a limit cycle).
 """
 
 from __future__ import annotations
@@ -71,8 +81,11 @@ KNOWN_OPTIONS = ("max_co", "steady_tol", "qoi_tol", "max_flow_times", "chunk", "
 DEFAULTS = {"max_co": 0.2, "steady_tol": 1e-6, "qoi_tol": 1e-4, "max_flow_times": 400, "chunk": 10,
             "flux_scheme": "Kurganov", "limiter": "vanAlbada", "prandtl": 0.72, "timeout": None, "mass_tol": 1e-4}
 # Internal flow (a total_inlet): one flow time is L / a*, an acoustic time, and the pressure outlets switch at
-# the end of a chunk, so the chunks are shorter (docs/solver_transient.md, "Compressible internal flow").
-INTERNAL_DEFAULTS = {"chunk": 5}
+# the end of a chunk, so the chunks are shorter. Minmod: on the nozzle (cd_nozzle_shock_2d) at h0 / 2 vanAlbada
+# keeps a transverse acoustic limit cycle in the converging part (the field changing by 4e-3 per flow time, the
+# mass flow by 2e-3 of its value), Minmod one ten times smaller (5e-4, 3e-4), at the same error at h0
+# (docs/solver_transient.md, "Compressible internal flow").
+INTERNAL_DEFAULTS = {"chunk": 5, "limiter": "Minmod"}
 QOI_WINDOW = 3        # chunks over which every QoI must hold still (qoi_tol)
 STARTUP = (5.0, 0.25)     # pressure outlets: (flow times of the start-up, flow times between outlet switch updates)
 LIMITERS = ("vanAlbada", "vanLeer", "Minmod")     # scalar names; U uses the V version (vanLeerV, ...)
