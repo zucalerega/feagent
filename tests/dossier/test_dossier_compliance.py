@@ -310,7 +310,7 @@ def test_not_converged_with_an_absolute_and_a_relative_uncertainty(workproject):
     item = one(workproject, PROOF, rv)
     # the absolute one is used: 1 x: 98.4 MPa, MS = 170 / 98.4 - 1 = +0.72764; 2 x: 104.8 MPa, MS = +0.62214: pass
     assert item.verdict == "pass" and item.margin == pytest.approx(0.72764, abs=1e-5)
-    assert item.reasons[1:3] == ["The uncertainty of the result is 6.4 MPa (6.97 %), and the policy limit is 5 %.",
+    assert item.reasons[1:3] == ["The uncertainty of the result is 6.4 MPa (7 %), and the policy limit is 5 %.",
                                  "The margin of safety is +0.62 with 2 times this uncertainty on the unsafe side."]
 
 
