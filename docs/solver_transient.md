@@ -7,7 +7,7 @@ adds the conventions that hold across physics and one section per capability.
 
 | capability | physics, backend | module | status |
 |---|---|---|---|
-| transient heat conduction | heat, skfem | `feacore/solver/_skfem_transient.py` | see section |
+| transient heat conduction | heat, skfem | `feacore/solver/_skfem_transient.py` | done; verified (closed forms, orders, NAFEMS T3), `tests/test_transient_heat.py` |
 | modal analysis | elasticity, skfem | `feacore/solver/_skfem_modal.py` | see section |
 | transient dynamics | elasticity, skfem | `feacore/solver/_skfem_dynamics.py` | see section |
 | transient incompressible flow | flow, openfoam | `feacore/solver/_foam_transient.py` | see section |
