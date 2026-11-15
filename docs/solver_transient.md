@@ -509,7 +509,16 @@ Steady RANS in the OpenFOAM backend (`feacore/solver/openfoam_backend.py`, `simp
 `omegaWallFunction` (smooth wall). The first cell centre must lie in the log layer. The result gives
 `res.y_plus(group)` (per wall face, from k as the wall function computes it: y+ = Cmu^0.25 sqrt(k) y / nu;
 from the wall shear when there is no k), and a turbulent solve adds an `info: y+ on wall ...` line (5 %,
-median, 95 % of the wall area) and a warning when more than 5 % of a wall is under y+ = 30.
+median, 95 % of the wall area), a warning when more than 5 % of a wall is under y+ = 30, and a warning when
+more than 5 % of a wall's area is outside the validated range y+ 60 to 1600 (the share between 30 and 60 and
+the share above 1600 are named).
+
+**Cells and schemes.** A turbulent solve warns when the mesh has cells that are not hexahedra (in 2D: not
+quadrilaterals, which extrude to hexahedra): the validation found tetrahedra 15 to 26 % low and triangular
+prisms 13 to 17 % high (below). `skew_correction = "auto"` is off for a turbulent run, in 2D and in 3D,
+because the validation used the plain schemes (laminar runs keep "auto" = on in 3D); `skew_correction = true`
+still selects the skew-consistent schemes (`tests/test_solver_openfoam.py`,
+`test_turbulent_run_outside_validated_range_warns`).
 
 **Inlet turbulence.** k = 1.5 (I U_ref)^2 and omega = sqrt(k) / (Cmu^0.25 L) from `turbulence_intensity`
 (I, default 0.05), `turbulence_length` (L, default 0.07 x the smallest bounding-box extent) and the new
@@ -517,6 +526,10 @@ option `turbulence_velocity` (U_ref; default the largest constant inlet speed, a
 is an expression, as before). The validation uses I = 0.16 Re^-1/8 and L = 0.07 D.
 
 **Validated** (OpenFOAM v1912, structured hexahedra, `skew_correction` off, order 2, residual_tol 1e-5).
+What the pipe runs reach: they stop converged after 130 to 200 iterations, with final initial residuals of
+p under 5e-7, k and omega under 5e-6, and U up to 4e-5 on m = 5 (1e-5 on m = 7): U's minor components, which
+the backend judges rescaled by max|U| (`docs/solver_openfoam.md`). The slow test accepts a converged run, or
+residuals under 1e-4.
 Developed flow in a smooth pipe of 60 D with a power-law inlet profile; friction factor from the pressure
 gradient between 42 and 57 D against the Colebrook formula for a smooth wall (Prandtl's law). Meshes: the
 O-grid of `dossier.analysis.flow.build_mesh`, m cells per quarter of the wall
@@ -552,8 +565,14 @@ mesh uncertainty).
 - Separated flow: steady SIMPLE does not reach residual_tol 1e-5 behind a step (the residuals stall near
   1e-4 to 3e-3). Judge such runs by the stability of the QoI: the option `history_interval` makes the solver
   write the fields every N iterations, and `res.history_times()` / `res.at_time(t)` give the earlier
-  solutions (the dossier flow engine accepts a stalled run when the residuals are under 1e-2 and the pressure
-  drop changed less than 0.1 % in the last 200 iterations).
+  solutions. The dossier flow engine accepts a stalled run when the residuals are under 3e-3 (the stall level
+  of the sudden expansion) and, over every snapshot of the last 500 iterations (one every 30 iterations: a
+  spacing that does not divide round periods, so an oscillation of period 100 or 200 is not aliased away),
+  both the spread of the pressure drop (largest minus smallest) and the change that a straight line through
+  the snapshots gives over the window are under 0.1 %; the spread is then added to the uncertainty of the
+  pressure drop as an iteration part (`dossier/analysis/flow.py`, `iteration_window`). The earlier rule
+  compared two moments 200 iterations apart under 1e-2, which an oscillation whose period divides the gap
+  and a slow drift both passed.
 
 ## Compressible internal flow
 

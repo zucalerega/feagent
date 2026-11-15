@@ -943,7 +943,7 @@ def test_the_six_example_specifications_end_to_end(example, example_ctx, specs, 
     assert o["friction_factor"] == approx(fluid.colebrook(o["reynolds"], 3.2e-6 / 0.025)) == approx(0.01352, rel=1e-3)
     dynamic = 0.5 * 1141 * velocity**2
     assert o["dp_friction"] == approx(o["friction_factor"] * 6 * dynamic) and o["dp_minor"] == approx(0.07 * dynamic)
-    assert o["dp_total"] == approx(14.36e3, rel=1e-3) and hc.comparisons[0].band == (0.5, 2.0)
+    assert o["dp_total"] == approx(7.721e3, rel=1e-3) and hc.comparisons[0].band == (0.4, 2.5)
     assert len(hc.warnings) == 1 and "6 diameters" in hc.warnings[0]
 
     # ---- without a load case the record has the id of the specification

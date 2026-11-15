@@ -669,3 +669,120 @@ def test_example_proof_test_quick(workproject):
     assert not [c for c in rec.checks if c.passed is False]
     zz = [c for c in rec.checks if c.kind == "error_estimate"]
     assert zz and all(c.passed is None and c.limit is None for c in zz)
+
+
+# =========================================================================== review fixes: honest uncertainty
+
+H3 = [0.0032234, 0.0022627, 0.0016858]          # the h_rep of the levels of the first full run
+
+
+def _level_data(key, values, h=H3, where=None, info=None):
+    out = []
+    for k, (hk, v) in enumerate(zip(h, values)):
+        d = structural.LevelData(level=model.MeshLevel(level=k, h=hk, nodes=10, cells=10, path=f"meshes/L{k}.msh"), h=hk)
+        d.values[key] = v
+        if where is not None:
+            d.where[key] = {"location": [0.0, 0.0, 0.0], "near": "FT-X", "edge": False, "support": False, "h": hk,
+                            **where}
+        if info is not None:
+            d.info[key] = dict(info)
+        out.append(d)
+    return out
+
+
+def _lc(keys=()):
+    return model.LoadCase(id="LC-T", title="LC-T", analysis_type="static_structural", component="CMP-T",
+                          result_keys=list(keys))
+
+
+def test_error_estimated_only_for_a_sequence_that_converges():
+    est = {name: structural.study(h, v, 2.0, 0.05) for name, h, v in [
+        ("monotone", H3, [105.0, 102.464, 101.368]),
+        ("oscillatory", H3, [100.0, 120.0, 110.0]),
+        ("divergent", H3, [100.0, 110.0, 121.0]),
+        ("indeterminate", H3, [100.0, 100.0, 130.0]),
+        ("two_levels", H3[1:], [100.0, 100.5]),
+        ("one_level", H3[2:], [100.0])]}
+    assert {n: s.kind for n, s in est.items()} == {n: n for n in est}
+    assert {n: s.estimated for n, s in est.items()} == {"monotone": True, "oscillatory": True, "divergent": False,
+                                                        "indeterminate": False, "two_levels": True, "one_level": False}
+    # a spread of values that do not converge is not an error estimate, so the result is never converged
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 100.4, 101.0], 2.0, 0.05)       # 3 x spread = 3 %: under 5 %
+    assert st.kind == "divergent" and not st.estimated and st.status == "not_converged"
+    # no trend, but each change is inside the scatter of independent meshes (under 0.2 %): an estimate
+    st = structural.study(H3, [2.82849, 2.83090, 2.82827], 3.0, 0.05)
+    assert st.kind == "oscillatory_divergent" and st.estimated and st.status == "converged"
+
+
+def test_oscillation_uses_three_times_the_spread_of_the_last_three_values():
+    # the checker's case: 80, 100, 99.9. The last change (0.1) gave u = 0.3 = 0.3 %, converged. The spread is 20.
+    st = structural.study(H3, [80.0, 100.0, 99.9], 2.0, 0.05)
+    assert st.kind == "oscillatory" and st.estimated
+    assert st.absolute == pytest.approx(60.0) and st.status == "not_converged"
+
+
+def test_a_growing_peak_away_from_every_listed_edge_is_singular():
+    """The checker's case: a peak that grows like h^-0.3 (200, 222.4, 242.9 MPa) at a place that the list of
+    re-entrant edges misses. It was not_converged with u = 3 x spread = 128.8 MPa, and the compliance stage passed
+    it against 600 MPa with k = 2. Now it is singular with no uncertainty."""
+    from dossier import compliance as C
+
+    key = "von_mises.peak@part"
+    v = [200e6 * (H3[0] / h) ** 0.3 for h in H3]
+    out, missing = structural._results(_level_data(key, v, where={}), [key], {}, 0.05, _lc([key]))
+    rv = out[key]
+    assert not missing and rv.status == "singular" and not rv.error_estimated
+    assert rv.uncertainty is None and rv.uncertainty_abs is None and rv.order is None
+    assert "The peak grew at each refinement and the values do not converge." in rv.note
+
+    class Cr:
+        comparator = "<="
+    e = C._evaluate(rv, key, Cr, C._Limit(600e6, "Pa", "test", "limit"), C._Factor(1.0, "test"), "AN-T", 0.05, k=2.0)
+    assert e.verdict == "inconclusive"
+    # the old record (not converged with the spread as its uncertainty) is inconclusive too: no error estimate
+    old = rv.model_copy(update={"status": "not_converged", "uncertainty_abs": 128.8e6, "uncertainty": 128.8 / 242.9})
+    e = C._evaluate(old, key, Cr, C._Limit(600e6, "Pa", "test", "limit"), C._Factor(1.0, "test"), "AN-T", 0.05, k=2.0)
+    assert e.verdict == "inconclusive" and e.k is None and e.cause == "the result has no error estimate"
+
+
+def test_a_result_that_a_criterion_uses_is_judged_against_its_own_value():
+    """Roundness: a range of 1.00 um from two levels (1.02 um, 1.00 um) has u = 3 x 0.02 = 0.06 um = 6 %. Against
+    the reference of the feature (20 um of rigid-body motion and contraction) it read as converged (0.3 %)."""
+    key = "radial_displacement.range@FT-SEAT"
+    data = _level_data(key, [1.02e-6, 1.00e-6], h=[0.002, 0.001], info={"ref": 20e-6})
+    judged, _ = structural._results(data, [key], {}, 0.05, _lc([key]))
+    assert judged[key].status == "not_converged" and judged[key].uncertainty == pytest.approx(0.06)
+    assert "not with the size of its field" in judged[key].note
+    free, _ = structural._results(data, [key], {}, 0.05, _lc([]))                  # nothing judges it
+    assert free[key].status == "converged"
+    # a line of an @scls criterion is judged too
+    line = "sxx.membrane@SCL-A"
+    data = _level_data(line, [1.02e6, 1.00e6], h=[0.002, 0.001], info={"ref": 100e6})
+    out, _ = structural._results(data, [line], {"SCL-A": {}}, 0.05, _lc(["sxx.membrane@scls"]))
+    assert out[line].status == "not_converged"
+
+
+def test_scaled_result_carries_the_error_estimated_flag_of_its_base():
+    for flag in (True, False):
+        r = model.ResultValue(key="von_mises.peak@part", value=100.0, unit="Pa", uncertainty=0.02, uncertainty_abs=2.0,
+                              status="not_converged", per_level=[99.0, 100.0], error_estimated=flag)
+        assert scaled.scale_result(r, 1.5, "AN-BASE").error_estimated is flag
+
+
+def test_acceleration_sign_is_an_assumption(tube):
+    lc = tube.load_case("LC-ACC", [dict(effect="EF-G", interface=None, kind="acceleration", role="", features=[],
+                                        si=[0.0, 0.0, -9.81 * 20])], supports=["INT-ROOT"])
+    j = Journal("solve", "engine:test")
+    idealize.Idealizer(tube.project, tube.geo, lc, j)
+    asm = [a for a in j.assumptions if a.id == "ASM-LC-ACC-ACCELERATION-SIGN"]
+    assert len(asm) == 1
+    assert "opposite sign" in asm[0].verify_by and "tension side" in asm[0].impact
+    assert any(l.to == "EF-G" for l in asm[0].links)
+    dec = next(d for d in j.decisions if d.id == "DEC-LC-ACC-IDEALIZE-ACCELERATION")
+    assert "direction of the inertial load" not in dec.rationale and "one sign" in dec.rationale
+    # no acceleration: no such assumption
+    j2 = Journal("solve", "engine:test")
+    idealize.Idealizer(tube.project, tube.geo, tube.load_case("LC-P", [dict(
+        effect="EF-P", interface="INT-TIP", kind="pressure", role="seat", features=["FT-TIP"], si=1e6)],
+        supports=["INT-ROOT"]), j2)
+    assert not [a for a in j2.assumptions if a.id.endswith("ACCELERATION-SIGN")]

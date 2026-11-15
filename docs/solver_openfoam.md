@@ -88,8 +88,8 @@ Options (`analysis.options`, or keywords to `solve`): `turbulence` ("laminar"), 
 (5000), `residual_tol` (1e-8), `relaxation_U` (0.9), `relaxation_p` (none: SIMPLEC),
 `n_non_orth_correctors` (0), `timeout` (seconds; the solver writes and stops at the limit),
 `case_dir` (run there and keep it; it must be new or empty, never in the repo), `keep_case`,
-`turbulence_intensity`, `turbulence_length`, `skew_correction` ("auto": on in 3D, off in 2D; or
-true / false).
+`turbulence_intensity`, `turbulence_length`, `skew_correction` ("auto": on in laminar 3D, off in 2D and
+in turbulent runs, whose validation used the plain schemes; or true / false).
 
 ## 3D meshes: skew-consistent schemes (`skew_correction`)
 

@@ -45,12 +45,12 @@ def test_example_assumptions(example, example_journal):
 
 def test_example_findings(example_journal):
     by_id = {f.id: f for f in example_journal.findings}
-    assert "FND-H-PURGE-NO-JUSTIFICATION" in by_id
-    assert by_id["FND-H-PURGE-NO-JUSTIFICATION"].severity == "major"
+    # the example gives a note for every assumed parameter (h_purge too), so no justification finding is open
+    assert not [i for i in by_id if i.endswith("-NO-JUSTIFICATION")]
     for ph in ("PROOF", "BURST", "LEAK"):
         assert by_id[f"FND-PH-{ph}-FREE"].severity == "info"
     majors = {i for i, f in by_id.items() if f.severity in ("major", "error")}
-    assert majors == {"FND-H-PURGE-NO-JUSTIFICATION"}
+    assert majors == set()
 
 
 def test_example_check_is_deterministic(example, example_ctx, example_journal):
