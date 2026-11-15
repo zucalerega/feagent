@@ -27,7 +27,7 @@ import math
 
 from feacore.case import BC, QoI
 from feacore.problems.base import Reference
-from feacore.problems.cfd._common import num
+from feacore.problems.cfd._common import WHITE, num
 from feacore.problems.cfd.pipe import PipePoiseuille3D
 from feacore.problems.registry import register
 
@@ -135,7 +135,8 @@ class PipeTurbulent3D(PipePoiseuille3D):
                       notes="k-omega SST with wall functions gave -3 % to -5 % on this case (y+ 85 to 200); "
                             "the tolerance is the acceptance of the turbulence validation"),
             Reference("flow_rate_outlet", math.pi * p["R"] ** 2 * p["U"], "analytical",
-                      "Mass conservation: Q = pi R^2 U", tolerance=0.02,
+                      "Mass conservation of incompressible flow (continuity equation, exact): the outlet flow "
+                      "rate equals the inlet's, Q = pi R^2 U; continuity in " + WHITE, tolerance=0.02,
                       notes=f"inscribed polygon section: the mesh area is O(h^2) short of pi R^2 (D = {D} m)"),
         ]
 
