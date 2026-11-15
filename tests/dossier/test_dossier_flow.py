@@ -143,6 +143,93 @@ def test_mesh_study_check_is_information_when_over_the_limit():
     assert mesh_study(None).passed is None
 
 
+# --------------------------------------------------------------------------- the stalled-run rule
+
+
+def _snapshots(dp, end=2000, every=flow.HISTORY_INTERVAL):
+    """The pressure drop at the solver's snapshots (every `every` iterations) and at the end of the run."""
+    its = np.r_[np.arange(every, end, every), end].astype(float)
+    return its, dp(its)
+
+
+def _old_rule(dp, end=2000):
+    """The rule before the fix: the pressure drop 200 iterations before the end (snapshot every 100) against
+    the end, under 0.1 %."""
+    return abs(dp(np.array([end - 200.0]))[0] / dp(np.array([float(end)]))[0] - 1.0) < 1e-3
+
+
+@pytest.mark.parametrize("case", ["drift", "oscillation", "settled"])
+def test_stalled_run_rule_on_synthetic_histories(case):
+    """A slow drift (time constant 3000 iterations, 2 % still to go) and an oscillation with a period of 100
+    iterations (+-0.3 %) both passed the old two-point rule; the window rule (every snapshot of the last 500
+    iterations: spread and straight-line trend under 0.1 %) rejects them. A settled history passes, and its
+    spread is what the iteration part of the uncertainty carries."""
+    rng = np.random.default_rng(0)
+    dp = {"drift": lambda it: 1000.0 * (1.0 + 0.02 * np.exp(-it / 3000.0)),
+          "oscillation": lambda it: 1000.0 * (1.0 + 0.003 * np.sin(2.0 * np.pi * it / 100.0)),
+          "settled": lambda it: 1000.0 * (1.0 + 2e-5 * rng.standard_normal(np.shape(it)))}[case]
+    if case != "settled":
+        assert _old_rule(dp)                                   # what the checker found
+    its, vals = _snapshots(dp)
+    qc = flow.iteration_window(its, vals, 2000)
+    assert qc["snapshots"] >= flow.QOI_MIN_SNAPSHOTS and qc["iterations"] == 500
+    res = {"p": 2e-3, "U": 1e-3}
+    if case == "drift":
+        assert qc["trend"] > flow.QOI_TOL and not flow.stalled_but_steady(res, qc)
+    elif case == "oscillation":
+        assert qc["spread"] > 5e-3 and not flow.stalled_but_steady(res, qc)
+    else:
+        assert qc["spread"] < 2e-4 and qc["trend"] < 1e-4 and flow.stalled_but_steady(res, qc)
+        assert not flow.stalled_but_steady({"p": 5e-3}, qc)     # the residual limit is 3e-3 now (was 1e-2)
+        assert flow.RESIDUAL_STALL_MAX == 3e-3
+
+
+def test_stalled_run_rule_needs_a_covered_window():
+    flat = lambda it: np.full(np.shape(it), 1000.0)            # noqa: E731
+    assert flow.iteration_window(*_snapshots(flat, end=400), 400) is None             # shorter than the window
+    assert flow.iteration_window([1500.0, 2000.0], [1000.0, 1000.0], 2000) is None     # two snapshots
+    assert not flow.stalled_but_steady({"p": 1e-4}, None)
+
+
+def test_stalled_check_states_what_was_measured():
+    """The residuals check of a stalled run names the spread, the trend and the residual, and says that the
+    spread goes into the uncertainty (not 'the iteration error is small')."""
+    its, vals = _snapshots(lambda it: 1000.0 + 0.0 * it)
+    qc = flow.iteration_window(its, vals, 2000)
+    lv = flow.Level(m=5, cells=5000, nodes=5500, h_wall=1e-4, x=np.zeros(3), p=np.zeros(3), p_total=np.zeros(3),
+                    gradient=100.0, gradient_parts=(100.0, 100.0), dp=1000.0, dp_taps={}, dp_total_faces=1000.0,
+                    mass_in=1.0, mass_balance=0.0, momentum_residual=0.0, y_plus={}, iterations=2000,
+                    converged=False, residuals={"p": 2e-3}, qoi_change=qc, warnings=[], solve_s=1.0, quality={})
+    assert lv.solved
+    setup = flow.Setup(mass_flow=1.0, rho=1000.0, mu=1e-3, regime="laminar", upstream=0.1, downstream=0.1)
+    bore = flow.Bore(origin=np.zeros(3), axis=np.array([1.0, 0, 0]), xs=[0.0, 0.1], radii=[0.01],
+                     volume=math.pi * 1e-4 * 0.1, source="test.step")
+    out = flow._checks("AN-FLOW-X", [lv], setup, bore, "laminar", 1000.0, None, 0.05, {}, None,
+                       SimpleNamespace(features=[], interface="INT-X"), 0.02)
+    c = next(c for c in out if c.id.endswith("RESIDUALS"))
+    assert c.passed is True and c.limit == 3e-3
+    for words in ("spread over", "straight line", "2.0e-03", "iteration part", "500 iterations"):
+        assert words in c.statement, (words, c.statement)
+    assert "iteration error of the result is small" not in c.statement
+
+
+def test_section_friction_uses_each_diameter():
+    """The friction loss of a stepped bore from each section's own diameter: a straight bore gives the
+    Darcy-Weisbach value; a narrow section gives much more than the upstream gradient times its length."""
+    rho, mu, mdot, r = 1141.0, 1.95e-4, 5.3, 0.0125
+    v = mdot / (rho * math.pi * r * r)
+    re = rho * v * 2 * r / mu
+    straight = flow.section_friction([0.0, 0.15], [r], mdot, rho, mu)
+    assert straight == pytest.approx(flow.colebrook(re) * 0.15 / (2 * r) * 0.5 * rho * v * v, rel=1e-12)
+    stepped = flow.section_friction([0.0, 0.05, 0.10, 0.15], [r, 0.8 * r, r], mdot, rho, mu)
+    upstream = straight                                         # the old estimate: upstream gradient x length
+    assert stepped > 1.25 * upstream                            # the narrow third alone has ~2.9 x the gradient
+    rough = flow.section_friction([0.0, 0.15], [r], mdot, rho, mu, ks=flow.KS_PER_RA * 3.2e-6)
+    assert rough == pytest.approx(flow.colebrook(re, flow.KS_PER_RA * 3.2e-6 / (2 * r)) * 0.15 / (2 * r)
+                                  * 0.5 * rho * v * v, rel=1e-12)
+    assert rough > straight
+
+
 def test_benchmark_problem_registered():
     from feacore.problems.registry import get
     p = get("pipe_turbulent_3d")

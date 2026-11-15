@@ -56,13 +56,21 @@ Validation of the turbulent path (tests/dossier/test_dossier_flow.py, marked slo
     with the skew-consistent schemes +13 to +17 % (the extended least-squares gradient reads the wall value in
     cells that touch the wall with a point, which gives too much turbulence there).
 
-The uncertainty of the result (ResultValue.uncertainty) is the sum of three parts, and the note of the result
-gives each: the mesh study (Grid Convergence Index, safety factor 3), the model (MODEL_UNCERTAINTY), and the
-wall roughness when the flow domain gives one (the analysis has smooth walls; the Colebrook formula gives the
-increase of the friction loss). The status "converged" needs a mesh part under policy.max_uncertainty and a
-solver that converged on every mesh: the residual tolerance (1e-5), or residuals that stalled under
-RESIDUAL_STALL_MAX while the pressure drop changed less than QOI_TOL in the last QOI_WINDOW iterations (steady
-SIMPLE does not reach 1e-5 behind a step: the separated shear layer keeps the residuals near 1e-4).
+The value is the solver's pressure drop (smooth walls) plus, when the flow domain gives a wall roughness, the
+extra friction loss of the rough walls: the Colebrook formula for each section of the bore with its own
+diameter (section_friction), with the sand-grain roughness ks = KS_PER_RA x the given surface finish Ra (an
+Assumption record states it). The uncertainty of the result (ResultValue.uncertainty) is the sum of these parts
+over the value, and the note of the result gives each, in Pa and in %: the mesh study (Grid Convergence Index,
+safety factor 3), the model (MODEL_UNCERTAINTY of the solver's value), the iteration part of a stalled run (the
+spread of the pressure drop over the last QOI_WINDOW iterations), the uncertainty of the roughness correction
+(its change for ks = 2 Ra to 10 Ra), and the position of the downstream tap when it changes the result by
+TAP_NEGLIGIBLE or more. The status "converged" needs a mesh part under policy.max_uncertainty and a solver that
+converged on every mesh: the residual tolerance (1e-5), or residuals that stalled under RESIDUAL_STALL_MAX
+(3e-3) with a steady pressure drop: at every snapshot of the last QOI_WINDOW (500) iterations (one every
+HISTORY_INTERVAL = 30 iterations, a spacing that does not divide round periods), the spread (largest minus
+smallest) and the change that a straight line through the snapshots gives over the window are both under
+QOI_TOL (0.1 %) of the pressure drop (iteration_window; steady SIMPLE does not reach 1e-5 behind a step: the
+separated shear layer keeps the residuals near 1e-4 to 3e-3).
 
 Not verified: swirl or a distorted profile from a pump at the inlet, cavitation, compressible flow, rough
 walls in the solver, bores that are not circular, and any bend. `opts.quick` gives one coarse mesh: a first

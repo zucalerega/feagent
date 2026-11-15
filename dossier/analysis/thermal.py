@@ -47,6 +47,8 @@ Convergence (the rule of the structural engine, in absolute terms)
                                                     d the change between the two finest levels and
                                                     q = p limited to [0.5, p_t]
                       oscillatory                   u = max(3 |d| / (r^q - 1), 3 x spread of the three values)
+                      no trend, each change under 0.2 % of the reference (the range for a temperature, else
+                      the value): the scatter of independent meshes, u = 3 x spread, an estimate
                       no order                      u = 3 x spread: the scatter of values that do not converge,
                                                     not an error estimate (status not_converged)
     `error_estimated` is True for two levels, monotone, oscillatory and round-off; False for no order, one
@@ -504,12 +506,17 @@ def evaluate(key: str, ideal: Idealization, geo: dict, summary: dict) -> tuple[f
     return f[t][measure], f[t]["x" + measure], _near(geo, t)
 
 
-def uncertainty(h: list[float], v: list[float], p_theory: float) -> dict:
+REMESH_SCATTER = 2e-3       # changes under this part of the reference: the scatter of independent meshes
+
+
+def uncertainty(h: list[float], v: list[float], p_theory: float, scatter_ref: float | None = None) -> dict:
     """The discretization uncertainty of the value on the finest mesh, in the unit of the value (module
     docstring, "Convergence"). h and v are coarse to fine. Returns u (None with one level), kind, and for
     a monotone sequence the observed order and the extrapolated value. `estimated` is True when u is an error
     estimate of a sequence that converges (two levels, monotone, oscillating with smaller changes, round-off),
-    False when u is only the spread of values that do not converge or when there is no u."""
+    False when u is only the spread of values that do not converge or when there is no u. A sequence with no
+    trend whose changes are all under REMESH_SCATTER x `scatter_ref` is the scatter of independent meshes: kind
+    "scatter", u = 3 x spread, an estimate."""
     from feacore.verification import gci3
 
     out = {"u": None, "kind": "one_level", "order": None, "extrapolated": None, "estimated": False}
@@ -546,6 +553,8 @@ def uncertainty(h: list[float], v: list[float], p_theory: float) -> dict:
         out["estimated"] = True
     else:
         out["u"] = 3.0 * spread
+        if scatter_ref and max(abs(v3[1] - v3[0]), d) <= REMESH_SCATTER * abs(scatter_ref):
+            out["kind"], out["estimated"] = "scatter", True
     return out
 
 
@@ -556,6 +565,8 @@ _KIND_NOTE = {
     "oscillatory": "The values of the three finest meshes go up and down.",
     "exact": "The values of the three finest meshes are equal.",
     "converged": "The values of the three finest meshes are equal to six digits.",
+    "scatter": "The values of the three finest meshes have no trend, but each change is less than 0.2 % of the "
+               "reference. This is the scatter of independent meshes.",
 }
 
 
@@ -578,7 +589,8 @@ def _result(key: str, values: list[float], hs: list[float], scale: float | None,
     """The ResultValue of one key from its values on the levels. `scale` is the reference of the relative
     uncertainty of a temperature (the temperature range of the load case); None: the value itself."""
     is_temp = key.startswith("temperature.")
-    c = uncertainty(hs, values, ORDER_TEMPERATURE if is_temp else ORDER_HEAT_FLOW)
+    c = uncertainty(hs, values, ORDER_TEMPERATURE if is_temp else ORDER_HEAT_FLOW,
+                    scatter_ref=scale if is_temp else abs(values[-1]))
     u = c["u"]
     rel = _ratio(u, scale if is_temp else abs(values[-1]))      # the ratio that sets the status
     status = "converged" if c["estimated"] and rel is not None and rel <= limit else "not_converged"
