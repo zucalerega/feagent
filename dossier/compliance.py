@@ -15,11 +15,14 @@ What gets a verdict
 
 The response
     * The analysis of a load case is the last AnalysisRecord of the stage files with that `load_case`.
-    * The result is `results[criterion.key()]`. For the location `scls` it is the aggregate key
-      `<quantity>.<measure>@scls`. When the analysis has no such value, each line (`...@<SCL id>`, for
-      the lines of the component and every `...@SCL-*` key) is assessed as a result of its own and the
-      worst line governs: first by verdict (fail, inconclusive, pass), then by margin. A line of the
-      component without a result makes a pass inconclusive. `result_key` then names the line.
+    * The result is `results[criterion.key()]`. For the location `scls` the aggregate key
+      `<quantity>.<measure>@scls` is NOT used (it is for display: one number for all lines hides the
+      uncertainty and the status of each line). Each line (`...@<SCL id>`, for the lines of the component
+      and every `...@SCL-*` key) is ALWAYS assessed as a result of its own (value, uncertainty, status,
+      error_estimated) and the worst line governs: first by verdict (fail, inconclusive, pass), then by the
+      margin that decides. A line of the component without a result on the finest mesh makes a pass
+      inconclusive (a fail on another line stays a fail). `result_key` names the governing line, and the
+      statement names it too.
     * `value` and `unit` are SI. A result in another unit is converted with `dossier.units`.
 
 The numerical uncertainty (the contract with the analysis engines)
@@ -42,6 +45,8 @@ The margin of safety (`margin_of_safety`)
     "<="   MS = limit / (factor x response) - 1       a response of zero or less has no finite margin
     ">="   MS = (response / factor) / limit - 1
     `margin` is the margin of the conservative value. It is None when the margin has no finite value.
+    When the k rule below gives the pass or the fail, `margin` (and the margin of the requirement) is the
+    margin with k x dU, the one that decided; the statement also gives the margin with 1 x dU.
 
 The verdict of an item, in this order
     1. The factor or the limit has no valid value, or the result and the limit differ in dimension:
@@ -51,14 +56,18 @@ The verdict of an item, in this order
        with the same result key gives an estimate: inconclusive, with the margin of the estimate.
     3. By the status of the result:
        converged      pass when the margin of the conservative value is >= 0; fail when the margin is
-                      negative also with the uncertainty on the safe side; else inconclusive
+                      negative also with the uncertainty on the safe side; else inconclusive. A converged
+                      result with no uncertainty at all is inconclusive, unless its method is hand_calc or
+                      derived.
        singular       inconclusive (the reasons say when the criterion fails on every mesh of the study)
-       not_converged  with a stated uncertainty dU and k = policy.unconverged_margin_factor > 0: pass when the
-                      margin is >= 0 with k x dU on the unsafe side; fail when the margin is negative with
-                      k x dU on the safe side; else inconclusive. The stated uncertainty of a mesh sequence that
-                      does not converge is already a conservative bound; k covers the weaker basis. `margin` and
-                      `conservative_value` stay those of 1 x dU. With no uncertainty, or with k = 0: inconclusive.
-                      The journal records this rule once (DEC-<policy>-UNCONVERGED-MARGIN).
+       not_converged  with a stated uncertainty dU, `error_estimated` True and k =
+                      policy.unconverged_margin_factor > 0: pass when the margin is >= 0 with k x dU on the
+                      unsafe side; fail when the margin is negative with k x dU on the safe side; else
+                      inconclusive. `margin` is then the margin with k x dU; `conservative_value` stays that
+                      of 1 x dU. With `error_estimated` False (dU is only the spread of values that do not
+                      converge: not a bound), with no uncertainty, or with k = 0: inconclusive, and the reasons
+                      say that the result has no error estimate. The journal records this rule once
+                      (DEC-<policy>-UNCONVERGED-MARGIN).
        estimate       inconclusive
     4. A pass or a fail becomes inconclusive when the evidence is in doubt: a check with `passed is False`
        in the analysis or in an analysis it rests on (`uses`, `scaled_from`, the states of its duty
@@ -753,7 +762,9 @@ def _item(req: Requirement, k: int, crit: Criterion, lc: LoadCase, item_id: str,
         item.result_key, item.value, item.unit = ev.key, ev.value, ev.unit
         if ev.margin is not None:
             item.conservative_value = ev.conservative
-            item.margin = ev.margin if math.isfinite(ev.margin) else None
+            # the margin that decides: with k x the uncertainty when the k rule gives the verdict
+            shown = ev.deciding if verdict == ev.verdict else ev.margin
+            item.margin = shown if shown is not None and math.isfinite(shown) else None
             item.uncertainty = ev.rel
         else:
             item.limit = None       # the limit is in another dimension: the reasons give it with its unit
@@ -785,12 +796,19 @@ def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | No
             s.append("The value is not above zero, so the margin of safety has no upper bound.")
         else:
             extra = ""
-            if ev.k is not None and ev.k_margin is not None and math.isfinite(ev.k_margin):
+            k_shown = ev.k_decides and verdict == ev.verdict and math.isfinite(ev.k_margin)
+            if ev.k is not None and ev.k_margin is not None and math.isfinite(ev.k_margin) and not k_shown:
                 side = "safe" if ev.verdict == "fail" else "unsafe"
                 extra = f" and {_ms(ev.k_margin)} with {_times(ev.k)} the uncertainty on the {side} side"
             s.append(f"The margin of safety {'of the estimate ' if hc is not None else ''}is {_ms(ev.margin)}"
                      f"{' with the uncertainty on the unsafe side' if ev.du else ''}{extra}.")
+            if k_shown:
+                side = "safe" if ev.verdict == "fail" else "unsafe"
+                s.append(f"The margin that decides the verdict is {_ms(ev.k_margin)}, with {_times(ev.k)} the "
+                         f"uncertainty on the {side} side.")
     decided_by_k = ev is not None and hc is None and ev.k is not None and verdict == ev.verdict
+    if ev is not None and ev.governs:
+        s.append(ev.governs)
     s.append(_verdict_sentence(verdict, cause, ev.k if decided_by_k else None))
     if caveats:
         s.append(f"Finding {caveats[0]} applies to the inputs of this item." if len(caveats) == 1
@@ -934,15 +952,17 @@ def _journal(project, inp: _Inputs, items: list[ComplianceItem], estimates: list
         pol = project.policy
         times = _times(k)
         j.decide(pol.id, "unconverged-margin", "Margin of a result with the status not converged",
-                 choice=f"A result with the status not converged and a stated uncertainty can give a pass or a fail. "
+                 choice=f"A result with the status not converged and an error estimate can give a pass or a fail. "
                         f"The margin of safety then uses {times} the uncertainty. "
                         f"The verdict is pass when this margin is zero or more with the uncertainty on the unsafe side. "
                         f"The verdict is fail when this margin is negative with the uncertainty on the safe side. "
-                        "Else the verdict is inconclusive. A result with no stated uncertainty stays inconclusive.",
+                        "Else the verdict is inconclusive. A result with no error estimate stays inconclusive. "
+                        "The margin of the item is then the margin with this factor.",
                  rationale=f"Policy {pol.id} gives the factor unconverged_margin_factor of {_fac(k)}. "
-                           "The mesh study states the uncertainty of each result. "
-                           f"For a mesh sequence that does not reach the policy limit of {_pct(pol.max_uncertainty)}, "
-                           "this uncertainty is already a conservative bound. "
+                           "The mesh study gives an error estimate for a sequence that converges. "
+                           f"For a sequence that does not reach the policy limit of {_pct(pol.max_uncertainty)}, "
+                           "this estimate is already a conservative bound. "
+                           "The spread of values that do not converge is not a bound, so the rule does not use it. "
                            f"The factor of {_fac(k)} covers the weaker basis of this bound. "
                            "A margin that holds with this factor is much larger than a probable discretization error.",
                  alternatives=[("Refuse each result with an uncertainty over the policy limit.",
