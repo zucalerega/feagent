@@ -32,6 +32,7 @@ a:hover{text-decoration-thickness:2px}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:3px}
 code,pre,.cmd{font-family:var(--mono);font-size:.86em}
 code{background:var(--surface-3);padding:.05em .35em;border-radius:4px;word-break:break-word}
+.rt{white-space:pre-line}
 pre{background:var(--surface-2);border:1px solid var(--line);padding:.6rem .8rem;border-radius:var(--r);overflow:auto;white-space:pre-wrap}
 pre code{background:none;padding:0}
 q{quotes:"\201C" "\201D"}

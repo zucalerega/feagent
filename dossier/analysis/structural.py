@@ -259,11 +259,11 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
                     f"{SAFETY_SPREAD:g} times the spread of the three values ({pct(spread)}).")
     if noise is not None and SAFETY_SPREAD * noise > u:
         u = SAFETY_SPREAD * noise
-        note += (f" A move of the line by a quarter of an element changes the value by {pct(noise)}. The uncertainty "
+        note += (f"\n\nA move of the line by a quarter of an element changes the value by {pct(noise)}. The uncertainty "
                  f"is {SAFETY_SPREAD:g} times this change, which is more than the estimate from the mesh levels.")
     status = "converged" if u <= max_uncertainty * size else "not_converged"
     if abs(fine) < 0.5 * size:
-        note += (f" The value is small against the size of its field ({size:.4g}). The uncertainty is {pct(u)} of "
+        note += (f"\n\nThe value is small against the size of its field ({size:.4g}). The uncertainty is {pct(u)} of "
                  "that size.")
     rel = float(u / abs(fine)) if abs(fine) > 0 else None
     return Study(status, rel, extrapolated=ext, order=order, note=note, grew=grew, kind=kind, absolute=float(u))
@@ -1156,7 +1156,7 @@ def _statement(lc: LoadCase, ideal: Idealizer, data: list[LevelData], results: d
                  "case for them, and the engine applies no thermal strain.")
     if ideal.other_effects:
         s.append(f"The effects {names(ideal.other_effects)} are not mechanical loads, and the engine does not apply them.")
-    s.append(f"The study has {len(data)} mesh levels of quadratic tetrahedra. The finest mesh has "
+    s.append(f"\n\nThe study has {len(data)} mesh levels of quadratic tetrahedra. The finest mesh has "
              f"{fine.level.nodes} nodes and an element size of {fmt(fine.h, 'm')}.")
     if n_scl:
         s.append(f"Each of the {n_scl} stress classification lines has {scl_mod.PANELS * scl_mod.ORDER} sample points.")
@@ -1165,9 +1165,10 @@ def _statement(lc: LoadCase, ideal: Idealizer, data: list[LevelData], results: d
         count[r.status] = count.get(r.status, 0) + 1
     order = ("converged", "not_converged", "singular")
     text = {"converged": "are converged", "not_converged": "are not converged", "singular": "are singular"}
+    text1 = {"converged": "is converged", "not_converged": "is not converged", "singular": "is singular"}
     s.append(f"The analysis gives {len(results)} results: "
-             + ", ".join(f"{count[k]} {text[k]}" for k in order if count.get(k)) + ".")
-    return " ".join(s)
+             + ", ".join(f"{count[k]} {(text1 if count[k] == 1 else text)[k]}" for k in order if count.get(k)) + ".")
+    return " ".join(s).replace(" \n\n", "\n\n")
 
 
 def _late_decisions(j: Journal, lc: LoadCase, ideal: Idealizer, data: list[LevelData], d_excl: float, h0: float,
