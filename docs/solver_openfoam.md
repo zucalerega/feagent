@@ -34,6 +34,12 @@ BC mapping (pressure in the case is static pressure in Pa; OpenFOAM gets p / rho
 | `symmetry` | `symmetry` | `symmetry` |
 | boundary group without a BC, `unassigned` | `noSlip` (with an info warning) | `zeroGradient` |
 
+Known limit: a `slip` wall is first-order accurate. In the transient Taylor-Green vortex the decay comes out
+too fast by 5.6 % of the viscous rate at 16 cells and 2.9 % at 32 with `slip` walls; the same case with
+`symmetry` converges with order 2. The likely cause is that on a plain patch the explicit viscous-stress
+gradient is extrapolated rather than mirrored. Use `symmetry` for a flat frictionless wall; keep `slip` for
+curved inviscid walls and expect first-order convergence there. Not fixed yet.
+
 RANS (`analysis.options.turbulence = "kOmegaSST"` or `"kOmega"`): the inlet k and omega come from
 `turbulence_intensity` (default 0.05) and `turbulence_length` (default 0.07 times the smallest bbox
 extent). Walls use `kqRWallFunction` / `omegaWallFunction` / `nutkWallFunction`; outlets use

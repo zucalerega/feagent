@@ -497,10 +497,11 @@ def test_crank_nicolson_startup_after_later_jump(form, tmp_path):
     """The fluid temperature of a convection BC steps at t_s = 20 steps into the run (Bi = 10), the slab being
     at rest until then: after t_s the solution is the convective-slab series shifted by t_s. Before the fix the
     start-up only protected t = 0, and Crank-Nicolson's surface temperature alternated after t_s (the checker
-    measured 8.5 % of the step; here 6.9 % at step 6 after the jump, alternating in sign). Now the jump is
-    detected and the two steps from it are backward-Euler half-steps, so the error after the jump is what
-    the t = 0 start-up gives (test_convective_slab_biot: 5 % for the first five steps, 0.2 % after;
-    measured here 3.7 % and 1.1e-3). With cn_startup 'off' the run warns and still rings."""
+    measured 8.5 % of the step; here 8.5 % on the first step after the jump and 1.0 % after five, the error
+    alternating from step to step). Now the jump is detected and the two steps from it are backward-Euler
+    half-steps, so the error after the jump is what the t = 0 start-up gives (test_convective_slab_biot: 5 %
+    for the first five steps, 0.2 % after; measured here 3.7 % and 1.1e-3). With cn_startup 'off' the run
+    warns and still rings."""
     Lh, n, bi = 0.05, 20, 10.0
     mesh = strip(tmp_path / "c.msh", Lh, Lh / n, n, order=2)
     q = [P("Ts", Lh)]
@@ -515,12 +516,14 @@ def test_crank_nicolson_startup_after_later_jump(form, tmp_path):
     assert any("jump" in w and "Rannacher" in w for w in r.info.warnings), r.info.warnings
     e = np.abs(r.series(q[0]) - exact(r.times)) / (TI - TS)
     print(form, "after the jump: first five", e[21:26].max(), "rest", e[26:].max())
-    assert e[:21].max() < 1e-9                          # at rest until the jump
+    assert e[:20].max() < 1e-9                          # at rest until the jump
+    assert abs(r.series(q[0])[20] - TI) < 1e-9          # t_s: the state just before it (the series is slow there)
     assert e[21:26].max() < 5e-2 and e[26:].max() < 2e-3
     off = solve(heat(mesh, tr, bcs, q, cn_startup="off"))
     assert any("jump" in w and "cn_startup is 'off'" in w for w in off.info.warnings)
     eo = (off.series(q[0]) - exact(off.times)) / (TI - TS)
-    assert np.abs(eo[26:40]).max() > 1e-2 and np.all(np.sign(eo[26:39]) != np.sign(eo[27:40]))
+    de = np.diff(eo[21:41])
+    assert np.abs(eo[21:26]).max() > 5e-2 and np.all(np.sign(de[:-1]) != np.sign(de[1:]))
 
 
 def test_qoi_time_reductions_and_outputs(tmp_path):
