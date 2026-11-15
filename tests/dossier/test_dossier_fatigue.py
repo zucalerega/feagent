@@ -619,6 +619,23 @@ def test_status_in_and_out_of_the_singular_zones(bench, monkeypatch):
     assert check(out, "CONVERGENCE-SMOOTH").passed is True and check(out, "YIELD-SMOOTH").passed is True
 
 
+def test_smooth_convergence_over_the_limit_is_information_only(bench, monkeypatch):
+    """CONTRACTS.md: passed=False blocks a pass. damage.total@smooth is information only, so its
+    convergence check is passed=None when the change is over the limit; the result itself is not converged.
+    Smooth peak 200/3 + 180/sqrt(11) + bump: 200.9 MPa on the coarser mesh (bump 80), 240.9 MPa on the
+    finest (bump 120), a change of 40/240.9 = 16.6 % > 5 %."""
+    monkeypatch.setattr(fatigue, "EXCLUSION_ELEMENTS", 2.5)
+    out = _hand_bench(bench, coarse={"bump": 80.0}, fine={"bump": 120.0})
+    s = smooth(out)
+    assert s.status == "not_converged"
+    c = check(out, "CONVERGENCE-SMOOTH")
+    fine = 200.0 / 3.0 + 180.0 / math.sqrt(11.0) + 120.0
+    assert c.value == pytest.approx(40.0 / fine, rel=1e-6)
+    assert c.passed is None and "information only" in c.statement
+    assert all(k.passed is not False for k in out.record.checks if k.id.endswith("-SMOOTH")
+               and "CONVERGENCE" in k.id)
+
+
 def test_singular_zones_that_cannot_be_found_block_the_status(bench):
     """The geometry names a re-entrant edge, but the state analysis gives no mesh file: the engine cannot
     tell where the edge is. No smooth value, and the part result cannot be converged."""

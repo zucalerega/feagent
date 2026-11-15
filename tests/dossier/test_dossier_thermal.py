@@ -528,8 +528,8 @@ def test_engine_idealization_records(fin, fin_run):
     assert a.statement == ("The faces with no thermal load are adiabatic. The interface INT-STEM has the adiabatic "
                            "feature FT-BORE.") and a.conservative is None
     assert "colder than the face makes the part colder" in a.impact and "warmer than the face makes the part warmer" in a.impact
-    assert "REQ-NECK-001 gives a lower limit of a temperature, thus a colder mating part is the unsafe case." in a.impact
-    assert re.search(r"The analysis gives 90 K to 241\.\d+ K on the faces of INT-STEM\. The mating element is EL-STEM\.", a.impact)
+    assert "REQ-NECK-001 gives a lower limit of a temperature, thus a colder adjacent part is the unsafe case." in a.impact
+    assert re.search(r"The analysis gives 90 K to 241\.\d+ K on the faces of INT-STEM\. The adjacent element is EL-STEM\.", a.impact)
     assert ("about", "INT-STEM") in [(x.rel, x.to) for x in a.links]
     c = asm["ASM-LC-TH-COLD-CONDUCTIVITY"]
     assert "MAT-STEEL is 12 W/(m·K) at every temperature" in c.statement

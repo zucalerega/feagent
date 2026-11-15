@@ -17,7 +17,7 @@ Idealization (each rule is one Decision of the load case; the BCItems of the rec
     heat_flux          a heat flux. A positive value is a heat flow into the part.
     fluid_temperature without h      the engine does not guess a coefficient: status `not_supported`.
     a face with no thermal load      adiabatic. One Assumption names these features, gives their
-                       temperatures in the analysis, and says in which direction a mating part changes them.
+                       temperatures in the analysis, and says in which direction an adjacent part changes them.
     one conductivity for all temperatures     an Assumption, with the change of the requested temperatures
                        for a conductivity that is 20 % lower and 20 % higher (two more solves on the
                        coarsest mesh).
@@ -49,11 +49,14 @@ Convergence (the rule of the structural engine, in absolute terms)
                       oscillatory                   u = max(3 |d| / (r^q - 1), spread of the three values)
                       no order                      u = 3 x spread
                       changes below 1e-6 of the value   u = 1.25 x the larger change
-    `uncertainty_abs` is u, in the unit of the value. For a temperature the relative `uncertainty` is u
-    divided by the temperature range of the load case (the largest difference between the temperatures of
-    its boundary conditions and of the part): heat conduction is driven by temperature differences, and
-    u divided by the absolute temperature is small for every error. For a heat flow it is u / |value|.
-    A result is `converged` when its relative uncertainty is at most policy.max_uncertainty. The engine
+    `uncertainty_abs` is u, in the unit of the value; the compliance stage uses it for a temperature.
+    `uncertainty` is u / |value| (CONTRACTS.md: relative to the value). The status of a temperature comes
+    from u divided by the temperature range of the load case (the largest difference between the
+    temperatures of its boundary conditions and of the part), and the note gives that ratio: heat
+    conduction is driven by temperature differences, and u divided by the absolute temperature is small for
+    every error. For a heat flow the status comes from u / |value|. A result is `converged` when that
+    ratio is at most policy.max_uncertainty. The error-estimate check uses the same ratios: passed=False
+    only when one is over the limit, passed=None when a result has no uncertainty (one mesh). The engine
     never gives `singular`: a temperature is bounded, and the heat flow through a whole face is finite also
     where the flux at an edge of the face is not. A Decision of the load case states the rule.
 
@@ -86,7 +89,7 @@ Not verified, not done
     * No radiation, no contact resistance, no heat source in the volume, no conductivity that depends on
       the temperature, no transient (the steady state does not bound the thermal stress of a chill-down).
     * A heat transfer coefficient is uniform on the faces of its role, as the system context gives it.
-    * The direction in which an adiabatic face errs depends on the temperature of the mating part, which the
+    * The direction in which an adiabatic face errs depends on the temperature of the adjacent part, which the
       system context does not give: the Assumption states the condition, it does not decide it.
     * The solves are not written to the run store of the dashboard (opts.record_runs is not used).
 """
@@ -542,10 +545,24 @@ _KIND_NOTE = {
     "one_level": "The analysis has one mesh. An uncertainty needs two meshes or more.",
     "two_levels": "The uncertainty comes from the change between two meshes.",
     "monotone": "The values of the three finest meshes converge in one direction.",
-    "oscillatory": "The values of the three finest meshes change direction.",
+    "oscillatory": "The values of the three finest meshes go up and down.",
     "exact": "The values of the three finest meshes are equal.",
     "converged": "The values of the three finest meshes are equal to six digits.",
 }
+
+
+def _ratio(u: float | None, ref: float | None) -> float | None:
+    """u / ref; None when u is not known."""
+    if u is None or not math.isfinite(u):
+        return None
+    return (u / ref) if ref and ref > 0 else (0.0 if u == 0 else None)
+
+
+def _status_ratio(r: ResultValue, t_range: float) -> float | None:
+    """The relative uncertainty that sets the status of a result: a temperature in relation to the range."""
+    if r.key.startswith("temperature."):
+        return _ratio(r.uncertainty_abs, t_range)
+    return r.uncertainty
 
 
 def _result(key: str, values: list[float], hs: list[float], scale: float | None, limit: float,
@@ -555,14 +572,17 @@ def _result(key: str, values: list[float], hs: list[float], scale: float | None,
     is_temp = key.startswith("temperature.")
     c = uncertainty(hs, values, ORDER_TEMPERATURE if is_temp else ORDER_HEAT_FLOW)
     u = c["u"]
-    ref = scale if is_temp else abs(values[-1])
-    rel = None
-    if u is not None and math.isfinite(u):
-        rel = (u / ref) if ref and ref > 0 else (0.0 if u == 0 else None)
+    rel = _ratio(u, scale if is_temp else abs(values[-1]))      # the ratio that sets the status
     status = "converged" if rel is not None and rel <= limit else "not_converged"
     note = _KIND_NOTE.get(c["kind"], "The changes between the three finest meshes do not decrease.")
+    if is_temp and rel is not None:
+        note += (f" The uncertainty is {fmt(u, 'K')}. This is {100 * rel:.2g} % of the temperature range of "
+                 f"{fmt(scale, 'K')} of the load case, and this ratio sets the status.")
+    # `uncertainty` is relative to the value itself (CONTRACTS.md). For a temperature the compliance stage uses
+    # `uncertainty_abs` in K; the ratio to the range goes in the note only.
     return ResultValue(key=key, value=float(values[-1]), unit="K" if is_temp else "W",
-                       uncertainty=rel, uncertainty_abs=u if u is not None and math.isfinite(u) else None,
+                       uncertainty=_ratio(u, abs(values[-1])) if is_temp else rel,
+                       uncertainty_abs=u if u is not None and math.isfinite(u) else None,
                        status=status, location=where, near=near, per_level=[float(x) for x in values],
                        extrapolated=c["extrapolated"], order=c["order"], method="fe", note=note)
 
@@ -818,28 +838,28 @@ def _assumptions(j: Journal, project, ctx, geo: dict, lc: LoadCase, ideal: Ideal
         st = ["The faces with no thermal load are adiabatic."]
         for g in groups:
             st += _named(g["interface"], "feature", g["features"]) + _named(g["interface"], "face", g["faces"])
-        impact = ["No heat flows through an adiabatic face. In the hardware, the mating part exchanges heat with the face.",
-                  "A mating part that is colder than the face makes the part colder than the analysis gives.",
-                  "A mating part that is warmer than the face makes the part warmer than the analysis gives."]
+        impact = ["No heat flows through an adiabatic face. In the hardware, heat flows between the adjacent part and the face.",
+                  "An adjacent part that is colder than the face makes the part colder than the analysis gives.",
+                  "An adjacent part that is warmer than the face makes the part warmer than the analysis gives."]
         if lower and not upper:
-            impact.append(f"{_join(lower)} gives a lower limit of a temperature, thus a colder mating part is the "
+            impact.append(f"{_join(lower)} gives a lower limit of a temperature, thus a colder adjacent part is the "
                           f"unsafe case.")
         elif upper and not lower:
-            impact.append(f"{_join(upper)} gives an upper limit of a temperature, thus a warmer mating part is the "
+            impact.append(f"{_join(upper)} gives an upper limit of a temperature, thus a warmer adjacent part is the "
                           f"unsafe case.")
         temps = []
         for g in groups:
             who = f"the faces of {g['interface']}" if g["interface"] else "the faces of no interface"
-            mate = f" The mating element is {g['other']}." if g["other"] else ""
+            mate = f" The adjacent element is {g['other']}." if g["other"] else ""
             temps.append(f"The analysis gives {fmt(g['lo'], 'K')} to {fmt(g['hi'], 'K')} on {who}.{mate}")
         a = j.assume(
             subject=lc.id, key="adiabatic", title="Faces with no thermal load are adiabatic", stage="idealize",
             statement=" ".join(st),
             rationale=(f"The system context gives no thermal effect for these faces"
                        + (f" in the phase {lc.phase}." if lc.phase else ".")
-                       + " The analysis does not guess a heat transfer coefficient or a temperature of a mating part."),
+                       + " The analysis does not guess a heat transfer coefficient or a temperature of an adjacent part."),
             impact=" ".join(impact) + "\n\n" + " ".join(temps),
-            verify_by="Compare the temperature of each mating part with the temperatures that the analysis gives on "
+            verify_by="Compare the temperature of each adjacent part with the temperatures that the analysis gives on "
                       "its faces. If the difference is important, add a thermal effect for the interface to the "
                       "system context.",
             conservative=None, links=[("about", g["interface"]) for g in groups if g["interface"]])
@@ -944,8 +964,9 @@ def _checks(lc: LoadCase, ideal: Idealization, sols: list[LevelSolution], result
         out.append(Check(id=make_id("CHK", an, "error-estimate"), kind="error_estimate", passed=None, limit=limit,
                          statement="The analysis has one mesh, thus it has no estimate of the discretization error."))
     else:
-        unknown = [k for k, r in rated.items() if r.uncertainty is None]
-        known = {k: r.uncertainty for k, r in rated.items() if r.uncertainty is not None}
+        ratios = {k: _status_ratio(r, t_range) for k, r in rated.items()}
+        unknown = [k for k, x in ratios.items() if x is None]
+        known = {k: x for k, x in ratios.items() if x is not None}
         k_worst = max(known, key=known.get) if known else None
         text = []
         if k_worst is not None:
@@ -957,7 +978,9 @@ def _checks(lc: LoadCase, ideal: Idealization, sols: list[LevelSolution], result
         if unknown:
             text.append(f"The analysis has no uncertainty for {_join(unknown)}.")
         text.append(f"The limit of the policy is {100 * limit:g} %.")
-        ok = bool(known) and not unknown and max(known.values()) <= limit
+        # False only when a value is over the limit; a result with no uncertainty leaves the check open (None)
+        over = bool(known) and max(known.values()) > limit
+        ok = False if over else (True if known and not unknown else None)
         out.append(Check(id=make_id("CHK", an, "error-estimate"), kind="error_estimate", passed=ok,
                          value=float(max(known.values())) if known else None, limit=limit, statement=" ".join(text)))
     return out
