@@ -383,7 +383,8 @@ def test_taylor_green_order_in_time(tmp_path, scheme, order):
     vals = []
     for dt in (0.02, 0.01, 0.005):
         _, case = _tg_case(m, dt, scheme)
-        res = solve(case, backend="openfoam")
+        # Euler at Courant 0.64 needs more than the default 20 outer iterations to reach outer_tol
+        res = solve(case, backend="openfoam", n_outer_correctors=50)
         assert res.info.converged
         vals.append(res.evaluate(case.qois[0]))
         res.cleanup()

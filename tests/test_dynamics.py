@@ -169,7 +169,7 @@ def test_period_error_closed_form(bar):
 def test_second_order_in_time(bar, scheme, ray):
     """Against the exact semi-discrete solution (modal superposition with the modal damping ratios
     zeta = a / (2 omega) + b omega / 2 of Rayleigh damping): the error falls by 4 per halving of dt
-    (observed orders 1.96-1.99 newmark, 1.96-1.99 damped, 1.94-1.97 HHT alpha = -0.05)."""
+    (observed orders 1.96-1.99 newmark, 1.96-1.99 damped, 1.94-1.97 HHT alpha = -0.05; measured at 10 / 20 / 40 / 80 steps per period)."""
     T = 1 / F1_BAR
     errs = []
     for nper in (10, 20, 40):
@@ -291,9 +291,10 @@ def test_refuses_time_dependent_temperature(bar):
 
 def test_cantilever_step_load(tmp, beam):
     """A step tip load: the tip oscillates about the static deflection with a peak near twice it, at the first
-    natural frequency (from the modal solver). Measured: peak / static 1.99 at 40 steps per period, frequency
-    within 0.3 % of f1 (the higher modes the step excites shift the zero crossings a little); the mean over
-    whole periods is the static value."""
+    natural frequency (from the modal solver). Measured (HHT alpha = -0.05, 20 / 40 / 80 steps per period):
+    peak / static 1.984 / 1.985 / 1.989; dominant frequency -0.81 % / -0.22 % / +0.19 % from f1 (the higher modes
+    the step excites shift the zero crossings a little); the mean over four periods +0.88 % / +0.22 % / +0.06 %
+    from the static value. Newmark gives the same to 0.2 %."""
     mat = {"s": Material(E=E, nu=0.3, rho=RHO)}
     bcs = [BC(type="fixed", group="left"), BC(type="force", group="right", value=[0.0, -1000.0])]
     q = QoI("tip", "point", field="uy", point=[1.0, 0.05])
