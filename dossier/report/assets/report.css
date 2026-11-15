@@ -445,3 +445,7 @@ details.card>summary{grid-template-columns:minmax(0,1fr) auto auto}
 .grp-h{display:flex;flex-wrap:wrap;gap:.3rem .6rem;align-items:baseline;padding:.4rem .6rem;border-radius:var(--r);border-top:0}
 .grp-s{margin:.3rem .6rem}
 .tn-leaf{flex-wrap:wrap}
+[hidden]{display:none!important}
+.filters{position:static;box-shadow:none}
+td.num{text-align:right}
+@media (max-width:60rem){.card-badges{grid-column:1;grid-row:auto;justify-content:flex-start}details.card>summary{padding-left:1.7rem}.card-sum{grid-column:1}.main{padding-top:3.2rem}}

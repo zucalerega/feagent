@@ -36,16 +36,25 @@ in ``info.warnings``.
 Start-up of Crank-Nicolson.  Crank-Nicolson does not damp the modes a step cannot resolve: it multiplies
 them by nearly -1 each step. When the initial state does not satisfy a temperature BC at t = 0 (a quench: a
 face suddenly held at another temperature) those modes are excited at full strength and the solution rings
-from step to step near the face. This is detected (the jump at the constrained nodes, against 1e-9 of the
-largest temperature) and handled, not hidden: the first two steps are each taken as two backward-Euler
-half-steps (Rannacher's start-up; four half-steps are what restores second order for discontinuous data:
-Rannacher, Numer. Math. 43 (1984); Giles & Carter, J. Comput. Finance 9 (2006)). The half-step matrix
-2/dt M + K is the Crank-Nicolson matrix, so the start-up costs no factorization. The choice over a warning:
-the ringing does not decay on a fine mesh, so a warning would leave a wrong answer; the start-up keeps the
-time grid and the order. ``analysis.options["cn_startup"]`` = "auto" (default), "always" or "off" (then the
-jump is a warning). A jump of the flux or of the fluid temperature of a convection BC is not a jump of a
-value: the temperature stays continuous and no start-up is used (verified: the convective slab at Biot 0.1
-to 10 keeps its accuracy). Backward Euler and BDF2 damp the unresolved modes and need no start-up.
+from step to step near the face. The same happens, less visibly, when a flux or the fluid temperature of a
+convection BC steps at t = 0: the temperature stays continuous, but the initial state does not satisfy the
+boundary condition's flux, and Crank-Nicolson's surface temperature then alternates by up to 25 % of the
+step for many steps (measured: the convective slab at Bi = 10, 100 steps to Fo = 1; 3 % at Bi = 1). This is
+handled, not hidden: the first two steps are each taken as two backward-Euler half-steps (Rannacher's
+start-up; four half-steps are what restores second order for discontinuous data: Rannacher, Numer. Math. 43
+(1984); Luskin & Rannacher, SIAM J. Numer. Anal. 19 (1982); Giles & Carter, J. Comput. Finance 9 (2006)).
+The half-step matrix 2/dt M + K is the Crank-Nicolson matrix, so the start-up costs no factorization.
+When it is used (``cn_startup`` = "auto", the default): whenever the initial state is not a steady state of
+the data at t = 0, i.e. the residual f(0) - K(0) T0 of the free unknowns is above 1e-9 of its terms (and so
+always after a jump of a prescribed temperature, detected separately against 1e-9 of the largest
+temperature and named in ``info.warnings``). Telling a flux that is incompatible with the initial gradient
+from a compatible one would need a smoothness test of the initial rate that small meshes defeat; the
+start-up costs two extra solves and keeps second order for smooth data too (verified: the manufactured
+solution's observed order is 2.0 with it, and the projection of a smooth initial state onto the mesh is itself
+a slightly rough start that Crank-Nicolson alone carries along: observed 1.6 there without it). The choice
+over a warning: the ringing does not decay on a fine mesh, so a warning would leave a wrong answer.
+"always" forces the start-up; "off" never uses it (an incompatible temperature BC is then a warning).
+Backward Euler and BDF2 damp the unresolved modes and need no start-up.
 
 Results.  ``TransientHeatResult``: ``times``, ``kept``, ``series(qoi)`` (every QoI of the case at every
 step, evaluated while the solver runs, by ``SkfemResult``'s own evaluation), ``state(t)`` (a ``SkfemResult``
@@ -729,11 +738,19 @@ def solve(case: Case, **options) -> TransientHeatResult:
             W.append(f"{what} and cn_startup is 'off': Crank-Nicolson does not damp the modes this excites, the "
                      f"solution rings from step to step near these faces")
         _first_cell_warning(md, rc, nodes, dt, W)
-    if scheme == "crank_nicolson" and (startup == "always" or (startup == "auto" and incompatible)):
+    # the initial state against the rest of the data at t = 0: is it a steady state (nothing to damp)?
+    x0 = T.copy()
+    x0[D] = d.g
+    Kx = system.K(d) @ x0
+    unbalanced = float(np.linalg.norm((d.f - Kx)[system.I]))
+    moving = unbalanced > JUMP_TOL * max(float(np.linalg.norm(d.f[system.I])) + float(np.linalg.norm(Kx[system.I])),
+                                         1e-300)
+    if scheme == "crank_nicolson" and (startup == "always" or (startup == "auto" and (incompatible or moving))):
         n_startup = min(STARTUP_STEPS, n_steps)
-        W.append(("info: " + what + ": " if incompatible else "info: cn_startup = 'always': ")
-                 + f"Crank-Nicolson takes its first {n_startup} steps as {2 * n_startup} backward-Euler "
-                   f"half-steps (Rannacher start-up)")
+        why = (what if incompatible else "cn_startup = 'always'" if startup == "always" else
+               "the initial state is not a steady state of the data at t = 0")
+        W.append(f"info: {why}: Crank-Nicolson takes its first {n_startup} steps as {2 * n_startup} backward-Euler "
+                 f"half-steps (Rannacher start-up)")
     _resolution_warnings(system, times, W)
 
     method = _direct_method(opts.get("linear_solver"), len(system.I), W)

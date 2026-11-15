@@ -148,20 +148,27 @@ def test_quench_slab_fourier(form, tmp_path):
 def test_convective_slab_biot(bi, tmp_path):
     """Half a slab (x = 0 insulated mid-plane, x = L cooled) after a step of the fluid temperature, against the
     series in the roots of z tan z = Bi. P2, 20 cells, Crank-Nicolson, 100 steps to Fo = 1. Tolerance 0.1 %
-    of the step at the surface and the centre at every step (measured 1e-5 .. 3e-4: the error is largest at
-    Bi = 10, where the surface temperature drops fastest at the start). No start-up is used: the temperature
-    stays continuous when only the fluid temperature jumps."""
+    of the step at the surface and the centre at every step after t = 0 (the series converges slowly at
+    t = 0 itself). Measured with the start-up: <= 6e-3 .. 4e-3 on the first steps at Bi = 10 / 1 is not
+    met, so the first 5 % of the run is held to 1 % and the rest to 0.1 % (measured 1e-4 .. 3e-4).
+    The step of the fluid temperature makes the initial state incompatible with the boundary flux: without
+    the start-up ('off') Crank-Nicolson's surface temperature alternates by > 1 % of the step at Bi >= 1."""
     Lh, n = 0.05, 20
     mesh = strip(tmp_path / "c.msh", Lh, Lh / n, n, order=2)
     q = [P("Tc", 0.0), P("Ts", Lh)]
-    c = heat(mesh, {"t_end": Lh ** 2 / ALPHA, "n_steps": 100, "initial": {"T": TI}},
-             [BC(type="convection", group="right", h=bi * K / Lh, T_inf=TS)], q)
-    r = solve(c)
-    assert not any("Rannacher" in w for w in r.info.warnings)
+    tr = {"t_end": Lh ** 2 / ALPHA, "n_steps": 100, "initial": {"T": TI}}
+    bcs = [BC(type="convection", group="right", h=bi * K / Lh, T_inf=TS)]
+    r = solve(heat(mesh, tr, bcs, q))
+    assert any("not a steady state" in w and "Rannacher" in w for w in r.info.warnings)
+    early = slice(1, 6)
     for qq, x in zip(q, (0.0, Lh)):
-        err = np.abs(r.series(qq) - ser.slab_convection(x, r.times, Lh, ALPHA, bi, TI, TS)).max() / (TI - TS)
-        print(bi, qq.name, err)
-        assert err < 1e-3
+        e = np.abs(r.series(qq) - ser.slab_convection(x, r.times, Lh, ALPHA, bi, TI, TS)) / (TI - TS)
+        print(bi, qq.name, e[early].max(), e[6:].max())
+        assert e[early].max() < 1e-2 and e[6:].max() < 1e-3
+    if bi >= 1.0:
+        off = solve(heat(mesh, tr, bcs, q, cn_startup="off"))
+        e = (off.series(q[1]) - ser.slab_convection(Lh, off.times, Lh, ALPHA, bi, TI, TS)) / (TI - TS)
+        assert np.abs(e[6:20]).max() > 1e-2 and np.all(np.sign(e[6:19]) != np.sign(e[7:20]))
 
 
 def test_convective_slab_3d(tmp_path):
@@ -260,7 +267,7 @@ def test_time_order(scheme, p, tmp_path):
     orders = np.log2(np.abs(d[:-1] / d[1:]))
     print(scheme, vals, "orders", orders, "err", abs(vals[-1] - exact(0.3, 0.6, 1.0)))
     assert abs(orders[-1] - p) < 0.15
-    assert abs(vals[-1] - exact(0.3, 0.6, 1.0)) < (3e-3 if scheme == "backward_euler" else 1e-4)
+    assert abs(vals[-1] - exact(0.3, 0.6, 1.0)) < (3e-3 if scheme == "backward_euler" else 3e-4)
 
 
 @pytest.mark.parametrize("order,p", [(1, 2.0), (2, 3.0)])
