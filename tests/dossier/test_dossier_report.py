@@ -164,7 +164,7 @@ def test_ste_summary_when_checker_importable(built):
 def test_numbers_are_shown_in_display_units(built):
     proj, res, html = built
     assert "MPa" in html and "margin" in html
-    text = re.sub(r"<script.*?</script>|<svg.*?</svg>|<[^>]*>", " ", html, flags=re.S)
+    text = re.sub(r"<script.*?</script>|<style.*?</style>|<svg.*?</svg>|<[^>]*>", " ", html, flags=re.S)
     assert not re.search(r"\d[eE][+-]\d", text)
 
 

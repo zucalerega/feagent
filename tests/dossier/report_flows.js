@@ -10,6 +10,7 @@ const { chromium } = require('playwright');
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('request', r => { const u = r.url(); if (/^https?:/.test(u) && !u.startsWith(new URL(url).origin)) external.push(u); });
   const R = {};
+  const openAll = i => page.evaluate(x => { for (let e = document.getElementById(x); e; e = e.parentElement) if (e.tagName === 'DETAILS') e.open = true; document.getElementById(x).scrollIntoView({behavior: 'instant'}); }, i);
   await page.goto(url);
   await page.waitForTimeout(400);
   // 1. a link opens its card, marks it, and Back returns
@@ -63,7 +64,7 @@ const { chromium } = require('playwright');
     await page.goto(url + '#FND-REQ-MOV-001-MEOP-ENVELOPE'); await page.waitForTimeout(600);
     const id = await page.evaluate(() => { const b = document.querySelector('.fld.review[data-state=open]'); return b && b.getAttribute('data-review-of'); });
     R.forms = forms > 5;
-    await page.evaluate(i => { const e = document.getElementById(i); e.open = true; }, id);
+    await openAll(id);
     const blk = page.locator(`.fld.review[data-review-of="${id}"]`);
     await blk.locator('input[type=text]').fill('Test Person');
     await blk.locator('.rv-btn.accept').click(); await page.waitForTimeout(600);
@@ -73,7 +74,7 @@ const { chromium } = require('playwright');
     R.open_count = +opens >= 0;
     // reject needs a comment
     const id2 = await page.evaluate(() => { const b = document.querySelector('.fld.review[data-state=open]'); return b && b.getAttribute('data-review-of'); });
-    await page.evaluate(i => { document.getElementById(i).open = true; }, id2);
+    await openAll(id2);
     const b2 = page.locator(`.fld.review[data-review-of="${id2}"]`);
     await b2.locator('.rv-btn.reject').click();
     R.reject_needs_comment = (await b2.locator('.rv-err').textContent()).length > 0;

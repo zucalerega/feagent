@@ -223,7 +223,7 @@ def test_prescribed_base_motion(bar):
     """The fixed end moves as u_D = U (1 - cos W t). Exact semi-discrete solution: u = u_D (rigid translation)
     + w with M w'' + K w = -M 1 a_D, i.e. q_k = -G_k U W^2 / (w_k^2 - W^2) (cos W t - cos w_k t). The same
     problem in the moving frame (fixed end, body force -rho a_D) must give the same motion: the two runs differ
-    by O(dt^2) (observed order 2.1-2.2), so the prescribed velocity and acceleration (Newmark relations, and
+    by O(dt^2) (observed order 1.99, 2.02), so the prescribed velocity and acceleration (Newmark relations, and
     differences at t = 0) are consistent. Against the exact solution both converge alike (error 2.2 %, 0.84 %,
     0.35 % at 40, 80, 160 steps; slower than dt^2 at first because the step excites modes it cannot resolve)."""
     U, W = 1e-5, 2 * math.pi * 500.0
