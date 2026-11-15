@@ -92,12 +92,23 @@ def dominant_frequency(times, values) -> float:
     span = t[-1] - t[0]
     if not span > 0:
         raise ValueError("dominant_frequency needs increasing times")
-    y = y - np.polyval(np.polyfit(t - t[0], y, 1), t - t[0])
-    up = np.nonzero((y[:-1] < 0.0) & (y[1:] >= 0.0))[0]
-    if up.size < 3:
-        raise ValueError(f"dominant_frequency needs at least two full periods in the window "
-                         f"({max(up.size - 1, 0)} found)")
-    tc = t[up] - y[up] * (t[up + 1] - t[up]) / (y[up + 1] - y[up])
+    def crossings(v):
+        up = np.nonzero((v[:-1] < 0.0) & (v[1:] >= 0.0))[0]
+        if up.size < 3:
+            raise ValueError(f"dominant_frequency needs at least two full periods in the window "
+                             f"({max(up.size - 1, 0)} found)")
+        return t[up] - v[up] * (t[up + 1] - t[up]) / (v[up + 1] - v[up])
+
+    # first a straight-line fit of the samples; it is slightly biased by the oscillation itself, so the
+    # trend is then fitted again through the mean of each full period, which the oscillation does not bias
+    tc = crossings(y - np.polyval(np.polyfit(t - t[0], y, 1), t - t[0]))
+    mids, means = [], []
+    for a, b in zip(tc[:-1], tc[1:]):
+        tw = np.concatenate([[a], t[(t > a) & (t < b)], [b]])
+        means.append(np.trapezoid(np.interp(tw, t, y), tw) / (b - a))
+        mids.append(0.5 * (a + b))
+    trend = np.polyfit(mids, means, 1) if len(mids) >= 2 else [0.0, means[0]]
+    tc = crossings(y - np.polyval(trend, t))
     f = float((tc.size - 1) / (tc[-1] - tc[0]))
     per_period = (t.size - 1) / (span * f)
     if per_period < 8.0:
