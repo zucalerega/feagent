@@ -492,6 +492,37 @@ def test_crank_nicolson_startup(tmp_path):
         solve(heat(mesh, tr, bcs, q, cn_startup="sometimes"))
 
 
+@pytest.mark.parametrize("form", ["where", "table"])
+def test_crank_nicolson_startup_after_later_jump(form, tmp_path):
+    """The fluid temperature of a convection BC steps at t_s = 20 steps into the run (Bi = 10), the slab being
+    at rest until then: after t_s the solution is the convective-slab series shifted by t_s. Before the fix the
+    start-up only protected t = 0, and Crank-Nicolson's surface temperature alternated after t_s (the checker
+    measured 8.5 % of the step; here 6.9 % at step 6 after the jump, alternating in sign). Now the jump is
+    detected and the two steps from it are backward-Euler half-steps, so the error after the jump is what
+    the t = 0 start-up gives (test_convective_slab_biot: 5 % for the first five steps, 0.2 % after;
+    measured here 3.7 % and 1.1e-3). With cn_startup 'off' the run warns and still rings."""
+    Lh, n, bi = 0.05, 20, 10.0
+    mesh = strip(tmp_path / "c.msh", Lh, Lh / n, n, order=2)
+    q = [P("Ts", Lh)]
+    dt = Lh ** 2 / ALPHA / 100
+    ts = 20 * dt
+    tinf = (f"where(t < {ts!r}, {TI}, {TS})" if form == "where" else
+            {"table": [[0.0, TI], [ts - 1e-9 * dt, TI], [ts, TS]]})
+    tr = {"t_end": ts + 100 * dt, "n_steps": 120, "initial": {"T": TI}}
+    bcs = [BC(type="convection", group="right", h=bi * K / Lh, T_inf=tinf)]
+    exact = lambda t: np.where(t < ts, TI, ser.slab_convection(Lh, np.maximum(t - ts, 0.0), Lh, ALPHA, bi, TI, TS))  # noqa: E731
+    r = solve(heat(mesh, tr, bcs, q))
+    assert any("jump" in w and "Rannacher" in w for w in r.info.warnings), r.info.warnings
+    e = np.abs(r.series(q[0]) - exact(r.times)) / (TI - TS)
+    print(form, "after the jump: first five", e[21:26].max(), "rest", e[26:].max())
+    assert e[:21].max() < 1e-9                          # at rest until the jump
+    assert e[21:26].max() < 5e-2 and e[26:].max() < 2e-3
+    off = solve(heat(mesh, tr, bcs, q, cn_startup="off"))
+    assert any("jump" in w and "cn_startup is 'off'" in w for w in off.info.warnings)
+    eo = (off.series(q[0]) - exact(off.times)) / (TI - TS)
+    assert np.abs(eo[26:40]).max() > 1e-2 and np.all(np.sign(eo[26:39]) != np.sign(eo[27:40]))
+
+
 def test_qoi_time_reductions_and_outputs(tmp_path):
     """QoI.time: the value at a time (linear between steps), max over time, and a window; output_times keeps
     those states; state(t) is a steady-style result (probe, nodal, evaluate, write_vtu)."""

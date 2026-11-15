@@ -784,6 +784,22 @@ def solve(case: Case, **options) -> TransientHeatResult:
                "the initial state is not a steady state of the data at t = 0")
         W.append(f"info: {why}: Crank-Nicolson takes its first {n_startup} steps as {2 * n_startup} backward-Euler "
                  f"half-steps (Rannacher start-up)")
+    half_steps = set(range(n_startup))
+    # a jump of the data later in the run excites the same undamped modes: the same start-up after it
+    jumps = [n for n in _data_jumps(system, times) if n > 0 or n_startup == 0] if scheme == "crank_nicolson" else []
+    if jumps:
+        at = ", ".join(f"{float(times[n]):g}..{float(times[n + 1]):g}" for n in jumps[:8]) + \
+            (f" and {len(jumps) - 8} more" if len(jumps) > 8 else "")
+        if startup == "off":
+            W.append(f"the boundary or load data jump between t = {at} and cn_startup is 'off': Crank-Nicolson does "
+                     f"not damp the modes a jump excites, the solution near those faces alternates from step to step "
+                     f"after it (measured: 8.5 % of the step at Biot 10). Use cn_startup 'auto' or the scheme bdf2.")
+        else:
+            for n in jumps:
+                half_steps.update(range(n, min(n + STARTUP_STEPS, n_steps)))
+            W.append(f"info: the boundary or load data jump between t = {at}: Crank-Nicolson takes the "
+                     f"{STARTUP_STEPS} steps from each jump on as backward-Euler half-steps (Rannacher start-up "
+                     f"after a jump)")
     _resolution_warnings(system, times, W)
 
     method = _direct_method(opts.get("linear_solver"), len(system.I), W)
@@ -840,7 +856,7 @@ def solve(case: Case, **options) -> TransientHeatResult:
             T_new = stepper.solve(1.0 / dt, d_new, MT / dt + d_new.f)
         elif scheme == "bdf2":
             T_new = stepper.solve(1.5 / dt, d_new, (2.0 * MT - 0.5 * MT_old) / dt + d_new.f)
-        elif n < n_startup:                   # two backward-Euler half-steps; same matrix as Crank-Nicolson
+        elif n in half_steps:                 # two backward-Euler half-steps; same matrix as Crank-Nicolson
             d_half = system.at(float(times[n]) + 0.5 * dt)
             T_half = stepper.solve(2.0 / dt, d_half, (2.0 / dt) * MT + d_half.f)
             d_new = system.at(t_new)

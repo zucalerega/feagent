@@ -39,12 +39,20 @@ def case(id, refs, phase=None, analysis_type="static_structural", **kw):
 
 
 def res(key, value, unit="Pa", u=0.02, status="converged", **kw):
+    kw.setdefault("error_estimated", u is not None)      # a mesh study that converges, unless a test says not
     return ResultValue(key=key, value=value, unit=unit, uncertainty=u, status=status, **kw)
 
 
 def analysis(lc_id, results=(), status="done", analysis_type="static_structural", **kw):
+    """An analysis record. A worst-line result `...@scls` with no line results of its own stands for the same
+    result on each of the five lines (the compliance stage assesses each line by itself)."""
+    out = {r.key: r for r in results}
+    for r in results:
+        prefix = r.key[: -len("scls")]
+        if r.key.endswith("@scls") and not any(k.startswith(prefix + "SCL-") for k in out):
+            out.update({prefix + line: r.model_copy(update={"key": prefix + line}) for line in LINES})
     return AnalysisRecord(id="AN-" + lc_id[3:], load_case=lc_id, analysis_type=analysis_type, status=status,
-                          results={r.key: r for r in results}, **kw)
+                          results=out, **kw)
 
 
 def check(id, passed, kind="equilibrium", statement="The reactions balance the applied loads."):
