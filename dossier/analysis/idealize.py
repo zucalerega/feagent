@@ -492,12 +492,27 @@ class Idealizer:
                 subject=lc.id, key="idealize-acceleration", title="Acceleration as a body force",
                 choice="The engine applies each acceleration as a body force on the full part. The body force is the "
                        "density times the acceleration vector.",
-                rationale="The system context gives the vector as the direction of the inertial load on the part, as "
-                          f"for gravity. The density of {self.material.id} is {fmt(self.rho, 'kg/m^3')}.",
+                rationale="The project convention reads each acceleration vector as the inertial load on the part per "
+                          "unit mass, as for gravity. The system context gives one sign for each vector. "
+                          "An assumption records that the engine analyses this sign only. "
+                          f"The density of {self.material.id} is {fmt(self.rho, 'kg/m^3')}.",
                 alternatives=[("Make a dynamic analysis with the vibration spectrum.",
                                "The system context gives quasi-static accelerations.")],
                 basis="rule", links=effects("acceleration"), by="rule:structural.acceleration")
             self.decisions["acceleration"] = d.id
+            j.assume(
+                subject=lc.id, key="acceleration-sign", title="One sign of each acceleration",
+                statement="The analysis uses each acceleration with the sign that the system context gives. "
+                          "The analysis does not use the opposite sign.",
+                rationale="The system context gives each acceleration as a quasi-static load factor with one sign. "
+                          "A quasi-static load factor can act in the two directions.",
+                impact="With the opposite sign, the stress from each acceleration changes its sign. "
+                       "The bending of a section, for example the neck, reverses, so the tension side moves to the "
+                       "other side of the section. Then the stress that governs can increase or move to a different "
+                       "location.",
+                verify_by="Do the analysis of this load case again with the opposite sign of each acceleration. "
+                          "Compare the margins of the two analyses.",
+                conservative=None, links=effects("acceleration"), by="rule:structural.acceleration")
         if self.loads and any(ld.kind in ("force", "moment") for ld in self.loads):
             j.assume(
                 subject=lc.id, key="load-path", title="Forces and moments spread over the full seat faces",

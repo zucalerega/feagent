@@ -10,7 +10,7 @@ stress and the largest principal stress scale the same way because the scale is 
 What the record holds
   results     every stress and displacement result of the base analysis times `scale`: value, per_level,
               extrapolated value and the absolute uncertainty are scaled; status, uncertainty (relative),
-              observed order, location and `near` carry over; `method` is "scaled". A base result of another quantity is not copied; the
+              `error_estimated` (the flag of the base result), observed order, location and `near` carry over; `method` is "scaled". A base result of another quantity is not copied; the
               message names it.
   checks      one check that the base analysis is done and that its own checks passed. A base check that
               did not pass fails this check too (a failed check is never hidden).
@@ -54,6 +54,7 @@ def scale_result(r: ResultValue, scale: float, base_id: str) -> ResultValue:
         "extrapolated": None if r.extrapolated is None else r.extrapolated * scale,
         "uncertainty_abs": None if r.uncertainty_abs is None else r.uncertainty_abs * abs(scale),
         "method": "scaled",
+        "error_estimated": bool(r.error_estimated),      # the flag of the base result
         "note": (f"{scale:.6g} times the value of {base_id}. " + (r.note or "")).strip()})
 
 

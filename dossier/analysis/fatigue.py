@@ -1513,9 +1513,12 @@ def _run(project, ctx, geo: dict, lc: LoadCase, workdir: Path, opts, t0: float) 
     # ---- the record
     results = {}
     for r in (part, smooth):
+        # an error estimate from two levels, except in a singular zone or at its rim (the value follows the cut)
+        estimated = bool(two and r.uncertainty is not None and math.isfinite(r.uncertainty) and not r.in_singular
+                         and not r.rim and r.status != "singular")
         results[r.key] = ResultValue(key=r.key, value=r.value, unit="", uncertainty=r.uncertainty, status=r.status,
                                      location=r.location, near=r.near, per_level=r.per_level, method="derived",
-                                     note=r.note)
+                                     note=r.note, error_estimated=estimated)
     j = Journal("solve", BY)
     _journal(j, project, lc, mat, sn, points, cases, part, zones, limit, two)
     states = list(dict.fromkeys(p.label for p in points if p.duty_cycle is not None))
