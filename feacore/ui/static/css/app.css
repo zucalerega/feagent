@@ -417,6 +417,11 @@ main.pj-fill { padding-bottom: 20px; }
 .pj-frame { width: 100%; height: 640px; border: 1px solid var(--line); border-radius: 12px; background: #fff; display: block; }
 /* inputs: the files and the problems on the left, the text of one file on the right */
 .pj-inputs { display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+.pj-inputs > * { min-width: 0; }
+.pj-inputs .stack { min-width: 0; }
+.pj-inputs table.data { width: 100%; }
+.pj-inputs table.data td .mono { overflow-wrap: anywhere; }
+.pj-inputs table.data td.num { white-space: nowrap; }
 @media (max-width: 1100px) { .pj-inputs { grid-template-columns: 1fr; } }
 .pj-edit, .pj-side { padding: 20px 22px; }
 .pj-side h3 { margin-bottom: 10px; }

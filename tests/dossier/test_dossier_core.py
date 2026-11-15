@@ -116,3 +116,30 @@ def test_stage_files_and_reviews(workproject):
     assert workproject.review_of(d)[0].state == "accepted" and not workproject.review_of(d)[1]
     d2 = d.model_copy(update={"choice": "Hold the bolt holes."})
     assert workproject.review_of(d2) == (rv, True)          # the record changed after the review
+
+
+# ---- python -m dossier ui: thin start of the dashboard (no server is started here)
+
+def test_ui_subcommand_builds_the_dashboard_call(monkeypatch, capsys):
+    import feacore.ui.__main__ as dash
+    from dossier import cli
+
+    calls = []
+    monkeypatch.setattr(dash, "main", lambda argv=None: calls.append(list(argv)))
+    assert cli.main(["ui"]) == 0
+    assert calls[-1] == ["--host", "127.0.0.1", "--port", "8000"]
+    out = capsys.readouterr().out
+    assert "http://localhost:8000/#/projects" in out and "Ctrl+C" in out
+    assert cli.main(["ui", "--port", "8123", "--runs-dir", "/tmp/r", "--host", "0.0.0.0"]) == 0
+    assert calls[-1] == ["--host", "0.0.0.0", "--port", "8123", "--runs-dir", "/tmp/r"]
+    assert "http://localhost:8123/#/projects" in capsys.readouterr().out
+
+
+def test_ui_subcommand_stops_quietly_on_ctrl_c(monkeypatch):
+    import feacore.ui.__main__ as dash
+    from dossier import cli
+
+    def interrupted(argv=None):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(dash, "main", interrupted)
+    assert cli.main(["ui", "--port", "8001"]) == 0

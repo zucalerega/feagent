@@ -118,3 +118,35 @@ def test_tools():
     with pytest.raises(Exception):
         tools.load_case_ids("--force")
     assert tools.load_case_ids("LC-A, LC-B") == ["LC-A", "LC-B"]
+
+
+def test_reassess_argv(env):
+    """The Re-assess button runs the stages assess to report of the project, nothing analysed again."""
+    ref = tools.project_ref(PROJECT)
+    runs = env["root"].parent.parent
+    argv = tools._run_argv({"project": str(runs / "dossier" / PROJECT), "from": "assess", "to": "report", "quick": False})
+    assert argv[0] == "run" and argv[2:6] == ["--from", "assess", "--to", "report"]
+    assert "--quick" not in argv and "--force" not in argv and ref.endswith(PROJECT)
+    with pytest.raises(Exception):      # the stages must be in order
+        tools._run_argv({"project": str(runs / "dossier" / PROJECT), "from": "report", "to": "assess"})
+
+
+def test_offscreen_runs_directly_without_xvfb_or_off_linux(monkeypatch):
+    """No xvfb-run on macOS and Windows: the script runs as it is. Only Linux without a display starts Xvfb."""
+    import sys
+
+    from feacore.ui import offscreen
+
+    monkeypatch.setattr(offscreen.shutil, "which", lambda name: "/usr/bin/xvfb-run" if name == "xvfb-run" else None)
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert offscreen.display_mode({}) == "xvfb"
+    assert offscreen.command("s.py", ["a"], {})[0] == "xvfb-run"
+    assert offscreen.display_mode({"DISPLAY": ":0"}) == "display"
+    assert offscreen.command("s.py", ["a"], {"DISPLAY": ":0"})[0] == sys.executable
+    for plat in ("darwin", "win32"):
+        monkeypatch.setattr(sys, "platform", plat)
+        assert offscreen.display_mode({}) == "none"
+        assert offscreen.command("s.py", ["a"], {}) == [sys.executable, "s.py", "a"]
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(offscreen.shutil, "which", lambda name: None)
+    assert offscreen.display_mode({}) == "none"

@@ -7,6 +7,8 @@
     python -m dossier show PROJECT ID                   one record (input or derived) with what it links to
     python -m dossier review PROJECT ID --accept|--reject|--changes --by NAME [--comment TEXT]
     python -m dossier params PROJECT [NAME ...]         the named numbers with their sources
+    python -m dossier ui [--port 8000] [--runs-dir DIR] [--host 127.0.0.1]
+                                                        start the dashboard (page: Projects) in the browser
 
 Stages: context, geometry, validate, plan, analyze, assess, report (dossier/pipeline.py).
 """
@@ -136,6 +138,37 @@ def cmd_review(a) -> int:
     return 0
 
 
+def ui_argv(a) -> list[str]:
+    """The arguments of ``python -m feacore.ui`` for ``python -m dossier ui`` (nothing else is added)."""
+    argv = ["--host", a.host, "--port", str(a.port)]
+    if a.runs_dir:
+        argv += ["--runs-dir", a.runs_dir]
+    return argv
+
+
+def ui_url(a) -> str:
+    """The address of the Projects page. A server that listens on every interface is reached as localhost."""
+    host = "localhost" if a.host in ("127.0.0.1", "0.0.0.0", "::", "::1", "") else a.host
+    return f"http://{host}:{a.port}/#/projects"
+
+
+def cmd_ui(a) -> int:
+    """Start the dashboard: the same thing as ``python -m feacore.ui`` with these options."""
+    try:
+        from feacore.ui.__main__ import main as dashboard
+    except ImportError as e:
+        print(f"The dashboard needs more packages ({e}). Install them with: pip install -e '.[ui]'", file=sys.stderr)
+        return 1
+    print(f"Projects page: {ui_url(a)}")
+    print("Press Ctrl+C in this window to stop it.")
+    sys.stdout.flush()
+    try:
+        dashboard(ui_argv(a))
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m dossier", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -159,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--accept", action="store_true"); g.add_argument("--reject", action="store_true")
     g.add_argument("--changes", action="store_true")
     s.add_argument("--by", required=True); s.add_argument("--comment"); s.set_defaults(fn=cmd_review)
+    s = sub.add_parser("ui", help="start the dashboard on this machine (page: Projects)")
+    s.add_argument("--port", type=int, default=8000); s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--runs-dir", default=None, help="where the dashboard keeps its projects and runs (default: its own, ./runs)")
+    s.set_defaults(fn=cmd_ui)
     a = ap.parse_args(argv)
     try:
         return a.fn(a)

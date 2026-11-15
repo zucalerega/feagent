@@ -4,10 +4,12 @@
 
 The dashboard's renderers (pyvista / VTK) need an OpenGL context. On a box without a screen this
 launcher starts the script under ``xvfb-run`` (a virtual X server, Mesa llvmpipe software rendering)
-when there is no ``DISPLAY``; with a display, or without Xvfb, it runs the script as is (VTK may still
-find EGL or OSMesa). Scripts that call the ``ffmpeg`` command get the ffmpeg bundled with
-imageio-ffmpeg when the system has none. The script replaces this process (``exec``), so the task
-lane's stop and kill reach it and the virtual display.
+when there is no ``DISPLAY``; with a display, without Xvfb, or on macOS and Windows (which have no X server
+and use their own window system), it runs the script as is (VTK may still find EGL or OSMesa). Scripts that call the ``ffmpeg`` command get
+the ffmpeg bundled with imageio-ffmpeg when the system has none. On Linux and macOS the script replaces this process (``exec``), so
+the task lane's stop and kill reach it and the virtual display. Windows has no ``exec`` that replaces a
+process (``os.exec*`` starts a new one and ends this one at once, so the task would look finished): there the
+launcher waits for the script and returns its exit code.
 """
 
 from __future__ import annotations
@@ -42,6 +44,8 @@ def ffmpeg_dir() -> str | None:
             link.symlink_to(exe)
         except FileExistsError:
             pass
+        except OSError:      # Windows without the right to make links
+            return None
     return str(base)
 
 
@@ -50,6 +54,8 @@ def display_mode(env: dict | None = None) -> str:
     env = os.environ if env is None else env
     if env.get("DISPLAY"):
         return "display"
+    if not sys.platform.startswith("linux"):    # macOS, Windows: their own window system, no X server to start
+        return "none"
     return "xvfb" if shutil.which("xvfb-run") else "none"
 
 
@@ -74,6 +80,10 @@ def main(argv: list[str] | None = None) -> None:
         env["PATH"] = extra + os.pathsep + env.get("PATH", "")
     cmd = command(argv[0], argv[1:], env)
     sys.stdout.flush()
+    if os.name == "nt":
+        import subprocess
+
+        raise SystemExit(subprocess.call(cmd, env=env))
     os.execvpe(cmd[0], cmd, env)
 
 

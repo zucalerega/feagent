@@ -32,6 +32,61 @@ python -m dossier new    my_valve                            # a copy of the exa
 The report is `<project>/out/report/index.html`. In the dashboard (`python -m feacore.ui`) the same thing is
 the **Projects** section: edit the inputs, run the stages as tasks, read the report, give reviews.
 
+## Run it on your machine
+
+Install (needs Python 3.12 or newer and `uv`; run it in a checkout of the repository):
+
+```bash
+uv venv .venv --python 3.12
+UV_NATIVE_TLS=1 uv pip install --python .venv/bin/python -e ".[ui]"     # Windows: .venv\Scripts\python.exe
+.venv/bin/python -m dossier ui                                         # then open http://localhost:8000/#/projects
+```
+
+`python -m dossier ui [--port 8000] [--runs-dir DIR] [--host 127.0.0.1]` starts the dashboard (the same as
+`python -m feacore.ui`), prints the address of the Projects page and stops with Ctrl+C. Projects and runs are
+kept in `./runs` of the checkout, or in `--runs-dir` / `$FEACORE_RUNS_DIR`. `UV_NATIVE_TLS=1` is only needed
+behind a proxy that re-signs certificates.
+
+What the page offers:
+
+- **New project**: a copy of the example `mov_valve` (the inputs are yours to change).
+- **Check inputs**, **Run verification (quick or full)**, **Re-assess** (margins and report again from the
+  analyses that exist, in seconds: use it after a review), **Build report**, and a panel to run some stages only.
+- **Report**: the real report in the page (links and the "Why" panel work); accept, reject or ask for changes
+  on any decision, assumption or finding, with your name and a comment (written to `reviews.yaml`).
+- **Inputs**: an editor for the YAML files (a problem shows with file, line and message) and a CAD replace.
+- **Numbers**, **Load cases** (each links to its record in the report) and **Reviews** (all records, filters).
+
+Tested here on Ubuntu 24.04 (Python 3.12, a new venv made with the install command above, then
+`python -m dossier ui --port 8124 --runs-dir ...` started from another folder, and the quick verification run
+from the page's API): the install is enough for all seven stages. `matplotlib` (formulas in the report) and
+`pyvista` (pictures) are already installed by the base dependencies of `pyproject.toml`; `pint` and `pydantic`
+are base dependencies too. A quick run takes 3 to 5 minutes on 4 CPUs.
+
+**Without OpenFOAM.** Everything runs except the flow load case (stepped bore, pressure drop). Tested on Ubuntu
+with OpenFOAM hidden from the backend (no OpenFOAM program on `PATH` and none in the usual install folders, the
+lookup in `feacore/solver/_foam_env.py` found nothing): the run completes; the analysis of `LC-FLOW-FIRE` is
+"not supported" with the text "OpenFOAM is not installed ..."; the pressure-drop requirement `REQ-MOV-008` gets
+the verdict inconclusive, "the value is an estimate from a hand calculation" (the hand calculation of the
+pressure drop still runs); the page shows the text in the Load cases tab and in the report. With the extra
+`cfd` (`pip install -e ".[ui,cfd]"`, the Python package `foamlib`) and OpenFOAM ESI v1912 or newer installed,
+the flow case is solved. Without `foamlib` the message says that package is missing (tested). The lookup of
+OpenFOAM uses `bash` and Linux install folders (read in the code), so OpenFOAM runs on Linux (or WSL) only.
+
+**Pictures.** The geometry stage of a full run (not a quick run) makes pictures of the part with VTK, which needs
+an OpenGL context. The page starts such a run through `feacore/ui/offscreen.py`. On Linux without a display it
+uses `xvfb-run` (tested: `sudo apt-get install xvfb`; the pictures are in the report); with a display it runs
+directly. On macOS and Windows there is no `xvfb-run` and the launcher runs the script directly with the
+system's own window system (read in the code, with a unit test of the choice; not tested on those systems). VTK
+does not raise an error when it has no OpenGL context, it can crash the process; if a full run stops in the
+geometry stage, run again with "no pictures" (in "Run a part of the pipeline", or `--no-pictures` on the
+command line), or use a quick run, which makes no pictures.
+
+**Not tested: macOS and Windows.** `gmsh` has wheels for macOS arm64 on PyPI, but not for Linux ARM (see
+`CLAUDE.md`). The task lane uses POSIX process groups (`feacore/ui/tasks.py`: `os.killpg`), so the buttons that
+stop or kill a run are expected not to work on native Windows (read, not run); use WSL 2 there. The MKL PARDISO
+solver is x86 only, the solver then uses SciPy (as stated in `CLAUDE.md`).
+
 ## What you write
 
 One folder per project, plain YAML, made to be read and reviewed by people and kept in git.

@@ -164,9 +164,9 @@ async function project(el, folder) {
   const pick = value => h('select', { style: { height: '40px' } }, stageNames.map(s => h('option', { value: s, selected: s === value ? true : null }, s)));
   const part = { from: pick(stageNames[0]), to: pick(stageNames[stageNames.length - 1]),
                  only: h('input', { type: 'text', placeholder: 'all', style: { width: '220px', height: '40px' }, spellcheck: 'false' }),
-                 quick: h('input', { type: 'checkbox', checked: true }), force: h('input', { type: 'checkbox' }),
+                 quick: h('input', { type: 'checkbox', checked: true }), force: h('input', { type: 'checkbox' }), nopic: h('input', { type: 'checkbox' }),
                  go: h('button', { class: 'btn', type: 'button' }, 'Run') };
-  part.go.onclick = () => startTask('dossier.run', { from: part.from.value, to: part.to.value, quick: part.quick.checked, force: part.force.checked,
+  part.go.onclick = () => startTask('dossier.run', { from: part.from.value, to: part.to.value, quick: part.quick.checked, force: part.force.checked, no_pictures: part.nopic.checked,
                                                     ...(part.only.value.trim() ? { only: part.only.value.trim() } : {}) }, part.go);
   const partBox = h('details', { class: 'pj-part' }, h('summary', {}, 'Run a part of the pipeline'),
     h('div', { class: 'row', style: { gap: '16px', alignItems: 'flex-end', marginTop: '10px' } },
@@ -175,6 +175,7 @@ async function project(el, folder) {
       h('label', { class: 'field', title: 'Load case ids, for example LC-FIRE LC-PROOF' }, h('span', { class: 'section-title' }, 'Only these load cases'), part.only),
       h('label', { class: 'check', title: 'Coarse meshes, two mesh levels, no pictures.' }, part.quick, 'quick'),
       h('label', { class: 'check', title: 'Analyse a load case again also when its analysis is current.' }, part.force, 'analyse again'),
+      h('label', { class: 'check', title: 'Do not make the pictures of the part (they need an OpenGL display).' }, part.nopic, 'no pictures'),
       part.go));
   put(el, head, partBox, runBox, h('div', { class: 'toolbar', style: { marginTop: '22px' } }, tabBar), panes);
 
@@ -226,6 +227,7 @@ async function project(el, folder) {
         h('div', { class: 'row', style: { gap: '8px' } }, check,
           button('Run verification (quick)', 'dossier.run', { quick: true }, 'primary', 'Every stage with coarse meshes, two mesh levels and no pictures.'),
           button('Run verification (full)', 'dossier.run', { quick: false }, '', 'Every stage with the full mesh studies and the pictures. It can take a long time.'),
+          button('Re-assess', 'dossier.run', { from: 'assess', to: 'report', quick: false }, '', 'Compute the margins and verdicts again from the analyses that exist, with the reviews as they are now, and write the report. It takes seconds: nothing is analysed again.'),
           button('Build report', 'dossier.report', {}, '', 'Write the report again from the stage files that exist.'))),
       st.ok ? null : h('div', { class: 'flag-list', style: { margin: '0 0 14px' } }, h('div', { class: 'flag critical' }, h('span', { class: 'ico' }, '✕'),
         h('div', {}, h('b', {}, `The inputs have ${plural(st.n_problems, 'problem')}`), h('span', {}, 'The pipeline cannot run until they are right. '),
