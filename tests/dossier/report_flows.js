@@ -37,7 +37,7 @@ const { chromium } = require('playwright');
   await page.click('.why[data-why="roundness_max"], .why[data-why="REQ-MOV-010"]').catch(() => {});
   await page.keyboard.press('Escape');
   // 4. preview
-  await page.evaluate(() => window.scrollTo({top: 0, behavior: 'instant'})); await page.waitForTimeout(300); await page.hover('#summary a.ref[href^="#REQ-MOV-002"]'); await page.waitForTimeout(900);
+  await page.evaluate(() => document.querySelector('#summary a.ref[href^="#REQ-MOV-002"]').scrollIntoView({behavior: 'instant', block: 'center'})); await page.waitForTimeout(400); await page.hover('#summary a.ref[href^="#REQ-MOV-002"]'); await page.waitForTimeout(900);
   R.preview = await page.isVisible('#peek') && (await page.textContent('#peek')).length > 10;
   // 5. filters
   await page.goto(url + '#decisions'); await page.waitForTimeout(500);

@@ -211,7 +211,7 @@ def test_laminar_straight_bore_against_hagen_poiseuille(workproject, flow_lc, tm
     assert all(c.passed is True for c in rec.checks if c.kind == "mass_balance")
     assert "y_plus" not in kinds
     assert all(c.passed in (True, None) or c.limit is not None for c in rec.checks)
-    titles = {d.title for d in an.journal.records if hasattr(d, "title")}
+    titles = {d.title for d in an.journal.decisions}
     assert "Laminar flow" in titles and "Definition of the pressure drop" in titles
 
 
