@@ -661,7 +661,6 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
         grad = slope(lo, x_up)
         half = 0.5 * (lo + x_up)
         parts = (slope(lo, half), slope(half, x_up))
-        p_up = _interp(x_mid, p_mean, x_up)
 
         def drop(tap: float, pm=None) -> float:
             pm = p_mean if pm is None else pm
