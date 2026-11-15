@@ -53,7 +53,12 @@ The verdict of an item, in this order
        converged      pass when the margin of the conservative value is >= 0; fail when the margin is
                       negative also with the uncertainty on the safe side; else inconclusive
        singular       inconclusive (the reasons say when the criterion fails on every mesh of the study)
-       not_converged  inconclusive
+       not_converged  with a stated uncertainty dU and k = policy.unconverged_margin_factor > 0: pass when the
+                      margin is >= 0 with k x dU on the unsafe side; fail when the margin is negative with
+                      k x dU on the safe side; else inconclusive. The stated uncertainty of a mesh sequence that
+                      does not converge is already a conservative bound; k covers the weaker basis. `margin` and
+                      `conservative_value` stay those of 1 x dU. With no uncertainty, or with k = 0: inconclusive.
+                      The journal records this rule once (DEC-<policy>-UNCONVERGED-MARGIN).
        estimate       inconclusive
     4. A pass or a fail becomes inconclusive when the evidence is in doubt: a check with `passed is False`
        in the analysis or in an analysis it rests on (`uses`, `scaled_from`, the states of its duty
@@ -197,6 +202,7 @@ class _Inputs:
         self.findings: dict[str, Finding] = {f.id: f for f in project.collection("findings")}
         self.req_ids = {r.id for reqs in project.requirements.values() for r in reqs}
         self.stale = set(project.stale())
+        self.unconverged = False        # a result with the status not converged and an uncertainty was assessed
         self.known = (set(project.inputs()) | set(ctx.params) | set(self.cases) | set(self.findings)
                       | {a.id for a in self.analyses.values()} | {h.id for h in self.hand_calcs})
 
@@ -318,6 +324,8 @@ class _Eval:
     conservative: float | None = None
     margin: float | None = None           # of the conservative value; math.inf: no finite value
     nominal: float | None = None          # of the value without its uncertainty
+    k: float | None = None                # not converged with an uncertainty: the factor on it (policy)
+    k_margin: float | None = None         # the margin with k x the uncertainty: unsafe side, safe side for a fail
 
     @property
     def rank(self) -> tuple:
@@ -329,8 +337,13 @@ class _Eval:
         return _show_delta(self.du, self.unit) if self.du_given_abs or self.rel is None else _pct(self.rel)
 
 
+def _times(k: float) -> str:
+    """A factor on the uncertainty in words: 2.0 -> "2 times", 1.5 -> "1.5 times"."""
+    return units.fmt(units.Q(k), None, 4) + " times"
+
+
 def _evaluate(rv: ResultValue, key: str, crit: Criterion, limit: _Limit, factor: _Factor, an_id: str,
-              max_uncertainty: float) -> _Eval:
+              max_uncertainty: float, k: float = 0.0) -> _Eval:
     """The conservative value, the margins and the verdict that one result supports on its own."""
     ev = _Eval(key=key)
     if not _finite(rv.value) or rv.status == "not_run":
@@ -408,11 +421,31 @@ def _evaluate(rv: ResultValue, key: str, crit: Criterion, limit: _Limit, factor:
     elif rv.status == "not_converged":
         ev.verdict, ev.cause = "inconclusive", "the result has the status not converged"
         ev.reasons.append("The result has the status not converged.")
-        if _finite(rv.uncertainty):
-            ev.reasons += [f"The uncertainty of the result is {_pct(abs(rv.uncertainty))}, "
-                           f"and the policy limit is {_pct(max_uncertainty)}.", _HOW_REFINE]
+        if _finite(rv.uncertainty) and not ev.du_given_abs:
+            ev.reasons.append(f"The uncertainty of the result is {_pct(abs(rv.uncertainty))}, "
+                              f"and the policy limit is {_pct(max_uncertainty)}.")
         elif ev.du is not None:
-            ev.reasons += [f"The uncertainty of the result is {ev.uncertainty_text()}.", _HOW_REFINE]
+            ev.reasons.append(f"The uncertainty of the result is {ev.uncertainty_text()}.")
+        if ev.du is not None and k > 0 and _finite(k):
+            ev.k = k
+            unsafe_k, safe_k = ms(value + unsafe * k * du), ms(value - unsafe * k * du)
+            times = _times(k)
+            if unsafe_k >= -_TOL:
+                ev.verdict, ev.cause, ev.k_margin = "pass", "", unsafe_k
+                ev.reasons += [f"The margin of safety is {_ms(unsafe_k)} with {times} this uncertainty on the unsafe side.",
+                               f"The policy accepts this margin for a result with the status not converged."]
+            elif safe_k < -_TOL:
+                ev.verdict, ev.cause, ev.k_margin = "fail", "the margin of safety is negative", safe_k
+                ev.reasons += [f"The margin of safety is {_ms(safe_k)} with {times} this uncertainty on the safe side.",
+                               "The criterion fails for each value in this wider band."]
+            else:
+                ev.k_margin = unsafe_k
+                ev.cause = f"the margin is smaller than {times} the uncertainty of a result with the status not converged"
+                ev.reasons += [f"The margin of safety is {_ms(unsafe_k)} with {times} this uncertainty on the unsafe side "
+                               f"and {_ms(safe_k)} on the safe side.",
+                               f"The margin is smaller than {times} the uncertainty.", _HOW_REFINE]
+        elif ev.du is not None:
+            ev.reasons.append(_HOW_REFINE)
         else:                   # no mesh study, or a value that has no limit: the note of the analysis says which
             ev.reasons += [no_uncertainty, *note, _HOW_REFINE if len(levels) < 2 else at_edge]
     else:                                                   # estimate
@@ -427,10 +460,11 @@ def _response(crit: Criterion, lc: LoadCase, an: AnalysisRecord, limit: _Limit, 
               inp: _Inputs) -> _Eval:
     """The result of the criterion in the analysis: the key itself, or for `scls` the worst line."""
     key = crit.key()
-    max_u = inp.project.policy.max_uncertainty
+    max_u, k = inp.project.policy.max_uncertainty, inp.project.policy.unconverged_margin_factor
     ev = None
     if key in an.results:
-        ev = _evaluate(an.results[key], key, crit, limit, factor, an.id, max_u)
+        ev = _evaluate(an.results[key], key, crit, limit, factor, an.id, max_u, k)
+        inp.unconverged |= ev.k is not None
         if ev.value is not None:
             return ev
     if crit.location == "scls":
@@ -438,8 +472,9 @@ def _response(crit: Criterion, lc: LoadCase, an: AnalysisRecord, limit: _Limit, 
         comp = inp.project.components.get(lc.component, inp.project.subject)
         lines = [s.id for s in comp.scls]
         lines += [k[len(prefix):] for k in an.results if k.startswith(prefix + "SCL-") and k[len(prefix):] not in lines]
-        evals = [_evaluate(an.results[prefix + line], prefix + line, crit, limit, factor, an.id, max_u)
+        evals = [_evaluate(an.results[prefix + line], prefix + line, crit, limit, factor, an.id, max_u, k)
                  for line in lines if prefix + line in an.results]
+        inp.unconverged |= any(e.k is not None for e in evals)
         usable = [e for e in evals if e.margin is not None]
         if usable:
             worst = min(usable, key=lambda e: e.rank)
@@ -603,7 +638,11 @@ def _caveats(req: Requirement, crit: Criterion, lc: LoadCase, limit, factor, inp
 # --------------------------------------------------------------------------- one compliance item
 
 
-def _verdict_sentence(verdict: str, cause: str) -> str:
+def _verdict_sentence(verdict: str, cause: str, k: float | None = None) -> str:
+    if k is not None and verdict == "pass":
+        return f"The result has the status not converged, but the criterion passes with {_times(k)} its uncertainty."
+    if k is not None and verdict == "fail":
+        return f"The result has the status not converged, but the criterion fails also with {_times(k)} its uncertainty."
     if verdict == "pass":
         return "The criterion passes."
     if verdict == "fail":
@@ -711,9 +750,14 @@ def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | No
         if math.isinf(ev.margin):
             s.append("The value is not above zero, so the margin of safety has no upper bound.")
         else:
+            extra = ""
+            if ev.k is not None and ev.k_margin is not None and math.isfinite(ev.k_margin):
+                side = "safe" if ev.verdict == "fail" else "unsafe"
+                extra = f" and {_ms(ev.k_margin)} with {_times(ev.k)} the uncertainty on the {side} side"
             s.append(f"The margin of safety {'of the estimate ' if hc is not None else ''}is {_ms(ev.margin)}"
-                     f"{' with the uncertainty on the unsafe side' if ev.du else ''}.")
-    s.append(_verdict_sentence(verdict, cause))
+                     f"{' with the uncertainty on the unsafe side' if ev.du else ''}{extra}.")
+    decided_by_k = ev is not None and hc is None and ev.k is not None and verdict == ev.verdict
+    s.append(_verdict_sentence(verdict, cause, ev.k if decided_by_k else None))
     if caveats:
         s.append(f"Finding {caveats[0]} applies to the inputs of this item." if len(caveats) == 1
                  else f"The findings {_join(caveats)} apply to the inputs of this item.")
@@ -851,6 +895,25 @@ def _journal(project, inp: _Inputs, items: list[ComplianceItem], estimates: list
                                ("Use the Richardson extrapolation of each result.",
                                 "The extrapolation is not reliable when the order of convergence of the mesh study is irregular.")],
                  links=[("uses", project.policy.id)])
+    k = project.policy.unconverged_margin_factor
+    if items and inp.unconverged and k > 0:
+        pol = project.policy
+        times = _times(k)
+        j.decide(pol.id, "unconverged-margin", "Margin of a result with the status not converged",
+                 choice=f"A result with the status not converged and a stated uncertainty can give a pass or a fail. "
+                        f"The margin of safety then uses {times} the uncertainty. "
+                        f"The verdict is pass when this margin is zero or more with the uncertainty on the unsafe side. "
+                        f"The verdict is fail when this margin is negative with the uncertainty on the safe side. "
+                        "Else the verdict is inconclusive. A result with no stated uncertainty stays inconclusive.",
+                 rationale=f"Policy {pol.id} gives the factor unconverged_margin_factor of {_fac(k)}. "
+                           "The mesh study states the uncertainty of each result. "
+                           f"For a mesh sequence that does not reach the policy limit of {_pct(pol.max_uncertainty)}, "
+                           "this uncertainty is already a conservative bound. "
+                           f"The factor of {_fac(k)} covers the weaker basis of this bound. "
+                           "A margin that holds with this factor is much larger than a probable discretization error.",
+                 alternatives=[("Refuse each result with an uncertainty over the policy limit.",
+                                "Then a result with a very large margin gives no verdict, and the engineer gets no information.")],
+                 links=[("uses", pol.id)])
     for item_id, key, lc, hc, output, why in estimates:
         j.decide(item_id, "estimate", "Estimate from a hand calculation in place of an analysis",
                  choice=f"Use the output {output} of hand calculation {hc.id} as an estimate of {key} for load case {lc.id}.",
