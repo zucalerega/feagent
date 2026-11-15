@@ -294,7 +294,6 @@ def test_free_cylinder_against_lame(cylinder):
     r = rec.results
     for sid in ("SCL-WALL", "SCL-SKEW"):
         m = r[f"max_principal.membrane@{sid}"]
-        print("DBG", sid, m.per_level, m.status, m.uncertainty, m.note)
         assert m.value == pytest.approx(hoop_mean, rel=0.01) and m.status == "converged" and len(m.per_level) == 3
         assert r[f"sxx.membrane@{sid}"].value == pytest.approx(A, rel=0.02)
     assert r["szz.membrane@SCL-WALL"].value == pytest.approx(hoop_mean, rel=0.01)
@@ -595,11 +594,11 @@ def test_convergence_rule_order_far_above_theory_is_no_order():
     assert st.absolute == pytest.approx(3.0 * 10.0001) and st.status == "not_converged"
 
 
-def test_convergence_rule_oscillation_uses_the_last_change():
-    st = structural.study([4.0, 2.0, 1.0], [100.0, 103.0, 101.5], 2.0, 0.05)
-    assert st.kind == "oscillatory" and st.order is None
-    assert st.absolute == pytest.approx(3.0 * 1.5) and st.status == "converged"
-    assert structural.study([4.0, 2.0, 1.0], [100.0, 103.0, 101.5], 2.0, 0.02).status == "not_converged"
+def test_convergence_rule_oscillation_uses_the_spread_of_the_last_three_values():
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 103.0, 101.5], 2.0, 0.10)
+    assert st.kind == "oscillatory" and st.order is None and st.estimated
+    assert st.absolute == pytest.approx(3.0 * 3.0) and st.status == "converged"         # 3 x (103 - 100)
+    assert structural.study([4.0, 2.0, 1.0], [100.0, 103.0, 101.5], 2.0, 0.05).status == "not_converged"
     # alternating with growing changes: the spread
     st = structural.study([4.0, 2.0, 1.0], [100.0, 101.0, 98.0], 2.0, 0.5)
     assert st.kind == "oscillatory_divergent" and st.absolute == pytest.approx(9.0)

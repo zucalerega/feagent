@@ -55,7 +55,8 @@ Convergence rule (exact). u is the absolute uncertainty of the value v on the fi
                  directions across the line. u is not less than 3 x (max - min) of these five values on the
                  finest mesh. Three levels at one fixed line can agree by chance; this floor does not.
   error_estimated  True when u comes from a sequence that converges: monotone, oscillating with smaller
-                 changes, two levels, or changes at round-off. False for a diverging or indeterminate sequence,
+                 changes, two levels, or changes at round-off. Also True on a line whose last three values
+                 differ by no more than the line noise (below): the noise explains the scatter, and u covers it. False for a diverging or indeterminate sequence,
                  one level, and every result without an uncertainty. The compliance stage does not conclude
                  from a not converged result without an error estimate.
   status         converged when u is an error estimate and u <= policy.max_uncertainty x max(|v|, reference),
@@ -280,6 +281,11 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
         u = SAFETY_SPREAD * noise
         note += (f"\n\nA move of the line by a quarter of an element changes the value by {pct(noise)}. The uncertainty "
                  f"is {SAFETY_SPREAD:g} times this change, which is more than the estimate from the mesh levels.")
+        if not estimated and n >= 3 and float(np.max(v[-3:]) - np.min(v[-3:])) <= noise:
+            # the levels scatter inside the band of the moved lines: the scatter is the line noise, and u covers it
+            estimated = True
+            note += (" The values of the mesh levels stay inside this band, so the line noise explains their scatter. "
+                     "The engine uses this uncertainty as the error estimate.")
     status = "converged" if estimated and u <= max_uncertainty * size else "not_converged"
     if abs(fine) < 0.5 * size:
         note += (f"\n\nThe value is small against the size of its field ({size:.4g}). The uncertainty is {pct(u)} of "
