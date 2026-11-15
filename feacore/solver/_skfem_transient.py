@@ -741,10 +741,10 @@ def solve(case: Case, **options) -> TransientHeatResult:
     # the initial state against the rest of the data at t = 0: is it a steady state (nothing to damp)?
     x0 = T.copy()
     x0[D] = d.g
-    Kx = system.K(d) @ x0
-    unbalanced = float(np.linalg.norm((d.f - Kx)[system.I]))
-    moving = unbalanced > JUMP_TOL * max(float(np.linalg.norm(d.f[system.I])) + float(np.linalg.norm(Kx[system.I])),
-                                         1e-300)
+    K0 = system.K(d)
+    unbalanced = float(np.linalg.norm((d.f - K0 @ x0)[system.I]))
+    terms = float(np.linalg.norm(d.f[system.I])) + float(np.linalg.norm((abs(K0) @ np.abs(x0))[system.I]))
+    moving = unbalanced > JUMP_TOL * max(terms, 1e-300)       # |K| |x|: K x of a uniform state is round-off
     if scheme == "crank_nicolson" and (startup == "always" or (startup == "auto" and (incompatible or moving))):
         n_startup = min(STARTUP_STEPS, n_steps)
         why = (what if incompatible else "cn_startup = 'always'" if startup == "always" else

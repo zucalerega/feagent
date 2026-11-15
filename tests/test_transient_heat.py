@@ -363,19 +363,21 @@ def test_nothing_changes(scheme, tmp_path):
         assert np.abs(r.series(q) - 300.0).max() < 1e-12 * 300
 
 
-@pytest.mark.parametrize("scheme,tol", [("backward_euler", 1e-9), ("crank_nicolson", 2e-3), ("bdf2", 2e-3)])
+@pytest.mark.parametrize("scheme,tol", [("backward_euler", 1e-9), ("crank_nicolson", 1e-3), ("bdf2", 1e-3)])
 def test_energy_balance(scheme, tol, tmp_path):
     """The stored heat rho cp int T changes by the time integral of the heat flowing in: the reaction at a
-    temperature BC and h (T_inf - T) over a convection face (an integral QoI of T on the face). Backward
-    Euler with its own reaction (the backward difference) balances to round-off; Crank-Nicolson and BDF2
-    reactions use a second-order difference and the trapezoidal rule integrates them: tolerance 0.2 % of the
-    heat exchanged (measured ~1e-4 with the start-up)."""
+    temperature BC and h (T_inf - T) over a convection face (an integral QoI of T on the face). The face
+    temperature ramps smoothly away from the initial value (a sudden jump would make the reaction at t = 0
+    infinite, like 1 / sqrt(t), which no quadrature in time integrates). Backward Euler with its own
+    reaction (the backward difference) balances to round-off (1e-9); Crank-Nicolson and BDF2 reactions use a
+    second-order difference and the trapezoidal rule integrates them: 0.1 % of the heat exchanged."""
     mesh = strip(tmp_path / "s.msh", 0.05, 0.01, 20, 2, order=2)
     h, Tf = 500.0, 400.0
     q = [QoI(name="E", type="integral", field="T"), QoI(name="R", type="reaction", group="left", component=0),
          QoI(name="F", type="integral", field="T", group="right")]
     c = heat(mesh, {"t_end": 200.0, "n_steps": 200, "scheme": scheme, "initial": {"T": 300.0}},
-             [BC(type="temperature", group="left", value=200.0), BC(type="convection", group="right", h=h, T_inf=Tf)], q)
+             [BC(type="temperature", group="left", value="300.0 - 100.0 * (1.0 - exp(-t / 20.0))"),
+              BC(type="convection", group="right", h=h, T_inf=Tf)], q)
     r = solve(c)
     t = r.times
     stored = RHO * CP * (r.series(q[0]) - r.series(q[0])[0])
