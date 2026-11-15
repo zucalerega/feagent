@@ -304,6 +304,16 @@ def test_not_converged_is_inconclusive_when_the_sign_changes_inside_k_times_the_
                                    "of a result with the status not converged.")
 
 
+def test_not_converged_with_an_absolute_and_a_relative_uncertainty(workproject):
+    rv = ResultValue(key=MB + "scls", value=92 * MPA, unit="Pa", uncertainty=0.0697, uncertainty_abs=6.4 * MPA,
+                     status="not_converged")
+    item = one(workproject, PROOF, rv)
+    # the absolute one is used: 1 x: 98.4 MPa, MS = 170 / 98.4 - 1 = +0.72764; 2 x: 104.8 MPa, MS = +0.62214: pass
+    assert item.verdict == "pass" and item.margin == pytest.approx(0.72764, abs=1e-5)
+    assert item.reasons[1:3] == ["The uncertainty of the result is 6.4 MPa (6.97 %), and the policy limit is 5 %.",
+                                 "The margin of safety is +0.62 with 2 times this uncertainty on the unsafe side."]
+
+
 def test_factor_zero_gives_the_old_rule(workproject):
     workproject.policy.unconverged_margin_factor = 0.0
     out, items, _ = assess(workproject, [case("LC-BURST", [BURST])],
@@ -323,10 +333,10 @@ def test_not_converged_temperature_with_an_absolute_uncertainty(workproject):
     th = dict(lc_id="LC-TH-FIRE", analysis_type="thermal_steady")
 
     def t(value, du):
-        return temperature(value, uncertainty=0.5, uncertainty_abs=du).model_copy(update={"status": "not_converged"})
+        return temperature(value, uncertainty_abs=du).model_copy(update={"status": "not_converged"})
 
     item = one(workproject, TEMP, t(251.3, 4.0), **th)
-    # the absolute uncertainty wins: 1 x: 247.3 K, MS = 247.3 / 233 - 1 = +0.06137; 2 x: 243.3 K, MS = +0.04421: pass
+    # absolute, in K: 1 x: 247.3 K, MS = 247.3 / 233 - 1 = +0.06137; 2 x: 243.3 K, MS = +0.04421: pass
     assert item.verdict == "pass" and item.margin == pytest.approx(0.06137, abs=1e-5)
     assert item.conservative_value == pytest.approx(247.3)
     assert item.reasons[1:3] == ["The uncertainty of the result is 4 K.",

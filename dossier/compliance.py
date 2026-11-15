@@ -421,9 +421,9 @@ def _evaluate(rv: ResultValue, key: str, crit: Criterion, limit: _Limit, factor:
     elif rv.status == "not_converged":
         ev.verdict, ev.cause = "inconclusive", "the result has the status not converged"
         ev.reasons.append("The result has the status not converged.")
-        if _finite(rv.uncertainty) and not ev.du_given_abs:
-            ev.reasons.append(f"The uncertainty of the result is {_pct(abs(rv.uncertainty))}, "
-                              f"and the policy limit is {_pct(max_uncertainty)}.")
+        if _finite(rv.uncertainty):
+            both = f"{ev.uncertainty_text()} ({_pct(abs(rv.uncertainty))})" if ev.du_given_abs else _pct(abs(rv.uncertainty))
+            ev.reasons.append(f"The uncertainty of the result is {both}, and the policy limit is {_pct(max_uncertainty)}.")
         elif ev.du is not None:
             ev.reasons.append(f"The uncertainty of the result is {ev.uncertainty_text()}.")
         if ev.du is not None and k > 0 and _finite(k):
