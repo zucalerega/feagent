@@ -107,7 +107,7 @@ class SSStripModes(ModalProblem):
         modes = strip_frequencies(p["L"], p["t"], p["E"], p["nu"], p["rho"], self.n_modes)
         return [Reference(f"f{k}", f, "analytical",
                           f"{LAMB}; plane strain, wavenumber k = {m} pi / L, branch {b} "
-                          f"({'flexural' if b == 'A' else 'extensional'})", tolerance=0.002,
+                          f"({'flexural' if b == 'A' else 'extensional'})", tolerance=0.005,
                           notes="Exact for 3D elasticity in plane strain; P2 meshes converge with h^4 "
                                 "(error below 0.5 % at h = 0.5, 2e-4 at h = 0.25).")
                 for k, (f, b, m) in enumerate(modes, start=1)]

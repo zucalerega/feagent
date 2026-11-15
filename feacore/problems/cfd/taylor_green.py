@@ -4,7 +4,7 @@ The unit square 0 <= x, y <= L (L = 1 m) holds one cell of the classical array o
 vortices (k = pi / L):
 
     u = U0 sin(k x) cos(k y) F(t),   v = -U0 cos(k x) sin(k y) F(t),   F(t) = exp(-2 nu k^2 t)
-    p = -(rho U0^2 / 4) (cos(2 k x) + cos(2 k y)) F(t)^2 (+ a constant)
+    p = (rho U0^2 / 4) (cos(2 k x) + cos(2 k y)) F(t)^2 (+ a constant)
 
 It is an exact solution of the unsteady incompressible Navier-Stokes equations for any Reynolds
 number (the convection is a gradient, balanced by the pressure; Taylor & Green 1937). On the edges
@@ -17,7 +17,7 @@ t_end = 1 s (F = exp(-0.1 pi^2) = 0.373), step 0.005 s. The fluid starts in the 
 
 QoIs (all exact): ux at (0.5, 0.25) at t_end; the time mean of the same velocity over the run,
 U0 sin(k/2) cos(k/4) (1 - F(t_end)) / (2 nu k^2 t_end); the pressure difference p(0.5, 0.5) -
-p(0.25, 0.5) = rho U0^2 F(t_end)^2 / 4 at t_end.
+p(0.25, 0.5) = -rho U0^2 F(t_end)^2 / 4 at t_end (the vortex centre C is the pressure minimum).
 
 Reference mesh: uniform square quads, L / h cells per side (16 at h0). The fixed solver (OpenFOAM
 v1912, pimpleFoam, BDF2, linearUpwind) at step 0.005 s: ux at t_end is 0.94 %, 0.19 %, 0.042 % low on
@@ -72,7 +72,7 @@ class TaylorGreenVortex2D(FlowProblem):
         p, k, F = self.params, self.k, self.decay(t)
         u = p["U0"] * math.sin(k * x) * math.cos(k * y) * F
         v = -p["U0"] * math.cos(k * x) * math.sin(k * y) * F
-        pr = -0.25 * p["rho"] * p["U0"] ** 2 * (math.cos(2 * k * x) + math.cos(2 * k * y)) * F ** 2
+        pr = 0.25 * p["rho"] * p["U0"] ** 2 * (math.cos(2 * k * x) + math.cos(2 * k * y)) * F ** 2
         return u, v, pr
 
     def points(self) -> dict[str, list[float]]:
@@ -81,7 +81,7 @@ class TaylorGreenVortex2D(FlowProblem):
 
     def initial(self) -> dict:
         p, k = self.params, num(self.k)
-        U0, q = num(p["U0"]), num(-0.25 * p["rho"] * p["U0"] ** 2)
+        U0, q = num(p["U0"]), num(0.25 * p["rho"] * p["U0"] ** 2)
         return {"U": [f"{U0}*sin({k}*x)*cos({k}*y)", f"-{U0}*cos({k}*x)*sin({k}*y)"],
                 "p": f"{q}*(cos(2*{k}*x) + cos(2*{k}*y))"}
 
@@ -162,7 +162,7 @@ class TaylorGreenVortex2D(FlowProblem):
                       f"{_SRC}: the time mean of U0 sin(kx) cos(ky) exp(-2 nu k^2 t) over [0, t_end]",
                       tolerance=0.02, notes="the mean is taken with the trapezoidal rule over the steps"),
             Reference("dp_CB", dp, "analytical",
-                      f"{_SRC}: p = -(rho U0^2 / 4)(cos 2kx + cos 2ky) exp(-4 nu k^2 t)", tolerance=0.02),
+                      f"{_SRC}: p = (rho U0^2 / 4)(cos 2kx + cos 2ky) exp(-4 nu k^2 t)", tolerance=0.02),
         ]
 
 

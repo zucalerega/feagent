@@ -272,7 +272,7 @@ def _convert(source: Path, dst: Path, k: float) -> None:
     top = max(int(i) for i in re.findall(r"^#(\d+)\s*=", text, re.M))
     a_, b_, c_ = top + 1, top + 2, top + 3
     # the new header unit is h x k metres per number: the kernel then gives k times what it gives for `source`
-    factor = repr(float(h * k))
+    factor = f"{float(h * k):.16E}"            # a STEP real always has a decimal point
     extra = (f"#{a_} = LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE({factor}), #{b_});\n"
              f"#{b_} = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) );\n"
              f"#{c_} = DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.);\n")
