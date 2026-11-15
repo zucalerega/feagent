@@ -30,16 +30,16 @@ this module adds to the contract are marked (+).
 How things are measured, and what the limits are
     * Faces and feature queries: meshing-harness `feagent.geometry.analyze` and `feagent.select` (the
       OpenCASCADE kernel through gmsh). A feature is `select` (a geometric query) or `faces` (tags).
-    * Length unit. `component.cad.length_unit` is the unit of the numbers in the CAD file. The header of a
-      STEP file also declares a unit, and the kernel converts by it; this module makes the kernel convert so
-      that the result is metres (exact: the kernel scales the analytic surfaces). A file whose numbers are
+    * Length unit. `component.cad.length_unit` is the unit of the numbers in the CAD file. The kernel reads
+      the numbers of a STEP file as they are, under a header unit that this module reads itself (the kernel's
+      own unit conversion on import does not survive a write, so it is not used). A file whose numbers are
       metres under a millimetre header (what gmsh writes, the example) is read as it is. Other files are
-      converted once, in a separate process, to `<out>/geometry/<component>_si.step`, and the copy is
-      checked face by face against the source. The process is separate because the kernel's target unit is
-      a process-wide setting that would silently scale later STEP imports of the same process. When the
-      header and `length_unit` disagree, the decision about the length unit asks for a review. Combinations
-      the kernel has no unit for (inch numbers under a millimetre header), STEP files with no or several
-      length units, IGES files and BREP files not in metres raise GeometryError.
+      scaled once by the factor (length_unit / header unit) in a separate process (a uniform scaling of the
+      solid, exact for the analytic surfaces) and written to `<out>/geometry/<component>_si.step`; the copy
+      is checked face by face against the source (kind, area x factor^2, centre x factor, volume). The
+      process is separate to keep the kernel's global state clean. When the header and `length_unit`
+      disagree, the decision about the length unit asks for a review. STEP files with no or several length
+      units, IGES files and BREP files not in metres raise GeometryError.
     * Exactly one solid. A file with no solid or with several raises GeometryError.
     * Material angle of an edge: `ace.geometry_info` (the angle of the material wedge between the two
       faces), sampled at 9 points along the edge because it changes along the edge where two curved faces
@@ -225,20 +225,23 @@ class SiCad:
     length_unit: str            # component.cad.length_unit
     scale: float                # metres per unit of the numbers in `source`
     header_unit: str            # the length unit in the header of the STEP file ("" for a format without one)
-    kernel_unit: str            # the unit the kernel converts to, so that the result is metres
+    kernel_unit: str            # "MM" (the file is read as it is) or "scaled" (a copy scaled to metres)
     converted: bool             # `path` is a converted copy of `source`
 
 
 _CONVERT = r"""
 import sys, gmsh
-src, dst, unit = sys.argv[1:4]
+src, dst, k = sys.argv[1], sys.argv[2], float(sys.argv[3])
 gmsh.initialize(readConfigFiles=False, interruptible=False)
 gmsh.option.setNumber("General.Terminal", 0)
-gmsh.option.setString("Geometry.OCCTargetUnit", unit)
+gmsh.option.setString("Geometry.OCCTargetUnit", "MM")
 gmsh.model.occ.importShapes(src, highestDimOnly=True)
 gmsh.model.occ.synchronize()
-if not gmsh.model.getEntities(3):
+solids = gmsh.model.getEntities(3)
+if not solids:
     raise SystemExit("the file has no solid")
+gmsh.model.occ.dilate(solids, 0, 0, 0, k, k, k)
+gmsh.model.occ.synchronize()
 gmsh.write(dst)
 gmsh.finalize()
 """
@@ -263,11 +266,11 @@ def _kernel_table(path: Path) -> dict:
 
 
 def _convert(source: Path, dst: Path, kernel_unit: str, k: float) -> None:
-    """Write `dst`: `source` with its coordinates in metres (the kernel converts on import), and check it
+    """Write `dst`: `source` with its coordinates in metres (scaled by `k` in the kernel), and check it
     against the source face by face. `k` = metres per unit of the source as the kernel reads it by default."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.stem + ".tmp" + dst.suffix)
-    run = subprocess.run([sys.executable, "-c", _CONVERT, str(source), str(tmp), kernel_unit],
+    run = subprocess.run([sys.executable, "-c", _CONVERT, str(source), str(tmp), repr(float(k))],
                          capture_output=True, text=True, timeout=1800)
     if run.returncode != 0 or not tmp.is_file():
         tmp.unlink(missing_ok=True)
@@ -304,14 +307,8 @@ def si_cad(project, component_id: str | None = None) -> SiCad:
         h_scale, h_name = step_length_unit(src)
         if h_scale is None:
             raise GeometryError(f"{src.name}: {h_name}. dossier needs a STEP file with one length unit in its header.")
-        target = h_scale / scale        # the kernel gives numbers x header unit / target unit: metres for this target
-        kernel = next((name for name, v in KERNEL_UNITS.items() if abs(v / target - 1.0) < 1e-9), None)
-        if kernel is None:
-            raise GeometryError(
-                f"{src.name}: the header declares the length unit {h_name} and component.yaml gives length_unit: "
-                f"{unit}. The CAD kernel cannot convert this combination exactly. Export the CAD file with the "
-                f"unit of its numbers in the header.")
         k = scale * 1e-3 / h_scale      # metres per unit of the numbers the kernel gives by default
+        kernel = "MM" if abs(k - 1.0) < 1e-12 else "scaled"
     elif ext == ".brep":
         if unit != "m":
             raise GeometryError(f"{src.name}: a BREP file has no length unit and dossier cannot scale it. Give the "
@@ -323,7 +320,7 @@ def si_cad(project, component_id: str | None = None) -> SiCad:
         return SiCad(src, src, sha, unit, scale, h_name, kernel, False)
     dst = project.out / "geometry" / f"{comp.id}_si.step"
     meta = dst.with_suffix(".json")
-    want = {"source_sha256": sha, "length_unit": unit, "kernel_unit": kernel}
+    want = {"source_sha256": sha, "length_unit": unit, "kernel_unit": kernel, "factor": k}
     current = None
     if dst.is_file() and meta.is_file():
         try:

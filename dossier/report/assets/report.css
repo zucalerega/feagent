@@ -96,7 +96,7 @@ p{margin:.5rem 0;max-width:72ch}
 .t-none{background:var(--none-bg);color:var(--none)}
 .t-stale{background:var(--stale-bg);color:var(--stale)}
 .tile.t-pass,.tile.t-fail,.tile.t-warn,.tile.t-none,.att-i{background:var(--surface)}
-a.ref,a.self{font-family:var(--mono);font-size:.84em;text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent);word-break:break-all}
+a.ref,a.self{font-family:var(--mono);font-size:.84em;text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,transparent);overflow-wrap:break-word}
 a.ref:hover,a.self:hover{background:var(--accent-bg)}
 a.sub{font-size:.9em}
 .noref{color:var(--fg-3)}

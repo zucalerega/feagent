@@ -104,7 +104,8 @@ def test_hex_mesh_keeps_the_section_area(tmp_path):
             p = m.points[c.data]
             # volume of a hexahedron from 6 tetrahedra over the diagonal 0-6
             for a, b, cc in ((1, 2, 6), (2, 3, 6), (3, 7, 6), (7, 4, 6), (4, 5, 6), (5, 1, 6)):
-                vol += abs(np.dot(p[:, a] - p[:, 0], np.cross(p[:, b] - p[:, 0], p[:, cc] - p[:, 0]))).sum() / 6
+                vol += np.abs(np.einsum("ij,ij->i", p[:, a] - p[:, 0],
+                                        np.cross(p[:, b] - p[:, 0], p[:, cc] - p[:, 0]))).sum() / 6
     assert vol == pytest.approx(math.pi * 0.0125**2 * 0.15, rel=5e-3)
 
 
@@ -206,9 +207,9 @@ def test_laminar_straight_bore_against_hagen_poiseuille(workproject, flow_lc, tm
     exact = 128 * mu * q * 0.150 / (math.pi * 0.025**4)
     assert len(r.per_level) == 2
     assert r.value == pytest.approx(exact, rel=0.03)
-    checks = {c.id.split("-", 2)[-1] if False else c.kind: c for c in rec.checks}
-    assert checks["mass_balance"].passed is True
-    assert "y_plus" not in checks
+    kinds = {c.kind for c in rec.checks}
+    assert all(c.passed is True for c in rec.checks if c.kind == "mass_balance")
+    assert "y_plus" not in kinds
     assert all(c.passed in (True, None) or c.limit is not None for c in rec.checks)
     titles = {d.title for d in an.journal.records if hasattr(d, "title")}
     assert "Laminar flow" in titles and "Definition of the pressure drop" in titles

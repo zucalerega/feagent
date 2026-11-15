@@ -217,7 +217,14 @@ def test_cylinder_bessel(tmp_path):
 def _mms(T_expr: str):
     """Source and boundary data of a manufactured T(x, y, t) for k = rho = cp = 1."""
     sp = pytest.importorskip("sympy")
-    from feacore.verification.mms import to_expr
+    from feacore.verification.mms import _CaseExprPrinter
+
+    class _Printer(_CaseExprPrinter):            # the steady MMS printer, with the time t allowed
+        def _print_Symbol(self, e):
+            return e.name if e.name == "t" else super()._print_Symbol(e)
+
+    def to_expr(e):
+        return _Printer().doprint(sp.sympify(e))
 
     x, y, t = sp.symbols("x y t")
     T = sp.sympify(T_expr, locals={"x": x, "y": y, "t": t})
