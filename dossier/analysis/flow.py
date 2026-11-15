@@ -570,8 +570,12 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
     r_mesh = r_in * math.sqrt(2.0 * math.pi / (n_circ * math.sin(2.0 * math.pi / n_circ)))
     # ---- the inlet profile, scaled so that the faces of this mesh carry the mass flow
     quad = mesh.points[mesh.faces["inlet"]]
-    cf = quad.mean(axis=1)
-    af = 0.5 * np.linalg.norm(np.cross(quad[:, 2] - quad[:, 0], quad[:, 3] - quad[:, 1]), axis=1)
+    # area centroid of each face, as the solver evaluates the inlet profile (not the mean of the corners)
+    t1 = 0.5 * np.linalg.norm(np.cross(quad[:, 1] - quad[:, 0], quad[:, 2] - quad[:, 0]), axis=1)
+    t2 = 0.5 * np.linalg.norm(np.cross(quad[:, 2] - quad[:, 0], quad[:, 3] - quad[:, 0]), axis=1)
+    af = t1 + t2
+    cf = ((t1[:, None] * (quad[:, 0] + quad[:, 1] + quad[:, 2]) + t2[:, None] * (quad[:, 0] + quad[:, 2] + quad[:, 3]))
+          / (3.0 * af[:, None]))
     c0 = bore.origin - setup.upstream * e
     rad = np.linalg.norm((cf - c0) - np.outer((cf - c0) @ e, e), axis=1)
     r_mesh, c0f, ef = float(r_mesh), [float(v) for v in c0], [float(v) for v in e]
