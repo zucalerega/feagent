@@ -446,6 +446,10 @@ class Policy(Model):
     factors: dict[str, Factor] = Field(default_factory=dict)   # yield, ultimate, proof, burst, fatigue_life, ...
     handcalc_band: tuple[float, float] = (0.8, 1.25)           # default accepted ratio analysis / hand calculation
     max_uncertainty: float = 0.05     # a result with a larger discretization uncertainty is not converged
+    unconverged_margin_factor: float = 2.0
+    # A result that is not converged but has a stated uncertainty can still decide a criterion when the margin
+    # holds with this many times that uncertainty on the unsafe side. 0 turns the rule off: then a result that
+    # is not converged never gives a pass or a fail.
     thermal_delta: Value = Field(default_factory=lambda: Value(value=5.0, unit="K"))
     # a phase whose temperatures differ from the reference temperature by more needs a thermal analysis
 

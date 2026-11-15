@@ -165,7 +165,7 @@ hand_calcs:
   - id: HC-PRESSURE-DROP
     model: pressure_drop_minor_loss
     title: Pressure drop of the open valve
-    description: Friction in the flow bore plus a loss coefficient for the steps at the seat pockets and the ball.
+    description: Friction in the flow bore plus the handbook loss coefficient of a full-bore ball valve.
     when: {analysis: [flow]}
     inputs:
       mdot: {expr: mdot_ox}
@@ -173,13 +173,13 @@ hand_calcs:
       mu: {expr: mu_lox}
       d: {expr: d_bore}
       L: 150 mm
-      K: 0.2
+      K: 0.07
       roughness: 3.2 um
     compare:
       - output: dp_total
         with: "pressure_drop.total@part"
-        band: [0.5, 2.0]
-        why: The loss coefficient of the seat pocket steps is an estimate.
+        band: [0.4, 2.5]
+        why: The loss coefficient is the handbook value for a full-bore ball valve, three times the friction factor of fully rough flow. It covers valves with more obstruction than this one. The roughness value is a surface finish, which is smaller than the sand-grain roughness of the friction formula.
 
 # The fluid volume of the open valve for the flow analysis (engine:flow). flow_domain.step is made by
 # make_flow_domain.py, which states the assumed dimensions of the ball and the seat rings.

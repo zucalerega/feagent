@@ -169,6 +169,10 @@ Fields for later engines (fatigue): for the two finest meshes write `fields_L<k>
 `x` (n, 3) node coordinates, `stress` (n, 6) = sxx, syy, szz, sxy, syz, sxz in Pa, `u` (n, 3) in m, and for
 a thermal analysis `T` (n,) in K. List them as `Artifact(kind="field")`.
 
+Convergence is carried by the result's `status` and uncertainty only: an engine does not add a failed check
+for a result that is over `policy.max_uncertainty`. The compliance stage decides what such a result can
+still show (`policy.unconverged_margin_factor`).
+
 A check with `passed=False` blocks a pass in the compliance stage, whatever its kind. A check that is
 information only (an error estimate with no stated limit) has `passed=None`; give `passed=False` only when
 the check has a limit and the value is over it.
