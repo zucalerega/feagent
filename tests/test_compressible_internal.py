@@ -182,7 +182,7 @@ def test_nozzle_regimes(tmp_path, regime):
     ex = p.exact_solution()
     q, exq = res.evaluate_all(), p.exact_qois()
     for name in ("mass_flow", "p_exit", "mach_exit"):
-        assert q[name] == pytest.approx(exq[name], rel=TOL[name]), name
+        assert q[name] == pytest.approx(exq[name], rel=p.tolerance(name)), name
     assert res.info.mass_balance["imbalance"] < p.qoi_tol     # the stopping rule's own band (a limit cycle)
     assert res.info.outlets["outlet"] == (0.0 if regime == "supersonic" else 1.0)
     # pressure and Mach number along the nozzle (section averages) against the exact solution, away from the
