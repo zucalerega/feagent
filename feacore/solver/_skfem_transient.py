@@ -53,7 +53,11 @@ start-up costs two extra solves and keeps second order for smooth data too (veri
 solution's observed order is 2.0 with it, and the projection of a smooth initial state onto the mesh is itself
 a slightly rough start that Crank-Nicolson alone carries along: observed 1.6 there without it). The choice
 over a warning: the ringing does not decay on a fine mesh, so a warning would leave a wrong answer.
-"always" forces the start-up; "off" never uses it (an incompatible temperature BC is then a warning).
+A jump of the data later in the run (a table step, ``where(t < t1, ...)``) gets the same start-up from the
+jump on (``_data_jumps``: a change over a step more than JUMP_RATIO times its neighbours'; a jump in the second
+half of a step is taken at its end, the step completed with the old data); it is named in ``info.warnings``.
+"always" forces the start-up; "off" never uses it (an incompatible temperature BC or a later jump is then a
+warning).
 Backward Euler and BDF2 damp the unresolved modes and need no start-up.
 
 Results.  ``TransientHeatResult``: ``times``, ``kept``, ``series(qoi)`` (every QoI of the case at every

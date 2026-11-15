@@ -109,6 +109,22 @@ solution's observed order is 2.0 with them, 1.6 without: projecting a smooth T0 
 slightly rough start). An incompatible temperature BC is also named in `info.warnings`; with `"off"` it is a
 warning. Backward Euler and BDF2 damp these modes and need no start-up.
 
+The same holds for a jump of the data later in the run (a table step, `where(t < 100, ...)`): measured on
+the convective slab at Bi = 10 with the fluid temperature stepped 20 steps into the run, the surface
+temperature was 8.5 % of the step off on the first step after it and alternated from step to step. Rule:
+before stepping, the change of the load vector, the prescribed temperatures and the convection coefficients
+over each step is compared with the change over the neighbouring steps; a change above 1e-9 of the data's
+size and more than 3 times both neighbours' is a jump (smooth data resolved by the step change by about as
+much from step to step: a sine at 11 steps per period by at most 1.2 times; a ramp that starts changes less
+than its neighbours). From each jump the two steps are taken as backward-Euler half-steps, as at t = 0. A
+jump in the second half of a step (where the data at the middle of the step are still the old ones, e.g. a
+jump exactly at a step time) is taken at the step's end: the step is completed with the old data and the
+state reported there is the one just before the jump, as the state at t = 0 is. With the rule the error after
+the jump is that of the t = 0 start-up (3.7 % on the first step, 1.1e-3 after five; `tests/test_transient_heat.py`,
+`test_crank_nicolson_startup_after_later_jump`). The jumps are named in `info.warnings`; with
+`cn_startup = "off"` they are a warning. A jump inside a step is placed at the step's start or end, so a
+step should still be put where the value changes (the resolution warning says so).
+
 **Results.** `TransientHeatResult`: `times`, `kept` (default 10 states evenly spaced and the last;
 `output_times` / `output_every`), `series(qoi)` (every QoI of the case at every step, evaluated during the
 run: point, point_difference, max, min, max_abs, mean, integral, and reaction = heat flow into the body

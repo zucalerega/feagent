@@ -164,6 +164,8 @@ def test_pass_is_a_converged_result_with_a_positive_conservative_margin(workproj
     assert item.reasons == ["The result has the status converged.",
                             "The value with its uncertainty on the unsafe side is 72.73 MPa.",
                             "The margin of safety is +1.38 without the uncertainty.",        # 170 / 71.3 - 1 = 1.384
+                            "The assessment uses each of the 5 stress classification lines by itself. "
+                            "Line SCL-SHELL governs.",
                             "No check of analysis AN-PROOF failed."]
     assert Link(rel="uses", to="Sy", note="allowable") in item.links
     assert {(l.rel, l.to) for l in item.refs()} >= {("verifies", "REQ-MOV-002"), ("uses", "LC-PROOF"), ("evidence", "AN-PROOF")}
@@ -667,11 +669,50 @@ def lines(values, **kw):
     return [res(MB + line, v * MPA, **kw) for line, v in zip(LINES, values) if v is not None]
 
 
-def test_scls_aggregate_key_is_used_when_the_analysis_gives_it(workproject):
+def test_scls_aggregate_key_is_never_used_for_a_verdict(workproject):
     ans = [analysis("LC-PROOF", [res(MB + "scls", 100 * MPA), *lines([96, 60, 150, 30, 20])])]
     item = assess(workproject, [case("LC-PROOF", [PROOF])], ans)[0].items[0]
-    # the aggregate governs, not the lines: 100 x 1.02 = 102 MPa; MS = 170 / 102 - 1 = 0.66667
-    assert item.result_key == MB + "scls" and item.margin == pytest.approx(0.66667, abs=1e-5) and item.verdict == "pass"
+    # the lines govern, not the aggregate (100 MPa): SCL-FLOOR 150 x 1.02 = 153 MPa; MS = 170 / 153 - 1 = 0.11111
+    assert item.result_key == MB + "SCL-FLOOR" and item.margin == pytest.approx(0.11111, abs=1e-5)
+    assert item.verdict == "pass"
+
+
+def test_scls_two_lines_the_aggregate_of_the_engine_does_not_pass(workproject):
+    """Line A 100 +/- 1 MPa converged, line B 95 +/- 20 MPa not converged, limit 133 MPa. The aggregate of the
+    structural engine (100 MPa, u 15 MPa, not converged) passes with k = 2 (130 MPa); line B alone does not:
+    95 + 2 x 20 = 135 MPa > 133 MPa."""
+    from dossier.analysis.structural import _aggregate
+
+    a = ResultValue(key=MB + "SCL-SHELL", value=100 * MPA, unit="Pa", uncertainty_abs=1 * MPA, uncertainty=0.01,
+                    status="converged", per_level=[99 * MPA, 100 * MPA], error_estimated=True)
+    b = ResultValue(key=MB + "SCL-FLOOR", value=95 * MPA, unit="Pa", uncertainty_abs=20 * MPA, uncertainty=20 / 95,
+                    status="not_converged", per_level=[80 * MPA, 95 * MPA], error_estimated=True)
+    agg = _aggregate(MB + "scls", {"SCL-SHELL": a, "SCL-FLOOR": b}, [])
+    assert agg.value == 100 * MPA and agg.uncertainty_abs == pytest.approx(15 * MPA)      # 115 MPa covers line B
+    req = workproject.requirement("REQ-MOV-002")
+    req.criteria[0].allowable, req.criteria[0].limit = None, Value(value=133, unit="MPa")
+    workproject.subject.scls = [s for s in workproject.subject.scls if s.id in ("SCL-SHELL", "SCL-FLOOR")]
+    out, _, _ = assess(workproject, [case("LC-PROOF", [PROOF])], [analysis("LC-PROOF", [agg, a, b])])
+    item = out.items[0]
+    # line A: 101 MPa, MS = 133 / 101 - 1 = +0.31683: pass. Line B: 1 x: 115 MPa, MS = +0.15652;
+    # 2 x unsafe: 135 MPa, MS = -0.01481; 2 x safe: 55 MPa, MS = +1.41818: inconclusive. B governs.
+    assert item.verdict == "inconclusive" and item.result_key == MB + "SCL-FLOOR"
+    assert item.margin == pytest.approx(0.15652, abs=1e-5)
+    assert "on the governing line SCL-FLOOR" in item.statement
+
+
+def test_scls_a_lost_line_stops_a_pass_also_with_an_aggregate_key(workproject):
+    # the structural engine wrote an aggregate from SCL-SHELL alone; the four other lines have no result
+    agg = res(MB + "scls", 100 * MPA, u=0.01)
+    one_line = res(MB + "SCL-SHELL", 100 * MPA, u=0.01)
+    out, _, _ = assess(workproject, [case("LC-PROOF", [PROOF])], [analysis("LC-PROOF", [agg, one_line])])
+    item = out.items[0]
+    # SCL-SHELL alone: 101 MPa, MS = 170 / 101 - 1 = +0.68317, a pass of one line only
+    assert item.verdict == "inconclusive" and item.result_key == MB + "SCL-SHELL"
+    assert item.margin == pytest.approx(0.68317, abs=1e-5)
+    assert "Analysis AN-PROOF has no result for SCL-NOZZLE-OUT, SCL-FLOOR, SCL-ROOF and SCL-NECK-ROOT on the finest mesh." \
+        in item.reasons
+    assert item.statement.endswith("The verdict is inconclusive because one or more stress classification lines have no result.")
 
 
 def test_scls_falls_back_to_the_worst_line(workproject):
@@ -682,16 +723,16 @@ def test_scls_falls_back_to_the_worst_line(workproject):
     # the worst line is SCL-FLOOR: 150 x 1.02 = 153 MPa; MS = 170 / 153 - 1 = 0.11111
     assert item.verdict == "pass" and item.result_key == MB + "SCL-FLOOR" and item.value == 150e6
     assert item.margin == pytest.approx(0.11111, abs=1e-5)
-    assert "Analysis AN-PROOF has no result for all stress classification lines together." in item.reasons
-    assert "The assessment uses the worst of 5 lines: SCL-FLOOR." in item.reasons
-    assert item.statement.startswith("The von Mises membrane plus bending stress on SCL-FLOOR is 150 MPa with an uncertainty of 2 %.")
+    assert "The assessment uses each of the 5 stress classification lines by itself. Line SCL-FLOOR governs." in item.reasons
+    assert item.statement.startswith("The von Mises membrane plus bending stress on the governing line SCL-FLOOR is 150 MPa "
+                                     "with an uncertainty of 2 %.")
     # an aggregate key without a value is a missing key
     assert run([res(MB + "scls", None, status="not_run"), *lines([96, 60, 150, 30, 20])]).result_key == MB + "SCL-FLOOR"
 
     item = run(lines([96, 60, 150, None, 20]))
     # a line of the component has no result: the pass of the other lines is not a pass of every line
     assert item.verdict == "inconclusive" and item.margin == pytest.approx(0.11111, abs=1e-5)
-    assert "Analysis AN-PROOF has no result for SCL-ROOF." in item.reasons
+    assert "Analysis AN-PROOF has no result for SCL-ROOF on the finest mesh." in item.reasons
     assert item.statement.endswith("The verdict is inconclusive because one or more stress classification lines have no result.")
 
     item = run([*lines([None, 60, 140, 30, 20]), res(MB + "SCL-SHELL", 150 * MPA, u=0.09, status="not_converged")])
