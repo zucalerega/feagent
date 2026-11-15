@@ -18,7 +18,11 @@ A feature without faces has no group; the journal then holds an error finding fo
 Sizes
     The meshes are made with ace.fea.make_mesh (order 2; it tries several surface meshers, straightens curved
     cells that fold, and reports the quality). `MeshLevel.level` is the index in the list: 0 is the coarsest.
-    Every size of level k is RATIO (1.4) times the size of level k + 1, so the study is one size field scaled:
+    The levels are one size field scaled: the sizes of level k are those of level k + 1 times a scale, chosen by
+    trial meshes (MAX_LEVEL_TRIALS) so that the representative size h_rep = (volume / cells)^(1/3) of level k is
+    RATIO (1.4) times that of level k + 1, within LEVEL_RATIO_TOL (6 %). The scale is not 1.4, because the local
+    refinement does not coarsen with the global size; a global size ratio of 1.4 gave a ratio of 1.17 of h_rep
+    on the quick study. The field:
     a global size h, and a local size rho x h within a fixed distance of
       * every re-entrant edge (geo["edges"]["reentrant"]), and
       * every small fillet: a fillet face (a concave torus, or a concave part of a cylinder) whose quarter arc
@@ -498,8 +502,8 @@ def _journal(geo: dict, entry: dict, empty_features: list[str]) -> Journal:
     choice += f" The mesh stage made {len(entry['trials'])} trial mesh{'' if len(entry['trials']) == 1 else 'es'} to find the sizes."
 
     floor_limits = bool(where) and entry["rho"] > RHO + 1e-9
-    rationale = [f"The finest mesh must have fewer than {plan['node_cap']} nodes, and each level is {RATIO:g} times "
-                 f"coarser than the next level.",
+    rationale = [f"The finest mesh must have fewer than {plan['node_cap']} nodes, and the representative element "
+                 f"size of each level is {RATIO:g} times that of the next finer level.",
                  "The stress changes most at re-entrant edges and at small fillets, and the elements are smaller there."]
     if floor_limits or (not where and (plan["edges"] or plan["fillets"])):
         rationale.append(f"The mesher does not make elements smaller than {_mm(entry['floor'])}, which is 1 % of the "

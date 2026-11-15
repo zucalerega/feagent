@@ -282,6 +282,7 @@ def test_quick_mesh_levels_cache_and_solve(built):
     assert len(lv) == 2
     assert [m.level for m in lv] == [0, 1]
     assert lv[0].h > lv[1].h
+    assert lv[0].h_rep / lv[1].h_rep == pytest.approx(1.4, rel=0.08)
     assert lv[0].nodes < lv[1].nodes <= 25000
     assert all(m.order == 2 and m.min_quality > 0.05 and m.h_rep > 0 for m in lv)
     assert all(not Path(m.path).is_absolute() and (project.out / m.path).is_file() for m in lv)
@@ -338,5 +339,4 @@ def test_full_mesh_levels(tmp_path):
     assert lv[0].nodes < lv[1].nodes < lv[2].nodes <= 120000
     assert lv[2].nodes > 0.6 * 120000
     for a, b in zip(lv, lv[1:]):
-        assert a.h / b.h == pytest.approx(1.4, rel=0.02)
-        assert a.h_rep > b.h_rep
+        assert a.h_rep / b.h_rep == pytest.approx(1.4, rel=0.08)
