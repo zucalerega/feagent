@@ -71,7 +71,8 @@ def test_files_read_write_and_problems(env):
     # refused: traversal, other file types, files that are not inputs
     for bad in ("../../etc/passwd", "..%2f..%2fetc%2fpasswd", "out/x.yaml", "components/mov_body/geometry.step"):
         assert c.put(f"/api/dossier/{PROJECT}/files/{bad}", content=b"x: 1").status_code in (400, 403, 404, 405, 415, 422)
-        assert c.get(f"/api/dossier/{PROJECT}/files/{bad}").status_code in (400, 403, 404, 405, 415, 422)
+        if not bad.endswith(".step"):      # a CAD file can be downloaded, never written as text
+            assert c.get(f"/api/dossier/{PROJECT}/files/{bad}").status_code in (400, 403, 404, 405, 415, 422)
 
 
 def test_records_trace_reviews(env):

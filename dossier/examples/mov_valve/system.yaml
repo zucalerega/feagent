@@ -51,7 +51,7 @@ parameters:
   h_lox:    {expr: "0.023 * re_lox**0.8 * pr_lox**0.4 * k_lox / d_bore", unit: "W/(m^2*K)", title: Heat transfer coefficient of the flowing LOX, basis: derived, note: "Dittus-Boelter correlation for turbulent flow in a tube."}
   h_stagnant: {value: 400 W/(m^2*K), title: Heat transfer coefficient of stagnant LOX, basis: assumed, note: "Natural convection in the closed valve."}
   h_chill:  {value: 600 W/(m^2*K), title: Heat transfer coefficient during chill-down, basis: assumed, note: "Low bleed flow with boiling at the wall."}
-  h_purge:  {value: 50 W/(m^2*K), title: Heat transfer coefficient of the purge gas, basis: assumed}
+  h_purge:  {value: 50 W/(m^2*K), title: Heat transfer coefficient of the purge gas, basis: assumed, note: "Forced convection of a low gas flow in the outlet bore."}
   h_amb:    {value: 12 W/(m^2*K), title: Heat transfer coefficient to the ambient air, basis: assumed, note: "Natural convection in air, with frost on the cold surfaces."}
   # ---- actuator and mechanical environment
   m_act:    {value: 2.8 kg, title: Actuator mass, source: "ACT-SPEC-004 rev A, 3.1"}

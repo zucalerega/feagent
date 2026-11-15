@@ -1,6 +1,6 @@
 """Command line of the STE checker.
 
-    python -m dossier.ste "Text to examine."          check one text
+    python -m dossier.ste "Text to examine."          check one text (several files or folders also work)
     python -m dossier.ste notes.txt                   check a text file (descriptive text)
     python -m dossier.ste out/validate.json           check the text fields of a JSON file (records)
     python -m dossier.ste dossier/loadcases           check the long strings in the Python files of a folder
@@ -72,7 +72,7 @@ def _print_rules() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m dossier.ste", description="ASD-STE100 checker")
-    ap.add_argument("target", nargs="?", help="text, a file or a folder")
+    ap.add_argument("target", nargs="*", help="text, files or folders")
     ap.add_argument("--rules", action="store_true", help="list the rules")
     ap.add_argument("--kind", choices=ste.KINDS, default="descriptive")
     ap.add_argument("--terms", help="terms.yaml of the project")
@@ -90,8 +90,10 @@ def main(argv: list[str] | None = None) -> int:
         terms = yaml.safe_load(Path(a.terms).read_text(encoding="utf-8")) or {}
     if a.dictionary:
         terms["dictionary"] = a.dictionary
-    texts = _collect(a.target)
-    kind = ste.field_kind if a.target.endswith(".json") else a.kind
+    texts: dict[str, str] = {}
+    for t in a.target:
+        texts.update(_collect(t))
+    kind = ste.field_kind if any(t.endswith(".json") for t in a.target) else a.kind
     summary = ste.summarize(texts, kind=kind, terms=terms or None)
     if a.json:
         print(json.dumps(summary, indent=2))

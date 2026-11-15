@@ -58,7 +58,7 @@ Convergence (the rule of the structural engine, in absolute terms)
     where the flux at an edge of the face is not. A Decision of the load case states the rule.
 
 Checks
-    heat balance    the heat flows through all loaded faces sum to zero. The flows come from the boundary
+    heat balance    the sum of the heat flows through all loaded faces is zero. The flows come from the boundary
                     conditions and the FE temperature with the solver's own quadrature, so the sum is zero
                     to the accuracy of the linear solve on every mesh: the check finds a solve that failed
                     or a boundary condition that the evaluation lost. It does not measure the mesh error.
@@ -719,7 +719,8 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
                     ("Use a heat transfer coefficient that changes along the faces.",
                      "The system context gives one value for the role.")]
             value = {"h": b.h, "T_fluid": b.value}
-            text = f"Convection with {h} and a fluid temperature of {T} on {_count(len(b.faces), 'face')}."
+            text = (f"The analysis applies convection with a heat transfer coefficient of {h} and a fluid temperature of {T} "
+                    f"to {_count(len(b.faces), 'face')}.")
         elif b.kind == "temperature":
             title = f"Prescribed temperature on {where}"
             choice = f"The analysis prescribes a temperature of {T} on {_targets(b)}."
@@ -727,7 +728,7 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
             alts = [("Apply convection with a heat transfer coefficient.",
                      "The effect gives a surface temperature. It gives no fluid and no coefficient.")]
             value = {"T": b.value}
-            text = f"A prescribed temperature of {T} on {_count(len(b.faces), 'face')}."
+            text = f"The analysis prescribes a temperature of {T} on {_count(len(b.faces), 'face')}."
         else:
             q = fmt(b.value, "W/m^2")
             title = f"Heat flux on {where}"
@@ -736,7 +737,7 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
             why = f"The effect {b.effect} gives this heat flux for {where}."
             alts = [("Prescribe a temperature on the faces.", "The effect gives a heat flux. It gives no temperature.")]
             value = {"q": b.value}
-            text = f"A heat flux of {q} into the part on {_count(len(b.faces), 'face')}."
+            text = f"The analysis applies a heat flux of {q} into the part to {_count(len(b.faces), 'face')}."
         if b.role == "external":
             why += " The geometry stage gives the faces that no other role uses."
         d = j.decide(subject=lc.id, key=f"bc-{b.effect}", title=title, choice=choice, rationale=why, alternatives=alts,
@@ -747,7 +748,7 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
         feats = list(dict.fromkeys(f for t in ideal.adiabatic for f in geo["faces"].get(str(t), {}).get("features", [])))
         items.append(BCItem(type="adiabatic", features=feats, faces=[f"f{t}" for t in ideal.adiabatic], value=None,
                             decision=make_id("ASM", lc.id, "adiabatic"),
-                            description=f"No heat flow through {_count(len(ideal.adiabatic), 'face')} with no thermal load."))
+                            description=f"Heat does not flow through the {_count(len(ideal.adiabatic), 'face')} with no thermal load."))
     return items
 
 
@@ -925,7 +926,7 @@ def _checks(lc: LoadCase, ideal: Idealization, sols: list[LevelSolution], result
     out.append(Check(
         id=make_id("CHK", an, "heat-balance"), kind="heat_balance", passed=bool(worst <= BALANCE_TOL),
         value=float(worst), limit=BALANCE_TOL,
-        statement=(f"The heat flows through all faces with a thermal load sum to {fmt(total, 'W')}. The heat flow "
+        statement=(f"The sum of the heat flows through all faces with a thermal load is {fmt(total, 'W')}. The heat flow "
                    f"through the part is {fmt(through, 'W')}. The ratio is {worst:.1e} and the limit is {BALANCE_TOL:g}.")))
     # mesh quality
     q = min(s.summary["min_quality"] for s in sols)

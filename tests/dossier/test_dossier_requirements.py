@@ -2,7 +2,10 @@
 
 import pytest
 
+import dataclasses
+
 from dossier import context
+from dossier.model import Value
 from dossier.requirements import validate as V
 
 SUBJ = "mov_body"
@@ -29,6 +32,9 @@ def edit(project, req_id, **fields):
 def set_param(project, req_id, name, **fields):
     r = project.requirement(req_id)
     params = dict(r.parameters)
+    if isinstance(fields.get("value"), str):                  # "10.8 MPa": read it as the project files do
+        v = Value.model_validate(fields.pop("value"))
+        fields.update(value=v.value, unit=v.unit)
     params[name] = params[name].model_copy(update=fields)
     edit(project, req_id, parameters=params)
 
@@ -118,7 +124,7 @@ def test_summary_lists_every_rule(base):
 def test_a_failing_rule_does_not_hide_the_others(example, example_ctx, monkeypatch):
     def boom(env):
         raise RuntimeError("x")
-    monkeypatch.setattr(V.RULES[0], "fn", boom)
+    monkeypatch.setattr(V, "RULES", (dataclasses.replace(V.RULES[0], fn=boom), *V.RULES[1:]))
     monkeypatch.setattr(V, "STRICT", False)
     j = V.validate(example, example_ctx, None)
     assert any(f.rule == "req.not_verifiable" and f.severity == "error" for f in j.findings)
@@ -257,10 +263,8 @@ def test_duty_cycle_uncovered(workproject):
 
 def test_material_temperature(workproject):
     m = workproject.material_of()
-    workproject.materials[m.id] = m.model_copy(update={"service_temperature": [150.0, 600.0]}) \
-        if hasattr(m, "service_temperature") else m
-    if not hasattr(m, "service_temperature"):
-        pytest.skip("the material has no service temperature field")
+    workproject.materials[m.id] = m.model_copy(update={"service_temperature": (Value.model_validate("150 K"),
+                                                                              Value.model_validate("600 K"))})
     j = run(workproject)
     assert any(f.rule == "req.material_temperature" and f.severity == "major" for f in j.findings)
 

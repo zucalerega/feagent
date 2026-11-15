@@ -387,6 +387,17 @@ curl -X POST $S/api/cad/uploads/<upload>/sets -H 'Content-Type: application/json
   reference-free (`ace.infer`: ZZ estimate, agreement); the `cad.reference` tool or a finished P2 study
   (`POST /api/cad/problems/<id>/adopt`) certifies references with the gold rules.
 
+## Projects page (dossier)
+
+`#/projects` is the entry point for `dossier`, the package that verifies one component by analysis in the context of its system (`dossier/CONTRACTS.md`). Projects live in `<runs dir>/dossier/<folder>/`. *New project from example* copies a shipped example (`dossier/examples/`, like `python -m dossier new`); the examples themselves are never written.
+
+- **List**: a card per project with the component, a strip of the seven stages (done, stale, not run), verdict counts, major findings and review progress.
+- **One project** (`#/projects/<folder>`): the buttons *Check inputs*, *Run verification (quick)*, *Run verification (full)* and *Build report* start tasks (tools `dossier.run`, `dossier.report`, group `dossier`) with the live log. Tabs: *Report* (the report page in a frame, reloaded when a run ends), *Inputs* (the YAML files and a text editor; Save writes the file and shows the problems with file, line and message), *Numbers*, *Load cases*, *Reviews*.
+- A stage whose engine is missing fails plainly in the task log and the stage status.
+- **API** (`/api/dossier`, `feacore/ui/dossier_api.py`): list and create, `{project}` status, `/check`, `/tasks`, `/files` (GET, PUT for input YAML only, `/cad/{component}` upload), `/params`, `/records`, `/trace`, `/reviews`, `/report/{path}` (index.html gets `window.DOSSIER_API` injected), `/out/{path}` (read-only, inside `out/`).
+
+Tests: `python -m pytest tests/test_ui_dossier.py -q`.
+
 ## Nonlinear and Test data pages
 
 **Nonlinear** `#/nonlinear` (`feacore/ui/nonlinear_api.py`, tools in `feacore/ui/tools/nonlinear.py`) has three tabs:

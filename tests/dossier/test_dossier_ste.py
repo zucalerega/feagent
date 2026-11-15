@@ -23,7 +23,7 @@ def names(text, kind="descriptive", terms=None):
 # ---- each rule: one sentence that breaks it, one that does not -----------------------------------------------
 
 def test_descriptive_length():
-    long = " ".join(["The valve body has a seat pocket"] + ["and a flange"] * 6) + "."
+    long = " ".join(["The valve body has a seat pocket"] + ["and a flange"] * 7) + "."
     assert ste.count_words(long) > 25
     assert "STE 6.3" in rules(long)
     assert "STE 6.3" not in rules("The valve body has a flange and a neck.")

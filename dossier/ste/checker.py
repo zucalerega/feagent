@@ -338,6 +338,10 @@ def _has_verb(toks: list[T.Token], voc: Vocabulary) -> bool:
             if _follower(toks, i, frozenset({"that", "if", "sure"})):
                 return True
             j = _before(toks, i)
+            if (w != base and w.endswith("s") and j >= 0 and toks[j].kind == T.WORD and toks[j].lower not in
+                    (_FUNCTION | W.ADJECTIVES | W.NUMBER_WORDS) and i + 1 < len(toks)
+                    and toks[i + 1].kind == T.WORD and toks[i + 1].lower in (W.PREPOSITIONS | W.DETERMINERS | W.MID_ADVERBS)):
+                return True      # "the pressure acts on", "the load moves to": a noun, the verb, a function word
             if j >= 0 and toks[j].kind == T.WORD and (toks[j].lower == "to" or toks[j].lower in ("they", "we", "you")):
                 return True
             continue
