@@ -50,6 +50,7 @@ their 3D tool results (`ace/harness.py`).
 | `results/`, `talk_plots/`, `docs/gallery/` | Run summaries and exported trained swarms (`results/trained_swarms/`), every presentation figure with its script, the image/video gallery |
 | `wsp/` | Teaching a small open model to mesh (weight-space programming, LoRA distillation). `wsp/README.md` |
 | `single_agent/` | One analyst agent per arm (Opus or Sonnet) from component design data to a verified analysis, with a deterministic scorecard and a learned rulebook. `single_agent/README.md` |
+| `dossier/` | Verification of one component by analysis in the context of its system: YAML inputs (system, component, requirements) → validated specification → load cases → analyses → margins and verdicts → a linked report; reviews, language-model reviewer roles, STE check. `dossier/README.md`, `dossier/CONTRACTS.md` |
 | `teams/` | Sculptured team definitions (wingbox; parallel mesh systems → synthesis) |
 | `scripts/` | Setup (`setup_gpu_box.sh`, `bootstrap.sh`, `serve.sh`), the gold pipeline, nonlinear runs and videos, figures |
 | `docs/` | Solver, benchmark, UI and Brev docs |
@@ -81,6 +82,10 @@ Never committed: `runs/` (the run store), `ace_runs/`, `swarms/`, `benchmarks/go
   renders to stills and videos, and the committed gallery. Outputs: `<runs>/nonlinear/<kind>/<tool>-<task>/`.
 - **Test data**: the physical tests and printable parts; a machine export (CSV / TXT, read by
   `ace.evidence.read_table`) is checked and saved as `<runs>/testdata/<id>/`, a ready `--evidence` folder.
+- **Projects** (`#/projects`, `feacore/ui/dossier_api.py`, tools in `feacore/ui/tools/dossier.py`, `docs/ui.md`):
+  dossier projects live in `<runs>/dossier/<folder>/`, created from a shipped example. Buttons: Check inputs, Run
+  verification (quick / full), Build report (tools `dossier.run`, `dossier.report` on the task lane). Tabs: Report
+  (the page in a frame), Inputs (YAML editor with problems by file and line), Numbers, Load cases, Reviews.
 - **Runs**, **Tasks**, **Solve**, **Connect** (API examples), **Health**.
 
 Long jobs run on the **task lane** (`feacore/ui/tasks.py`): a tool is a whitelisted command with typed
@@ -144,6 +149,12 @@ headless box the same way: `xvfb-run -a python ...`.
   `abc_00000065_bc1`, handbook only): Opus and Sonnet both scored 1.00; Opus was more precise and also found a
   converged ring-root stress above yield that fails the part (`single_agent/pilots/`). The API loop has not run
   on real models yet. Also in the dashboard (Agents section).
+- **Dossier** (`dossier/`, `dossier/README.md`): `python -m dossier check|run|status|show|review|new PROJECT`; the
+  worked example is `dossier/examples/mov_valve/` (a LOX valve body, invented data, six planted defects in its
+  specification). Seven stages (context, geometry, validate, plan, analyze, assess, report), each writes files to
+  `<project>/out/`. Engines: structural (linear elastic, scikit-fem), steady thermal, elastic stress-life fatigue,
+  flow (stepped bores of revolution, OpenFOAM), hand calculations (`dossier/handcalc/`). Tests: `tests/dossier/`,
+  `tests/test_ui_dossier.py`. In the dashboard: Projects. Language-model roles: `python -m dossier.agents`.
 - **Sculptured teams** (`teams/`): the wingbox team and the parallel-mesh-systems → synthesis team.
 - `make_problem.py`: prints a unique, seeded problem statement per (agent number, call number).
 
@@ -237,7 +248,8 @@ Decisions:
 - The UI shows small trendless mesh-to-mesh changes (under 2%) as "scatter between meshes", not as
   divergence. Real singularities still show as diverging.
 - **CFD (`backend="openfoam"`, physics "flow"):** OpenFOAM ESI (v1912 from Ubuntu's `openfoam`
-  package works) plus `foamlib` (the `cfd` extra). It runs 2D/3D laminar steady SIMPLEC with tight
+  package works) plus `foamlib` (the `cfd` extra). It runs 2D/3D laminar steady SIMPLEC (turbulent RANS only in the
+  validated range, see "Solver extensions" below) with tight
   residuals; forces and the probes are computed in numpy, because v1912's function objects crash.
   Benchmarks: Poiseuille channel, lid-driven cavity Re 100, DFG 2D-1 cylinder, 3D pipe
   (`docs/benchmarks_cfd.md`). Use quad/hex meshes for GCI: on unstructured triangles OpenFOAM's cell
@@ -263,6 +275,35 @@ Decisions:
     Mach 3 and 10 deg incidence. Its references are mesh-converged (`scripts/supersonic_blunt_study.py`).
     At alpha = 0 it is validated against the exact pitot pressure, and its standoff against Billig
     (`docs/benchmarks_cfd.md`).
+- **Solver extensions** (`docs/solver_transient.md` is the source: case format, result types, tests, tolerances).
+  A capability that is not built raises `NotImplementedError`; nothing falls back to a steady solve. A transient
+  answer needs a step-refinement check as a mesh answer needs a mesh study (time step is a discretization).
+  - **Transient heat conduction** (`_skfem_transient.py`): Crank-Nicolson (default, order 2), backward Euler,
+    BDF2; values may depend on time (`t` or a table). Verified against closed forms, observed orders and NAFEMS T3.
+    Limits: linear (constant k, rho, cp; no radiation), fixed step; a sudden change at a face (a quench) puts a
+    few percent of error in the first steps whatever the scheme, and Crank-Nicolson keeps unresolved modes.
+  - **Modal analysis** (`_skfem_modal.py`): `analysis.options["modal"]`, `ModalResult`. Verified against NAFEMS
+    FV32 / FV41 / FV52, Rayleigh-Lamb, beam theory. Limits: linear elastic, no prestress, no damping; a frequency
+    is good with several P2 cells per half wave, the highest requested mode is the least accurate; point and line
+    supports soften with refinement (FV52).
+  - **Transient dynamics** (`_skfem_dynamics.py`): Newmark, HHT, Rayleigh damping. Verified against exact discrete
+    and modal solutions, order 2, energy, waves. Limit: the step against the highest frequency of interest (period
+    error 3.1 % at 10 steps per period, 0.2 % at 40); fewer than about 5 steps per period is not followed.
+  - **Transient incompressible flow** (`_foam_transient.py`): laminar 2D and 3D, BDF2 order 2, Taylor-Green and
+    DFG 2D-2 registered. Limits: laminar only, fixed meshes, a 2D case sheds 2D vortices, about Courant 1 with the
+    defaults. Not reviewed by anyone other than its author.
+  - **Turbulent flow (RANS)** (`openfoam_backend.py`, `analysis.options["turbulence"] = "kOmegaSST"`): wall
+    functions. Validated range: structured hexahedra with the plain schemes, Re 1e5 to 1.4e6, y+ 60 to 1600,
+    smooth walls, internal flow without swirl. In it the friction factor is 3 to 5 % low (Colebrook) and the
+    sudden-expansion loss about 7 % high (Borda-Carnot). Tetrahedra (-15 to -26 %) and prisms (+13 to +17 %) did
+    not validate; a turbulent solve warns about non-hexahedral cells and wall cells outside y+ 60 to 1600. A
+    refinement study does not converge the friction factor in the usual sense (it depends on y+).
+  - **Compressible internal flow** (`_foam_compressible.py`, `_foam_internal.py`): `total_inlet`, `pressure_outlet`;
+    verified against the exact quasi-1D nozzle in three regimes and NACA 1135 (`tests/test_compressible_internal.py`).
+    Limits: perfect gas, inviscid or laminar walls, no turbulence, steady end state only, Mach from about 0.1.
+  - **Temperature field as a thermal load** (`Load(type="temperature", value={"field": "T.npz"})`,
+    `docs/solver_skfem.md`): the nodes of a heat solve on the same mesh and order. No interpolation between
+    meshes: a field that does not belong to the mesh stops the solve. One-way coupling.
 - Known solver/verification limits (from the benchmark runs):
   - 3D point stresses at mesh vertices scatter 0.1-0.5% between unstructured tet meshes, in both
     backends. GCI on such QoIs reads as oscillatory or divergent, so judge them against the reference
@@ -274,6 +315,39 @@ Decisions:
     on tets was a solver bias. The apparent force imbalance came from the wall force dividing by |Cf - C|
     instead of the wall-normal distance. Point velocities at a smooth maximum still read 2-5 % low on coarse
     tets (the probe's vertex fit); pressure drops, forces and flow rates are fine.
+
+## Dossier decisions (`dossier/`)
+
+- **Loads come from the system context, never from a requirement.** A requirement states criteria and factors; a
+  number it states about the environment (MEOP, cycles, temperature range) is a claim that `validate` checks against
+  the context. Reason: a specification drifts when the system around the part changes; the check finds the drift.
+- **A load case is a phase at limit loads (factor 1.0).** Factors of safety act on the response in the margin, so one
+  solve serves every criterion of the phase. A case proportional to another one (same loads times a scale, same
+  supports, no thermal effect) is scaled, not solved.
+- **Nothing is silent.** A choice is a Decision (reason, alternatives), a thing taken as true is an Assumption
+  (impact), a problem in the inputs is a Finding. The planner never drops a load case because another looks more
+  severe (loads can cancel). A criterion that no case serves stays visible as not assessed.
+- **Stage contract.** Each engine is a pure function of the project, the context and the stage files before it and
+  returns records and a Journal; only `pipeline.py` writes stage files. An engine that cannot do a case returns
+  `status="not_supported"` with the reason and never invents a result (`dossier/CONTRACTS.md`).
+- **SI inside records**, the display unit next to it; conversions only through `dossier.units`.
+- **Verdict rules** (`dossier/compliance.py`): pass, fail, inconclusive, not assessed. A pass must be earned. Margin of
+  the conservative value (value +- uncertainty). Converged: pass or fail on that margin. Singular, no error estimate,
+  no uncertainty, estimate: inconclusive. Not converged with an error estimate: decides only with
+  `policy.unconverged_margin_factor` (2) times the uncertainty on the unsafe side (fail: on the safe side). A failed
+  check in the analysis or in one it rests on, a missing analysis it rests on, or a stale file makes a pass or fail
+  inconclusive. Each stress classification line is assessed alone; the worst governs. Findings are caveats in the
+  statement and do not change a verdict. The independent review found three ways to a false pass; they are closed.
+- **Convergence is judged by rule, not by the engine's wish.** Peaks near re-entrant edges and support rims are never
+  converged (singular when they grow at every refinement). The uncertainty of a diverging sequence is the spread and
+  is flagged as no error estimate.
+- **Reviews** are tied to the record content; a changed record makes its review stale. Language-model roles only
+  propose records (marked as agent proposals, same review); they never review, edit inputs or change a verdict.
+- **Text is ASD-STE100**, checked by `dossier.ste` (the writing rules and a small word list; the ASD dictionary is not
+  in the repo and is not checked unless the user supplies the file).
+- **Deliberately not done:** nonlinear material or contact; transient thermal in the pipeline; buckling and modal load
+  cases; strain-life fatigue; a flow volume that is not a stepped bore of revolution; a verdict from a language model.
+  Each is said in the report as a limit and in `dossier/README.md`, "Limits".
 
 ## NVIDIA compute (hackathon)
 
@@ -303,6 +377,12 @@ Decisions:
 
 ## Open questions
 
+- Dossier: should a requirement that the validation questions (a major finding) block a pass? Today it is a caveat.
+- Dossier: a quasi-static acceleration load acts in one direction; it should be run in both signs.
+- Dossier: wire the new solver capabilities (transient heat, modal, transient dynamics, transient and turbulent flow,
+  compressible internal flow) into dossier load cases and into the agents' tool sets (`ace/`, `single_agent/`).
+- Dossier: the API loop of the language-model roles (`dossier/agents/loop.py`) has not run on real models; only the
+  mock path and a hand-driven pilot were exercised.
 - Scoring is settled for the ACE loop (`ace/checks.py`: field mode x the automesher, hidden probe points,
   bonuses; nonlinear tasks against the measured curve). Still open: one rubric across FEA, CFD and the
   nonlinear task, and how much a reference-free estimate (ZZ) may stand in for a reference on custom CAD.

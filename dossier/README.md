@@ -101,6 +101,274 @@ component's `interfaces` say which CAD features each connection acts on, by role
    through the same review.
 7. **Text is ASD-STE100** Simplified Technical English, checked by `dossier.ste`.
 
+## The stages
+
+`python -m dossier run` runs seven stages in order (`--from` and `--to` select a range, `--only LC-...`
+selects load cases, `--force` analyses again). Only `pipeline.py` writes stage files, into `<project>/out/`.
+A stage whose engine fails stops the run with the reason. A stage file that is older than the inputs is
+*stale*: the verdict rules treat it as doubtful evidence, and the dashboard shows it.
+
+**context.** Evaluates every named number (units, expressions, dimension check) and every effect in SI per
+phase (`dossier/context.py`). Writes `context.json`. A number of basis
+`assumed` becomes an assumption record.
+
+**geometry** (`geometry.py`, `meshing.py`). Reads the STEP file (exactly one solid, one length unit), measures
+it and turns every feature query into CAD faces, with area, centroid, radius and axis. Finds re-entrant edges
+(sampled at 9 points per edge, so an angle that peaks between samples can be missed) and checks that each stress
+classification line starts and ends on the surface and stays in the material. Then it makes one shared study of
+quadratic tetrahedra, coarse to fine (successive levels about 1.4 apart in element size, local refinement at
+re-entrant edges and small fillets, finest level under `node_cap` nodes). Every mesh carries physical groups
+for each face, each feature and each interface role. The element size cannot go below 1 % of the bounding-box
+diagonal (2.42 mm for the example), so a small fillet gets at most two quadratic elements along its arc. A
+decision states how many elements the fillets and the thinnest wall get and asks for a review. Writes `geometry.json`, the
+meshes with an index (cached by the hash of CAD, groups, sizes and gmsh version), and pictures.
+
+**validate** (`system/check.py`, `requirements/validate.py`). Two sets of rules. The *system check* looks for
+what is legal but wrong or weak: a load with no interface or no faces, a convection effect with no heat transfer
+coefficient, a number with no source or an assumed number with no reason, a load on a face that a support
+holds, a phase in which nothing holds the part, a duty cycle with no load. The *requirement rules* have
+families: quality (verifiable criterion, "shall", vague words, vocabulary of the criterion, location,
+allowable, limit, factor), consistency (MEOP against the largest pressure in the operation phases, fluid
+temperature range, rated flow within 1 %, design cycles against the duty cycles, explicit parameter checks),
+policy (a factor not below the policy), coverage (every phase with loads, every loading duty cycle),
+conflict (parameters with one role and different values), and material (service temperature range, medium
+compatibility, properties at the temperatures of the context). Output: findings with a severity, and
+assumptions. A finding does not stop the run; it travels to the verdicts as a caveat.
+
+**plan** (`loadcases/select.py`). A requirement counts when it is verified by analysis and has a criterion. The
+quantity of the criterion gives the analysis family (stress, displacement: structural; temperature, heat flow:
+thermal; pressure drop: flow; damage: fatigue). One load case is one phase at limit loads (factor 1.0 on every
+load; factors act on the response in the margin). Loads come from the system context only, never from a
+requirement. A structural case is thermo-structural when a thermal effect differs from the component's
+reference temperature by more than `policy.thermal_delta`; it then uses the steady thermal case of the phase
+(`LC-TH-<phase>`). Fatigue has one case, `LC-FATIGUE`, with one cycle use per duty cycle. A structural case
+whose loads are a multiple of another case's loads, with the same supports and no thermal effect, is not solved:
+it is scaled from the base case (`scaled_from`, `scale`, status `scaled`). This is exact for linear statics.
+The planner never drops a case because another looks more severe: loads can cancel and another load path can
+govern. Every case it makes, scales or leaves out is a decision with its reason. A criterion that no case can
+serve stays visible as a case with status `not_supported` and a reason, so its verdict is "not assessed". The
+plan also instantiates the hand calculations of the component (`handcalc/`): closed-form models with their
+sources (Lamé cylinder and sphere, thin cylinder, circular plate, beam and bolt-circle loads, Euler buckling,
+fin, constrained thermal stress, cylinder-wall conduction, Dittus-Boelter, minor-loss pressure drop, column
+surge, Basquin life), each with a `when` rule and a `band` in which the analysis result must fall.
+
+**analyze** (`analysis/`). One engine per analysis type; each writes one analysis record with the model, the
+convergence study, results with an uncertainty and a status, and checks. An engine that cannot do a case returns
+status `not_supported` with the exact reason and never invents a result. After the engines, each hand
+calculation is compared with the analysis result (`handcalc.compare`).
+
+- *Structural* (`structural.py`, `idealize.py`, `scl.py`). Linear elastic, small displacement, with the fixed
+  solver (scikit-fem, quadratic tetrahedra, a direct solve) on every mesh level. Pressure, force, moment (a
+  traction that is statically exact), acceleration (body force) and supports become boundary conditions, each
+  as a decision. A free part is balanced and held at three nodes with inertia relief for the residual. A
+  thermo-structural case reads the temperature from the thermal engine on the same mesh. Results: peak von Mises
+  and principal stress at the part, features and interfaces, linearized membrane and membrane-plus-bending
+  stress on each stress classification line (all six components, not the ASME choice), displacements and out-of-roundness of
+  bores. Convergence: two levels give an uncertainty of 3 times the change (scaled); three levels use the grid
+  convergence index with safety factors; a peak near a re-entrant edge or the rim of a support is never
+  converged and is marked `singular` when it grows at every refinement. Stress lines get a floor from moving
+  the line by a quarter element. Checks: load balance, reactions, mesh quality, a Zienkiewicz-Zhu estimate.
+  Verified in `tests/dossier/test_dossier_structural.py`. Not verified: the thermal support with a real
+  temperature gradient (checked with a uniform temperature only), moment loads on curved faces (flat faces
+  against beam theory only), the stress next to seats (the real load path through bolts and gaskets is not
+  modelled).
+- *Thermal* (`thermal.py`). Steady heat conduction, one conductivity, convection with a given heat transfer
+  coefficient, prescribed temperature, heat flux. Faces with no thermal load are adiabatic (an assumption
+  records which, and the direction of the error). The conductivity assumption is tested with two more solves at
+  minus and plus 20 %. Convergence uses the temperature range of the case as the reference, because heat
+  conduction depends on temperature differences. Verified in `tests/dossier/test_dossier_thermal.py` against a
+  slab with convection, a hollow cylinder (logarithmic profile) and a hollow fin against a numerical solution.
+  Not modelled: radiation, contact resistance, volume heat sources, temperature-dependent conductivity, and
+  time dependence.
+- *Fatigue* (`fatigue.py`). Elastic stress-life. The stress range of two states is the von Mises stress of the
+  tensor difference (ASME VIII-2, 5.5.3). Mean stress correction by Goodman, Smith-Watson-Topper or none; cycles
+  to failure by the Basquin relation; cycles counted by the max-min method of Annex 5-B.5 over all duty cycles
+  together, because the order of the duty cycles is not known; damage by Miner's sum at every node. Singular
+  zones (re-entrant edges, rims of held faces) are left out of the `smooth` result and are never converged.
+  Two checks fail the result where the material is not elastic: a range above 2 Sy (shakedown) and a
+  first-cycle von Mises stress above Sy. The engine then does not give a valid damage. There is no fatigue
+  strength reduction (Kf = 1), no stress between phases (a thermal transient or a surge is not seen), no
+  residual stress, and no sequence effect in Miner's rule. Verified in `tests/dossier/test_dossier_fatigue.py`.
+- *Flow* (`flow.py`). The pressure drop of a stepped bore of revolution (planes across the axis, cylinders about
+  the axis), read from the STEP file and checked against its volume. The engine builds a structured hexahedral
+  mesh with a straight pipe upstream and downstream and solves with OpenFOAM (`simpleFoam`): laminar below Re
+  2000, k-omega SST with wall functions at Re 1e5 and above. Between these, above 1.4e6 (the validated range
+  ends there, see `docs/solver_transient.md`) and for any other shape the case is `not_supported`. The turbulent
+  model was checked against Colebrook in a smooth pipe (friction factor 2.6 to 4.7 % low) and against Borda-Carnot
+  for a sudden expansion (loss coefficient about 7 % high); the engine adds a model uncertainty of 10 % to the
+  result. Tetrahedra (15 to 26 % low) and prisms (13 to 17 % high) did not validate and are not used. The
+  convergence status needs a mesh part under `policy.max_uncertainty` and a solver that converged on every mesh,
+  or residuals that stalled under 3e-3 with a steady pressure drop over the last 500 iterations. Rough walls
+  are a correction by the Colebrook formula, not a solver result. No swirl, cavitation, bends, non-circular
+  bores or compressible flow. Tests: `tests/dossier/test_dossier_flow.py` (the turbulent validation is marked
+  slow).
+- *Scaled* (`scaled.py`). Takes the base analysis and multiplies results by the scale.
+
+**assess** (`compliance.py`). Margins and verdicts. See "Verdicts".
+
+**report** (`report/`). Builds `out/report/index.html` and `report.md`. See "The report".
+
+## Verdicts
+
+Every requirement of the component gets one verdict: **pass**, **fail**, **inconclusive** or **not assessed**.
+An engineer signs verdicts, so a pass must be earned and every other verdict gives its reason
+(`dossier/compliance.py` is the source of truth).
+
+*Margin.* For a limit that the response must not exceed: MS = limit / (factor x response) - 1. For a minimum:
+MS = (response / factor) / limit - 1. The factor is a number, a requirement parameter or a factor of the policy.
+The limit is a material property (`yield_strength`, `ultimate_strength`) or a stated value, with the same
+dimension as the response. A response of zero or less has no finite margin.
+
+*Uncertainty.* dU is the absolute uncertainty of the analysis result. The conservative value is value + dU
+for a maximum and value - dU for a minimum. If the analysis gives no uncertainty, the verdict says so.
+
+*Verdict of one criterion in one load case, in this order:*
+
+1. The factor or limit has no valid value, or result and limit differ in dimension: **not assessed**.
+2. No analysis, an analysis that is not "done", or no value for the result: **not assessed** with the
+   message of the analysis. One exception: a hand calculation of the same case with a comparison on the same
+   result key gives an estimate, and the verdict is **inconclusive** with that margin.
+3. By the convergence status of the result:
+   - *converged*: **pass** when the margin of the conservative value is not negative; **fail** when it is
+     negative even with the uncertainty on the safe side; otherwise **inconclusive**. A converged result with
+     no uncertainty is **inconclusive** unless it comes from a hand calculation or a derived number.
+   - *singular*: **inconclusive**. The text says when the criterion fails on every mesh of the study.
+   - *not converged*: if the analysis gives an error estimate (`error_estimated` true), the result can still
+     decide, with `policy.unconverged_margin_factor` = k (default 2): **pass** when the margin is not
+     negative with k x dU on the unsafe side; **fail** when it is negative with k x dU on the safe side;
+     otherwise **inconclusive**. The margin shown is then the margin with k x dU. With no error estimate (the
+     uncertainty is only the spread of values that do not converge), no uncertainty, or k = 0, the verdict is
+     **inconclusive**. A decision records this rule.
+   - *estimate*: **inconclusive**.
+4. A pass or fail becomes **inconclusive** when the evidence is in doubt: a check with `passed` false in the
+   analysis or in an analysis it rests on (`uses`, `scaled_from`, the states of a fatigue case); such an
+   analysis that is missing or not "done"; a plan or analysis file older than the inputs. A check with `passed`
+   none is a note only. A failed hand-calculation comparison (the result outside its band) is such a check.
+
+Stress classification lines are assessed one by one. The aggregate key for all lines is never used. The worst
+line governs, first by verdict, then by margin. A line with no result makes a pass inconclusive, and a fail on
+another line stays a fail.
+
+*Verdict of a requirement:* fail if any item fails; else inconclusive if any item is inconclusive; else not
+assessed if an item or criterion has no verdict; else pass. A requirement that is not verified by analysis, or
+has no criterion, is not assessed. The governing item is the one with the smallest margin among the items that
+decide.
+
+*Caveats.* Findings of severity `error` or `major` whose subject is a record that the item rests on (the
+requirement and its parameters, the load case, its phase and effects, the numbers behind the limit and the
+factor, the material, the location) appear in the statement. A caveat does not change the verdict. A question
+about a requirement therefore does not block a pass. This is an open question (see `CLAUDE.md`).
+
+## Decisions, assumptions and reviews
+
+Three record kinds keep choices visible. A **decision** is a choice with its reason and the alternatives (a
+selected or rejected load case, a boundary condition rule, the mesh sizes, the verdict rule for unconverged
+results). An **assumption** is something taken as true with what happens if it is wrong; it can be marked as
+not on the safe side. A **finding** is a problem in the inputs (category, severity). Every record has an id
+that is the same on every run, an origin (the rule, the stage, or an agent), and links.
+
+A person reviews records in `reviews.yaml`, from the command line or the dashboard: accept, reject, or request
+changes, with a name and a comment. A review is tied to the content of the record. If the record changes, the
+review turns *stale*: the record needs a new review. The report lists open reviews. A decision that asks for a
+review, an assumption that is not conservative, a proposal of an agent, a rejected or stale review all appear
+under "Needs attention". A review does not change a verdict by itself. Verdicts come from the rules above.
+
+## The report
+
+`out/report/index.html` is one self-contained page (no external script, font or picture), and
+`out/report/report.md` has the same content as text. It has eleven sections: Summary (verdicts, review
+progress, stage status), Needs attention, System context (diagram, effects by phase, named numbers with their
+sources), Component (CAD, features, interfaces, stress classification lines), Requirements and their
+validation, Load cases (with a matrix of criteria against cases), Hand calculations (formulas, inputs,
+sources), Analyses (meshes, convergence, checks, pictures), Compliance (the margin of each criterion, with the
+governing item), Decisions and assumptions, and About this report (input files with hashes, the STE check of
+the text, limits).
+
+The page supports three ways to follow the records (`dossier/trace.py`):
+
+- **Result flow**: requirement, load case, analysis, margin, verdict, and back.
+- **Decision flow**: the decisions and assumptions of each stage, in order.
+- **Justification flow**: for any record, what it rests on, down to a number with its source document; and in
+  the other direction, which results change if a number changes.
+
+Inside the dashboard the review buttons of the page work; opened as a file, the page shows the reviews of
+the build time.
+
+## Language-model roles
+
+`dossier/agents/` has three reviewer roles: `requirements-reviewer` (the specification against the system
+context), `plan-reviewer` (load cases and hand calculations) and `analysis-checker` (each analysis, as an
+independent checker). A role reads a brief (the dossier as text, with instructions) and submits a JSON
+document of findings, decisions and assumptions. What a role does: it notices what rules cannot, such as a
+requirement that can be read two ways, a missing load path, an idealization that is wrong, an assumption
+that is not conservative. What it does not do: it gives no review, changes no input file, changes no
+record of a rule, and cannot change a verdict. Its records are marked "proposed by an agent", decisions
+need review, and `submit` rejects a submission that names a record that does not exist, leaves a required
+text empty, repeats an existing finding or uses a word outside the vocabulary. Numbers in the text that
+are not numbers of the dossier produce a warning.
+
+What was exercised: the mock path (`python -m dossier.agents run PROJECT ROLE --mock`, a canned submission,
+no model call), the submission checks in `tests/dossier/test_dossier_agents.py`, and a hand-driven pilot in
+which an agent read a brief and submitted through the shell. The API loop (`dossier.agents.loop`, one structured call
+per role through `ace.llm`) has not run on a real model.
+
+## The example and its results
+
+@@RESULTS@@
+
+## Limits
+
+- **Linear elastic only.** Small displacements, no yield, no contact, no bolt preload, no gasket. The joints are
+  fixed supports, so the stress next to a seat is approximate.
+- **Thermal is steady state in the pipeline.** The solver now has transient heat conduction
+  (`docs/solver_transient.md`), but the planner does not use it. A steady temperature does not bound the thermal
+  stress of a chill-down. The load cases name that assumption.
+- **One material per component**, one conductivity and one set of properties at all temperatures (an assumption
+  tests +-20 % on the conductivity).
+- **No buckling and no natural-frequency load case.** The solver now has modal analysis. The planner does not
+  create such cases, and no requirement quantity maps to them. Euler buckling exists only as a hand calculation.
+- **Fatigue is elastic stress-life only** and stops where the part yields: there it gives no valid damage and
+  no pass. No strain-life method, no fatigue strength reduction, no stress between phases, no sequence effect.
+- **Flow handles stepped bores of revolution** with a wall-function RANS model in the validated range only
+  (Re 1e5 to 1.4e6, y+ 60 to 1600, hexahedral meshes, smooth walls plus a roughness correction). It carries a
+  model uncertainty of 10 %. Other shapes, bends, swirl and cavitation are `not_supported`.
+- **Peak stresses at sharp edges and support rims have no limit** in linear elasticity. They are marked
+  singular and give inconclusive verdicts. The remedy is a stress classification line or a model of the
+  real geometry, not a finer mesh.
+- **The mesh size floor** is 1 % of the bounding-box diagonal. Small fillets are resolved to a few percent at
+  best.
+- **The STE check** covers the writing rules that a program can examine (sentence length, tenses, modal verbs,
+  contractions, a small list of words that are not approved, heuristics for the passive voice and noun
+  clusters). It does not hold the ASD dictionary. Without the user's dictionary file the vocabulary check is
+  partial. Meaning, one topic per sentence and the article rules are not checked.
+- **CAD**: one solid, STEP. Millimetre-unit files from a CAD system were tested with rewritten headers of the
+  example only. Free-form faces have no radius or axis.
+- **The example's data is invented.** Do not use a number from it for design.
+- **Not verified in the structural engine**: the thermal support with a real gradient, moment loads on curved
+  faces.
+- **The language-model roles** have not run through the API on a real model (see above).
+
+## What was checked independently
+
+Two independent checks of the code were made, and the team fixed what they found. The checks were reviews
+by people other than the authors of each part; this README does not claim more than that.
+
+- The verdict rules had three ways to a false pass. They are closed, and tests in
+  `tests/dossier/test_dossier_compliance.py` cover the rules above.
+- A conversion error of a per-degree unit (a temperature difference treated as a temperature) was fixed.
+- The convergence rule of the flow engine was weak: it compared two moments of the iteration, which an
+  oscillation or a slow drift could pass. It now uses every snapshot over a window of 500 iterations
+  (spread and trend both under 0.1 %).
+- Transient heat conduction missed a start-up after a later jump in a boundary value. This was fixed in the solver.
+- The frequency estimate of a transient result could be wrong without a warning. This was fixed in the solver.
+
+Not independently checked: the transient incompressible flow capability. Its own tests exist (Taylor-Green,
+DFG 2D-2, `docs/solver_transient.md`), but no one other than its author reviewed it. The rest of the new
+solver capabilities (modal analysis, transient dynamics, compressible internal flow) are reported as verified
+in `docs/solver_transient.md` by their authors' tests.
+
+Test status: @@TESTS@@
+
 ## Files
 
 | file | role |
@@ -111,5 +379,14 @@ component's `interfaces` say which CAD features each connection acts on, by role
 | `context.py` | every named number evaluated, every effect in SI per phase, effects mapped to features |
 | `pipeline.py`, `cli.py` | the stages and the command line |
 | `trace.py` | the trace graph: what each record rests on, what depends on it |
+| `geometry.py`, `meshing.py` | features to CAD faces; the shared mesh study |
+| `system/`, `requirements/` | the system check and diagram; the requirement rules |
+| `loadcases/`, `handcalc/` | load-case selection and scaling; closed-form models |
+| `analysis/` | engines: `structural`, `thermal`, `fatigue`, `flow`, `scaled`, with `idealize` and `scl` |
+| `compliance.py` | margins and verdicts |
+| `report/` | the HTML and Markdown report |
+| `agents/` | language-model reviewer roles: brief, submit, mock, API loop |
+| `ste/` | the Simplified Technical English checker and writer helpers |
+| `examples/mov_valve/` | the worked example, with its own README |
 | `records.py` | how a stage writes decisions, assumptions and findings |
 | `CONTRACTS.md` | the contract of each engine, for people who add or change one |

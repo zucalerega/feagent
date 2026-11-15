@@ -10,7 +10,7 @@ One web app for the whole project, `python -m feacore.ui`, on top of `feacore`. 
 - the **run store** (`feacore/runstore.py`): solves, studies, agent submissions and task outputs as files, readable by the evaluator and the improvers.
 - the **multi-agent consensus view**: every agent's answer with its own error band, against the population and the reference.
 
-Navigation: **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **Swarm** view), **Nonlinear**, **Test data**, **Runs**, **Tasks**, **Solve** and **Connect** (plus Health). Pages (single-page app, no build step, `feacore/ui/static/`):
+Navigation: **Projects**, **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **Swarm** view), **Nonlinear**, **Test data**, **Runs**, **Tasks**, **Solve** and **Connect** (plus Health). Pages (single-page app, no build step, `feacore/ui/static/`):
 
 | page | what it shows |
 |---|---|
@@ -23,6 +23,7 @@ Navigation: **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **
 | Swarm `#/swarm` | the ACE agent loop, live: loop and generation selectors, score distribution per generation, per-problem leaderboards (score, QoI vs reference, mesh, DOFs, solves, gates) linking to the field viewer and the problem's Consensus view. Empty state until the ACE bridge writes records |
 | Nonlinear `#/nonlinear` | nonlinear runs with their force-travel curves over the Instron test, run pages with videos and *Resume*, the analysis tools (scoring ramp, elastoplastic ramp, crush to fracture, renderers), the gallery. See "Nonlinear and Test data pages" below |
 | Test data `#/testdata` | the physical tests and printable parts; upload a machine export, check its parsing and save it as an `--evidence` folder |
+| Projects `#/projects` | `dossier` projects: list with stage status and verdict counts, one project with report, inputs, numbers, load cases and reviews, and buttons that run the pipeline as tasks. See "Projects page (dossier)" below |
 | Tasks `#/tasks` | every task (agent runs, gold meshing, crush runs, renders, ...) with its state, command, output folder and live log; *Stop* (graceful, where the tool supports it) and *Kill* |
 | Run study `#/study` | pick problem / backend / element order / refinement; live progress; per QoI: QoI vs log h with the Richardson extrapolation, the GCI band and the reference; error vs h (log-log, observed vs theoretical slope); verdict and flags in plain words |
 | Consensus `#/consensus/<problem>` | forest plot per QoI: each submission's finest-mesh value ± GCI, extrapolated value, consensus median, reference ± tolerance; per-submission verdicts and flags |
