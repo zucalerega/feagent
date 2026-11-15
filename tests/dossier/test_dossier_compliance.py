@@ -830,6 +830,7 @@ def test_limit_from_an_allowable_a_parameter_an_expression_or_a_number(workproje
 
 
 def test_caveat_walk_reaches_the_requirement_that_states_a_load_parameter(workproject, example_ctx):
+    workproject.policy.questioned_requirement_blocks_pass = False      # the caveat walk, without the block of a pass
     def loaded(id, refs, phase, **kw):
         return case(id, refs, phase, loads=example_ctx.loads(workproject, None, phase), **kw)
 
@@ -866,7 +867,7 @@ def test_caveat_walk_reaches_the_requirement_that_states_a_load_parameter(workpr
     assert fire_u.caveats == ["FND-REQ-MOV-004-YIELD-FACTOR", mat, scl, env]
     # the fatigue case uses the proof and firing cases, and the count of the proof duty cycle
     assert life.caveats == [meop.id, "FND-REQ-MOV-006-DESIGN-CYCLES", mat, env, "FND-SYS-OXFEED-COUNT"]
-    # a caveat does not change the verdict; the statement names it; the record links to it
+    # with the block off, a caveat does not change the verdict; the statement names it; the record links to it
     assert proof.verdict == "pass" and proof.margin == pytest.approx(1.33754, abs=1e-5)
     assert proof.statement.endswith(
         "The criterion passes. The findings FND-REQ-MOV-001-MEOP-LOW, FND-MAT-316L-TOO-COLD and FND-SCL-ROOF-OUTSIDE "
@@ -880,6 +881,7 @@ def test_caveat_walk_reaches_the_requirement_that_states_a_load_parameter(workpr
 
 
 def test_caveat_on_another_requirement_is_about_the_number_the_item_reads(workproject, example_ctx):
+    workproject.policy.questioned_requirement_blocks_pass = False      # the caveat walk, without the block of a pass
     workproject.requirement("REQ-MOV-001").parameters["p_rated"] = ReqParameter.model_validate("9 MPa")   # no load reads it
     cases = [case("LC-PROOF", [PROOF], "PH-PROOF", loads=example_ctx.loads(workproject, None, "PH-PROOF"))]
     ans = [analysis("LC-PROOF", [res(MB + "scls", 71.3 * MPA)])]
@@ -904,6 +906,92 @@ def test_caveat_on_another_requirement_is_about_the_number_the_item_reads(workpr
     item = run(finding("EF-IN-P-PROOF", "basis"))
     assert item.verdict == "pass"
     assert item.statement.endswith("The criterion passes. Finding FND-EF-IN-P-PROOF-BASIS applies to the inputs of this item.")
+
+
+# --------------------------------------------------------------------------- a questioned requirement blocks a pass
+
+MEOP_LOW = "FND-REQ-MOV-001-MEOP-LOW"
+
+
+def proof_with(project, ctx, value, *fnd):
+    """The proof case (proof pressure = proof_factor x meop of REQ-MOV-001) with one von Mises result."""
+    cases = [case("LC-PROOF", [PROOF], "PH-PROOF", loads=ctx.loads(project, None, "PH-PROOF"))]
+    out, items, verdicts = assess(project, cases, [analysis("LC-PROOF", [res(MB + "scls", value)])], findings=fnd)
+    return out, out.items[0], verdicts["REQ-MOV-002"]
+
+
+def meop_low(severity="major", statement="The value is too low."):
+    return finding("REQ-MOV-001", "meop-low", severity, links=[Link(rel="about", to="meop")]).model_copy(
+        update={"statement": statement})
+
+
+def test_a_major_finding_on_a_load_parameter_blocks_a_pass(workproject, example_ctx):
+    assert workproject.policy.questioned_requirement_blocks_pass is True          # the default
+    out, item, verdict = proof_with(workproject, example_ctx, 71.3 * MPA, meop_low())
+    # MS = 170 / (71.3 x 1.02) - 1 = 170 / 72.726 - 1 = 1.33754: the margin stays as computed
+    assert item.caveats == [MEOP_LOW] and item.verdict == "inconclusive"
+    assert item.margin == pytest.approx(1.33754, abs=1e-5)
+    assert item.statement.endswith(
+        "The margin of safety is +1.34 with the uncertainty on the unsafe side. "
+        f"The verdict is inconclusive until a person resolves finding {MEOP_LOW}, because the finding questions a "
+        "value that this criterion uses.")
+    assert item.reasons[:2] == [
+        f"Finding {MEOP_LOW} questions a value that this criterion uses. "
+        "The criterion cannot pass until a person resolves the finding.",
+        "A person resolves a finding with a correction of the inputs that removes the finding, "
+        "or with a review that rejects the finding."]
+    # the requirement follows its item
+    assert verdict.verdict == "inconclusive" and verdict.margin == pytest.approx(1.33754, abs=1e-5)
+    assert f"The cause is that finding {MEOP_LOW} questions a value that this criterion uses." in verdict.statement
+    # one decision records the rule, with its alternative
+    dec = [d for d in out.journal.decisions if d.id == "DEC-POLICY-QUESTIONED-REQUIREMENT"]
+    assert len(dec) == 1 and "questioned_requirement_blocks_pass set to false" in dec[0].alternatives[0].option
+    assert {(l.rel, l.to) for l in dec[0].refs()} >= {("uses", "POLICY"), ("about", MEOP_LOW)}
+    from dossier import ste
+    for text in [item.statement, *item.reasons, verdict.statement, dec[0].choice, dec[0].rationale,
+                 dec[0].alternatives[0].option, dec[0].alternatives[0].why_not]:
+        assert not [i for i in ste.check(text) if i.severity == "error"], text
+        assert not ste_problems(text), text
+    # no finding: no block and no decision
+    workproject.write_stage("validate", findings=[])
+    out, item, _ = proof_with(workproject, example_ctx, 71.3 * MPA)
+    assert item.verdict == "pass" and "DEC-POLICY-QUESTIONED-REQUIREMENT" not in [d.id for d in out.journal.decisions]
+
+
+def test_with_the_flag_false_the_finding_is_a_caveat_only(workproject, example_ctx):
+    workproject.policy.questioned_requirement_blocks_pass = False
+    out, item, verdict = proof_with(workproject, example_ctx, 71.3 * MPA, meop_low())
+    assert item.verdict == "pass" and item.margin == pytest.approx(1.33754, abs=1e-5) and verdict.verdict == "pass"
+    assert item.statement.endswith(f"The criterion passes. Finding {MEOP_LOW} applies to the inputs of this item.")
+    assert "DEC-POLICY-QUESTIONED-REQUIREMENT" not in [d.id for d in out.journal.decisions]
+
+
+def test_a_fail_stays_a_fail_and_a_minor_finding_does_not_block(workproject, example_ctx):
+    # fail: 170 / (200 x 0.98) - 1 = -0.13265 < 0 on the safe side; the margin shown: 170 / (200 x 1.02) - 1 = -0.16667
+    _, item, verdict = proof_with(workproject, example_ctx, 200 * MPA, meop_low())
+    assert item.verdict == "fail" and verdict.verdict == "fail" and item.margin == pytest.approx(-0.16667, abs=1e-5)
+    assert item.caveats == [MEOP_LOW] and "The criterion fails." in item.statement
+    out, item, _ = proof_with(workproject, example_ctx, 71.3 * MPA, meop_low("minor"))
+    assert item.caveats == [] and item.verdict == "pass"
+    assert "DEC-POLICY-QUESTIONED-REQUIREMENT" not in [d.id for d in out.journal.decisions]
+
+
+def test_only_a_current_review_that_rejects_the_finding_lifts_the_block(workproject, example_ctx):
+    proof_with(workproject, example_ctx, 71.3 * MPA, meop_low())         # writes the finding to the stage files
+    workproject.set_review(MEOP_LOW, "rejected", by="A. Reviewer", comment="The shutdown surge is not at the valve.")
+    _, item, verdict = proof_with(workproject, example_ctx, 71.3 * MPA, meop_low())
+    assert item.verdict == "pass" and verdict.verdict == "pass" and item.caveats == [MEOP_LOW]   # still named
+    assert item.statement.endswith(f"The criterion passes. Finding {MEOP_LOW} applies to the inputs of this item.")
+    # the finding changed after the review: the review is stale and does not count
+    _, item, _ = proof_with(workproject, example_ctx, 71.3 * MPA, meop_low(statement="The value is 2 % too low."))
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(1.33754, abs=1e-5)
+    assert item.reasons[2] == f"The review of finding {MEOP_LOW} does not count, because the finding changed after the review."
+    # a review that accepts the finding agrees that the requirement is wrong: the block stays
+    workproject.set_review(MEOP_LOW, "accepted", by="A. Reviewer")
+    _, item, _ = proof_with(workproject, example_ctx, 71.3 * MPA, meop_low(statement="The value is 2 % too low."))
+    assert item.verdict == "inconclusive"
+    assert item.reasons[2] == (f"A person accepted finding {MEOP_LOW} in a review. "
+                               "The requirement must change before the criterion can pass.")
 
 
 # --------------------------------------------------------------------------- the verdict of a requirement
@@ -1077,7 +1165,8 @@ def test_stage_file_round_trip(workproject, example_ctx):
     out, items, verdicts = everything(workproject, example_ctx)
     summary = pipeline.stage_assess(workproject, pipeline.Options())
     assert summary["REQ-MOV-002"] == "inconclusive (margin -0.01)" and summary["REQ-MOV-009"] == "not_assessed"
-    assert summary["REQ-MOV-006"] == "pass"                      # a damage of zero: no finite margin to print
+    # a damage of zero (no finite margin to print), and finding FND-REQ-MOV-001-MEOP on the proof pressure blocks the pass
+    assert summary["REQ-MOV-006"] == "inconclusive" and summary["REQ-MOV-007"].startswith("pass")
 
     def no_constant(c):                                          # NaN and Infinity are not JSON
         raise AssertionError(f"{c} in the stage file")

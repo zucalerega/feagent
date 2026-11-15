@@ -450,6 +450,10 @@ class Policy(Model):
     # A result that is not converged but has a stated uncertainty can still decide a criterion when the margin
     # holds with this many times that uncertainty on the unsafe side. 0 turns the rule off: then a result that
     # is not converged never gives a pass or a fail.
+    questioned_requirement_blocks_pass: bool = True
+    # A finding of severity error or major that questions a value a criterion uses (the requirement, its
+    # parameters, its factor or limit, a parameter its loads depend on) turns a pass into inconclusive until a
+    # person resolves the finding. False restores the old rule: the finding is only a caveat in the statement.
     thermal_delta: Value = Field(default_factory=lambda: Value(value=5.0, unit="K"))
     # a phase whose temperatures differ from the reference temperature by more needs a thermal analysis
 

@@ -337,7 +337,11 @@ Decisions:
   `policy.unconverged_margin_factor` (2) times the uncertainty on the unsafe side (fail: on the safe side). A failed
   check in the analysis or in one it rests on, a missing analysis it rests on, or a stale file makes a pass or fail
   inconclusive. Each stress classification line is assessed alone; the worst governs. Findings are caveats in the
-  statement and do not change a verdict. The independent review found three ways to a false pass; they are closed.
+  statement. A requirement that the validation questions blocks a pass (decided): a finding of severity error or major
+  on a value the criterion uses (the requirement, its parameters, factor or limit, a parameter its loads depend on)
+  makes a pass inconclusive until the inputs are corrected or a current review rejects the finding (an accepted
+  review keeps the block); a fail stays a fail, the margin is unchanged. `policy.questioned_requirement_blocks_pass`
+  (default true; false: caveat only). The independent review found three ways to a false pass; they are closed.
 - **Convergence is judged by rule, not by the engine's wish.** Peaks near re-entrant edges and support rims are never
   converged (singular when they grow at every refinement). The uncertainty of a diverging sequence is the spread and
   is flagged as no error estimate.
@@ -377,7 +381,6 @@ Decisions:
 
 ## Open questions
 
-- Dossier: should a requirement that the validation questions (a major finding) block a pass? Today it is a caveat.
 - Dossier: a quasi-static acceleration load acts in one direction; it should be run in both signs.
 - Dossier: wire the new solver capabilities (transient heat, modal, transient dynamics, transient and turbulent flow,
   compressible internal flow) into dossier load cases and into the agents' tool sets (`ace/`, `single_agent/`).

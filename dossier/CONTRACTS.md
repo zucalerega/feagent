@@ -30,7 +30,11 @@ Rules of the model (do not work around them):
    estimate, a failed check, or a hand calculation that disagrees makes a verdict inconclusive, never a pass.
    A result that is over the convergence limit but has an error estimate (`ResultValue.error_estimated`) can
    still decide a criterion, when the margin holds with `policy.unconverged_margin_factor` times that estimate
-   on the unsafe side; the margin shown is then that margin.
+   on the unsafe side; the margin shown is then that margin. A finding of severity error or major that
+   questions a value the criterion uses (the requirement, its parameters, its factor or limit, a parameter its
+   loads depend on) turns a pass into inconclusive until a person resolves it: the inputs are corrected, or a
+   current review rejects the finding (`policy.questioned_requirement_blocks_pass`, default true; false makes
+   such a finding a caveat only). A fail stays a fail.
 6. **SI inside records** (Pa, m, N, K, kg, s). The unit people read is next to it (`display`). Use
    `dossier.units` for every conversion; never multiply by 1e6 by hand.
 7. **Text is ASD-STE100** (see "Text" below).
@@ -191,6 +195,8 @@ def assess(project, ctx) -> Assessment      # .items: [ComplianceItem], .verdict
 ```
 Margin of safety: `MS = allowable / (factor x response) - 1` for `<=`; `MS = (response / factor) / limit - 1`
 for `>=`. The response enters with its uncertainty on the unsafe side (`conservative_value`).
+The findings of severity error or major on the inputs of an item are its `caveats`. An unresolved caveat
+turns a pass into inconclusive (rule 5); the module docstring gives the walk and what resolves a finding.
 
 ### report — `dossier/report/`, `dossier/ste/`
 

@@ -77,8 +77,21 @@ The verdict of an item, in this order
 Caveats: the findings of severity error or major whose subject (or an "about" link) is a record the item
 rests on. These are the requirement and its parameters; the load case, its phase and its effects, and
 those of the load cases it uses; every parameter that the effects, the limit and the factor depend on,
-with the requirement or material that states it; the material; the location of the result. A caveat does
-not change the verdict. The statement names it.
+with the requirement or material that states it; the material; the location of the result. The statement
+names each caveat. A caveat does not change a fail or an inconclusive verdict.
+
+A questioned requirement blocks a pass (`policy.questioned_requirement_blocks_pass`, True by default)
+    5. A pass becomes inconclusive when a caveat is not resolved. A pass on a requirement whose own numbers
+       are in question tells the engineer nothing about the real environment. A fail stays a fail, and the
+       margin stays as computed. The statement and the first reason name each finding that blocks the pass,
+       and the cause of the verdict is that the finding questions a value that the criterion uses.
+       A finding is resolved when it no longer exists (a person corrected the inputs, and the validate stage
+       ran again), or when a person gave it the review state `rejected` in reviews.yaml (the reviewer judged
+       the finding wrong). A review `accepted` (the reviewer agrees that the requirement is wrong) keeps the
+       block. A stale review (the finding changed after the review, `Project.review_of`) does not count.
+       The stage reads reviews.yaml when it runs: a new review takes effect at the next run of assess.
+       The journal records the rule once (DEC-<policy>-QUESTIONED-REQUIREMENT) when it blocks an item.
+       With the flag False, the old rule applies: a caveat never changes a verdict.
 
 The verdict of a requirement: fail if an item fails, else inconclusive if an item is inconclusive, else
 not_assessed if an item or a criterion has no verdict, else pass. `governing` is the item with the
@@ -212,6 +225,8 @@ class _Inputs:
         self.req_ids = {r.id for reqs in project.requirements.values() for r in reqs}
         self.stale = set(project.stale())
         self.unconverged = False        # a result with the status not converged and an uncertainty was assessed
+        self.reviews = project.reviews()
+        self.blocked: dict[str, None] = {}      # the findings that blocked the pass of an item, in order
         self.known = (set(project.inputs()) | set(ctx.params) | set(self.cases) | set(self.findings)
                       | {a.id for a in self.analyses.values()} | {h.id for h in self.hand_calcs})
 
@@ -226,6 +241,22 @@ class _Inputs:
         """The findings of severity error or major about one of `subjects`."""
         return [f.id for f in self.findings.values() if f.severity in ("error", "major")
                 and (f.subject in subjects or any(l.rel == "about" and l.to in subjects for l in f.links))]
+
+    def unresolved(self, fid: str) -> tuple[bool, str]:
+        """(the finding still blocks a pass, a sentence about its review or ""). Only a review `rejected`
+        that is not stale resolves a finding that exists."""
+        f = self.findings.get(fid)
+        if f is None:
+            return False, ""
+        rv, stale = self.project.review_of(f, self.reviews)
+        if rv.state == "rejected" and not stale:
+            return False, ""
+        if stale and rv.state != "open":
+            return True, (f"The review of finding {fid} does not count, because the finding changed after the review.")
+        if rv.state == "accepted":
+            return True, (f"A person accepted finding {fid} in a review. "
+                          "The requirement must change before the criterion can pass.")
+        return True, ""
 
     def param_source(self, name: str) -> str:
         p = self.ctx.params[name]
@@ -767,14 +798,39 @@ def _item(req: Requirement, k: int, crit: Criterion, lc: LoadCase, item_id: str,
             item.uncertainty = ev.rel
         else:
             item.limit = None       # the limit is in another dimension: the reasons give it with its unit
+    decided = verdict               # the verdict of the evidence, before a questioned requirement blocks a pass
+    blocking: list[str] = []
+    if verdict == "pass" and inp.project.policy.questioned_requirement_blocks_pass:
+        notes = []
+        for c in item.caveats:
+            blocks, note = inp.unresolved(c)
+            if blocks:
+                blocking.append(c)
+                notes += [note] if note else []
+        if blocking:
+            inp.blocked.update(dict.fromkeys(blocking))
+            verdict, cause = "inconclusive", _blocked_cause(blocking)
+            reasons = [f"{cause[0].upper()}{cause[1:]}. The criterion cannot pass until a person resolves "
+                       f"{'the finding' if len(blocking) == 1 else 'each finding'}.",
+                       "A person resolves a finding with a correction of the inputs that removes the finding, "
+                       "or with a review that rejects the finding.",
+                       *notes, *reasons]
     item.verdict, item.reasons = verdict, reasons
-    item.statement = _statement(key, lc, ev, hc, limit, factor, verdict, cause, item.caveats)
+    item.statement = _statement(key, lc, ev, hc, limit, factor, decided, cause, item.caveats, blocking)
     return item, cause
 
 
+def _blocked_cause(blocking: list[str]) -> str:
+    """The cause of a pass that a questioned requirement blocks, as a clause."""
+    if len(blocking) == 1:
+        return f"finding {blocking[0]} questions a value that this criterion uses"
+    return f"the findings {_join(blocking)} question values that this criterion uses"
+
+
 def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | None, limit, factor, verdict: str,
-               cause: str, caveats: list[str]) -> str:
-    """The item in words: the value, the limit, the factor, the margin, the verdict, the caveats."""
+               cause: str, caveats: list[str], blocking: list[str] = ()) -> str:
+    """The item in words: the value, the limit, the factor, the margin, the verdict, the caveats.
+    `verdict` is the verdict of the evidence; `blocking` are the findings that turn its pass into inconclusive."""
     s = []
     if ev is not None and ev.value is not None:
         shown = _show(ev.value, ev.unit)
@@ -809,7 +865,15 @@ def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | No
                 s.append(f"The margin that decides the verdict is {_ms(ev.k_margin)}, with {_times(ev.k)} the "
                          f"uncertainty on the {side} side.")
     decided_by_k = ev is not None and hc is None and ev.k is not None and verdict == ev.verdict
-    s.append(_verdict_sentence(verdict, cause, ev.k if decided_by_k else None))
+    if blocking:
+        # one sentence, so that the statement keeps to six sentences (STE 6.6)
+        s.append(f"The verdict is inconclusive until a person resolves finding {blocking[0]}, because the finding "
+                 "questions a value that this criterion uses." if len(blocking) == 1 else
+                 f"The verdict is inconclusive until a person resolves the findings {_join(blocking)}, because they "
+                 "question values that this criterion uses.")
+        caveats = [c for c in caveats if c not in blocking]
+    else:
+        s.append(_verdict_sentence(verdict, cause, ev.k if decided_by_k else None))
     if caveats:
         s.append(f"Finding {caveats[0]} applies to the inputs of this item." if len(caveats) == 1
                  else f"The findings {_join(caveats)} apply to the inputs of this item.")
@@ -968,6 +1032,23 @@ def _journal(project, inp: _Inputs, items: list[ComplianceItem], estimates: list
                  alternatives=[("Refuse each result with an uncertainty over the policy limit.",
                                 "Then a result with a very large margin gives no verdict, and the engineer gets no information.")],
                  links=[("uses", pol.id)])
+    if inp.blocked:
+        pol = project.policy
+        j.decide(pol.id, "questioned-requirement", "A finding that questions a requirement blocks a pass",
+                 choice="A finding of severity error or major can question a value that a criterion uses. "
+                        "Then the criterion cannot pass, and its verdict is inconclusive. "
+                        "A fail stays a fail. The margin of safety stays as the analysis gives it. "
+                        "A person resolves the finding with a correction of the inputs, "
+                        "or with a review that rejects the finding.",
+                 rationale="A finding that blocks a pass is about the requirement or its parameters. "
+                           "It can also be about the factor, the limit, or a parameter that the loads use. "
+                           "A pass on a requirement whose own numbers are in question gives the engineer "
+                           "no information about the real environment. "
+                           "A review that accepts the finding agrees that the requirement is wrong, so the block stays. "
+                           f"Policy {pol.id} sets questioned_requirement_blocks_pass to true.",
+                 alternatives=[("Give the finding as a caveat only, with questioned_requirement_blocks_pass set to false.",
+                                "The pass then rests on numbers that a finding says are wrong.")],
+                 links=[("uses", pol.id)] + [("about", f) for f in inp.blocked])
     for item_id, key, lc, hc, output, why in estimates:
         j.decide(item_id, "estimate", "Estimate from a hand calculation in place of an analysis",
                  choice=f"Use the output {output} of hand calculation {hc.id} as an estimate of {key} for load case {lc.id}.",

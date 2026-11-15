@@ -95,7 +95,8 @@ component's `interfaces` say which CAD features each connection acts on, by role
 4. **Every record links to what it rests on**, down to a number with its source document
    (`dossier/trace.py`).
 5. **Verdicts are honest**: pass, fail, inconclusive, not assessed. A result that is not converged, a singular
-   peak, or a hand calculation that disagrees makes a verdict inconclusive, never a pass.
+   peak, or a hand calculation that disagrees makes a verdict inconclusive, never a pass. So does a finding of
+   severity error or major that questions a value the criterion uses, until a person resolves it.
 6. **Rules first, judgement on top.** The engines are deterministic and reproducible. Language-model roles
    read the dossier and propose findings and decisions; their records are marked as proposed by an agent and go
    through the same review.
@@ -133,7 +134,8 @@ temperature range, rated flow within 1 %, design cycles against the duty cycles,
 policy (a factor not below the policy), coverage (every phase with loads, every loading duty cycle),
 conflict (parameters with one role and different values), and material (service temperature range, medium
 compatibility, properties at the temperatures of the context). Output: findings with a severity, and
-assumptions. A finding does not stop the run; it travels to the verdicts as a caveat.
+assumptions. A finding does not stop the run; it travels to the verdicts as a caveat, and a caveat of severity
+error or major blocks a pass (see "Verdicts").
 
 **plan** (`loadcases/select.py`). A requirement counts when it is verified by analysis and has a criterion. The
 quantity of the criterion gives the analysis family (stress, displacement: structural; temperature, heat flow:
@@ -256,8 +258,13 @@ decide.
 
 *Caveats.* Findings of severity `error` or `major` whose subject is a record that the item rests on (the
 requirement and its parameters, the load case, its phase and effects, the numbers behind the limit and the
-factor, the material, the location) appear in the statement. A caveat does not change the verdict. A question
-about a requirement therefore does not block a pass. This is an open question (see `CLAUDE.md`).
+factor, the material, the location) appear in the statement. Such a caveat blocks a pass: the verdict becomes
+**inconclusive**, the margin stays as computed, and the statement and the first reason name the finding. A pass
+on a requirement whose own numbers are in question tells the engineer nothing about the real environment. The
+block lifts when the finding no longer exists (the inputs were corrected) or when a person rejects it in
+`reviews.yaml` (the finding is wrong). A review that accepts the finding (the requirement is wrong) keeps the
+block, and a stale review does not count. A fail stays a fail. A decision records the rule.
+`questioned_requirement_blocks_pass: false` in the policy restores the old rule: a caveat only.
 
 ## Decisions, assumptions and reviews
 
@@ -271,7 +278,9 @@ A person reviews records in `reviews.yaml`, from the command line or the dashboa
 changes, with a name and a comment. A review is tied to the content of the record. If the record changes, the
 review turns *stale*: the record needs a new review. The report lists open reviews. A decision that asks for a
 review, an assumption that is not conservative, a proposal of an agent, a rejected or stale review all appear
-under "Needs attention". A review does not change a verdict by itself. Verdicts come from the rules above.
+under "Needs attention". A review does not change a verdict by itself. Verdicts come from the rules above; the
+one rule that reads reviews is the block of a pass by a finding, which a rejected review lifts at the next
+assess stage.
 
 ## The report
 
@@ -317,7 +326,8 @@ per role through `ace.llm`) has not run on a real model.
 The example is the body of a main oxidizer valve (invented data; `dossier/examples/mov_valve/README.md`). The
 table below is from one full run (not `--quick`) of the final code: `out/assess.json` and the analysis records in
 `out/analyses/` of that run. The run took about 15 minutes on one machine; the flow analysis took 7.4 minutes of
-it and each structural or thermal case about 43 seconds.
+it and each structural or thermal case about 43 seconds. The verdicts are from the assess stage of the same run
+again (`--from assess`), with the rule that a questioned requirement blocks a pass; no analysis ran again.
 
 *What the run did.* 13 load cases: 11 solved, 2 scaled from `LC-PROOF` (`LC-BURST`, `LC-LEAK`). 12 hand-calculation
 comparisons, all inside their bands. The validation stage wrote 12 findings: 7 major and 5 information. The 7 major
@@ -329,9 +339,9 @@ and the transport phase that no requirement covers.
 | Requirement | Verdict | Deciding margin | What governs | Why |
 |---|---|---|---|---|
 | REQ-MOV-001 MEOP | not assessed | none | the verification method is review | Review is the method, not analysis. Finding `FND-REQ-MOV-001-MEOP-LOW` says the MEOP is too low. |
-| REQ-MOV-002 proof pressure | pass | +0.48 | von Mises membrane plus bending on `SCL-FLOOR`, `LC-PROOF`, 76.2 MPa against 170 MPa yield | The result is not converged (uncertainty 25 %, limit 5 %), but it has an error estimate. The margin is +0.48 with 2 times the uncertainty on the unsafe side. |
-| REQ-MOV-003 burst pressure | pass | +2.67 | von Mises membrane on `SCL-SHELL`, `LC-BURST` (scaled from the proof case), 116.3 MPa against 485 MPa ultimate | Not converged (6.9 %), with an error estimate. The margin holds with 2 times the uncertainty. |
-| REQ-MOV-004 margins in all phases | inconclusive | -0.38 (not a verdict) | peak von Mises stress in `LC-FIRE`, 247.6 MPa against 170 MPa yield, factor 1.1 | 3 of 8 items pass (ultimate, on stress classification lines). 5 are inconclusive. The peak is at a sharp re-entrant edge, where linear elasticity gives no limit; the three meshes do not converge, so there is no error estimate. `LC-SHUTDOWN` reads 171.5 MPa (margin -0.099) in the same way, `LC-CHILL` is a singular peak. The criterion asks for the peak, so the result cannot say fail or pass. |
+| REQ-MOV-002 proof pressure | inconclusive | +0.48 (not a verdict) | von Mises membrane plus bending on `SCL-FLOOR`, `LC-PROOF`, 76.2 MPa against 170 MPa yield | The result is not converged (uncertainty 25 %, limit 5 %), but it has an error estimate. The margin is +0.48 with 2 times the uncertainty on the unsafe side. Finding `FND-REQ-MOV-001-MEOP-LOW` questions the MEOP behind the proof pressure, so the pass is blocked until a person resolves it. |
+| REQ-MOV-003 burst pressure | inconclusive | +2.67 (not a verdict) | von Mises membrane on `SCL-SHELL`, `LC-BURST` (scaled from the proof case), 116.3 MPa against 485 MPa ultimate | Not converged (6.9 %), with an error estimate. The margin holds with 2 times the uncertainty. Blocked by `FND-REQ-MOV-001-MEOP-LOW`, as for 002. |
+| REQ-MOV-004 margins in all phases | inconclusive | -0.38 (not a verdict) | peak von Mises stress in `LC-FIRE`, 247.6 MPa against 170 MPa yield, factor 1.1 | All 8 items are inconclusive. The 3 ultimate items (on stress classification lines) have margins that hold, but finding `FND-REQ-MOV-004-YIELD-FACTOR` on the requirement blocks their pass. The other 5 are inconclusive by the result. The peak is at a sharp re-entrant edge, where linear elasticity gives no limit; the three meshes do not converge, so there is no error estimate. `LC-SHUTDOWN` reads 171.5 MPa (margin -0.099) in the same way, `LC-CHILL` is a singular peak. The criterion asks for the peak, so the result cannot say fail or pass. |
 | REQ-MOV-005 temperature range | not assessed | none | the verification method is review | Finding `FND-REQ-MOV-005-MIN-TEMPERATURE`: the range 233 K to 323 K excludes the 90 K of the LOX. |
 | REQ-MOV-006 fatigue | inconclusive | +375.6 (not a verdict) | damage at the part, `LC-FATIGUE`: 1.76e-5 against 1, scatter factor 4 | The analysis check on yield fails: 247.6 MPa at the peak is above the 170 MPa yield strength in the first cycle, so the elastic stress-life damage is not valid. The damage also changes by a factor of 37.7 between the two finest meshes. Finding `FND-REQ-MOV-006-CHECK-DESIGN-CYCLES`: 200 cycles against 267 in the context. |
 | REQ-MOV-007 actuator face temperature | pass | +0.034 | minimum temperature on `INT-ACT`, `LC-TH-FIRE`: 242.15 K against 233 K | Converged (uncertainty 1.2 K). The hand calculation `HC-ACT-TEMP` agrees. The margin is small. |
@@ -339,19 +349,20 @@ and the transport phase that no requirement covers.
 | REQ-MOV-009 stiffness | not assessed | none | no criterion | "Sufficiently stiff" has no measure. Findings `FND-REQ-MOV-009-NOT-VERIFIABLE` and `-VAGUE`. |
 | REQ-MOV-010 out-of-roundness | pass | +0.31 | range of radial displacement of `FT-SEAT-OUT-WALL`, `LC-PRESTART`: 13.7 µm against 20 µm | Not converged (6 %, limit 5 %), with an error estimate. The margin holds with 2 times the uncertainty. |
 
-Count: 4 pass, 3 inconclusive, 3 not assessed, no fail. Read the table with these points.
+Count: 2 pass, 5 inconclusive, 3 not assessed, no fail. Read the table with these points.
 
 - **No verdict is "fail", although REQ-MOV-004 shows a negative margin.** The margin is of a peak that has no limit
   in linear elasticity. The analysis cannot tell a real overstress from the mathematical singularity. A person
   must decide: model the real fillet radius, or classify the stress on a line.
-- **Passes rest on the k = 2 rule** for REQ-MOV-002, -003 and -010. Their results are not converged by the 5 %
+- **Margins rest on the k = 2 rule** for REQ-MOV-002, -003 and -010. Their results are not converged by the 5 %
   policy but have an error estimate. The margin is shown with 2 times the uncertainty.
-- **The three inconclusive verdicts have different causes**: a singular peak (004), a material that yields so the
-  method does not apply (006), a flow solution without an error estimate (008).
-- **Caveats**: the passes of REQ-MOV-002 and -003 carry the finding that the MEOP of REQ-MOV-001 is too low. The
-  system file reads the MEOP by name from that requirement (`proof_factor * meop`), so the proof and burst
-  pressures are 1.5 and 2.5 times 10.5 MPa, not times 10.72 MPa. The verdict is not changed by the caveat;
-  whether the margins still hold at the higher MEOP the run does not show.
+- **The five inconclusive verdicts have different causes**: a singular peak (004), a material that yields so the
+  method does not apply (006), a flow solution without an error estimate (008), and a questioned requirement
+  (002, 003).
+- **Questioned requirements block a pass**: REQ-MOV-002 and -003 would pass, but the system file reads the MEOP by
+  name from REQ-MOV-001 (`proof_factor * meop`), so the proof and burst pressures are 1.5 and 2.5 times 10.5 MPa,
+  not times 10.72 MPa. Whether the margins still hold at the higher MEOP the run does not show. A correction of
+  the MEOP (and the analyses again), or a review that rejects `FND-REQ-MOV-001-MEOP-LOW`, lifts the block.
 - The inputs are example data. The numbers show what the tool does with them, not how a valve body performs.
 
 ## Limits
