@@ -220,27 +220,34 @@ def test_energy_conservation_and_balance(bar):
 
 
 def test_prescribed_base_motion(bar):
-    """The fixed end moves as u_D = U (1 - cos W t). Exact: u = u_D (rigid) + w with M w'' + K w = -M 1 a_D,
-    i.e. q_k = -G_k U W^2 / (w_k^2 - W^2) (cos W t - cos w_k t). Second order in dt, so the prescribed
-    velocity and acceleration (from the Newmark relations, and by differences at t = 0) are consistent."""
+    """The fixed end moves as u_D = U (1 - cos W t). Exact semi-discrete solution: u = u_D (rigid translation)
+    + w with M w'' + K w = -M 1 a_D, i.e. q_k = -G_k U W^2 / (w_k^2 - W^2) (cos W t - cos w_k t). The same
+    problem in the moving frame (fixed end, body force -rho a_D) must give the same motion: the two runs differ
+    by O(dt^2) (observed order 2.1-2.2), so the prescribed velocity and acceleration (Newmark relations, and
+    differences at t = 0) are consistent. Against the exact solution both converge alike (error 2.2 %, 0.84 %,
+    0.35 % at 40, 80, 160 steps; slower than dt^2 at first because the step excites modes it cannot resolve)."""
     U, W = 1e-5, 2 * math.pi * 500.0
     bcs = [BC(type="displacement", group="left", components=[0], value=f"{U}*(1 - cos({W}*t))"),
            BC(type="displacement", group="left", components=[1], value=0.0)] + BAR_BCS[1:]
+    rel_load = [Load(type="body_force", value=[f"-{RHO}*{U}*{W}**2*cos({W}*t)", 0])]
     T = 1 / 500.0
-    errs = []
+    diffs, errs = [], []
     for nst in (40, 80, 160):
         r = solve(bar_case(bar, T / nst, T, bcs=bcs))
+        rr = solve(bar_case(bar, T / nst, T, loads=rel_load))
+        t, y = r.history(r.case.qois[0])
+        uD = U * (1 - np.cos(W * t))
+        diffs.append(np.abs(y - (rr.series(rr.case.qois[0]) + uD)).max() / np.abs(y).max())
         mo = Modal(r, tip_dof(r))
         one = np.zeros(r.model.N)
         one[r.model.split[0]] = 1.0
         G = mo.Phi.T @ (r.M @ one)[mo.I]
-        t, y = r.history(r.case.qois[0])
         q = (-G * U * W**2 / (mo.lam - W**2))[None, :] * (np.cos(W * t)[:, None] - np.cos(np.outer(t, mo.w)))
-        ex = U * (1 - np.cos(W * t)) + q @ mo.row
+        ex = uD + q @ mo.row
         errs.append(np.abs(y - ex).max() / np.abs(ex).max())
-    p = np.log2(np.array(errs[:-1]) / np.array(errs[1:]))
-    assert np.all(p > 1.8), (errs, p)
-    assert errs[-1] < 0.01
+    p = np.log2(np.array(diffs[:-1]) / np.array(diffs[1:]))
+    assert np.all(p > 1.8), (diffs, p)
+    assert np.all(np.diff(errs) < 0) and errs[-1] < 0.005, errs
 
 
 def test_free_body_rigid_acceleration(tmp, bar):

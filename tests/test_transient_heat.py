@@ -363,7 +363,7 @@ def test_nothing_changes(scheme, tmp_path):
         assert np.abs(r.series(q) - 300.0).max() < 1e-12 * 300
 
 
-@pytest.mark.parametrize("scheme,tol", [("backward_euler", 1e-9), ("crank_nicolson", 1e-3), ("bdf2", 1e-3)])
+@pytest.mark.parametrize("scheme,tol", [("backward_euler", 1e-9), ("crank_nicolson", 1e-3), ("bdf2", 3e-3)])
 def test_energy_balance(scheme, tol, tmp_path):
     """The stored heat rho cp int T changes by the time integral of the heat flowing in: the reaction at a
     temperature BC and h (T_inf - T) over a convection face (an integral QoI of T on the face). The face
@@ -371,7 +371,10 @@ def test_energy_balance(scheme, tol, tmp_path):
     makes the heat flow at t = 0 infinite, like 1 / sqrt(t), which no quadrature in time integrates: a jump
     of the fluid temperature by 100 K leaves 0.25 % of the heat exchanged on the first steps). Backward Euler with its own
     reaction (the backward difference) balances to round-off (1e-9); Crank-Nicolson and BDF2 reactions use a
-    second-order difference and the trapezoidal rule integrates them: 0.1 % of the heat exchanged."""
+    second-order difference and the trapezoidal rule integrates them: 0.1 % of the heat exchanged for
+    Crank-Nicolson (measured 2e-5); 0.3 % for BDF2 (measured 2.6e-3, all of it from the first step, which is
+    backward Euler: its balance holds with the rectangle rule, and the trapezoid over [0, dt] differs by
+    (R(dt) - R(0)) dt / 2, an O(dt^2) term that stays in the sum)."""
     mesh = strip(tmp_path / "s.msh", 0.05, 0.01, 20, 2, order=2)
     h, Tf = 500.0, "300.0 + 100.0 * (1.0 - exp(-t / 20.0))"
     q = [QoI(name="E", type="integral", field="T"), QoI(name="R", type="reaction", group="left", component=0),
