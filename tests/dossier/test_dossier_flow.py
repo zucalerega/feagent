@@ -137,7 +137,7 @@ def test_mesh_study_check_is_information_when_over_the_limit():
 
     c = mesh_study(0.08)
     assert c.passed is None and c.value == pytest.approx(0.08) and c.limit == 0.05
-    assert "8 %" in c.statement and "5 %" in c.statement and "information only" in c.statement
+    assert "8.0 %" in c.statement and "5 %" in c.statement and "information only" in c.statement
     c = mesh_study(0.02)
     assert c.passed is True and "information only" not in c.statement
     assert mesh_study(None).passed is None
