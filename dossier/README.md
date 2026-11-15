@@ -405,7 +405,10 @@ DFG 2D-2, `docs/solver_transient.md`), but no one other than its author reviewed
 solver capabilities (modal analysis, transient dynamics, compressible internal flow) are reported as verified
 in `docs/solver_transient.md` by their authors' tests.
 
-Test status: @@TESTS@@
+Test status: `pytest -m "not slow" tests meshing-harness/tests` on the final code gave 1938 passed, 71 skipped, 73 deselected
+and 1 failed in 20 minutes. The one failure is `tests/test_code_aster.py::test_vendored_manifest_and_mesh_groups`: the
+`h5py` module is not installed in this environment. It is outside `dossier`. The slow tests (`-m slow`, among them the
+turbulent flow validation) were not part of this run.
 
 ## Files
 
