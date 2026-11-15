@@ -1297,7 +1297,7 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
         add("tap-position", "sensitivity",
             f"The pressure drop changes by {_pct(spread, 2)} when the downstream pressure tap moves to "
             f"{' or '.join(f'{t:g}' for t in TAP_DOWN_ALT)} diameters. The limit is {_pct(TAP_TOL, 0)}."
-            + (f" The change is added to the uncertainty of the result." if spread >= TAP_NEGLIGIBLE else
+            + (" The change is added to the uncertainty of the result." if spread >= TAP_NEGLIGIBLE else
                f" The change is less than {_pct(TAP_NEGLIGIBLE, 1)} and is not added to the uncertainty."),
             spread <= TAP_TOL, spread, TAP_TOL)
     if fine.dp:
