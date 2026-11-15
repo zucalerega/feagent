@@ -205,7 +205,7 @@ def test_laminar_straight_bore_against_hagen_poiseuille(workproject, flow_lc, tm
     rho = flow._fluid(workproject, ctx, comp)["rho"]
     q = mdot / rho
     exact = 128 * mu * q * 0.150 / (math.pi * 0.025**4)
-    assert len(r.per_level) == 2
+    assert len(r.per_level) == 1
     assert r.value == pytest.approx(exact, rel=0.03)
     kinds = {c.kind for c in rec.checks}
     assert all(c.passed is True for c in rec.checks if c.kind == "mass_balance")
@@ -261,7 +261,7 @@ def test_example_valve_quick(workproject, flow_lc, tmp_path):
     rec = an.record
     assert rec.status == "done", rec.message
     r = rec.results[flow.RESULT_KEY]
-    assert r.unit == "Pa" and len(r.per_level) == 2
+    assert r.unit == "Pa" and len(r.per_level) == 1
     assert 5e3 < r.value < 60e3
     assert "first look" in r.note
     kinds = {c.kind for c in rec.checks}

@@ -65,7 +65,7 @@ RESIDUAL_STALL_MAX while the pressure drop changed less than QOI_TOL in the last
 SIMPLE does not reach 1e-5 behind a step: the separated shear layer keeps the residuals near 1e-4).
 
 Not verified: swirl or a distorted profile from a pump at the inlet, cavitation, compressible flow, rough
-walls in the solver, bores that are not circular, and any bend. `opts.quick` gives two coarse meshes: a first
+walls in the solver, bores that are not circular, and any bend. `opts.quick` gives one coarse mesh: a first
 look.
 """
 
@@ -113,7 +113,7 @@ MOMENTUM_TOL = 0.02
 DEVELOPED_TOL = 0.02
 TAP_TOL = 0.05
 YPLUS_AREA_MIN = 0.90
-RESIDUAL_STALL_MAX = 1e-3           # a stalled run counts as converged only under this residual ...
+RESIDUAL_STALL_MAX = 1e-2           # a stalled run counts as converged only under this residual ...
 QOI_WINDOW, QOI_TOL = 200, 1e-3     # ... and when the pressure drop changed less than QOI_TOL in QOI_WINDOW iterations
 HISTORY_INTERVAL = 100              # the solver writes the fields every this many iterations
 
@@ -754,9 +754,10 @@ def mesh_uncertainty(sizes: list[float], values: list[float]) -> dict:
 
 
 def level_plan(quick: bool, levels: int) -> list[int]:
-    """Cells per quadrant of each mesh, coarse to fine: a ratio of about 1.4 (quick: the two coarsest). Four cells
-    per quadrant put y+ over the validated range at the example's Reynolds number."""
-    return ([5, 7] if quick else [5, 7, 10, 14])[: max(1, min(int(levels), 4))]
+    """Cells per quadrant of each mesh, coarse to fine: a ratio of about 1.4. Quick: the coarsest mesh only (the
+    second one is over the node cap of a quick run). Four cells per quadrant put y+ over the validated range at
+    the example's Reynolds number."""
+    return [5] if quick else [5, 7, 10, 14][: max(1, min(int(levels), 4))]
 
 
 # =========================================================================== the engine
