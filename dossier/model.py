@@ -862,7 +862,10 @@ Verdict = Literal["pass", "fail", "inconclusive", "not_assessed"]
 class ComplianceItem(Record):
     """One criterion of one requirement against one result of one load case.
     Margin of safety MS = allowable / (factor x response) - 1 for "<=", and
-    (response / factor) / limit - 1 for ">=": MS >= 0 passes."""
+    (response / factor) / limit - 1 for ">=": MS >= 0 passes. The response enters with its uncertainty on
+    the unsafe side. `margin` is the margin that decides the verdict: with one times the uncertainty for a
+    converged result, and with `policy.unconverged_margin_factor` times it for a result that is over the
+    convergence limit but has an error estimate (dossier/compliance.py)."""
 
     kind: Literal["compliance"] = "compliance"
     requirement: str
