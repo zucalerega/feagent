@@ -434,3 +434,10 @@ svg.dz-diagram [data-ref]:focus-visible{outline:2px solid var(--focus)}
 .att-b .rl-t{font-weight:600;color:var(--fg)}
 .att-b .rl-t::after{content:" -";font-weight:400;color:var(--fg-3)}
 section.sec.is-target{outline:0;animation:none}
+details.card>summary{grid-template-columns:minmax(0,1fr) auto auto}
+.card-badges{grid-column:2;grid-row:1}
+.card>summary .why{grid-column:3;grid-row:1;justify-self:end}
+.rowid a.self{white-space:nowrap;word-break:normal}
+@media (max-width:60rem){details.card>summary{grid-template-columns:1fr}.card>summary .why{grid-column:1;grid-row:auto}}
+.t-matrix td:first-child,.t-matrix th:first-child{min-width:15rem;white-space:normal}
+.t-matrix td:nth-child(2){white-space:nowrap}
