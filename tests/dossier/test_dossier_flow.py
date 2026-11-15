@@ -15,6 +15,7 @@ pipe_turbulent_3d, and the example valve with opts.quick.
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 import shutil
 
 import numpy as np

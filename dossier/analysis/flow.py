@@ -1202,8 +1202,8 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
         add("mesh-study", "error_estimate",
             f"The pressure drop on the meshes is {vals}, coarse to fine. The mesh uncertainty of the finest value "
             f"is {_pct(u_mesh)}. The policy permits {_pct(max_u, 0)}."
-            + ("" if u_mesh <= max_u else " The uncertainty is more than the policy limit. The status and the "
-               "uncertainty of the result show this. This check is information only."),
+            + ("" if u_mesh <= max_u else " The status and the uncertainty of the result show this. "
+               "This check is information only."),
             True if u_mesh <= max_u else None, u_mesh, max_u)     # CONTRACTS.md: convergence is not a failed check
     else:
         add("mesh-study", "error_estimate", "The analysis has one mesh. It gives no estimate of the mesh error.",

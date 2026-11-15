@@ -1175,8 +1175,8 @@ def _checks(lc: LoadCase, ctx, points: list[Point], levels: list[Level], part: Z
                 if r.zone == "smooth":
                     text += " The damage in the smooth zone is for information only. This check does not stop a pass."
                 else:
-                    text += (" The change is more than the policy limit. The status and the uncertainty of the damage "
-                             "show this. This check is information only.")
+                    text += (" The change is more than the policy limit, and the status and the uncertainty of the "
+                             "damage show it. This check is information only.")
             out.append(Check(id=cid(f"convergence-{r.zone}"), kind="error_estimate", statement=text,
                              passed=passed, value=ch, limit=limit))
     return out

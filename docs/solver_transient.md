@@ -434,11 +434,11 @@ case may also use a `pressure_outlet` (supersonic inflow against a back pressure
 fluxes, explicit, conservative. Why not the pressure-based transonic solvers: a time-boxed trial of
 `rhoPimpleFoam` (`transonic yes`, v1912, the same mesh and boundary conditions, cd_nozzle_shock_2d at h0)
 blew up within a few iterations with local time stepping (`localEuler`) started from rest; time accurate at
-Courant 0.5 it ran (5500 steps for 32 flow times, three times fewer than rhoCentralFoam) to a steady field
-whose cell mass fluxes at inlet and outlet differed by 0.8 % and whose shock sat 1.5 % of L downstream of the
-exact position, where rhoCentralFoam's mass balance closes to 1e-7 and its shock is within 0.2 % of L. The
+Courant 0.5 it ran (5500 steps for 32 flow times, four times fewer than rhoCentralFoam) to a steady field
+whose mass flow (from the inlet cells) was 1.5 % above the exact choked value and whose shock sat 0.9 % of L
+downstream of the exact position (the same estimates give rhoCentralFoam 0.0 % and 0.1 %). The
 density-based scheme conserves mass, momentum and energy across the shock by construction and starts from
-rest without tuning. Its cost: the time step follows the acoustic speed, so a flow time L / a* takes ~600
+rest without tuning. Its cost: the time step follows the acoustic speed, so a flow time L / a* takes ~360
 steps per 40 cells along the duct, whatever the Mach number; below Mach ~0.1 the steps grow without bound
 relative to the flow and the central scheme's dissipation swamps the small pressure differences
 (`info.warnings` says so when the largest Mach number of the result is below 0.1; solve such a flow as
@@ -553,8 +553,8 @@ effects.
   Inflow through a `total_inlet` must stay subsonic (warned).
 - Steady flow only: the run is time-accurate, but only the end state is returned; limit cycles of the
   scheme (above) are not averaged: the QoIs are the last snapshot, steady to `qoi_tol`.
-- Serial, explicit: about 1.4 us per cell per step on one core; a flow time at h0 (480 cells) takes
-  ~700 steps, at h0 / 2 ~1500.
+- Serial, explicit: about 1 us per cell per step on one core (plus a second per chunk restart); a flow
+  time at h0 (480 cells) takes ~700 steps, at h0 / 2 ~1500.
 
 Run times (one core of the shared machine under load; table above): about 10 s at 2 h0, 20-40 s at h0,
 80-130 s at h0 / 2 and 500 s at h0 / 4. Steps per flow time: ~350 at 2 h0, doubling with each refinement.

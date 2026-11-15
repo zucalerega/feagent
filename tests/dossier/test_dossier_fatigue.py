@@ -479,7 +479,7 @@ def test_convergence_between_the_two_finest_meshes(bench):
     out = bench.run([("DC-PROOF", 1000, ["LC-PROOF"])])
     c = check(out, "CONVERGENCE-PART")          # CONTRACTS.md: convergence is information, not a failed check
     assert part(out).status == "not_converged" and c.passed is None and "information only" in c.statement
-    assert c.value == pytest.approx(1 - 1 / 1.10) and "10 %" in c.statement and "5 %" in c.statement
+    assert c.value == pytest.approx(1 - 1 / 1.10) and "more than the policy limit" in c.statement
     assert part(out).uncertainty == pytest.approx((120.0 / goodman(100 / 1.1, 100 / 1.1)) ** 5 - 1.0)
 
 

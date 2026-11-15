@@ -155,7 +155,7 @@ def _balance_line(res) -> str:
 @needs_foam
 def test_nozzle_choked_coarse(tmp_path):
     """Fast end-to-end check (40 x 3 cells, a few seconds): the supersonic regime chokes at the exact mass
-    flow within 1 % (the coarse mesh's error is -0.1 %), the outlet extrapolates on every face, and the mass
+    flow within 1 % (the coarse mesh's error is -0.14 %), the outlet extrapolates on every face, and the mass
     balance is reported."""
     p = get("cd_nozzle_supersonic_2d")
     res = _solve(tmp_path, p, 0.5)
@@ -170,8 +170,8 @@ def test_nozzle_choked_coarse(tmp_path):
     assert inflow == pytest.approx(-res.evaluate(QoI("m_out", "mass_flow", group="outlet")), rel=1e-4)
 
 
-# Errors at h0 (80 x 6 cells), measured (docs/solver_transient.md): mass flow -0.04 % (choked) / -0.6 %
-# (subsonic), shock position +0.16 % of L. The tolerances (nozzle.TOL) are the benchmark's.
+# Errors at h0 (80 x 6 cells), measured (docs/solver_transient.md): mass flow -0.055 % (choked) / -0.64 %
+# (subsonic), shock position +0.17 % of L. The tolerances (nozzle.TOL, TOL_SUBSONIC) are the benchmark's.
 @needs_foam
 @pytest.mark.slow
 @pytest.mark.parametrize("regime", list(REGIMES))
