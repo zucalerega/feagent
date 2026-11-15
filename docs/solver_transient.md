@@ -359,7 +359,56 @@ Case(mesh="beam.msh",
 
 ## Turbulent flow (RANS)
 
-(section written by the capability's author)
+Steady RANS in the OpenFOAM backend (`feacore/solver/openfoam_backend.py`, `simpleFoam`):
+`analysis.options["turbulence"] = "kOmegaSST"` (also wired: `"kOmega"`). Laminar cases are unchanged
+(no k, omega or nut files are written).
+
+**Wall treatment.** Every `wall` BC gets wall functions: `nutkWallFunction`, `kqRWallFunction`,
+`omegaWallFunction` (smooth wall). The first cell centre must lie in the log layer. The result gives
+`res.y_plus(group)` (per wall face, from k as the wall function computes it: y+ = Cmu^0.25 sqrt(k) y / nu;
+from the wall shear when there is no k), and a turbulent solve adds an `info: y+ on wall ...` line (5 %,
+median, 95 % of the wall area) and a warning when more than 5 % of a wall is under y+ = 30.
+
+**Inlet turbulence.** k = 1.5 (I U_ref)^2 and omega = sqrt(k) / (Cmu^0.25 L) from `turbulence_intensity`
+(I, default 0.05), `turbulence_length` (L, default 0.07 x the smallest bounding-box extent) and the new
+option `turbulence_velocity` (U_ref; default the largest constant inlet speed, and 1 m/s when every inlet
+is an expression, as before). The validation uses I = 0.16 Re^-1/8 and L = 0.07 D.
+
+**Validated** (OpenFOAM v1912, structured hexahedra, `skew_correction` off, order 2, residual_tol 1e-5).
+Developed flow in a smooth pipe of 60 D with a power-law inlet profile; friction factor from the pressure
+gradient between 42 and 57 D against the Colebrook formula for a smooth wall (Prandtl's law). Meshes: the
+O-grid of `dossier.analysis.flow.build_mesh`, m cells per quarter of the wall
+(`tests/dossier/test_dossier_flow.py`, slow):
+
+| Re | m = 4 | m = 5 | m = 7 | m = 10 | y+ of the wall cells |
+|---|---|---|---|---|---|
+| 1.0e5 | -3.0 % | -4.1 % | -4.6 % | | 169, 114, 85 |
+| 1.384e6 | | -2.6 % | -2.9 % | -3.2 % | 1240, 940, 630 |
+
+The benchmark problem `pipe_turbulent_3d` (`feacore/problems/cfd/pipe_turbulent.py`, Re 1e5, the O-grid of
+`pipe_poiseuille_3d`, reference Darcy-Weisbach with Colebrook, tolerance 10 %) gives dp_AB +1.1 %, -1.5 %,
+-3.6 % on its three study levels (median y+ 139, 126, 74). Sudden expansion d1/d2 = 0.7 at Re1 = 1.384e6
+(42 D upstream, 45 D2 downstream, loss from the extrapolated mass-flow-mean total pressure lines): loss
+coefficient +7.0 % (m 5) and +6.8 % (m 7) above Borda-Carnot (1 - beta^2)^2 = 0.260; the residuals stall at
+about 3e-3 there (separated shear layer), while the loss changes by 0.2 % between the meshes.
+
+Summary: the friction factor is 3 to 5 % low, a separation loss about 7 % high; within 10 % on the
+friction factor, so usable with a stated model uncertainty of 10 % (the dossier flow engine adds it to the
+mesh uncertainty).
+
+**Limits (not validated, do not rely on them):**
+- Only y+ 60 to 1600 on the wall cells. Finer wall meshes give a lower friction factor with this wall
+  treatment (the error grows from -3 % to -4.6 % as y+ drops from 169 to 85 at Re 1e5); y+ under 30 is
+  outside the wall functions' range, and a wall-resolved (low-Re) setup is not validated at all.
+- Only structured hexahedra. On tetrahedra the same case gave -15 % (plain schemes) and -26 % (skew-corrected
+  schemes) and did not converge; triangular prisms with the skew-corrected schemes gave +13 to +17 %.
+- Mesh refinement does not converge the friction factor in the usual sense: with wall functions the result
+  depends on y+, so a GCI over wall-function meshes estimates the discretisation error only while y+ stays in
+  the range above.
+- Smooth walls only (no roughness in the wall functions), Re 1e5 to 1.4e6, internal flow without swirl,
+  curvature, heat transfer or other models (`kEpsilon` etc. raise "not wired up yet").
+- Separated flow: steady SIMPLE does not reach residual_tol 1e-5 behind a step; judge such runs by the
+  stability of the QoI, and treat the residual check as failed.
 
 ## Compressible internal flow
 

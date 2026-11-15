@@ -42,13 +42,14 @@ Validation of the turbulent path (tests/dossier/test_dossier_flow.py, marked slo
     42 and 57 diameters, against the Colebrook formula for a smooth wall (Prandtl's law):
 
         Re          mesh (cells per quadrant)   y+ of the wall cells   error of the friction factor
-        1.0e5       4, 5, 7                     150, 120, 85           -3.9 %, -4.1 %, -4.5 %
-        1.384e6     4, 5, 7                     1590, 1270, 910        -2.6 %, -2.7 %, -2.9 %
-        (earlier runs on the repository's own pipe mesh: y+ 66 to 1525, -2.8 % to -4.7 %)
+        1.0e5       4, 5, 7                     169, 114, 85           -3.0 %, -4.1 %, -4.6 %
+        1.384e6     5, 7, 10                    1240, 940, 630         -2.6 %, -2.9 %, -3.2 %
+        (runs on the O-grid of the benchmark pipe_turbulent_3d: y+ 66 to 1525, -2.8 % to -4.7 %)
 
-    Sudden expansion (diameter ratio 0.7, Re 1.384e6): loss coefficient against the Borda-Carnot relation,
-    see VALIDATION below. The model gives a friction factor that is 3 to 5 % low. The stated model uncertainty
-    is MODEL_UNCERTAINTY (10 %), on the unsafe side of an upper limit.
+    Sudden expansion (diameter ratio 0.7, Re 1.384e6, meshes 5 and 7): the loss coefficient is +7.0 % and
+    +6.8 % above the Borda-Carnot relation (1 - beta^2)^2; the residuals stall near 3e-3 behind the step.
+    Thus the model gives a friction that is 3 to 5 % low and a separation loss that is about 7 % high. The
+    stated model uncertainty is MODEL_UNCERTAINTY (10 %). docs/solver_transient.md, "Turbulent flow (RANS)".
 
     What did not validate (not used): tetrahedra with the skew-consistent schemes -26 %, tetrahedra with the
     plain schemes -15 % (the residuals did not decrease, the pressure field oscillated), triangular prisms
@@ -89,10 +90,11 @@ RESULT_KEY = "pressure_drop.total@part"
 # ---- the validated range of the turbulent path (see the module docstring and the slow tests)
 VALIDATED_RE = (1.0e5, 1.4e6)       # Reynolds numbers of the pipe validation
 VALIDATED_YPLUS = (60.0, 1600.0)    # y+ of the wall cells that the validation covers
-MODEL_UNCERTAINTY = 0.10            # stated uncertainty of the turbulence model (measured: -2.6 to -4.7 %)
+MODEL_UNCERTAINTY = 0.10            # stated uncertainty of the turbulence model (measured: -4.6 % to +7 %)
 RE_LAMINAR = 2000.0                 # under this Reynolds number the flow is laminar
 VALIDATION = {
     "pipe": {"reference": "Colebrook formula for a smooth wall", "error": (-0.047, -0.026)},
+    "expansion": {"reference": "Borda-Carnot relation, diameter ratio 0.7", "error": (0.068, 0.070)},
 }
 
 # ---- the domain, in diameters of the inlet
@@ -848,7 +850,9 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
                  rationale=f"The Reynolds number is {re:.3g}, thus the flow is turbulent. This module validates the "
                            f"model on developed pipe flow at Reynolds numbers from {VALIDATED_RE[0]:g} to "
                            f"{VALIDATED_RE[1]:g}. The friction factor is {_pct(-VALIDATION['pipe']['error'][1])} to "
-                           f"{_pct(-VALIDATION['pipe']['error'][0])} lower than the Colebrook formula for a smooth wall. "
+                           f"{_pct(-VALIDATION['pipe']['error'][0])} lower than the Colebrook formula for a smooth wall. The loss "
+                           f"coefficient of a sudden expansion is {_pct(VALIDATION['expansion']['error'][1])} higher "
+                           f"than the Borda-Carnot value. "
                            f"The stated model uncertainty is {_pct(MODEL_UNCERTAINTY, 0)}.",
                  alternatives=[("Resolve the wall layer without wall functions.",
                                 "The wall cells must then be 1000 times thinner. This path is not validated here."),
@@ -1016,7 +1020,9 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
     j.decide(sub, "uncertainty", "Uncertainty of the pressure drop",
              choice="The uncertainty of the result is the sum of the mesh part, the model part and the roughness part.",
              rationale=" ".join(parts[:-1] if opts.quick else parts)
-                       + " The sum is on the unsafe side of an upper limit, because the model gives a friction that is too low.",
+                       + (" In the validation, the model gave a friction loss that is 3 % to 5 % too low and a loss at a "
+                          "sudden expansion that is 7 % too high. The model part covers the two errors."
+                          if regime == "turbulent" else ""),
              alternatives=[("Give the mesh part only.",
                             "The error of the turbulence model is larger than the mesh error, thus the margin must include it.")],
              basis="calculation", stage="solve")
