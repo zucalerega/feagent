@@ -25,14 +25,15 @@ Options (``analysis.options`` or keywords): ``turbulence`` ("laminar"), ``max_it
 ``case_dir`` (run there instead of a temp dir and keep it), ``keep_case`` (keep the temp dir),
 ``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size), ``turbulence_velocity``
 (reference speed of the inlet k: default the largest constant inlet speed, 1 m/s when every inlet is an
-expression), ``skew_correction`` ("auto": on in 3D, off in 2D; or true / false), ``history_interval``
+expression), ``skew_correction`` ("auto": on in laminar 3D, off in 2D and in turbulent runs; or true / false), ``history_interval``
 (none: also write the fields every N iterations; ``OpenFOAMResult.history_times()`` / ``at_time()`` read
 them, e.g. to judge iterative convergence by a QoI when the residuals stall). See docs/solver_openfoam.md.
 
 Turbulent runs (RANS) use wall functions on every wall (``nutkWallFunction``, ``kqRWallFunction``,
 ``omegaWallFunction``): the first cell must be in the log layer. ``OpenFOAMResult.y_plus(group)`` gives y+ of
 the wall faces and a turbulent solve reports its range (an ``info`` line; a warning when part of the wall is
-under y+ = 30). Validation and limits: docs/solver_transient.md, "Turbulent flow (RANS)".
+under y+ = 30, and one when more than 5 % of a wall's area is outside the validated 60-1600), and warns when
+the mesh has cells other than hexahedra. Validation and limits: docs/solver_transient.md, "Turbulent flow (RANS)".
 """
 
 from __future__ import annotations
@@ -238,7 +239,7 @@ def solve(case: Case, **options) -> "OpenFOAMResult":
         raise CaseError(f"analysis.options.turbulence must be 'laminar' or one of {RAS_MODELS}")
     if turbulence not in ("laminar", "kOmegaSST", "kOmega"):
         raise CaseError(f"turbulence model {turbulence!r} is not wired up yet (use laminar or kOmegaSST)")
-    opts["skew_correction"] = _skew_correction(opts["skew_correction"], case.dim)
+    opts["skew_correction"] = _skew_correction(opts["skew_correction"], case.dim, turbulence != "laminar")
     tol = float(opts["residual_tol"])
     max_it = int(opts["max_iterations"])
     mesh_path = case.mesh_path()
@@ -300,6 +301,8 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
 
     turbulent = turbulence != "laminar"
     turb = _turbulence_inlet(case, fm, opts, nu) if turbulent else None
+    if turbulent:
+        _cell_type_warning(fm, warnings)
     closed = not any(b.type == "pressure_outlet" for b in case.bcs)
     ref = {"pRefCell": 0, "pRefValue": 0.0} if closed else None
     skew = opts["skew_correction"]
@@ -382,12 +385,14 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
     return res
 
 
-def _skew_correction(value, dim: int) -> bool:
-    """Option ``skew_correction``: "auto" (on in 3D), or a bool. 3D tet meshes need it: with the plain
+def _skew_correction(value, dim: int, turbulent: bool = False) -> bool:
+    """Option ``skew_correction``: "auto" (on in laminar 3D), or a bool. 3D tet meshes need it: with the plain
     schemes their solution converges to a wrong one (pressure gradient 12-15 % high in a pipe or a
-    channel). 2D triangle meshes are accurate without it, so 2D keeps the validated plain schemes."""
+    channel). 2D triangle meshes are accurate without it, so 2D keeps the validated plain schemes. A
+    turbulent (RANS) run keeps the plain schemes: the RANS validation used them, on hexahedra (and on
+    tetrahedra and prisms the skew-corrected schemes did worse: -26 % and +13 to +17 %)."""
     if value == "auto" or value is None:
-        return dim == 3
+        return dim == 3 and not turbulent
     if isinstance(value, bool):
         return value
     raise CaseError(f"analysis.options.skew_correction must be 'auto', true or false (got {value!r})")
@@ -406,10 +411,25 @@ def _is_time(name: str) -> bool:
 
 
 Y_PLUS_LOG = 30.0      # wall functions: the first cell centre should be above this y+ (log layer)
+Y_PLUS_VALIDATED = (60.0, 1600.0)   # y+ range of the RANS validation (docs/solver_transient.md)
+Y_PLUS_SHARE = 0.05    # a warning when more than this share of a wall's area is outside the validated range
+RANS_CELLS = {2: {"quad"}, 3: {"hexahedron"}}     # cell types of the RANS validation (2D: extruded to hexahedra)
+
+
+def _cell_type_warning(fm: FoamMesh, warnings: list) -> None:
+    """A turbulent run on cells other than hexahedra is outside the validated range."""
+    types = set(fm.cell_type.split("+")) - {""}
+    other = sorted(types - RANS_CELLS.get(fm.dim, set()))
+    if other:
+        warnings.append(f"turbulent run on {', '.join(other)} cells: the RANS model is validated on hexahedra only "
+                        f"(developed pipe flow: tetrahedra gave a friction factor 15 to 26 % low, triangular prisms "
+                        f"13 to 17 % high; docs/solver_transient.md, 'Turbulent flow (RANS)'). Use a hexahedral "
+                        f"mesh or state a model uncertainty of that size.")
 
 
 def _report_y_plus(res: "OpenFOAMResult", case: Case, warnings: list) -> None:
-    """info line with the y+ range of each wall group; a warning when part of a wall is under Y_PLUS_LOG."""
+    """info line with the y+ range of each wall group; a warning when part of a wall is under Y_PLUS_LOG, and
+    one when more than Y_PLUS_SHARE of a wall's area is outside the validated range Y_PLUS_VALIDATED."""
     for b in case.bcs:
         if b.type != "wall" or b.group not in res.patch:
             continue
@@ -430,6 +450,14 @@ def _report_y_plus(res: "OpenFOAMResult", case: Case, warnings: list) -> None:
             warnings.append(f"y+ is under {Y_PLUS_LOG:g} on {low:.0%} of wall {b.group!r}: the wall functions need "
                             f"the first cell in the log layer there (validated range y+ 60-1600, "
                             f"docs/solver_transient.md)")
+        lo, hi = Y_PLUS_VALIDATED
+        below = float(a[(yp >= Y_PLUS_LOG) & (yp < lo)].sum() / a.sum())
+        above = float(a[yp > hi].sum() / a.sum())
+        if below + above > Y_PLUS_SHARE:
+            warnings.append(f"y+ is outside the validated range {lo:g}-{hi:g} on {below + above:.0%} of wall "
+                            f"{b.group!r} ({below:.0%} between {Y_PLUS_LOG:g} and {lo:g}, {above:.0%} above {hi:g}): "
+                            f"the wall-function results are not validated there (the friction factor drifts with "
+                            f"y+; docs/solver_transient.md, 'Turbulent flow (RANS)')")
 
 
 def _turbulence_inlet(case: Case, fm: FoamMesh, opts: dict, nu: float) -> dict:

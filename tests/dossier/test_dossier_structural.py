@@ -294,6 +294,7 @@ def test_free_cylinder_against_lame(cylinder):
     r = rec.results
     for sid in ("SCL-WALL", "SCL-SKEW"):
         m = r[f"max_principal.membrane@{sid}"]
+        print("DBG", sid, m.per_level, m.status, m.uncertainty, m.note)
         assert m.value == pytest.approx(hoop_mean, rel=0.01) and m.status == "converged" and len(m.per_level) == 3
         assert r[f"sxx.membrane@{sid}"].value == pytest.approx(A, rel=0.02)
     assert r["szz.membrane@SCL-WALL"].value == pytest.approx(hoop_mean, rel=0.01)
