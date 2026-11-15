@@ -329,19 +329,16 @@ def test_hand_calculation_that_does_not_agree_makes_the_verdict_inconclusive(wor
         "The cause is that a check of the analysis failed.")
 
 
-def test_error_estimate_of_the_analysis_does_not_block_a_converged_result(workproject):
-    # the error estimate sums up all results of the analysis; this item uses the status of its own result
+def test_failed_error_estimate_check_blocks_a_pass_like_any_failed_check(workproject):
+    # the brief: any check with passed False makes the verdict inconclusive and is named
     est = Check(id="CHK-TH-FIRE-ERROR-ESTIMATE", kind="error_estimate", passed=False, value=0.31, limit=0.05,
                 statement="The largest relative uncertainty of a result is 31 % (heat_flow.total@INT-ENV).")
     item = one(workproject, TEMP, temperature(251.3, uncertainty_abs=4.0), "LC-TH-FIRE", analysis_type="thermal_steady",
                checks=[check("CHK-TH-FIRE-HEAT-BALANCE", True, "heat_balance"), est])
-    assert item.verdict == "pass" and item.margin == pytest.approx(0.06137, abs=1e-5)
-    assert item.reasons[-3:] == [
-        "Check CHK-TH-FIRE-ERROR-ESTIMATE of analysis AN-TH-FIRE failed. It is an error estimate of the analysis as a whole.",
-        'The check says: "The largest relative uncertainty of a result is 31 % (heat_flow.total@INT-ENV)."',
-        "The status of each result gives its convergence, so an error estimate does not change the verdict."]
-    assert not any(r.startswith("No check of") for r in item.reasons)
-    assert "error_estimate" in compliance.NOT_BLOCKING
+    assert item.verdict == "inconclusive"
+    assert item.margin == pytest.approx(0.06137, abs=1e-5)       # the margin itself is unchanged
+    assert "Check CHK-TH-FIRE-ERROR-ESTIMATE of analysis AN-TH-FIRE failed." in item.reasons
+    assert "a check of the analysis failed" in item.statement
 
 
 def test_failed_check_in_an_analysis_the_result_rests_on(workproject):

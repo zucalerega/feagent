@@ -327,6 +327,8 @@ def _has_verb(toks: list[T.Token], voc: Vocabulary) -> bool:
         if t.kind != T.WORD:
             continue
         w = _key(t)
+        if re.match(r"^(?:do|does|did|is|are|was|were|has|have|had|can|won|must|should|would|could)n['’]t$", w):
+            return True
         if w in W.BE or w in W.HAVE or w in W.DO or w in _MODALS or w in voc.verbs:
             return True
         if w in _VERB_FORMS:

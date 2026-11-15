@@ -86,9 +86,6 @@ from dossier.records import Journal
 
 BY = "engine:compliance"
 ESTIMATE_REASON = "The value is an estimate from a hand calculation. No analysis confirms it."
-# A failed check of one of these kinds is a note, not a blocker: it sums up the convergence of all results
-# of the analysis, and the verdict of an item already uses the status and the uncertainty of its own result.
-NOT_BLOCKING = ("error_estimate",)
 _STRESS = ("von_mises", "max_principal", "sxx", "syy", "szz", "sxy", "syz", "sxz")
 _HOW_SINGULAR = "An engineer can use section stresses, model the real edge radius, or do an elastic-plastic analysis."
 _HOW_SINGULAR_OTHER = "An engineer can model the real edge radius, or use a result that does not include the edge."
@@ -521,7 +518,7 @@ def _doubts(lc: LoadCase, an: AnalysisRecord, inp: _Inputs) -> tuple[list[tuple[
                          ["The input files changed after the plan stage wrote the load cases.",
                           "Do the plan stage and the analyses again."]))
     checked: list[str] = []
-    failed = estimates = n_checks = 0
+    failed = n_checks = 0
     for case_id, rec in [(lc.id, an)] + [(i, inp.analyses.get(i)) for i in _upstream(lc, inp.cases)]:
         if rec is None or rec.status != "done":
             blockers.append((f"load case {case_id} has no complete analysis",
@@ -535,19 +532,13 @@ def _doubts(lc: LoadCase, an: AnalysisRecord, inp: _Inputs) -> tuple[list[tuple[
                              [f"The input files changed after analysis {rec.id}.", "Do the analysis again."]))
         for c in rec.checks:
             says = [f'The check says: "{c.statement}"'] if c.statement else []
-            if c.passed is False and c.kind in NOT_BLOCKING:
-                estimates += 1
-                notes += [f"Check {c.id} of analysis {rec.id} failed. It is an error estimate of the analysis as a whole.",
-                          *says]
-            elif c.passed is False:
+            if c.passed is False:
                 failed += 1
                 blockers.append(("a check of the analysis failed", [f"Check {c.id} of analysis {rec.id} failed.", *says]))
                 links += inp.links(Link(rel="evidence", to=c.link or "", note=f"check {c.id} failed"))
             elif c.passed is None:
                 notes.append(f"Check {c.id} of analysis {rec.id} has no result.")
-    if estimates:
-        notes.append("The status of each result gives its convergence, so an error estimate does not change the verdict.")
-    if n_checks and not failed and not estimates:
+    if n_checks and not failed:
         notes.insert(0, f"No check of {'analysis' if len(checked) == 1 else 'the analyses'} {_join(checked)} failed.")
     if not an.checks:
         notes.append(f"The record of analysis {an.id} has no check.")
