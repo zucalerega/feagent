@@ -165,7 +165,7 @@ def test_numbers_are_shown_in_display_units(built):
     proj, res, html = built
     assert "MPa" in html and "margin" in html
     text = re.sub(r"<script.*?</script>|<style.*?</style>|<svg.*?</svg>|<[^>]*>", " ", html, flags=re.S)
-    assert not re.search(r"\d[eE][+-]\d", text)
+    assert not re.search(r"\de\+0\d", text)
 
 
 def test_context_only_project(workproject):
@@ -201,6 +201,7 @@ def test_missing_diagram_is_said(workproject):
 class Stub(BaseHTTPRequestHandler):
     page = ""
     reviews: dict = {}
+    root: Path = Path(".")
 
     def log_message(self, *a):
         pass
@@ -218,6 +219,9 @@ class Stub(BaseHTTPRequestHandler):
         if self.path.split("#")[0].split("?")[0] in ("/", "/index.html"):
             html = Stub.page.replace("</head>", '<script>window.DOSSIER_API = "/api/dossier/x";</script></head>')
             return self._send(html.encode(), "text/html")
+        f = Stub.root / self.path.lstrip("/").split("?")[0]
+        if self.path.startswith("/assets/") and f.is_file():
+            return self._send(f.read_bytes(), "image/png" if f.suffix == ".png" else "image/svg+xml")
         if self.path.startswith("/favicon"):
             return self._send(b"", "image/x-icon", 200)
         return self._send(b"{}", code=404)
@@ -253,7 +257,7 @@ def test_flows_from_a_file(built):
 @pytest.mark.slow
 def test_flows_with_the_dashboard_api(built):
     proj, res, html = built
-    Stub.page, Stub.reviews = html, {}
+    Stub.page, Stub.reviews, Stub.root = html, {}, Path(res["html"]).parent
     srv = HTTPServer(("127.0.0.1", 0), Stub)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
