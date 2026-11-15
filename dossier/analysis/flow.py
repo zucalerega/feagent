@@ -24,7 +24,7 @@ What the engine can do, and why it stops there
     range, or above it.
 
 The model
-    domain      the bore, with a straight pipe added upstream (42 diameters for turbulent flow, 8 for laminar
+    domain      the bore, with a straight pipe added upstream (42 diameters for turbulent flow, 14 for laminar
                 flow) and downstream (12 diameters)
     inlet       a velocity profile (power law for turbulent flow, parabola for laminar flow) scaled to the
                 mass flow, far upstream. The inlet length makes the flow developed at the part.
@@ -96,7 +96,7 @@ VALIDATION = {
 }
 
 # ---- the domain, in diameters of the inlet
-INLET_LENGTH = {"turbulent": 42.0, "laminar": 8.0}
+INLET_LENGTH = {"turbulent": 42.0, "laminar": 14.0}  # laminar: the window (8 D) starts 6 D after the inlet
 OUTLET_LENGTH = 12.0
 TAP_UP, TAP_DOWN = 2.0, 6.0         # pressure taps: upstream of the inlet face, downstream of the outlet face
 TAP_DOWN_ALT = (4.0, 8.0)           # other downstream taps, for the check of the tap position

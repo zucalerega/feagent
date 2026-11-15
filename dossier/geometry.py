@@ -229,24 +229,6 @@ class SiCad:
     converted: bool             # `path` is a converted copy of `source`
 
 
-_CONVERT = r"""
-import sys, gmsh
-src, dst, k = sys.argv[1], sys.argv[2], float(sys.argv[3])
-gmsh.initialize(readConfigFiles=False, interruptible=False)
-gmsh.option.setNumber("General.Terminal", 0)
-gmsh.option.setString("Geometry.OCCTargetUnit", "MM")
-gmsh.model.occ.importShapes(src, highestDimOnly=True)
-gmsh.model.occ.synchronize()
-solids = gmsh.model.getEntities(3)
-if not solids:
-    raise SystemExit("the file has no solid")
-gmsh.model.occ.dilate(solids, 0, 0, 0, k, k, k)
-gmsh.model.occ.synchronize()
-gmsh.write(dst)
-gmsh.finalize()
-"""
-
-
 def _kernel_table(path: Path) -> dict:
     """{(dim, tag): (measure, centre, type)} of the faces and solids of a CAD file, read with the kernel
     default (target unit millimetre, set explicitly so that a stale process-wide setting cannot scale it)."""
@@ -265,16 +247,41 @@ def _kernel_table(path: Path) -> dict:
     return out
 
 
-def _convert(source: Path, dst: Path, kernel_unit: str, k: float) -> None:
-    """Write `dst`: `source` with its coordinates in metres (scaled by `k` in the kernel), and check it
-    against the source face by face. `k` = metres per unit of the source as the kernel reads it by default."""
+def _length_unit_id(text: str) -> str:
+    """The id of the one length-unit entity of a STEP file (step_length_unit has checked that there is one)."""
+    ids: set[str] = set()
+    for m in re.finditer(r"GLOBAL_UNIT_ASSIGNED_CONTEXT\s*\(\s*\(([^()]*)\)", text):
+        ids |= set(re.findall(r"#(\d+)", m.group(1)))
+    found = [i for i in sorted(ids, key=int) if "LENGTH_UNIT" in (_entity(text, i) or "")]
+    if len(found) != 1:
+        raise GeometryError("the header of the STEP file does not have exactly one length unit entity")
+    return found[0]
+
+
+def _convert(source: Path, dst: Path, k: float) -> None:
+    """Write `dst`: `source` with the header length unit replaced, so that the kernel (default target
+    millimetre) gives coordinates that are `k` times those it gives for `source`, that is metres. Only the
+    header changes (the numbers and the surfaces are not touched, so the copy is exact). The copy is then
+    checked against the source face by face (kind, area x k^2, centre x k, volume x k^3)."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.stem + ".tmp" + dst.suffix)
-    run = subprocess.run([sys.executable, "-c", _CONVERT, str(source), str(tmp), repr(float(k))],
-                         capture_output=True, text=True, timeout=1800)
-    if run.returncode != 0 or not tmp.is_file():
-        tmp.unlink(missing_ok=True)
-        raise GeometryError(f"{source.name}: the conversion to metres failed: {(run.stderr or run.stdout).strip()[-400:]}")
+    text = Path(source).read_text(errors="replace")
+    h, _ = step_length_unit(source)
+    uid = _length_unit_id(text)
+    ent = re.search(rf"#{uid}\s*=\s*(.*?);", text, re.S)
+    top = max(int(i) for i in re.findall(r"^#(\d+)\s*=", text, re.M))
+    a_, b_, c_ = top + 1, top + 2, top + 3
+    # the new header unit is h x k metres per number: the kernel then gives k times what it gives for `source`
+    factor = repr(float(h * k))
+    extra = (f"#{a_} = LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE({factor}), #{b_});\n"
+             f"#{b_} = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) );\n"
+             f"#{c_} = DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.);\n")
+    # a conversion-based unit, as the STEP files of CAD systems declare an inch
+    unit = f"( CONVERSION_BASED_UNIT('SCALED', #{a_}) LENGTH_UNIT() NAMED_UNIT(#{c_}) )"
+    new = text[:ent.start(1)] + unit + text[ent.end(1):]
+    end = new.rfind("ENDSEC;")                 # the end of the data section
+    new = new[:end] + extra + new[end:]
+    tmp.write_text(new)
     a, b = _kernel_table(source), _kernel_table(tmp)
     problems = []
     if sorted(a) != sorted(b):
@@ -328,7 +335,7 @@ def si_cad(project, component_id: str | None = None) -> SiCad:
         except ValueError:
             current = None
     if not current or any(current.get(key) != v for key, v in want.items()) or current.get("sha256") != sha256_of(dst):
-        _convert(src, dst, kernel, k)
+        _convert(src, dst, k)
         meta.write_text(json.dumps({**want, "sha256": sha256_of(dst)}, indent=1) + "\n")
     return SiCad(src, dst, sha, unit, scale, h_name, kernel, True)
 

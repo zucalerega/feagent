@@ -74,6 +74,7 @@ DEFAULTS = {"max_co": 0.2, "steady_tol": 1e-6, "qoi_tol": 1e-4, "max_flow_times"
 # the end of a chunk, so the chunks are shorter (docs/solver_transient.md, "Compressible internal flow").
 INTERNAL_DEFAULTS = {"chunk": 5}
 QOI_WINDOW = 3        # chunks over which every QoI must hold still (qoi_tol)
+STARTUP = (5.0, 0.25)     # pressure outlets: (flow times of the start-up, flow times between outlet switch updates)
 LIMITERS = ("vanAlbada", "vanLeer", "Minmod")     # scalar names; U uses the V version (vanLeerV, ...)
 PATCH_TYPE = {"freestream": "patch", "outlet": "patch", "wall": "wall", "slip": "patch", "symmetry": "symmetry",
               **fint.PATCH_TYPE}
@@ -459,6 +460,31 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
     steps, end, change, reason, history, qhist = 0, 0.0, {}, None, [], []
     converged, steady, spread, where = False, "", float("nan"), ""
     balance, switched = {}, 0
+    if switch is not None and not opts.get("init_from"):
+        # Start-up: the flow sets off from rest (or from the freestream) and its starting waves cross the
+        # outlets within a flow time or two; the outlet switch follows them every STARTUP[1] flow times for the
+        # first STARTUP[0], since a back pressure held on a face the gas already leaves supersonically drives
+        # the boundary state out of range (sqrt of a negative temperature in rhoCentralFoam).
+        sub = STARTUP[1] * t_ref
+        while end < STARTUP[0] * t_ref * (1 - 1e-9):
+            end = min(end + sub, max_ft * t_ref)
+            _write_control(cdir, end, dt0, sub, float(opts["max_co"]))
+            code, n, tail, reason = _run_solver(fe, cdir, None if timeout is None
+                                                else timeout - (time.perf_counter() - t0))
+            steps += n
+            if code != 0 or reason == "diverged":
+                raise SolverError(f"rhoCentralFoam failed during the start-up (exit {code}, {steps} time steps); "
+                                  "last lines:\n" + "".join(tail[-25:]))
+            if reason == "timeout":
+                break
+            times = _times(cdir)
+            for old in times[:-1]:
+                shutil.rmtree(old)
+            f = _read(times[-1], mesh.n_cells)
+            if switch.update(f["p"][0], f["T"][0], f["U"][0]):
+                switch.write(times[-1])
+        for q in switch.patches:
+            q.history.clear()
     while True:
         end = min(end + chunk * t_ref, max_ft * t_ref)
         _write_control(cdir, end, dt0, t_ref, float(opts["max_co"]))
