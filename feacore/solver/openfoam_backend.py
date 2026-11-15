@@ -25,7 +25,9 @@ Options (``analysis.options`` or keywords): ``turbulence`` ("laminar"), ``max_it
 ``case_dir`` (run there instead of a temp dir and keep it), ``keep_case`` (keep the temp dir),
 ``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size), ``turbulence_velocity``
 (reference speed of the inlet k: default the largest constant inlet speed, 1 m/s when every inlet is an
-expression), ``skew_correction`` ("auto": on in 3D, off in 2D; or true / false). See docs/solver_openfoam.md.
+expression), ``skew_correction`` ("auto": on in 3D, off in 2D; or true / false), ``history_interval``
+(none: also write the fields every N iterations; ``OpenFOAMResult.history_times()`` / ``at_time()`` read
+them, e.g. to judge iterative convergence by a QoI when the residuals stall). See docs/solver_openfoam.md.
 
 Turbulent runs (RANS) use wall functions on every wall (``nutkWallFunction``, ``kqRWallFunction``,
 ``omegaWallFunction``): the first cell must be in the log layer. ``OpenFOAMResult.y_plus(group)`` gives y+ of
@@ -54,7 +56,7 @@ from feacore.solver.base import Result, SolveInfo
 
 KNOWN_OPTIONS = ("turbulence", "max_iterations", "residual_tol", "relaxation_U", "relaxation_p",
                  "n_non_orth_correctors", "timeout", "case_dir", "keep_case", "turbulence_intensity",
-                 "turbulence_length", "skew_correction", "turbulence_velocity")
+                 "turbulence_length", "skew_correction", "turbulence_velocity", "history_interval")
 DEFAULTS = {"turbulence": "laminar", "max_iterations": 5000, "residual_tol": 1e-8, "relaxation_U": 0.9,
             "relaxation_p": None, "n_non_orth_correctors": 0, "timeout": None, "turbulence_intensity": 0.05,
             "skew_correction": "auto"}
@@ -279,7 +281,8 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
         if r.group != "*" and r.group not in fm.cell_groups:
             warnings.append(f"region group {r.group!r} is not a cell group of the mesh "
                             f"(cell groups: {sorted(fm.cell_groups)}); the fluid fills the whole mesh")
-    fio.write_control(cdir, max_it)
+    hist = opts.get("history_interval")
+    fio.write_control(cdir, max_it, interval=int(hist) if hist else None)
     run(fe, ["gmshToFoam", "mesh.msh"], cdir, timeout=timeout)
     bcs = _patch_bcs(case, fm, warnings)
     types = {p: (PATCH_TYPE[bc.type] if bc is not None else "wall") for p, bc in bcs.items()}
@@ -469,6 +472,7 @@ class OpenFOAMResult(Result):
 
     # ---- load results
     def _load(self, poly: dict, tdir: Path) -> None:
+        self._poly, self.time = poly, float(tdir.name)
         nb = fio.read_list(self.cdir / "constant" / "polyMesh" / "neighbour").astype(np.int64)
         mesh = FvMesh(poly["points"], poly["faces"], poly["owner"], nb, poly["patches"])
         self.mesh = mesh
@@ -524,6 +528,21 @@ class OpenFOAMResult(Result):
         self.gradU = mesh.grad(U, Ub)                         # [c, i, j] = d U_j / d x_i
         self.gradp = mesh.grad(p, pb) * self.rho
         self.p = (p - self.pshift) * self.rho
+
+    def history_times(self) -> list[float]:
+        """Iterations with written fields (all of them with option history_interval), ascending."""
+        return sorted(float(d.name) for d in Path(self.cdir).iterdir()
+                      if d.is_dir() and _is_time(d.name) and float(d.name) > 0)
+
+    def at_time(self, time: float) -> "OpenFOAMResult":
+        """The solution at an earlier written iteration, as a result object (same case, mesh and info)."""
+        dirs = [d for d in Path(self.cdir).iterdir() if d.is_dir() and _is_time(d.name) and float(d.name) == float(time)]
+        if not dirs:
+            raise CaseError(f"no fields written at iteration {time:g} (use the option history_interval)")
+        r = OpenFOAMResult(self.case, self.fm, self.cdir, self.rho, self.nu, self.closed, list(self._warnings))
+        r._load(self._poly, dirs[0])
+        r.info = self.info
+        return r
 
     def y_plus(self, group: str) -> dict:
         """y+ of the cells next to the wall faces of `group`: {"y_plus", "area", "Cf", "basis"} (arrays per

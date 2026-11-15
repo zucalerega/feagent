@@ -111,6 +111,9 @@ MOMENTUM_TOL = 0.02
 DEVELOPED_TOL = 0.02
 TAP_TOL = 0.05
 YPLUS_AREA_MIN = 0.90
+RESIDUAL_STALL_MAX = 1e-3           # a stalled run counts as converged only under this residual ...
+QOI_WINDOW, QOI_TOL = 200, 1e-3     # ... and when the pressure drop changed less than QOI_TOL in QOI_WINDOW iterations
+HISTORY_INTERVAL = 100              # the solver writes the fields every this many iterations
 
 
 class FlowDomainError(ValueError):
@@ -546,6 +549,7 @@ class Level:
     iterations: int
     converged: bool
     residuals: dict
+    qoi_change: dict | None         # change of the pressure drop over the last QOI_WINDOW iterations (not converged)
     warnings: list[str]
     solve_s: float
     quality: dict
@@ -594,7 +598,8 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
     s = " + ".join(f"{t}*{ef[i]!r}" for i, t in enumerate(dx))
     radial = radial.replace("D2", f"({d2})").replace("S*S", f"({s})**2")
     velocity = [f"{u_max * ef[i]!r}*{radial}" if abs(ef[i]) > 1e-12 else 0.0 for i in range(3)]
-    options = {"max_iterations": int(setup.max_iterations), "residual_tol": float(setup.residual_tol)}
+    options = {"max_iterations": int(setup.max_iterations), "residual_tol": float(setup.residual_tol),
+               "history_interval": HISTORY_INTERVAL}
     if setup.timeout:
         options["timeout"] = float(setup.timeout)
     if setup.regime == "turbulent":
@@ -636,24 +641,38 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
         x_up = -TAP_UP * d
         lo = x_up - DEVELOPED_WINDOW * d
 
-        def slope(a: float, b: float) -> float:
+        def slope(a: float, b: float, pm=None) -> float:
+            pm = p_mean if pm is None else pm
             sel = (x_mid >= a) & (x_mid <= b)
             if sel.sum() < 2:
                 return float("nan")
             w = np.sqrt(thick[sel])
             m_ = np.column_stack([np.ones(sel.sum()), x_mid[sel]]) * w[:, None]
-            return -float(np.linalg.lstsq(m_, p_mean[sel] * w, rcond=None)[0][1])
+            return -float(np.linalg.lstsq(m_, pm[sel] * w, rcond=None)[0][1])
 
         grad = slope(lo, x_up)
         half = 0.5 * (lo + x_up)
         parts = (slope(lo, half), slope(half, x_up))
         p_up = _interp(x_mid, p_mean, x_up)
 
-        def drop(tap: float) -> float:
+        def drop(tap: float, pm=None) -> float:
+            pm = p_mean if pm is None else pm
+            g = grad if pm is p_mean else slope(lo, x_up, pm)
             x_dn = bore.length + tap * d
-            return p_up - _interp(x_mid, p_mean, x_dn) - grad * ((0.0 - x_up) + (x_dn - bore.length))
+            return _interp(x_mid, pm, x_up) - _interp(x_mid, pm, x_dn) - g * ((0.0 - x_up) + (x_dn - bore.length))
 
         taps = {t: drop(t) for t in (*TAP_DOWN_ALT, TAP_DOWN) if t * d < setup.downstream - 0.5 * d}
+        # ---- iterative convergence of the result: the pressure drop QOI_WINDOW iterations before the end
+        qoi_change = None
+        if not info.converged:
+            earlier = [t for t in res.history_times() if t <= info.iterations - QOI_WINDOW]
+            if earlier:
+                r0 = res.at_time(earlier[-1])
+                p0 = np.bincount(layer, a_cell * r0.p, n_l) / a_sum
+                dp0 = drop(TAP_DOWN, p0)
+                dp1 = taps.get(TAP_DOWN, float("nan"))
+                qoi_change = {"iterations": int(info.iterations - earlier[-1]),
+                              "change": float(abs(dp1 - dp0) / abs(dp1)) if dp1 else float("nan")}
         dp_faces = _interp(x_mid, pt_mean, 0.0) - _interp(x_mid, pt_mean, bore.length)
         # ---- balances
         mass_in = -rho * q["q_in"]
@@ -696,6 +715,7 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
                      dp_taps=taps, dp_total_faces=dp_faces, mass_in=mass_in, mass_balance=float(balance),
                      momentum_residual=float(mom_res), y_plus=y_plus, iterations=int(info.iterations),
                      converged=bool(info.converged), residuals={k: float(v) for k, v in info.residuals.items()},
+                     qoi_change=qoi_change,
                      warnings=[w for w in info.warnings if not w.startswith("info")], solve_s=solve_s,
                      quality=quality, log=log)
     finally:

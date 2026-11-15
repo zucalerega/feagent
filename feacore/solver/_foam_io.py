@@ -47,10 +47,12 @@ def _t(s: str):
 # --------------------------------------------------------------------------- system / constant
 
 
-def write_control(case: Path, end: int, functions: dict | None = None) -> None:
+def write_control(case: Path, end: int, functions: dict | None = None, interval: int | None = None) -> None:
+    """controlDict of a steady run. `interval`: also write the fields every `interval` iterations (history)."""
     _w(case / "system" / "controlDict", {
         "application": "simpleFoam", "startFrom": "latestTime", "startTime": 0, "stopAt": "endTime",
-        "endTime": int(end), "deltaT": 1, "writeControl": "timeStep", "writeInterval": int(end),
+        "endTime": int(end), "deltaT": 1, "writeControl": "timeStep",
+        "writeInterval": int(interval) if interval else int(end),
         "purgeWrite": 0, "writeFormat": "ascii", "writePrecision": 17, "writeCompression": False,
         "timeFormat": "general", "timePrecision": 8, "runTimeModifiable": False,
         "functions": functions or {},
