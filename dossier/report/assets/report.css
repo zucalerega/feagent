@@ -450,3 +450,4 @@ details.card>summary{grid-template-columns:minmax(0,1fr) auto auto}
 td.num{text-align:right}
 @media (max-width:60rem){.card-badges{grid-column:1;grid-row:auto;justify-content:flex-start}details.card>summary{padding-left:1.7rem}.card-sum{grid-column:1}.main{padding-top:3.2rem}}
 @media print{table{font-size:8pt}th,td{padding:.25rem .35rem}.mx-cell{min-width:0}.t-matrix td:first-child,.t-matrix th:first-child{min-width:0}svg.dz-diagram{max-width:100%}}
+@media (max-width:60rem){.main{padding-top:4rem}}
