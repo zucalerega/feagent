@@ -69,7 +69,7 @@
     if (lastTarget) lastTarget.classList.remove("is-target");
     openAncestors(e);
     if (e.tagName === "DETAILS") e.open = true;
-    e.classList.add("is-target"); lastTarget = e;
+    if (!e.matches("section.sec")) e.classList.add("is-target"); lastTarget = e;
     if (scroll !== false) e.scrollIntoView({ block: "start" });
     var sm = e.closest("summary"); if (!sm && e.focus) { e.setAttribute("tabindex", "-1"); }
     setTimeout(function () { if (lastTarget === e) e.classList.remove("is-target"); }, 4000);

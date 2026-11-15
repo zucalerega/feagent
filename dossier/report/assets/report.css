@@ -429,3 +429,8 @@ svg.dz-diagram [data-ref]:focus-visible{outline:2px solid var(--focus)}
   h2,h3,h4{break-after:avoid}
   .card-b{display:block}
 }
+.lg{background:none;padding:0;border-radius:0;white-space:nowrap}
+.rvp-l{text-transform:none;font-size:.82rem;line-height:1.7}
+.att-b .rl-t{font-weight:600;color:var(--fg)}
+.att-b .rl-t::after{content:" -";font-weight:400;color:var(--fg-3)}
+section.sec.is-target{outline:0;animation:none}
