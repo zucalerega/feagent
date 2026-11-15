@@ -65,11 +65,36 @@ def parse(text: Any) -> pint.Quantity:
     s = text.strip()
     try:
         q = Q(s)
+        q = _per_degree(q, s)
+    except UnitsError:
+        raise
     except Exception as e:  # noqa: BLE001  pint raises several kinds
         raise UnitsError(f"cannot read quantity {text!r}: {e}") from e
     if not isinstance(q.magnitude, (int, float)):
         raise UnitsError(f"cannot read quantity {text!r}: it has no number")
     return q
+
+
+_OFFSET = {"degree_Celsius": "delta_degree_Celsius", "degree_Fahrenheit": "delta_degree_Fahrenheit"}
+
+
+def _per_degree(q: pint.Quantity, text: str) -> pint.Quantity:
+    """In a derived unit a degree is a temperature difference: "13e-6 1/degC" is 13e-6 per kelvin, and
+    "15 W/(m*degC)" is 15 W/(m K). pint reads the degree there as an absolute temperature and gets a value
+    that is wrong by a factor of hundreds, so the unit is rebuilt with the difference unit. A plain
+    temperature ("20 degC") stays an absolute temperature."""
+    units_ = dict(q.units._units)
+    if not any(u in _OFFSET for u in units_) or (len(units_) == 1 and next(iter(units_.values())) == 1):
+        return q
+    num = text.strip().split()[0]
+    try:
+        value = float(num)
+    except ValueError as e:
+        raise UnitsError(f"cannot read quantity {text!r}: write the number first, then the unit") from e
+    unit = ureg.Unit("")
+    for name, power in units_.items():
+        unit = unit * ureg.Unit(_OFFSET.get(name, name)) ** power
+    return Q(value, unit)
 
 
 def is_vector(q: Any) -> bool:

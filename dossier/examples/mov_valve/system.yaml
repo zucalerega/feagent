@@ -258,5 +258,5 @@ connections:
     description: Ambient air on the outer surfaces, and the acceleration of the engine.
     effects:
       - {id: EF-ENV-T, phase: [PH-CHILL, PH-PRESTART, PH-FIRE, PH-SHUTDOWN], kind: fluid_temperature, role: external, value: {expr: t_amb}, h: {expr: h_amb}, description: Ambient air on the outer surfaces.}
-      - {id: EF-ENV-A-FIRE, phase: PH-FIRE, kind: acceleration, value: {expr: ["a_axial", "a_lat", 0], unit: "m/s^2"}, description: Quasi-static acceleration of the engine.}
-      - {id: EF-ENV-A-TRANSPORT, phase: PH-TRANSPORT, kind: acceleration, value: {expr: [0, "a_transport", 0], unit: "m/s^2"}, description: Transport shock.}
+      - {id: EF-ENV-A-FIRE, phase: PH-FIRE, kind: acceleration, value: {expr: ["a_axial", "a_lat", 0], unit: "m/s^2"}, description: Inertial load on the valve per unit mass during firing (quasi-static load factors).}
+      - {id: EF-ENV-A-TRANSPORT, phase: PH-TRANSPORT, kind: acceleration, value: {expr: [0, "a_transport", 0], unit: "m/s^2"}, description: Inertial load on the valve per unit mass from the transport shock.}

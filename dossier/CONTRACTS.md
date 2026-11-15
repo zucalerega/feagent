@@ -26,8 +26,11 @@ Rules of the model (do not work around them):
 3. **Nothing is silent.** A choice is a `Decision` with its rationale and the alternatives. A thing taken as
    true is an `Assumption` with its impact. A problem in the inputs is a `Finding`. Use `records.Journal`.
 4. **Every record links to what it comes from** (`links`, typed fields; `Record.refs()` lists them all).
-5. **Verdicts are honest**: pass, fail, inconclusive, not_assessed. A result that is not converged, a
-   singular peak, or a hand calculation that disagrees makes a verdict inconclusive, never a pass.
+5. **Verdicts are honest**: pass, fail, inconclusive, not_assessed. A singular peak, a result with no error
+   estimate, a failed check, or a hand calculation that disagrees makes a verdict inconclusive, never a pass.
+   A result that is over the convergence limit but has an error estimate (`ResultValue.error_estimated`) can
+   still decide a criterion, when the margin holds with `policy.unconverged_margin_factor` times that estimate
+   on the unsafe side; the margin shown is then that margin.
 6. **SI inside records** (Pa, m, N, K, kg, s). The unit people read is next to it (`display`). Use
    `dossier.units` for every conversion; never multiply by 1e6 by hand.
 7. **Text is ASD-STE100** (see "Text" below).
@@ -234,6 +237,14 @@ Text an engineer wrote (requirement text, descriptions in the YAML files) is quo
 - Do not write planning documents. Put what a user must know in your module docstrings.
 
 ## Shared conventions between engines
+
+- An `acceleration` effect is the inertial load on the part per unit mass (the direction a plumb line would
+  take: gravity is [0, 0, -9.81] m/s^2 for z up). The body force is density times this vector. A source that
+  gives the acceleration of the vehicle gives the opposite sign; a quasi-static load factor acts in both
+  directions, and the engine analyses the one sign that the context gives and records that as an assumption.
+- A worst-line result (`@scls`) is not assessed as one number. The compliance stage assesses every stress
+  classification line by itself and the worst one governs; a line of the component with no result makes the
+  verdict inconclusive.
 
 - `dossier.context.proportional(loads_a, loads_b) -> float | None`: the scale between two phases whose
   mechanical loads are the same pattern (no thermal loads). Used by the planner (scaled load cases) and by
