@@ -287,6 +287,10 @@ def test_quick_mesh_levels_cache_and_solve(built):
     assert all(m.order == 2 and m.min_quality > 0.05 and m.h_rep > 0 for m in lv)
     assert all(not Path(m.path).is_absolute() and (project.out / m.path).is_file() for m in lv)
     assert any("MESH-SIZES" in d.id for d in journal.decisions)
+    # the coarse quick level differs by about 2 % from the CAD volume: a minor finding with the quick limit, not a major one
+    vol = [f for f in journal.findings if f.rule == "mesh.volume"]
+    assert all(f.severity == "minor" for f in vol)
+    assert not vol or "quick run" in vol[0].statement
     # second call: from the cache, same files
     import time
     t = time.time()

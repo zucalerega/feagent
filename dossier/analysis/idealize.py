@@ -506,7 +506,7 @@ class Idealizer:
                           "the gasket, and the system context does not give these local forces.",
                 impact="The stress next to a loaded seat face is approximate. The stress at a distance of more than "
                        "the width of the seat face does not change.",
-                verify_by="Compare the location of the governing stress with the loaded seat faces.",
+                verify_by="Compare the location of the stress that governs with the loaded seat faces.",
                 conservative=None, links=[ld.item.effect for ld in self.loads if ld.kind in ("force", "moment")],
                 by="rule:structural.load_path")
         held = [h.interface for h in self.held]
@@ -559,7 +559,7 @@ class Idealizer:
                 rationale="The system context gives no material and no temperature of the neighbour. Two flanges in "
                           "contact have almost the same temperature at the joint.",
                 impact=f"If the neighbour contracts more or less than the held face, the held face gets a thermal "
-                       f"stress of approximately {fmt(per_kelvin, 'Pa')} for each kelvin of difference. "
+                       f"stress. The stress is approximately {fmt(per_kelvin, 'Pa')} for each kelvin of difference. "
                        "This stress is not in the results.",
                 verify_by="Compare the material and the temperature of the neighbour flange with those of the held face.",
                 conservative=False, links=held, by="rule:structural.thermal_support")
