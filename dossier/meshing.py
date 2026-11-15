@@ -211,7 +211,7 @@ def _plan(geo: dict, cad, groups: dict, opts, extra: list[dict]) -> dict:
     if n_levels < 1 or cap < 1:
         raise MeshingError(f"options: levels = {n_levels} and node_cap = {cap} must be 1 or more")
     return {"recipe": RECIPE_VERSION, "cad": cad.sha256, "length_unit": cad.length_unit, "component": geo["component"],
-            "groups": groups, "node_cap": cap, "levels": n_levels, "ratio": RATIO, "order": ORDER,
+            "groups": groups, "node_cap": cap, "levels": n_levels, "quick": bool(getattr(opts, "quick", False)), "ratio": RATIO, "order": ORDER,
             "edges": edges, "fillets": fillets, "extra": extra, "volume": geo["cad"]["volume"],
             "area": geo["cad"].get("area") or sum(f["area"] for f in faces.values()),
             "diagonal": geo["cad"].get("diagonal") or math.dist(*geo["cad"]["bbox"]),
@@ -547,7 +547,7 @@ def _journal(geo: dict, entry: dict, empty_features: list[str]) -> Journal:
                              "poor stress result near it.",
                    suggestion="Examine the results near the poor elements, or change the node limit to get other meshes.",
                    values={"level": x["level"], "min_quality": x["min_quality"], "limit": MIN_QUALITY})
-    quick = bool(getattr(opts, "quick", False))
+    quick = bool(plan.get("quick", False))      # in the plan, so that a cached call gives the same finding
     vol_tol = VOLUME_TOL_QUICK if quick else VOLUME_TOL
     vol_major = VOLUME_MAJOR_QUICK if quick else 10 * VOLUME_TOL
     off = [x for x in lv if x["volume_error"] > vol_tol]

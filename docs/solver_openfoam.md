@@ -38,8 +38,8 @@ RANS (`analysis.options.turbulence = "kOmegaSST"` or `"kOmega"`): the inlet k an
 `turbulence_intensity` (default 0.05) and `turbulence_length` (default 0.07 times the smallest bbox
 extent). Walls use `kqRWallFunction` / `omegaWallFunction` / `nutkWallFunction`; outlets use
 `inletOutlet`. This path is wired and sanity-checked: it runs, conserves mass and drags the walls.
-It is not validated, and SIMPLE + SST may stall around 1e-5 instead of reaching a tight
-`residual_tol`.
+SIMPLE + SST may stall around 1e-5 instead of reaching a tight `residual_tol`. The validation is in
+`docs/solver_transient.md`, section "Turbulent flow (RANS)".
 
 ## Results and QoIs
 
@@ -346,5 +346,6 @@ benchmarks `cd_nozzle_*_2d`): `docs/solver_transient.md`, "Compressible internal
   (interior surfaces) are detected but not supported yet.
 * `write_vtu` writes cell centres with values as a point cloud. Use `case_dir` and ParaView for
   the full mesh.
-* RANS: only `kOmegaSST` / `kOmega` with wall functions, and not validated (see above).
+* RANS: only `kOmegaSST` / `kOmega` with wall functions. The validation and its limits are in
+  `docs/solver_transient.md`, section "Turbulent flow (RANS)".
 * A closed domain's pressure is defined up to a constant; it is reported with zero mean.

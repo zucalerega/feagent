@@ -65,8 +65,8 @@ def _fin_validity(v) -> list[str]:
     name="fin_convective_tip",
     title="Hollow circular fin with a body at its tip that loses heat",
     reference=f"{_INC}, section 3.6.2 and Table 3.4, case A (fin of uniform cross-section with convection at the "
-              f"tip). The model puts the surface area A_tip of the body at the tip in the tip condition of case A; "
-              f"the documentation of dossier.handcalc.thermal gives the solution.",
+              f"tip). The model puts the surface area A_tip of the body at the tip in the tip condition of case A. "
+              f"The documentation of dossier.handcalc.thermal gives the solution.",
     inputs=[
         Input("T_base", "Temperature of the base of the fin", "K", symbol=r"T_{b}"),
         Input("T_inf", "Temperature of the fluid around the fin", "K", symbol=r"T_{\infty}"),
