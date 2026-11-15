@@ -42,21 +42,31 @@ Convergence rule (exact). u is the absolute uncertainty of the value v on the fi
                    monotone, p far above theory (p > 1.5 p_theory + 0.5: not in the asymptotic range)
                                         u = max(the two values above, 3 x spread). No order and no
                                         extrapolated value are given (the observed order is not used).
-                   oscillatory, the changes become smaller: the limit is between the last two values.
-                                        u = 3 x |v_fine - v_medium|
-                   diverging, or no order   u = 3 x spread, spread = max - min of the three values
+                   oscillatory, the changes become smaller.
+                                        u = 3 x the spread (max - min) of the last three values (the last
+                                        change alone can be small by chance: 80, 100, 99.9)
+                   diverging, or no order   u = 3 x spread, spread = max - min of the three values. This is
+                                        NOT an error estimate (error_estimated False): it is the scatter of
+                                        values that do not converge.
                    changes < 1e-6       u = 1.25 x the larger change (round-off)
   line noise     A result on a stress classification line also depends on where the line cuts the elements
                  (the recovered stress scatters at the element scale). On every level the engine evaluates
                  the line four more times, moved by a quarter of the local element size in the two
                  directions across the line. u is not less than 3 x (max - min) of these five values on the
                  finest mesh. Three levels at one fixed line can agree by chance; this floor does not.
-  status         converged when u <= policy.max_uncertainty x max(|v|, reference), else not_converged.
+  error_estimated  True when u comes from a sequence that converges: monotone, oscillating with smaller
+                 changes, two levels, or changes at round-off. False for a diverging or indeterminate sequence,
+                 one level, and every result without an uncertainty. The compliance stage does not conclude
+                 from a not converged result without an error estimate.
+  status         converged when u is an error estimate and u <= policy.max_uncertainty x max(|v|, reference),
+                 else not_converged. For a result that a criterion or a hand calculation of the load case uses
+                 (`lc.result_keys`, and each line of an `@scls` key), the reference is the value itself.
                  The reference is the size of the field that a small value comes from: the largest principal
                  stress (absolute) of the section tensor for a stress component and for max_principal on a
                  line, and the largest displacement of the feature for a range of the radial displacement.
                  So a component near zero in a large stress state, or a roundness near zero, can be
-                 converged. For every other result the reference is the value itself.
+                 converged when nothing judges it. For every other result the reference is the value itself.
+                 A value near zero that a criterion uses is then not_converged, and its note says why.
   uncertainty    `uncertainty_abs` of a result is u (in the unit of the value; the compliance stage uses it).
                  `uncertainty` is u / |v| (relative to the value; empty when v is zero). It can be above 1 for
                  a value near zero that is converged against its reference.
@@ -65,10 +75,12 @@ Convergence rule (exact). u is the absolute uncertainty of the value v on the fi
                  converged: the stress there has no limit in linear elasticity, and three meshes can hide
                  the growth. It is `singular` when its magnitude grew at every refinement (by more than
                  0.1 %), else `not_converged`. Its uncertainty and order are empty: a value without a limit
-                 has none.
+                 has none. A peak ANYWHERE that grew at every refinement and whose sequence is diverging or
+                 indeterminate is `singular` too (a list of re-entrant edges can miss an edge).
   aggregate      `@scls` is the line with the largest value. Its uncertainty covers the conservative value
                  v + u of every line. Its status is the worst status among the lines whose conservative
                  value reaches the largest value. A line without a result makes the aggregate not_converged.
+                 The aggregate is for display only: the compliance stage assesses each line by itself.
   The value of a result is always the value on the finest mesh; `extrapolated` is information.
 
 Peaks next to held faces: the rim of a rigid support is a singular line. The engine leaves out of every
