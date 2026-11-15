@@ -227,7 +227,7 @@ selects and scales the load cases, runs structural, thermal, fatigue and flow an
 checks, and gives each requirement a verdict (pass, fail, inconclusive or not assessed) with its margin. Every
 record links to what it rests on, and a person reviews decisions and assumptions. The result is one linked
 report. The worked example is the body of a liquid-oxygen valve with invented data and six planted defects in
-its specification. @@COUNTS@@ It runs from the command line (`python -m dossier run dossier/examples/mov_valve`)
+its specification. In a full run it finds all six defects and gives 4 passes, 3 inconclusive verdicts and 3 not assessed, with no fail. It runs from the command line (`python -m dossier run dossier/examples/mov_valve`)
 and from the dashboard's Projects page. Language-model reviewer roles exist but have not run through the API on
 a real model. Details, rules and limits: [`dossier/README.md`](dossier/README.md).
 

@@ -314,7 +314,45 @@ per role through `ace.llm`) has not run on a real model.
 
 ## The example and its results
 
-@@RESULTS@@
+The example is the body of a main oxidizer valve (invented data; `dossier/examples/mov_valve/README.md`). The
+table below is from one full run (not `--quick`) of the final code: `out/assess.json` and the analysis records in
+`out/analyses/` of that run. The run took about 15 minutes on one machine; the flow analysis took 7.4 minutes of
+it and each structural or thermal case about 43 seconds.
+
+*What the run did.* 13 load cases: 11 solved, 2 scaled from `LC-PROOF` (`LC-BURST`, `LC-LEAK`). 12 hand-calculation
+comparisons, all inside their bands. The validation stage wrote 12 findings: 7 major and 5 information. The 7 major
+findings cover all six planted defects (the 009 requirement gives two: no measurable criterion and a vague word):
+MEOP 10.5 MPa below the 10.72 MPa of the context, yield factor 1.1 below the policy value of 1.25, a fluid
+temperature range that does not include 90 K, 200 design cycles against 267, "sufficiently stiff" with no criterion,
+and the transport phase that no requirement covers.
+
+| Requirement | Verdict | Deciding margin | What governs | Why |
+|---|---|---|---|---|
+| REQ-MOV-001 MEOP | not assessed | none | the verification method is review | Review is the method, not analysis. Finding `FND-REQ-MOV-001-MEOP-LOW` says the MEOP is too low. |
+| REQ-MOV-002 proof pressure | pass | +0.48 | von Mises membrane plus bending on `SCL-FLOOR`, `LC-PROOF`, 76.2 MPa against 170 MPa yield | The result is not converged (uncertainty 25 %, limit 5 %), but it has an error estimate. The margin is +0.48 with 2 times the uncertainty on the unsafe side. |
+| REQ-MOV-003 burst pressure | pass | +2.67 | von Mises membrane on `SCL-SHELL`, `LC-BURST` (scaled from the proof case), 116.3 MPa against 485 MPa ultimate | Not converged (6.9 %), with an error estimate. The margin holds with 2 times the uncertainty. |
+| REQ-MOV-004 margins in all phases | inconclusive | -0.38 (not a verdict) | peak von Mises stress in `LC-FIRE`, 247.6 MPa against 170 MPa yield, factor 1.1 | 3 of 8 items pass (ultimate, on stress classification lines). 5 are inconclusive. The peak is at a sharp re-entrant edge, where linear elasticity gives no limit; the three meshes do not converge, so there is no error estimate. `LC-SHUTDOWN` reads 171.5 MPa (margin -0.099) in the same way, `LC-CHILL` is a singular peak. The criterion asks for the peak, so the result cannot say fail or pass. |
+| REQ-MOV-005 temperature range | not assessed | none | the verification method is review | Finding `FND-REQ-MOV-005-MIN-TEMPERATURE`: the range 233 K to 323 K excludes the 90 K of the LOX. |
+| REQ-MOV-006 fatigue | inconclusive | +375.6 (not a verdict) | damage at the part, `LC-FATIGUE`: 1.76e-5 against 1, scatter factor 4 | The analysis check on yield fails: 247.6 MPa at the peak is above the 170 MPa yield strength in the first cycle, so the elastic stress-life damage is not valid. The damage also changes by a factor of 37.7 between the two finest meshes. Finding `FND-REQ-MOV-006-CHECK-DESIGN-CYCLES`: 200 cycles against 267 in the context. |
+| REQ-MOV-007 actuator face temperature | pass | +0.034 | minimum temperature on `INT-ACT`, `LC-TH-FIRE`: 242.15 K against 233 K | Converged (uncertainty 1.2 K). The hand calculation `HC-ACT-TEMP` agrees. The margin is small. |
+| REQ-MOV-008 pressure drop | inconclusive | +7.04 (not a verdict) | pressure drop of the open valve, `LC-FLOW-FIRE`: 5.84 kPa against 60 kPa | The uncertainty is 28 % and it is not an error estimate. On the coarsest mesh the residual stalled at 6.2e-3, above the stall limit of 3e-3, and the three meshes (3.554, 3.552 and 3.58 kPa, smooth walls) do not converge in order; the roughness correction adds 2.26 kPa. The hand calculation agrees. The margin is large, but the rules do not let an unconverged result without an estimate count. |
+| REQ-MOV-009 stiffness | not assessed | none | no criterion | "Sufficiently stiff" has no measure. Findings `FND-REQ-MOV-009-NOT-VERIFIABLE` and `-VAGUE`. |
+| REQ-MOV-010 out-of-roundness | pass | +0.31 | range of radial displacement of `FT-SEAT-OUT-WALL`, `LC-PRESTART`: 13.7 µm against 20 µm | Not converged (6 %, limit 5 %), with an error estimate. The margin holds with 2 times the uncertainty. |
+
+Count: 4 pass, 3 inconclusive, 3 not assessed, no fail. Read the table with these points.
+
+- **No verdict is "fail", although REQ-MOV-004 shows a negative margin.** The margin is of a peak that has no limit
+  in linear elasticity. The analysis cannot tell a real overstress from the mathematical singularity. A person
+  must decide: model the real fillet radius, or classify the stress on a line.
+- **Passes rest on the k = 2 rule** for REQ-MOV-002, -003 and -010. Their results are not converged by the 5 %
+  policy but have an error estimate. The margin is shown with 2 times the uncertainty.
+- **The three inconclusive verdicts have different causes**: a singular peak (004), a material that yields so the
+  method does not apply (006), a flow solution without an error estimate (008).
+- **Caveats**: the passes of REQ-MOV-002 and -003 carry the finding that the MEOP of REQ-MOV-001 is too low. The
+  system file reads the MEOP by name from that requirement (`proof_factor * meop`), so the proof and burst
+  pressures are 1.5 and 2.5 times 10.5 MPa, not times 10.72 MPa. The verdict is not changed by the caveat;
+  whether the margins still hold at the higher MEOP the run does not show.
+- The inputs are example data. The numbers show what the tool does with them, not how a valve body performs.
 
 ## Limits
 
@@ -350,11 +388,11 @@ per role through `ace.llm`) has not run on a real model.
 
 ## What was checked independently
 
-Two independent checks of the code were made, and the team fixed what they found. The checks were reviews
-by people other than the authors of each part; this README does not claim more than that.
+Two independent checks of the code were made, and the team fixed what they found. This list is the team's report
+of them; the fixes are in the code, the checks themselves are not part of the repository.
 
-- The verdict rules had three ways to a false pass. They are closed, and tests in
-  `tests/dossier/test_dossier_compliance.py` cover the rules above.
+- The verdict rules had three ways to a false pass. They are closed, and
+  `tests/dossier/test_dossier_compliance.py` tests the rules above.
 - A conversion error of a per-degree unit (a temperature difference treated as a temperature) was fixed.
 - The convergence rule of the flow engine was weak: it compared two moments of the iteration, which an
   oscillation or a slow drift could pass. It now uses every snapshot over a window of 500 iterations
