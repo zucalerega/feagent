@@ -23,8 +23,14 @@ Options (``analysis.options`` or keywords): ``turbulence`` ("laminar"), ``max_it
 ``residual_tol`` (1e-8: initial residuals of p and U, as ``residualControl``), ``relaxation_U``
 (0.9), ``relaxation_p`` (none: SIMPLEC), ``n_non_orth_correctors`` (0), ``timeout`` (s),
 ``case_dir`` (run there instead of a temp dir and keep it), ``keep_case`` (keep the temp dir),
-``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size), ``skew_correction``
-("auto": on in 3D, off in 2D; or true / false). See docs/solver_openfoam.md.
+``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size), ``turbulence_velocity``
+(reference speed of the inlet k: default the largest constant inlet speed, 1 m/s when every inlet is an
+expression), ``skew_correction`` ("auto": on in 3D, off in 2D; or true / false). See docs/solver_openfoam.md.
+
+Turbulent runs (RANS) use wall functions on every wall (``nutkWallFunction``, ``kqRWallFunction``,
+``omegaWallFunction``): the first cell must be in the log layer. ``OpenFOAMResult.y_plus(group)`` gives y+ of
+the wall faces and a turbulent solve reports its range (an ``info`` line; a warning when part of the wall is
+under y+ = 30). Validation and limits: docs/solver_transient.md, "Turbulent flow (RANS)".
 """
 
 from __future__ import annotations
@@ -48,7 +54,7 @@ from feacore.solver.base import Result, SolveInfo
 
 KNOWN_OPTIONS = ("turbulence", "max_iterations", "residual_tol", "relaxation_U", "relaxation_p",
                  "n_non_orth_correctors", "timeout", "case_dir", "keep_case", "turbulence_intensity",
-                 "turbulence_length", "skew_correction")
+                 "turbulence_length", "skew_correction", "turbulence_velocity")
 DEFAULTS = {"turbulence": "laminar", "max_iterations": 5000, "residual_tol": 1e-8, "relaxation_U": 0.9,
             "relaxation_p": None, "n_non_orth_correctors": 0, "timeout": None, "turbulence_intensity": 0.05,
             "skew_correction": "auto"}
@@ -340,6 +346,8 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
 
     res = OpenFOAMResult(case, fm, cdir, rho, nu, closed, warnings)
     res._load(poly, tdir)
+    if turbulent:
+        _report_y_plus(res, case, warnings)
     if stagnated:
         # A minor velocity component (e.g. Uy of a nearly parallel flow) has its residual normalised
         # by its own small scale, so it stalls at a round-off floor. Rescaled by max|U| it is converged.
@@ -394,6 +402,33 @@ def _is_time(name: str) -> bool:
         return False
 
 
+Y_PLUS_LOG = 30.0      # wall functions: the first cell centre should be above this y+ (log layer)
+
+
+def _report_y_plus(res: "OpenFOAMResult", case: Case, warnings: list) -> None:
+    """info line with the y+ range of each wall group; a warning when part of a wall is under Y_PLUS_LOG."""
+    for b in case.bcs:
+        if b.type != "wall" or b.group not in res.patch:
+            continue
+        try:
+            y = res.y_plus(b.group)
+        except (CaseError, ValueError):
+            continue
+        yp, a = y["y_plus"], y["area"]
+        if yp.size == 0:
+            continue
+        order = np.argsort(yp)
+        cum = np.cumsum(a[order]) / a.sum()
+        pct = {q: float(yp[order][min(int(np.searchsorted(cum, q)), yp.size - 1)]) for q in (0.05, 0.5, 0.95)}
+        low = float(a[yp < Y_PLUS_LOG].sum() / a.sum())
+        warnings.append(f"info: y+ on wall {b.group!r} ({y['basis']}): 5 % {pct[0.05]:.3g}, median {pct[0.5]:.3g}, "
+                        f"95 % {pct[0.95]:.3g} of the wall area")
+        if low > 0.05:
+            warnings.append(f"y+ is under {Y_PLUS_LOG:g} on {low:.0%} of wall {b.group!r}: the wall functions need "
+                            f"the first cell in the log layer there (validated range y+ 60-1600, "
+                            f"docs/solver_transient.md)")
+
+
 def _turbulence_inlet(case: Case, fm: FoamMesh, opts: dict, nu: float) -> dict:
     """k and omega from a turbulence intensity and a length scale (inlet speed from the BCs)."""
     speeds = []
@@ -401,6 +436,8 @@ def _turbulence_inlet(case: Case, fm: FoamMesh, opts: dict, nu: float) -> dict:
         if b.type == "velocity_inlet" and not _is_expr(b.value):
             speeds.append(float(np.linalg.norm(b.value)) if isinstance(b.value, list) else abs(float(b.value)))
     Uref = max(speeds) if speeds else 1.0
+    if opts.get("turbulence_velocity"):
+        Uref = float(opts["turbulence_velocity"])
     I = float(opts.get("turbulence_intensity") or 0.05)
     size = float(np.min(np.ptp(fm.bbox, axis=0))) if fm.bbox is not None else 1.0
     L = float(opts.get("turbulence_length") or 0.07 * size)
@@ -442,6 +479,7 @@ class OpenFOAMResult(Result):
         p, bp = fio.read_field(tdir / "p", n)
         p = p.ravel()
         nut_b, nut = {}, None
+        self.k = fio.read_field(tdir / "k", n)[0].ravel() if (tdir / "k").exists() else None
         if (tdir / "nut").exists():
             nut, bnut = fio.read_field(tdir / "nut", n)
             nut = nut.ravel()
@@ -486,6 +524,27 @@ class OpenFOAMResult(Result):
         self.gradU = mesh.grad(U, Ub)                         # [c, i, j] = d U_j / d x_i
         self.gradp = mesh.grad(p, pb) * self.rho
         self.p = (p - self.pshift) * self.rho
+
+    def y_plus(self, group: str) -> dict:
+        """y+ of the cells next to the wall faces of `group`: {"y_plus", "area", "Cf", "basis"} (arrays per
+        face). Turbulent runs: from k, y+ = Cmu^0.25 sqrt(k) y / nu, as the wall functions compute it;
+        laminar runs: from the wall shear, y+ = y u_tau / nu. y is the wall-normal distance of the cell centre."""
+        if group not in self.patch:
+            raise CaseError(f"no boundary group {group!r} in the flow result")
+        mesh = self.mesh
+        sl = mesh.patch_slice(group)
+        own = mesh.owner[sl]
+        nrm = mesh.Sf[sl] / mesh.magSf[sl][:, None]
+        yn = np.abs(np.einsum("ij,ij->i", nrm, mesh.Cf[sl] - mesh.C[own]))
+        if self.k is not None:
+            yp = 0.09 ** 0.25 * np.sqrt(np.maximum(self.k[own], 0.0)) * yn / self.nu
+            basis = "k"
+        else:
+            ut = self.U[own] - nrm * np.einsum("ij,ij->i", self.U[own], nrm)[:, None]
+            tau = self._nu_b[group] * np.linalg.norm(ut, axis=1) / np.maximum(yn, 1e-300)
+            yp = yn * np.sqrt(tau) / self.nu
+            basis = "wall shear"
+        return {"y_plus": yp, "area": mesh.magSf[sl].copy(), "Cf": mesh.Cf[sl].copy(), "basis": basis}
 
     # ---- fields
     def _check_field(self, fld):

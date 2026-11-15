@@ -558,7 +558,6 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
     """Solve one mesh with the OpenFOAM backend and reduce the solution. Raises what the backend raises."""
     from feacore.case import BC, Analysis, Case, Material, QoI, Region
     from feacore.geometry import fv_quality
-    from feacore.solver import _foam_io as fio
     from feacore.solver import solve
 
     d = bore.diameter
@@ -594,9 +593,8 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
         options["timeout"] = float(setup.timeout)
     if setup.regime == "turbulent":
         intensity = 0.16 * re ** -0.125
-        # the backend takes a reference speed of 1 m/s for an inlet that is an expression
-        options.update(turbulence="kOmegaSST", skew_correction=False, turbulence_intensity=intensity * v_mean,
-                       turbulence_length=0.07 * d)
+        options.update(turbulence="kOmegaSST", skew_correction=False, turbulence_intensity=intensity,
+                       turbulence_velocity=v_mean, turbulence_length=0.07 * d)
     else:
         options.update(turbulence="laminar")
     case = Case(mesh=str(mesh_path),
@@ -661,27 +659,14 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
         f_wall = float(np.dot([q["f_x"], q["f_y"], q["f_z"]], e))
         mom_res = (mom - f_wall) / abs(f_wall) if f_wall else float("nan")
         # ---- y+ of the wall cells (k-based, as the wall function has it; from the wall shear when there is no k)
-        fv = res.mesh
-        sl = fv.patch_slice("wall")
-        own = fv.owner[sl]
-        nrm = fv.Sf[sl] / fv.magSf[sl][:, None]
-        yn = np.abs(np.einsum("ij,ij->i", nrm, fv.Cf[sl] - fv.C[own]))
         y_plus: dict = {}
         if setup.regime == "turbulent":
-            yp = None
-            try:
-                tdir = max((p for p in Path(res.cdir).iterdir() if p.is_dir() and p.name.replace(".", "").isdigit()),
-                           key=lambda p: float(p.name))
-                k_cell = fio.read_field(tdir / "k", fv.n_cells)[0].ravel()
-                yp = 0.09 ** 0.25 * np.sqrt(np.maximum(k_cell[own], 0.0)) * yn / nu
-                y_plus["basis"] = "k"
-            except Exception:  # noqa: BLE001  no k field to read: use the wall shear
-                ut = res.U[own] - nrm * np.einsum("ij,ij->i", res.U[own], nrm)[:, None]
-                yp = yn * np.sqrt(res._nu_b["wall"] * np.linalg.norm(ut, axis=1) / yn) / nu
-                y_plus["basis"] = "shear"
-            xw = (fv.Cf[sl] - bore.origin) @ e
+            ypr = res.y_plus("wall")                         # the backend's y+ (from k, as the wall functions)
+            yp = ypr["y_plus"]
+            y_plus["basis"] = ypr["basis"]
+            xw = (ypr["Cf"] - bore.origin) @ e
             zone = (xw >= x_up) & (xw <= bore.length + TAP_DOWN * d)
-            aw = fv.magSf[sl][zone]
+            aw = ypr["area"][zone]
             order = np.argsort(yp[zone])
             cum = np.cumsum(aw[order]) / aw.sum()
             ys = yp[zone][order]
