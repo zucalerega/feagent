@@ -731,25 +731,32 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
 
 def mesh_uncertainty(sizes: list[float], values: list[float]) -> dict:
     """The discretization uncertainty of the value on the finest mesh (relative), from the values on two or
-    three meshes (coarse to fine). Grid Convergence Index with a safety factor of 3."""
-    out = {"uncertainty": None, "extrapolated": None, "order": None, "method": "one mesh: no estimate"}
+    three meshes (coarse to fine). Grid Convergence Index with a safety factor of 3. `estimated` is True when
+    the uncertainty is an error estimate of a sequence that converges (two meshes, monotone, oscillating with
+    smaller changes, changes under the noise level); False for one mesh and for a diverging or indeterminate
+    sequence, whose uncertainty is only the scatter of the values."""
+    out = {"uncertainty": None, "extrapolated": None, "order": None, "method": "one mesh: no estimate",
+           "estimated": False}
     if len(values) < 2 or not all(math.isfinite(v) for v in values) or values[-1] == 0.0:
         return out
     f1, f2 = values[-1], values[-2]
     r = sizes[-2] / sizes[-1]
     two = 3.0 * abs(f2 - f1) / (r - 1.0) / abs(f1)          # first order assumed: the order is not known
     if len(values) == 2:
-        return {**out, "uncertainty": two, "method": "two meshes, first order assumed, safety factor 3"}
+        return {**out, "uncertainty": two, "method": "two meshes, first order assumed, safety factor 3",
+                "estimated": math.isfinite(two)}
     from feacore.verification.gci import gci3
     g = gci3(sizes[-3:], values[-3:], p_theory=2.0)
     if g.convergence == "monotone" and g.gci_fine_conservative is not None:
         return {"uncertainty": float(g.gci_fine_conservative), "extrapolated": float(g.phi_ext), "order": float(g.p),
-                "method": "three meshes, monotone, observed order, safety factor 3"}
+                "method": "three meshes, monotone, observed order, safety factor 3", "estimated": True}
     if g.convergence in ("exact", "converged"):
-        return {**out, "uncertainty": float(g.gci_fine or 0.0), "method": "three meshes, changes under the noise level"}
+        return {**out, "uncertainty": float(g.gci_fine or 0.0), "method": "three meshes, changes under the noise level",
+                "estimated": True}
     spread = 3.0 * max(abs(f2 - f1), abs(values[-3] - f2)) / abs(f1)
     return {**out, "uncertainty": max(spread, two),
-            "method": f"three meshes, {g.convergence.replace('_', ' ')}: three times the largest change"}
+            "method": f"three meshes, {g.convergence.replace('_', ' ')}: three times the largest change",
+            "estimated": g.convergence == "oscillatory"}
 
 
 def level_plan(quick: bool, levels: int) -> list[int]:
@@ -1030,7 +1037,7 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
         status, total = "not_converged", None
     else:
         total = u_mesh + u_model + u_rough
-        status = "converged" if (u_mesh <= max_u and solved and value > 0) else "not_converged"
+        status = "converged" if (est["estimated"] and u_mesh <= max_u and solved and value > 0) else "not_converged"
     parts = [f"The mesh study gives {_pct(u_mesh)} ({est['method']})." if u_mesh is not None
              else "One mesh gives no estimate of the mesh error."]
     if regime == "turbulent":
@@ -1044,6 +1051,7 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
         parts.append("The meshes are coarse. This result is a first look.")
     an.results[RESULT_KEY] = ResultValue(
         key=RESULT_KEY, value=float(value), unit="Pa", uncertainty=total, status=status,
+        error_estimated=bool(est["estimated"] and total is not None and solved),
         per_level=[float(v) for v in values], extrapolated=est["extrapolated"], order=est["order"], method="fe",
         near="the bore from the inlet face to the outlet face", note=" ".join(parts))
     j.decide(sub, "uncertainty", "Uncertainty of the pressure drop",

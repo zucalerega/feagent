@@ -46,8 +46,11 @@ Convergence (the rule of the structural engine, in absolute terms)
                       monotone, observed order p    u = max(1.25 |d| / (r^p - 1), 3 |d| / (r^q - 1)), with
                                                     d the change between the two finest levels and
                                                     q = p limited to [0.5, p_t]
-                      oscillatory                   u = max(3 |d| / (r^q - 1), spread of the three values)
-                      no order                      u = 3 x spread
+                      oscillatory                   u = max(3 |d| / (r^q - 1), 3 x spread of the three values)
+                      no order                      u = 3 x spread: the scatter of values that do not converge,
+                                                    not an error estimate (status not_converged)
+    `error_estimated` is True for two levels, monotone, oscillatory and round-off; False for no order, one
+    level, or no u.
                       changes below 1e-6 of the value   u = 1.25 x the larger change
     `uncertainty_abs` is u, in the unit of the value; the compliance stage uses it for a temperature.
     `uncertainty` is u / |value| (CONTRACTS.md: relative to the value). The status of a temperature comes
@@ -504,10 +507,12 @@ def evaluate(key: str, ideal: Idealization, geo: dict, summary: dict) -> tuple[f
 def uncertainty(h: list[float], v: list[float], p_theory: float) -> dict:
     """The discretization uncertainty of the value on the finest mesh, in the unit of the value (module
     docstring, "Convergence"). h and v are coarse to fine. Returns u (None with one level), kind, and for
-    a monotone sequence the observed order and the extrapolated value."""
+    a monotone sequence the observed order and the extrapolated value. `estimated` is True when u is an error
+    estimate of a sequence that converges (two levels, monotone, oscillating with smaller changes, round-off),
+    False when u is only the spread of values that do not converge or when there is no u."""
     from feacore.verification import gci3
 
-    out = {"u": None, "kind": "one_level", "order": None, "extrapolated": None}
+    out = {"u": None, "kind": "one_level", "order": None, "extrapolated": None, "estimated": False}
     n = len(v)
     if n < 2:
         return out
@@ -515,6 +520,7 @@ def uncertainty(h: list[float], v: list[float], p_theory: float) -> dict:
         d, r = abs(v[-1] - v[-2]), h[-2] / h[-1]
         out["kind"] = "two_levels"
         out["u"] = 3.0 * d * max(1.0, 1.0 / (r**2 - 1.0)) if r > 1.0 else (0.0 if d == 0 else math.inf)
+        out["estimated"] = math.isfinite(out["u"])
         return out
     h3, v3 = [float(x) for x in h[-3:]], [float(x) for x in v[-3:]]
     g = gci3(h3, v3, p_theory=p_theory)
@@ -529,13 +535,15 @@ def uncertainty(h: list[float], v: list[float], p_theory: float) -> dict:
     out["kind"] = g.convergence
     if g.convergence in ("exact", "converged"):
         out["u"] = 1.25 * max(abs(v3[2] - v3[1]), abs(v3[1] - v3[0]))
+        out["estimated"] = True
     elif g.convergence in ("monotone", "oscillatory") and g.p is not None:
         q = min(max(g.p, 0.5), p_theory)
         if g.convergence == "monotone":
             out["u"] = max(gci(1.25, g.p), gci(3.0, q))
             out["order"], out["extrapolated"] = float(g.p), (float(g.phi_ext) if g.phi_ext is not None else None)
-        else:
-            out["u"] = max(gci(3.0, q), spread)
+        else:                       # oscillating: 3 x the spread of the last three values
+            out["u"] = max(gci(3.0, q), 3.0 * spread)
+        out["estimated"] = True
     else:
         out["u"] = 3.0 * spread
     return out
@@ -573,7 +581,7 @@ def _result(key: str, values: list[float], hs: list[float], scale: float | None,
     c = uncertainty(hs, values, ORDER_TEMPERATURE if is_temp else ORDER_HEAT_FLOW)
     u = c["u"]
     rel = _ratio(u, scale if is_temp else abs(values[-1]))      # the ratio that sets the status
-    status = "converged" if rel is not None and rel <= limit else "not_converged"
+    status = "converged" if c["estimated"] and rel is not None and rel <= limit else "not_converged"
     note = _KIND_NOTE.get(c["kind"], "The changes between the three finest meshes do not decrease.")
     if is_temp and rel is not None:
         note += (f" The uncertainty is {fmt(u, 'K')}. This is {100 * rel:.2g} % of the temperature range of "
@@ -584,7 +592,8 @@ def _result(key: str, values: list[float], hs: list[float], scale: float | None,
                        uncertainty=_ratio(u, abs(values[-1])) if is_temp else rel,
                        uncertainty_abs=u if u is not None and math.isfinite(u) else None,
                        status=status, location=where, near=near, per_level=[float(x) for x in values],
-                       extrapolated=c["extrapolated"], order=c["order"], method="fe", note=note)
+                       extrapolated=c["extrapolated"], order=c["order"], method="fe", note=note,
+                       error_estimated=bool(c["estimated"] and u is not None and math.isfinite(u)))
 
 
 # --------------------------------------------------------------------------- the engine

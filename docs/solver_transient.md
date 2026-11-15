@@ -467,6 +467,7 @@ directories are deleted as the run goes); a point QoI per step builds the cell-t
 **Example.**
 
 ```python
+import feacore.solver
 from feacore.case import BC, Analysis, Case, Material, QoI, Region
 case = Case(mesh="channel.msh",
             analysis=Analysis(physics="flow", formulation="2d", order=2, thickness=0.01,
