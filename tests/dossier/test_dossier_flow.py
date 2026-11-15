@@ -262,7 +262,11 @@ def test_example_valve_quick(workproject, flow_lc, tmp_path):
     assert rec.status == "done", rec.message
     r = rec.results[flow.RESULT_KEY]
     assert r.unit == "Pa" and len(r.per_level) == 1
-    assert 5e3 < r.value < 60e3
+    # the bore is 6 diameters of smooth pipe plus two narrow grooves: a little more than the friction alone
+    rho, mu, d = 1141.0, 1.95e-4, 0.025
+    v = 5.3 / (rho * math.pi * d * d / 4)
+    friction = flow.colebrook(rho * v * d / mu) * 6.0 * 0.5 * rho * v * v
+    assert 0.95 * friction < r.value < 1.3 * friction      # measured: 3.55 kPa, friction 3.38 kPa
     assert "first look" in r.note
     kinds = {c.kind for c in rec.checks}
     assert {"mass_balance", "residuals", "y_plus"} <= kinds
