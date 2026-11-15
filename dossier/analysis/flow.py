@@ -1141,8 +1141,9 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
     if regime == "turbulent":
         parts.append(f"The turbulence model adds {part(a_model)} ({_pct(MODEL_UNCERTAINTY, 0)} of the solver's value).")
     if a_iter > 0:
-        parts.append(f"The iteration part adds {part(a_iter)}: the residuals stalled, and over the last "
-                     f"{QOI_WINDOW} iterations the pressure drop spread over {_pct(iter_spread, 3)}.")
+        parts.append(f"The iteration part adds {part(a_iter)}: the solver did not reach the residual tolerance, "
+                     f"and over the last {QOI_WINDOW} iterations the pressure drop spread over "
+                     f"{_pct(iter_spread, 3)} of the solver's value.")
     if a_rough > 0:
         parts.append(f"The roughness correction adds {part(a_rough)}: the change of the correction for ks = "
                      f"{KS_PER_RA_RANGE[0]:g} Ra to {KS_PER_RA_RANGE[1]:g} Ra.")

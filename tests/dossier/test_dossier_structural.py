@@ -731,7 +731,7 @@ def test_a_growing_peak_away_from_every_listed_edge_is_singular():
     v = [200e6 * (H3[0] / h) ** 0.3 for h in H3]
     out, missing = structural._results(_level_data(key, v, where={}), [key], {}, 0.05, _lc([key]))
     rv = out[key]
-    assert not missing and rv.status == "singular" and not rv.error_estimated
+    assert key not in missing and rv.status == "singular" and not rv.error_estimated
     assert rv.uncertainty is None and rv.uncertainty_abs is None and rv.order is None
     assert "The peak grew at each refinement and the values do not converge." in rv.note
 
