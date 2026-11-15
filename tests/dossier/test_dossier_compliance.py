@@ -256,16 +256,91 @@ def test_singular_peak_under_the_limit_is_still_inconclusive(workproject):
     assert "An engineer can model the real edge radius, or use a result that does not include the edge." in item.reasons
 
 
-def test_not_converged_is_inconclusive_also_with_a_large_margin(workproject):
-    item = one(workproject, OP_YIELD, res("von_mises.peak@part", 100 * MPA, u=0.08, status="not_converged",
+REFINE = "An engineer can do the analysis again with a finer mesh or with more mesh levels."
+
+
+def test_not_converged_passes_when_the_margin_holds_with_k_times_the_uncertainty(workproject):
+    # the burst case of the first full run: 116.3 MPa, uncertainty 6.9 % (policy limit 5 %), Su = 485 MPa, factor 1.0
+    item = one(workproject, BURST, res("von_mises.membrane@scls", 116.3 * MPA, u=0.069, status="not_converged",
+                                       near="SCL-SHELL"), "LC-BURST", checks=[check("CHK-EQUILIBRIUM", True)])
+    # 1 x: 116.3 x 1.069 = 124.3247 MPa; MS = 485 / 124.3247 - 1 = +2.90108   (margin and conservative value)
+    # 2 x: 116.3 x 1.138 = 132.3494 MPa; MS = 485 / 132.3494 - 1 = +2.66455   >= 0: pass
+    assert workproject.policy.unconverged_margin_factor == 2.0
+    assert item.verdict == "pass" and item.margin == pytest.approx(2.90108, abs=1e-5)
+    assert item.conservative_value == pytest.approx(124.3247e6) and item.uncertainty == pytest.approx(0.069)
+    assert item.reasons[:5] == ["The result has the status not converged.",
+                                "The uncertainty of the result is 6.9 %, and the policy limit is 5 %.",
+                                "The margin of safety is +2.66 with 2 times this uncertainty on the unsafe side.",
+                                "The policy accepts this margin for a result with the status not converged.",
+                                'The location of the value is "SCL-SHELL".']
+    assert item.statement.endswith(
+        "The margin of safety is +2.90 with the uncertainty on the unsafe side and +2.66 with 2 times the uncertainty "
+        "on the unsafe side. The result has the status not converged, but the criterion passes with 2 times its uncertainty.")
+
+
+def test_not_converged_fails_when_the_margin_is_negative_with_k_times_the_uncertainty_on_the_safe_side(workproject):
+    item = one(workproject, PROOF, res(MB + "scls", 300 * MPA, u=0.10, status="not_converged"))
+    # 1 x unsafe: 330 MPa; MS = 170 / 330 - 1 = -0.48485 (the margin)
+    # 2 x safe:   300 x 0.8 = 240 MPa; MS = 170 / 240 - 1 = -0.29167 < 0: fail
+    assert item.verdict == "fail" and item.margin == pytest.approx(-0.48485, abs=1e-5)
+    assert "The margin of safety is -0.29 with 2 times this uncertainty on the safe side." in item.reasons
+    assert "The criterion fails for each value in this wider band." in item.reasons
+    assert item.statement.endswith("and -0.29 with 2 times the uncertainty on the safe side. "
+                                   "The result has the status not converged, but the criterion fails also with 2 times its uncertainty.")
+
+
+def test_not_converged_is_inconclusive_when_the_sign_changes_inside_k_times_the_uncertainty(workproject):
+    item = one(workproject, OP_YIELD, res("von_mises.peak@part", 140 * MPA, u=0.06, status="not_converged",
                                           near="FT-NECK-ROOT-FILLET"))
-    # 100 x 1.08 = 108 MPa; MS = 170 / (1.1 x 108) - 1 = 170 / 118.8 - 1 = +0.43098
-    assert item.verdict == "inconclusive" and item.margin == pytest.approx(0.43098, abs=1e-5)
+    # 1 x unsafe: 148.4 MPa; MS = 170 / (1.1 x 148.4) - 1 = 170 / 163.24 - 1 = +0.04141 (a pass if it were converged)
+    # 2 x unsafe: 156.8 MPa; MS = 170 / 172.48 - 1 = -0.01438
+    # 2 x safe:   123.2 MPa; MS = 170 / 135.52 - 1 = +0.25443: neither a pass nor a fail
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(0.04141, abs=1e-5)
+    assert item.reasons[:5] == ["The result has the status not converged.",
+                                "The uncertainty of the result is 6 %, and the policy limit is 5 %.",
+                                "The margin of safety is -0.014 with 2 times this uncertainty on the unsafe side and +0.25 on the safe side.",
+                                "The margin is smaller than 2 times the uncertainty.", REFINE]
+    assert item.statement.endswith("The verdict is inconclusive because the margin is smaller than 2 times the uncertainty "
+                                   "of a result with the status not converged.")
+
+
+def test_factor_zero_gives_the_old_rule(workproject):
+    workproject.policy.unconverged_margin_factor = 0.0
+    out, items, _ = assess(workproject, [case("LC-BURST", [BURST])],
+                           [analysis("LC-BURST", [res("von_mises.membrane@scls", 116.3 * MPA, u=0.069, status="not_converged",
+                                                      near="SCL-SHELL")])])
+    item = out.items[0]
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(2.90108, abs=1e-5)
     assert item.reasons[:4] == ["The result has the status not converged.",
-                                "The uncertainty of the result is 8 %, and the policy limit is 5 %.",
-                                "An engineer can do the analysis again with a finer mesh or with more mesh levels.",
-                                'The location of the value is "FT-NECK-ROOT-FILLET".']
-    assert item.statement.endswith("The verdict is inconclusive because the result has the status not converged.")
+                                "The uncertainty of the result is 6.9 %, and the policy limit is 5 %.", REFINE,
+                                'The location of the value is "SCL-SHELL".']
+    assert item.statement.endswith("The margin of safety is +2.90 with the uncertainty on the unsafe side. "
+                                   "The verdict is inconclusive because the result has the status not converged.")
+    assert not any(d.id.endswith("UNCONVERGED-MARGIN") for d in out.journal.decisions)
+
+
+def test_not_converged_temperature_with_an_absolute_uncertainty(workproject):
+    th = dict(lc_id="LC-TH-FIRE", analysis_type="thermal_steady")
+
+    def t(value, du):
+        return temperature(value, uncertainty=0.5, uncertainty_abs=du).model_copy(update={"status": "not_converged"})
+
+    item = one(workproject, TEMP, t(251.3, 4.0), **th)
+    # the absolute uncertainty wins: 1 x: 247.3 K, MS = 247.3 / 233 - 1 = +0.06137; 2 x: 243.3 K, MS = +0.04421: pass
+    assert item.verdict == "pass" and item.margin == pytest.approx(0.06137, abs=1e-5)
+    assert item.conservative_value == pytest.approx(247.3)
+    assert item.reasons[1:3] == ["The uncertainty of the result is 4 K.",
+                                 "The margin of safety is +0.044 with 2 times this uncertainty on the unsafe side."]
+    item = one(workproject, TEMP, t(220.0, 4.0), **th)
+    # 2 x safe: 228 K, MS = 228 / 233 - 1 = -0.02146: fail (the margin: 216 / 233 - 1 = -0.07296)
+    assert item.verdict == "fail" and item.margin == pytest.approx(-0.07296, abs=1e-5)
+    assert "The margin of safety is -0.021 with 2 times this uncertainty on the safe side." in item.reasons
+    item = one(workproject, TEMP, t(236.0, 3.0), **th)
+    # 1 x: 233 K, MS = 0 (a pass if it were converged); 2 x unsafe: 230 K, MS = -0.01288; 2 x safe 242 K, +0.03863
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(0.0, abs=1e-12)
+
+
+def test_not_converged_without_an_uncertainty_stays_inconclusive(workproject):
     # no uncertainty: the note of the analysis gives the cause. One mesh level: a mesh study is the remedy
     one_level = res("von_mises.peak@part", 100 * MPA, u=None, status="not_converged", per_level=[100 * MPA],
                     note="The analysis has one mesh level.")
@@ -282,6 +357,31 @@ def test_not_converged_is_inconclusive_also_with_a_large_margin(workproject):
     assert item.reasons[2:4] == ['The note of the result is: "The peak is at a sharp re-entrant edge, where the stress has no '
                                  'limit in linear theory."',
                                  "An engineer can use section stresses, model the real edge radius, or do an elastic-plastic analysis."]
+
+
+def test_a_failed_check_still_blocks_a_pass_or_a_fail_of_a_result_that_is_not_converged(workproject):
+    eq = check("CHK-EQUILIBRIUM", False, statement="The reactions are 12 % smaller than the applied loads.")
+    item = one(workproject, BURST, res("von_mises.membrane@scls", 116.3 * MPA, u=0.069, status="not_converged"), checks=[eq])
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(2.90108, abs=1e-5)       # a pass with k = 2
+    assert "Check CHK-EQUILIBRIUM of analysis AN-X failed." in item.reasons
+    assert item.statement.endswith("The verdict is inconclusive because a check of the analysis failed.")
+    item = one(workproject, PROOF, res(MB + "scls", 300 * MPA, u=0.10, status="not_converged"), checks=[eq])
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(-0.48485, abs=1e-5)      # a fail with k = 2
+
+
+def test_the_rule_for_results_that_are_not_converged_is_one_decision_of_the_policy(workproject):
+    cases = [case("LC-BURST", [BURST]), case("LC-PROOF", [PROOF])]
+    ans = [analysis("LC-BURST", [res("von_mises.membrane@scls", 116.3 * MPA, u=0.069, status="not_converged")]),
+           analysis("LC-PROOF", [res(MB + "scls", 300 * MPA, u=0.10, status="not_converged")])]
+    out, _, _ = assess(workproject, cases, ans)
+    dec = [d for d in out.journal.decisions if d.subject == workproject.policy.id]
+    assert [d.id for d in dec] == ["DEC-POLICY-UNCONVERGED-MARGIN"]
+    assert "2 times the uncertainty" in dec[0].choice and "conservative bound" in dec[0].rationale
+    assert "5 %" in dec[0].rationale and dec[0].alternatives[0].option.startswith("Refuse each result")
+    assert ("uses", "POLICY") in {(l.rel, l.to) for l in dec[0].refs()}
+    # only converged results: no such decision
+    out, _, _ = assess(workproject, [case("LC-PROOF", [PROOF])], [analysis("LC-PROOF", [res(MB + "scls", 71.3 * MPA)])])
+    assert [d.id for d in out.journal.decisions] == ["DEC-CMP-MOV-BODY-UNCERTAINTY-IN-MARGIN"]
 
 
 def test_estimate_status_is_inconclusive(workproject):
@@ -573,11 +673,14 @@ def test_scls_falls_back_to_the_worst_line(workproject):
     assert "Analysis AN-PROOF has no result for SCL-ROOF." in item.reasons
     assert item.statement.endswith("The verdict is inconclusive because one or more stress classification lines have no result.")
 
-    item = run([*lines([None, 60, 150, 30, 20]), res(MB + "SCL-SHELL", 96 * MPA, u=0.09, status="not_converged")])
+    item = run([*lines([None, 60, 140, 30, 20]), res(MB + "SCL-SHELL", 150 * MPA, u=0.09, status="not_converged")])
     # a line that is not converged can hide a larger value: it governs before the passing lines
-    # 96 x 1.09 = 104.64 MPa; MS = 170 / 104.64 - 1 = 0.62462
+    # 150 x 1.09 = 163.5 MPa; MS = 170 / 163.5 - 1 = 0.03976; 2 x: 177 MPa, MS = -0.03955; 2 x safe 123 MPa: +0.38211
     assert item.verdict == "inconclusive" and item.result_key == MB + "SCL-SHELL"
-    assert item.margin == pytest.approx(0.62462, abs=1e-5)
+    assert item.margin == pytest.approx(0.03976, abs=1e-5)
+    item = run([*lines([None, 60, 150, 30, 20]), res(MB + "SCL-SHELL", 96 * MPA, u=0.09, status="not_converged")])
+    # 96 MPa with 2 x 9 %: 113.28 MPa, MS = +0.50071: a pass; the smallest margin governs (SCL-FLOOR, +0.11111)
+    assert item.verdict == "pass" and item.result_key == MB + "SCL-FLOOR"
 
     item = run(lines([96, 60, 200, None, 20]))
     # a line that fails decides, also with a line missing: 200 x 1.02 = 204 MPa; MS = 170 / 204 - 1 = -0.16667
@@ -778,10 +881,10 @@ def test_requirement_roll_up(workproject):
 
     # an inconclusive item wins over not assessed and over pass; the smallest inconclusive margin governs
     sing = res(peak, 412 * MPA, u=None, status="singular", per_level=[310 * MPA, 412 * MPA])
-    notc = res(peak, 100 * MPA, u=0.08, status="not_converged")
+    notc = res(peak, 140 * MPA, u=0.06, status="not_converged")
     _, items, verdicts = assess(workproject, *operation(sing, res(scls, 200 * MPA), notc, None))
     v = verdicts["REQ-MOV-004"]
-    # singular: 170 / 453.2 - 1 = -0.62489; not converged: 170 / 118.8 - 1 = +0.43098
+    # singular: 170 / 453.2 - 1 = -0.62489; not converged: 170 / 163.24 - 1 = +0.04141 (-0.01438 with 2 x 6 %)
     assert v.verdict == "inconclusive" and v.governing == "CMPL-REQ-MOV-004-YIELD-LC-FIRE"
     assert v.margin == pytest.approx(-0.62489, abs=1e-5)
     assert v.statement == ("The verdict for requirement REQ-MOV-004 is inconclusive. "
