@@ -12,7 +12,7 @@ adds the conventions that hold across physics and one section per capability.
 | transient dynamics | elasticity, skfem | `feacore/solver/_skfem_dynamics.py` | done, verified (exact discrete and modal solutions, order 2, energy, waves) |
 | transient incompressible flow | flow, openfoam | `feacore/solver/_foam_transient.py` | see section |
 | turbulent flow (RANS) | flow, openfoam | `feacore/solver/openfoam_backend.py` | see section |
-| compressible internal flow | compressible, openfoam | `feacore/solver/_foam_compressible.py` | see section |
+| compressible internal flow | compressible, openfoam | `feacore/solver/_foam_compressible.py`, `_foam_internal.py` | done, verified (exact quasi-1D nozzle in three regimes, NACA 1135), `tests/test_compressible_internal.py` |
 
 A capability whose module is not there yet raises `NotImplementedError` with its name; nothing falls back
 to a steady solve.
@@ -415,4 +415,146 @@ mesh uncertainty).
 
 ## Compressible internal flow
 
-(section written by the capability's author)
+Physics `compressible`, OpenFOAM backend: subsonic inflow from a reservoir, choking, normal shocks in a
+duct and supersonic or subsonic outflow against a back pressure. Code: `feacore/solver/_foam_compressible.py`
+(the run, the stopping rule, the `mass_flow` QoI) and its helper `feacore/solver/_foam_internal.py` (the
+boundary conditions, the outlet switch, the mass balance). Benchmarks: `cd_nozzle_subsonic_2d`,
+`cd_nozzle_shock_2d`, `cd_nozzle_supersonic_2d` (`feacore/problems/compressible/nozzle.py`; exact solution in
+`feacore/problems/compressible/quasi1d.py`). Tests: `tests/test_compressible_internal.py`.
+
+**Case.** `BC("total_inlet", group, p0=..., T0=...)` (Pa, K): the reservoir; the gas enters along the inward
+normal. `BC("pressure_outlet", group, value=pb)`: the static back pressure (Pa, absolute; a number or an
+expression in x, y, z). `QoI(name, "mass_flow", group=...)`: kg/s through the group, positive out of the
+domain (2D: through the extruded depth `analysis.thickness`). Walls are `slip` (inviscid) or `wall` (laminar,
+`mu > 0`), plus `symmetry`. A case with a `total_inlet` takes no `freestream` and needs a `pressure_outlet`
+(`CaseError` otherwise). Forces use the gauge pressure p - pb of the first pressure outlet. A `freestream`
+case may also use a `pressure_outlet` (supersonic inflow against a back pressure).
+
+**Solver: `rhoCentralFoam`, as for the external flows.** Density based, Kurganov-Tadmor central-upwind
+fluxes, explicit, conservative. Why not the pressure-based transonic solvers: a time-boxed trial of
+`rhoPimpleFoam` (`transonic yes`, v1912, the same mesh and boundary conditions, cd_nozzle_shock_2d at h0)
+blew up within a few iterations with local time stepping (`localEuler`) started from rest; time accurate at
+Courant 0.5 it ran (5500 steps for 32 flow times, three times fewer than rhoCentralFoam) to a steady field
+whose cell mass fluxes at inlet and outlet differed by 0.8 % and whose shock sat 1.5 % of L downstream of the
+exact position, where rhoCentralFoam's mass balance closes to 1e-7 and its shock is within 0.2 % of L. The
+density-based scheme conserves mass, momentum and energy across the shock by construction and starts from
+rest without tuning. Its cost: the time step follows the acoustic speed, so a flow time L / a* takes ~600
+steps per 40 cells along the duct, whatever the Mach number; below Mach ~0.1 the steps grow without bound
+relative to the flow and the central scheme's dissipation swamps the small pressure differences
+(`info.warnings` says so when the largest Mach number of the result is below 0.1; solve such a flow as
+incompressible, physics `flow`).
+
+**Boundary conditions as written to OpenFOAM** (justification in the docstring of `_foam_internal.py`).
+rhoCentralFoam builds a boundary face's flux from the boundary values of p, T and U alone, so each must be a
+state the gas can have.
+- `total_inlet`: U `pressureInletOutletVelocity` (the normal velocity from the interior, no tangential
+  velocity), p `totalPressure` and T `totalTemperature` with `psi thermo:psi` and `gamma`, i.e. the
+  isentropic p = p0 (1 + (gamma - 1) / 2 M^2)^(-gamma / (gamma - 1)), T = T0 / (1 + (gamma - 1) / 2 M^2) at
+  the boundary's own Mach number. A subsonic inflow has one outgoing characteristic: the velocity is that one
+  extrapolated quantity. (`pressureInletVelocity` would be circular: the flux it reads is made from the
+  boundary velocity.)
+- `pressure_outlet`: p `mixed` with `refValue` = pb and a per-face `valueFraction` of 1 (impose pb) or 0
+  (zero gradient), U `pressureInletOutletVelocity`, T `inletOutlet` (the reservoir's T0 for gas that
+  re-enters). v1912 has no stock condition that switches on the Mach number, and `waveTransmissive` relaxes
+  p towards pb in both regimes (a subsonic outlet does not sit at pb, a supersonic one still feels it), so
+  the solver sets the value fraction itself (`OutletSwitch`): from the state next to the face that the
+  boundary has not disturbed (the owner cell of an extrapolating face, the cell behind it of an imposing
+  one), with M_n its Mach number normal to the face: impose where M_n < 1, or where M_n >= 1 and pb is at
+  least the pressure behind a normal shock at M_n (the shock then moves into the duct); extrapolate
+  otherwise (an over- or under-expanded jet adjusts outside the domain).
+
+**Start-up.** The initial field is the gas at rest at the reservoir state (p0, T0), and the back pressure
+is applied at once, as when a diaphragm at the exit bursts. The gas already has the reservoir's entropy, so
+only pressure waves have to settle. For the first 5 flow times the run stops every 0.25 flow time to update
+the outlet switch, so the starting waves leaving the duct supersonically are not held at pb (that drove the
+boundary state out of range, a square root of a negative temperature, in the first trials at pb / p0 = 0.05
+and 0.4); afterwards it updates after every chunk. The nozzle starts from rest at every back pressure tried
+(pb / p0 = 0.05 .. 0.92), so no quasi-1D initial state or back-pressure ramp is needed. `init_from` maps a
+previous solution instead (the switch then starts from that field).
+
+**Stopping rule.** As for external flow, with t_ref = L / a* (L: the extent from the inlets to the outlets,
+a* = sqrt(2 gamma R T0 / (gamma + 1))) and chunks of 5 flow times. Steady means the field stopped changing
+(`steady_tol`), or every QoI held to `qoi_tol` of its scale over the last 3 chunks (p0 for pressures, a* for
+velocities, 1 for the Mach number, rho* a* times the smaller of the inlet and outlet areas for mass flows),
+and in addition no outlet face switched and the mass flows in and out agree to `mass_tol` (1e-4; to
+`qoi_tol` when the QoIs decide, since a limit cycle makes the mass in the duct breathe at that level). The
+balance is reported in `info.warnings` ("info: mass balance: ... in, ... out, imbalance ...") and in
+`info.mass_balance`; the outlets' state in `info.outlets` and a warning line each. Gas re-entering through a
+pressure outlet, gas leaving through a total inlet and an inflow that reaches Mach 1 are warned about.
+
+The limiter is Minmod for internal flow (vanAlbada for external flow). On cd_nozzle_shock_2d at h0 / 2,
+vanAlbada keeps a transverse acoustic oscillation in the converging part that never decays (the field
+changes by 4e-3 per flow time after 300 flow times, the mass flow by 2e-3 of its value); Minmod leaves a
+limit cycle ten times smaller (5e-4 per flow time, mass flow 3e-4) at the same error at h0 (table below,
+and the vanAlbada errors at h0: mass flow -0.044 % choked / -0.62 % subsonic, shock +0.16 % of L). The nozzle
+benchmarks therefore use `qoi_tol` 1e-3, as the blunted wedge does for its limit cycle.
+
+**Verification: the converging-diverging nozzle** (`cd_nozzle_*_2d`). Upper half of a planar nozzle,
+-1 <= x <= 1 m, 0 <= y <= h(x) = 0.1 (1 + 0.5 x^2) m (A / A_t = h / h_t, inlet and exit area ratio 1.5),
+symmetry at y = 0, slip wall, inviscid air (gamma 1.4, R 287), p0 = 1e5 Pa, T0 = 300 K. Wall slope at most
+0.1, throat radius of curvature 10 h_t: the departure from quasi-1D flow is O(h'^2) ~ 1e-2 locally and the
+planar throat's discharge deficit ~2.5e-4 (Kliegel and Levine 1969: (gamma + 1) / 96 (h_t / R_c)^2). Quad
+meshes, 80 x 6 cells at h0 (cells nearly square at the throat). The exact solution (area-Mach relation,
+isentropic and normal-shock relations, scipy `brentq`) is itself checked against NACA Report 1135's tables
+(isentropic M = 0.5, 1, 2, 3; normal shock M = 1.5, 2, 3; choked flux 0.040418 sqrt(T0) / p0) to 1e-4.
+Regimes: critical back pressures p1 / p0 = 0.8805, p2 / p0 = 0.6157, p3 / p0 = 0.1602.
+
+1. subsonic, pb / p0 = 0.92 (not choked: mdot = 19.5521 kg/s, Me = 0.3472);
+2. shock, pb / p0 = 0.80 (choked: mdot = rho* a* A_t = 23.3356 kg/s, normal shock at x_s = 0.5864 m, M1 =
+   1.494);
+3. supersonic, pb / p0 = 0.10 (choked, Me = 1.8541, pe / p0 = 0.1602; the same at pb / p0 = 0.05 and 0.4).
+
+Measured (Minmod, one core, the shared 4-core machine under load; errors relative; x_s from
+`nozzle.shock_position`, the section-averaged pressure's mid-jump point; profile = the largest deviation of
+the section-averaged p (/ p0) and Mach number at 39 stations, 0.1 away from the shock):
+
+COMPRESSIBLE_TABLE
+
+Reading it:
+- The choked mass flow is within 0.06 % at every mesh from h0 on; its remaining error is the planar throat's
+  discharge deficit (~ -0.03 %) plus the limit cycle (+-0.02 % at h0 / 2), so it does not converge further
+  towards the 1D value, as expected.
+- The shock position agrees to 0.2 % of L at every mesh (the shock is captured in about two cells; the mid-jump
+  point sits within a tenth of a cell of the 1D position, the remainder being the 2D shock's slight curvature).
+- The unchoked (subsonic) mass flow is the sensitive one: it follows from p0 - pb = 8 % of p0 and carries the
+  scheme's total-pressure loss: SUBSONIC_ORDER.
+- The exit pressure of the supersonic regime converges towards a 2D offset of ~0.3 % (the exit flow is not
+  parallel: the wall turns it by 5.7 deg), and the exit Mach number with it.
+- The result does not depend on the back pressure below p2: pb / p0 = 0.05, 0.10 and 0.40 give the same
+  mass flow and exit state to 2e-5 (the outlet extrapolates on every face in all three).
+
+Tolerances of the benchmark (`nozzle.TOL`, relative): mass flow 0.5 % (1 % not choked), exit pressure and
+Mach number 1 %, shock position 2 % of L: at least three times the error at h0 / 2 and well above the 2D
+effects.
+
+**Limits.**
+- Perfect gas only (constant gamma, cp; no real-gas properties, no condensation or two-phase flow).
+- Inviscid (`slip`) or laminar walls (`wall`, constant mu); no turbulence, so no shock-boundary-layer
+  interaction or separation behind the shock as in a real over-expanded nozzle.
+- Mach range: about 0.1 (largest Mach number of the flow) up to the hypersonic range of the external path.
+  Inflow through a `total_inlet` must stay subsonic (warned).
+- Steady flow only: the run is time-accurate, but only the end state is returned; limit cycles of the
+  scheme (above) are averaged by nothing: the QoIs are the last snapshot, within `qoi_tol`.
+- Serial, explicit: about 1.4 us per cell per step on one core; a flow time at h0 (480 cells) takes
+  ~700 steps, at h0 / 2 ~1500.
+
+Run times (one core, shared machine): RUNTIME_LINE.
+
+**Example.**
+
+```python
+from feacore.case import BC, QoI
+from feacore.problems.registry import get
+from feacore.solver import solve
+
+p = get("cd_nozzle_shock_2d")
+case = p.case(p.mesh("nozzle.msh", p.params["h0"]))      # total_inlet, pressure_outlet, slip, symmetry
+# case.bcs: [BC("total_inlet", group="inlet", p0=1e5, T0=300.0),
+#            BC("pressure_outlet", group="outlet", value=8e4), BC("slip", group="wall"),
+#            BC("symmetry", group="axis")]; case.qois: mass_flow (outlet), p_exit, mach_exit
+res = solve(case, backend="openfoam")
+res.evaluate_all()          # {"mass_flow": 23.32, "p_exit": 8e4, "mach_exit": 0.472}
+res.info.mass_balance       # {"in": ..., "out": ..., "imbalance": ...}
+from feacore.problems.compressible.nozzle import shock_position
+shock_position(res, p)      # 0.588 (exact 0.5864)
+```
