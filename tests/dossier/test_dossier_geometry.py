@@ -289,35 +289,40 @@ def test_quick_mesh_levels_cache_and_solve(built):
     assert time.time() - t < 2.0
     assert [(m.path, m.nodes) for m in lv2] == [(m.path, m.nodes) for m in lv]
 
-    # groups: f<tag>, every feature, solid
+    # groups: f<tag>, every feature, solid; the mesh loads in the fixed solver and has the curved volume of the CAD
+    from skfem import Basis, ElementTetP2
+
     from feacore.solver._skfem_mesh import read_mesh
-    path = project.out / lv[0].path
-    mesh = read_mesh(path)
-    text = " ".join(str(k) for k in getattr(mesh, "groups", getattr(mesh, "facet_groups", {})))
-    names = set(re.findall(r"[A-Za-z0-9_:\-]+", text)) if text else set()
-    if names:
-        assert "solid" in names and "FT-INLET-BORE" in names and "f1" in names
-    # the volume of the mesh against the CAD (a coarse mesh of curved holes: a few 1e-3)
-    entry = next(iter(meshing._read_index(project.out / "meshes")["entries"].values()))
-    assert max(abs(l["volume_error"]) for l in entry["levels"]) < 1e-2
+    md = read_mesh(project.out / lv[0].path, 3, 2)
+    for name in [f"f{t}" for t in geo["faces"]] + list(geo["features"]) + ["solid"]:
+        assert name in md.groups and len(md.groups[name].index), name
+    for m in lv:
+        vol = float(Basis(read_mesh(project.out / m.path, 3, 2).mesh, ElementTetP2(), intorder=3).dx.sum())
+        assert vol == pytest.approx(geo["cad"]["volume"], rel=1e-2)       # coarse levels: a hole is a polygon
 
 
 def test_solve_on_the_coarsest_mesh(built):
-    """A real solve on the coarsest quick mesh: fixed flange face, pressure in the cavity."""
+    """A real solve on the coarsest quick mesh by feature names: fixed flange face, a force on the actuator pad.
+    The reaction on the fixed face must balance the applied force (an independent equilibrium check)."""
     project, geo, _ = built
     lv = meshing.levels(project, geo, opts(quick=True))
-    from feacore.case import Case
+    from feacore.case import BC, QoI, Analysis, Case, Material
     from feacore.solver import solve
-    case = Case.model_validate({
-        "id": "dossier-geo-check", "analysis": "static", "dim": 3,
-        "materials": {"steel": {"E": 195e9, "nu": 0.3}},
-        "bcs": [{"type": "fixed", "group": "FT-INLET-FLANGE-FACE"}],
-        "loads": [{"type": "pressure", "group": "FT-CAVITY-WALL", "value": 1e6}],
-        "qois": [{"id": "umax", "type": "max_displacement"}],
-    }) if hasattr(Case, "model_validate") else None
-    res = solve(case, "skfem", mesh=str(project.out / lv[0].path)) if case is not None else None
-    assert res is not None
-    assert res.qois["umax"] > 0 and np.isfinite(res.qois["umax"])
+    case = Case(
+        mesh=str((project.out / lv[0].path).resolve()),
+        analysis=Analysis(physics="elasticity", formulation="3d", order=2),
+        materials={"steel": Material(E=195e9, nu=0.3)},
+        bcs=[BC("fixed", group="FT-INLET-FLANGE-FACE"), BC("fixed", group="FT-OUTLET-FLANGE-FACE"),
+             BC("force", group="FT-PAD-TOP", value=[0.0, 0.0, -1000.0]),
+             BC("pressure", group="FT-CAVITY-WALL", value=1e6)],
+        qois=[QoI(name="rz_in", type="reaction", group="FT-INLET-FLANGE-FACE", component=2),
+              QoI(name="rz_out", type="reaction", group="FT-OUTLET-FLANGE-FACE", component=2),
+              QoI(name="umax", type="max", field="u_mag")])
+    res = solve(case, "skfem")
+    q = res.evaluate_all()
+    assert q["umax"] > 0 and np.isfinite(q["umax"])
+    # the pressure on a cylinder wall has no net force along the axis (z), so the reactions carry 1000 N
+    assert abs(q["rz_in"] + q["rz_out"]) == pytest.approx(1000.0, rel=0.02)
 
 
 @pytest.mark.slow

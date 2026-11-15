@@ -18,7 +18,7 @@ def biot_roots(bi: float, n: int = 80) -> np.ndarray:
 
     eps = 1e-14
     return np.array([brentq(lambda z: z * np.sin(z) - bi * np.cos(z), j * np.pi + eps, j * np.pi + np.pi / 2 - eps,
-                            xtol=1e-15, rtol=4e-16) for j in range(n)])
+                            xtol=1e-15, rtol=1e-15) for j in range(n)])
 
 
 def bessel_roots(bi: float, n: int = 60) -> np.ndarray:
@@ -32,7 +32,7 @@ def bessel_roots(bi: float, n: int = 60) -> np.ndarray:
     out = []
     for j in range(n):
         lo, hi = a[j], b[j]
-        out.append(brentq(f, lo, hi, xtol=1e-15, rtol=4e-16))
+        out.append(brentq(f, lo, hi, xtol=1e-15, rtol=1e-15))
     return np.array(out)
 
 

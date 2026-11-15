@@ -23,7 +23,7 @@ from typing import Any
 
 from dossier.report import markdown, sections, stecheck
 from dossier.report.data import Data
-from dossier.report.page import Page, icon_sprite
+from dossier.report.page import BADGES, KIND_WORD, REL_WORD, REVIEW_TEXT, Page, icon_sprite
 from dossier.report.sections import review_rule
 
 ASSETS = Path(__file__).parent / "assets"
@@ -63,7 +63,6 @@ def build(project, opts=None) -> dict:
     parts, n_att = _render(p, ste)
 
     nav = "".join(f'<li><a href="#{k}" data-nav="{k}">{_html.escape(t)}</a></li>' for k, t in NAV)
-    preview = {i: [n.get("kind", ""), n.get("title", ""), n.get("summary", ""), n.get("status", "")] for i, n in d.graph["nodes"].items()}
     data = {
         "graph": {"nodes": d.graph["nodes"], "edges": d.graph["edges"]},
         "reviews": d.reviews,
@@ -71,8 +70,16 @@ def build(project, opts=None) -> dict:
         "cli": p.cli_project(),
         "rules": {k: [v[0], v[1], v[2]] for k, v in sections.ATT_REVIEW.items()},
         "cards": sorted(p.emitted),
-        "params": {i: {"unit": x.unit, "si": x.si, "basis": x.basis, "source": x.source, "expr": x.expr, "title": x.title}
-                   for i, x in d.ctx.params.items()} if hasattr(d.ctx, "params") else {},
+        "params": {i: {"display": x.display, "basis": x.basis, "source": x.source, "expr": x.expr, "title": x.title,
+                       "leaf": not x.depends_on} for i, x in d.ctx.params.items()},
+        "flags": {r.id: [bool(getattr(r, "needs_review", False)),
+                         getattr(r, "conservative", None) if r.kind == "assumption" else None,
+                         p.origin_kind(r.origin.by) == "agent", r.kind, r.title]
+                  for r in list(d.decisions) + list(d.assumptions) + list(d.findings) if r.id in d.reviews},
+        "words": {k: BADGES["review"][k][2] for k in BADGES["review"]},
+        "kinds": KIND_WORD,
+        "rel": REL_WORD,
+        "text": REVIEW_TEXT,
     }
     from dossier.report import diagram
     template = (ASSETS / "page.html").read_text()

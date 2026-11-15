@@ -43,7 +43,7 @@ from feacore.problems.cfd._common import FlowProblem, count, group, refinement_f
 from feacore.problems.compressible.quasi1d import NACA1135, Quasi1DNozzle
 from feacore.problems.registry import register
 
-REGIMES = {"subsonic": 0.92, "shock": 0.75, "supersonic": 0.10}
+REGIMES = {"subsonic": 0.92, "shock": 0.80, "supersonic": 0.10}
 # Tolerances (relative) of the references. The scheme's error at the default mesh h0 and the 2D effects of the
 # planar nozzle are measured in docs/solver_transient.md, "Compressible internal flow"; every tolerance is at
 # least 3 times the error at h0 / 2 and covers the quasi-1D model error (~1e-4 in the mass flow, ~1e-3 in the

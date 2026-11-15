@@ -284,7 +284,7 @@ def read_bore(path: Path, inlet, outlet, length_unit: str = "m") -> Bore:
             raise FlowDomainError(f"The cylinder face f{t} of {name} is the surface of a body in the flow. The "
                                   f"flow analysis is for a bore without a body in it.")
         r = float(f.radius) * k
-        span = float(f.angle_span) if f.angle_span else 2.0 * math.pi
+        span = math.radians(float(f.angle_span)) if f.angle_span else 2.0 * math.pi     # feagent gives degrees
         half = 0.5 * float(f.area) * k * k / (r * span)
         xc = float(np.dot(np.asarray(f.center, float) * k - c_in, axis))
         segs.append((xc - half, xc + half, r))

@@ -131,7 +131,7 @@ hand_calcs:
     model: tube_bending_axial
     title: Bending of the neck by the actuator inertia load
     description: The neck as a cantilever tube. The lateral inertia force of the actuator bends it, and the stem pressure force pulls it.
-    when: {phases: [PH-FIRE], needs: ["force@INT-ACT", "moment@INT-ACT"]}
+    when: {analysis: [static_structural, thermo_structural], phases: [PH-FIRE], needs: ["force@INT-ACT", "moment@INT-ACT"]}
     inputs:
       M: {expr: 'abs(load("INT-ACT", "moment")[0]) + abs(load("INT-ACT", "force")[1]) * 76 * mm', unit: "N*m"}
       F: {expr: 'load("INT-ACT", "force")[2]', unit: N}
@@ -180,3 +180,19 @@ hand_calcs:
         with: "pressure_drop.total@part"
         band: [0.5, 2.0]
         why: The loss coefficient of the seat pocket steps is an estimate.
+
+# The fluid volume of the open valve for the flow analysis (engine:flow). flow_domain.step is made by
+# make_flow_domain.py, which states the assumed dimensions of the ball and the seat rings.
+flow:
+  cad: {file: flow_domain.step, length_unit: m}
+  inlet: {description: "Section of the flow bore at the inlet flange face.", select: {kind: plane, normal: [-1, 0, 0], near: [-0.075, 0, 0], within: 0.002}, expect: 1}
+  outlet: {description: "Section of the flow bore at the outlet flange face.", select: {kind: plane, normal: [1, 0, 0], near: [0.075, 0, 0], within: 0.002}, expect: 1}
+  fluid:
+    rho: {expr: rho_lox}
+    mu: {expr: mu_lox}
+    roughness: 3.2 um
+  description: >
+    The LOX in the open valve from the inlet flange face to the outlet flange face: the 25 mm bore through the
+    nozzles, the seat rings and the ball, with a groove at each seat pocket for the open space between the seat
+    ring and the ball. The cavity around the ball is dead fluid and is not in the volume. The ball and seat ring
+    dimensions are assumed (make_flow_domain.py).

@@ -461,9 +461,12 @@ def test_engine_convergence_of_the_results(fin, fin_run):
         assert len(v.per_level) == 3 and v.per_level[-1] == v.value and v.method == "fe", key
         assert v.status == "converged" and v.uncertainty_abs is not None and v.uncertainty is not None, key
         if key.startswith("temperature"):
-            assert v.uncertainty == pytest.approx(v.uncertainty_abs / t_range)       # relative to the range of the case
+            # `uncertainty` is relative to the value (CONTRACTS.md); the ratio to the range of the case sets
+            # the status and is in the note; the compliance stage uses uncertainty_abs in K
+            assert v.uncertainty == pytest.approx(v.uncertainty_abs / abs(v.value))
             assert v.uncertainty_abs < 0.05, key                                      # K
-            assert "range" not in v.note                                              # the rule is not in the note
+            pct = f"{100 * v.uncertainty_abs / t_range:.2g} %"
+            assert f"This is {pct} of the temperature range of {t_range:g} K of the load case" in v.note, (key, v.note)
         else:
             assert v.uncertainty == pytest.approx(v.uncertainty_abs / abs(v.value)) and v.uncertainty < 0.01
     # the uncertainty covers the change between the two finest meshes
@@ -495,8 +498,13 @@ def test_engine_checks(fin_run):
     assert q.passed is True and q.value > 0.05 and q.limit == 0.01 and "negative Jacobian" in q.statement
     e = checks["error_estimate"]
     assert e.passed is True and e.value < 0.01 and e.limit == 0.05
-    worst = max((v for v in fin_run.record.results.values()), key=lambda v: v.uncertainty)
-    assert e.value == worst.uncertainty and f"({worst.key})" in e.statement and "The limit of the policy is 5 %." in e.statement
+    t_range = T_AIR - T_BASE
+
+    def ratio(v):           # the ratio that sets the status: a temperature in relation to the range of the case
+        return v.uncertainty_abs / t_range if v.key.startswith("temperature.") else v.uncertainty
+
+    worst = max((v for v in fin_run.record.results.values()), key=ratio)
+    assert e.value == pytest.approx(ratio(worst)) and f"({worst.key})" in e.statement and "The limit of the policy is 5 %." in e.statement
 
 
 def test_engine_idealization_records(fin, fin_run):
