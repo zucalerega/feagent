@@ -62,7 +62,6 @@ def build(project, opts=None) -> dict:
     p.own.section = ""
     parts, n_att = _render(p, ste)
 
-    n_open = sum(1 for rid in d.reviews if d.review_state(rid) == "open")
     nav = "".join(f'<li><a href="#{k}" data-nav="{k}">{_html.escape(t)}</a></li>' for k, t in NAV)
     preview = {i: [n.get("kind", ""), n.get("title", ""), n.get("summary", ""), n.get("status", "")] for i, n in d.graph["nodes"].items()}
     data = {
@@ -90,5 +89,5 @@ def build(project, opts=None) -> dict:
     md_path = out_dir / "report.md"
     md_path.write_text(markdown.convert("\n".join(parts), project.file.name), encoding="utf-8")
     summary = {k: v for k, v in (ste or {}).items() if k != "summary"} if ste else {"ran": False}
-    return {"html": str(html_path), "md": str(md_path), "ste": summary, "open_items": n_att + 0 * n_open,
+    return {"html": str(html_path), "md": str(md_path), "ste": summary, "open_items": n_att,
             "problems": list(p.problems)}

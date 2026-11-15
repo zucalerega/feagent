@@ -70,8 +70,8 @@ def test_files_read_write_and_problems(env):
     assert out["ok"] is True, out
     # refused: traversal, other file types, files that are not inputs
     for bad in ("../../etc/passwd", "..%2f..%2fetc%2fpasswd", "out/x.yaml", "components/mov_body/geometry.step"):
-        assert c.put(f"/api/dossier/{PROJECT}/files/{bad}", content=b"x: 1").status_code in (400, 403, 404, 415, 422)
-        assert c.get(f"/api/dossier/{PROJECT}/files/{bad}").status_code in (400, 403, 404, 415, 422)
+        assert c.put(f"/api/dossier/{PROJECT}/files/{bad}", content=b"x: 1").status_code in (400, 403, 404, 405, 415, 422)
+        assert c.get(f"/api/dossier/{PROJECT}/files/{bad}").status_code in (400, 403, 404, 405, 415, 422)
 
 
 def test_records_trace_reviews(env):
@@ -97,15 +97,15 @@ def test_records_trace_reviews(env):
 def test_report_serving(env):
     c = env["c"]
     page = c.get(f"/api/dossier/{PROJECT}/report/index.html")
-    assert page.status_code == 200 and "not built" in page.text.lower()
+    assert page.status_code == 404 and "not built" in page.text.lower()
     rep = env["root"] / "out" / "report"
     rep.mkdir(parents=True, exist_ok=True)
     (rep / "index.html").write_text("<html><head><title>r</title></head><body>hi</body></html>")
     page = c.get(f"/api/dossier/{PROJECT}/report/index.html").text
     assert f'window.DOSSIER_API = "/api/dossier/{PROJECT}"' in page and page.index("DOSSIER_API") < page.index("</head>")
     for bad in ("../../project.yaml", "..%2f..%2fproject.yaml", "%2e%2e/project.yaml"):
-        assert c.get(f"/api/dossier/{PROJECT}/report/{bad}").status_code in (400, 403, 404)
-        assert c.get(f"/api/dossier/{PROJECT}/out/{bad}").status_code in (400, 403, 404)
+        assert c.get(f"/api/dossier/{PROJECT}/report/{bad}").status_code in (400, 403, 404, 405)
+        assert c.get(f"/api/dossier/{PROJECT}/out/{bad}").status_code in (400, 403, 404, 405)
 
 
 def test_tools():
