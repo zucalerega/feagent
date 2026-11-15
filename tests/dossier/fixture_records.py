@@ -638,7 +638,7 @@ def _hand_calcs(project: Project, ctx, geo: dict, load_cases: list[LoadCase]) ->
             output("dp_minor", dp_k, "Pa", "Pressure drop of the steps."),
             output("dp_total", dp_f + dp_k, "Pa", "Pressure drop of the open valve.")],
            [CalcStep(text="The mean velocity in the flow bore is:", latex=r"v = \frac{4 \, \dot{m}}{\rho \, \pi \, d^2}", result=f"{vel:.2f} m/s"),
-            CalcStep(text="The Reynolds number is:", latex=r"Re = \frac{\rho \, v \, d}{\mu}", result=f"{re_:.3g}"),
+            CalcStep(text="The Reynolds number is:", latex=r"Re = \frac{\rho \, v \, d}{\mu}", result=f"{re_:.0f}"),
             CalcStep(text="The Haaland equation gives the friction factor.",
                      latex=r"\frac{1}{\sqrt{f}} = -1.8 \, \log_{10}\left[\left(\frac{\epsilon / d}{3.7}\right)^{1.11} + \frac{6.9}{Re}\right]",
                      result=f"{fr:.4f}"),
