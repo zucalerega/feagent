@@ -53,7 +53,7 @@ Checks on every level (results in the index; failures are findings in the journa
     * the fixed solver's reader (feacore.solver._skfem_mesh.read_mesh) loads the file, and every group is there
       with at least one facet;
     * the volume of the curved mesh against the CAD volume (a minor finding over VOLUME_TOL = 1e-3, a major
-      one over 1e-2). Elements that are large against the radius of a hole or a fillet do not follow it: the
+      one over 1e-2; a quick run uses 1e-2 and 5e-2, see VOLUME_TOL_QUICK). Elements that are large against the radius of a hole or a fillet do not follow it: the
       coarse levels of the example differ by 0.2 % to 0.6 %, the levels with a global size under 5 mm by less
       than 0.1 %;
     * min element quality (gmsh minSICN of the straight cells) against ace.config.MIN_QUALITY;
@@ -97,6 +97,12 @@ MAX_TRIALS = 6
 MAX_LEVEL_TRIALS = 4       # trial meshes per coarser level, to get the size ratio RATIO
 LEVEL_RATIO_TOL = 0.06     # the ratio of the representative sizes of successive levels: RATIO within 6 %
 VOLUME_TOL = 1e-3           # mesh volume against CAD volume: a minor finding over it, a major one over 10 times it
+# With opts.quick the meshes are coarse on purpose (about 2 times the size of the coarse level of a full run, and the
+# curved volume error of a mesh goes with the square of the size). The coarse level of the example then differs by
+# 1.8 % from the CAD volume. So a quick run uses a limit of 1 % for a minor finding and 5 % for a major one, and says so
+# in the finding. A full run keeps VOLUME_TOL.
+VOLUME_TOL_QUICK = 1e-2
+VOLUME_MAJOR_QUICK = 5e-2
 MIN_LEVEL_RATIO = 1.15      # successive levels must differ at least by this in representative size
 RECIPE_VERSION = 2          # change it when the sizing rules change: cached meshes are then made again
 C_VOLUME, C_SURFACE = 2.84, 5.53      # first guess: nodes ~ C_VOLUME V / h^3 + C_SURFACE A / h^2 (P2 tetrahedra)
@@ -541,14 +547,20 @@ def _journal(geo: dict, entry: dict, empty_features: list[str]) -> Journal:
                              "poor stress result near it.",
                    suggestion="Examine the results near the poor elements, or change the node limit to get other meshes.",
                    values={"level": x["level"], "min_quality": x["min_quality"], "limit": MIN_QUALITY})
-    off = [x for x in lv if x["volume_error"] > VOLUME_TOL]
+    quick = bool(getattr(opts, "quick", False))
+    vol_tol = VOLUME_TOL_QUICK if quick else VOLUME_TOL
+    vol_major = VOLUME_MAJOR_QUICK if quick else 10 * VOLUME_TOL
+    off = [x for x in lv if x["volume_error"] > vol_tol]
     if off:
         which = listing([str(x["level"]) for x in off])
         by = listing(["%.2g %%" % (100 * x["volume_error"]) for x in off])
-        j.find(rule="mesh.volume", severity="major" if max(x["volume_error"] for x in off) > 10 * VOLUME_TOL else "minor",
+        j.find(rule="mesh.volume", severity="major" if max(x["volume_error"] for x in off) > vol_major else "minor",
                category="model", subject=comp, key="mesh-volume", title="Volume of the meshes",
                statement=f"The volume of the mesh level{'' if len(off) == 1 else 's'} {which} differs from the CAD "
-                         f"volume by {by}. The limit of this check is {100 * VOLUME_TOL:g} %.",
+                         f"volume by {by}. The limit of this check is {100 * vol_tol:g} %."
+                         + (f" The run is a quick run with coarse meshes, thus the limit is {100 * vol_tol:g} % and not "
+                            f"{100 * VOLUME_TOL:g} %. A difference over {100 * vol_major:g} % is a major finding."
+                            if quick else ""),
                rationale="An element that is large against the radius of a hole or of a fillet does not follow the "
                          "curved face. The mesher also makes a curved element straight when it folds.",
                suggestion="Use a result near a small hole or a small fillet only from a level that agrees with the CAD volume.",

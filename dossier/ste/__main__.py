@@ -48,6 +48,8 @@ def _collect(arg: str) -> dict[str, str]:
     if p.is_dir():
         out: dict[str, str] = {}
         for f in sorted(p.rglob("*.py")):
+            if f.name == "roles.py" and f.parent.name == "agents":
+                continue                            # prompts for language-model roles: instructions to a model, not record text
             out.update(_python_strings(f))
         return out
     if p.is_file():
