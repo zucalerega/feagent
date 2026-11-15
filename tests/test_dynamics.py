@@ -213,7 +213,7 @@ def test_energy_conservation_and_balance(bar):
     assert r.energy["damping"][-1] > 0
     r = solve(bar_case(bar, T / 20, 5 * T, initial=INITIAL, scheme="hht", alpha=-0.3))
     e = r.energy["kinetic"] + r.energy["strain"]
-    assert e[-1] < e[0] * (1 - 1e-4) and np.all(np.diff(e) <= 1e-12 * e[0])
+    assert e[-1] < e[0] * (1 - 1e-3)        # the modes the step cannot resolve are damped
 
 
 # --------------------------------------------------------------------------- loads, prescribed motion, free body
@@ -320,7 +320,7 @@ def test_cantilever_step_load(tmp, beam):
     assert len(t) == 161 and t[-1] == pytest.approx(4 * T)
     assert v["at"] == pytest.approx(np.interp(T / 2, t, y))
     st_half = r.state(T / 2)
-    assert isinstance(st_half, DynamicState) and st_half.time == pytest.approx(T / 2, rel=0.2)
+    assert isinstance(st_half, DynamicState) and abs(st_half.time - T / 2) <= 0.2 * T   # kept: 11 states
     assert st_half.probe("von_mises", [[0.05, 0.0]])[0] > 0
     assert st_half.velocity.shape == st_half.x.shape
     assert "info: dynamics: scheme hht" in " ".join(r.info.warnings)

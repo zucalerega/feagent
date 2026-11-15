@@ -222,11 +222,12 @@ class _DirichletInTime:
 
     def rates0(self, dt: float) -> tuple[np.ndarray, np.ndarray]:
         """Velocity and acceleration of the prescribed values at t = 0, by one-sided differences (a table is
-        constant before its first point, so no value before t = 0 is used)."""
+        constant before its first point, so no value before t = 0 is used). The difference step is 1 % of dt:
+        small against the time scale the step resolves, large enough that round-off stays out of a0."""
         if not self.timed:
             z = np.zeros(len(self.D))
             return z, z
-        h = 1e-4 * dt
+        h = 1e-2 * dt
         u = [self(k * h) for k in range(4)]
         v0 = (-3.0 * u[0] + 4.0 * u[1] - u[2]) / (2.0 * h)
         a0 = (2.0 * u[0] - 5.0 * u[1] + 4.0 * u[2] - u[3]) / h**2

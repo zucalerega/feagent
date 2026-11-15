@@ -760,3 +760,33 @@ def test_pictures(fin):
         f = fin.project.out / a.path
         assert f.stat().st_size > 10_000 and f.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
         assert re.search(r"The lowest temperature is 90 K and the highest is 241\.\d+ K\.", a.caption)
+
+
+@pytest.mark.slow
+def test_example_steady_firing(workproject):
+    """The thermal load case of steady firing of the example (quick meshes). A requirement asks for at least
+    233 K at the actuator mounting face, and the 1D fin estimate is about 241 K. Observed with the full
+    meshes (3 levels, 23 157 to 108 229 nodes): temperature.min@INT-ACT = 242.15 K +- 0.36 K, converged;
+    with the quick meshes (2 levels of 14 765 and 23 155 nodes, size ratio 1.17) 242.1 K, not converged."""
+    from dossier import geometry, loadcases
+
+    opts = Options(quick=True, pictures=False, log=lambda s: None)
+    ctx = context_mod.build(workproject)
+    geo, _ = geometry.build(workproject, opts)
+    lc = next(c for c in loadcases.plan(workproject, ctx, geo).load_cases if c.id == "LC-TH-FIRE")
+    out = thermal.run(workproject, ctx, geo, lc, workproject.analysis_dir(lc.id), opts)
+    rec = out.record
+    assert rec.status == "done" and rec.id == "AN-TH-FIRE", rec.message
+    act = rec.results["temperature.min@INT-ACT"]
+    assert 236.0 < act.value < 248.0 and act.uncertainty_abs is not None and act.unit == "K"
+    assert rec.results["temperature.min@part"].value == pytest.approx(90.0, abs=0.5)
+    assert {c.kind: c.passed for c in rec.checks}["heat_balance"] is True
+    flows_ = [v.value for k, v in rec.results.items() if k.startswith("heat_flow.total@")]
+    assert len(flows_) == 3 and abs(sum(flows_)) < 1e-6 * max(abs(f) for f in flows_)
+    a = next(a for a in out.journal.assumptions if a.id.endswith("ADIABATIC"))
+    for feat in ("FT-STEM-BORE", "FT-PAD-TOP", "FT-PAD-HOLES", "FT-INLET-FLANGE-FACE", "FT-OUTLET-FLANGE-FACE",
+                 "FT-INLET-BOLT-HOLES", "FT-OUTLET-BOLT-HOLES"):
+        assert feat in a.statement, feat
+    assert "a colder adjacent part is the unsafe case" in a.impact
+    assert [p.path for p in rec.artifacts if p.kind == "field"] == ["analyses/LC-TH-FIRE/fields_L0.npz",
+                                                                     "analyses/LC-TH-FIRE/fields_L1.npz"]

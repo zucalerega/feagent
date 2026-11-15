@@ -367,12 +367,13 @@ def test_nothing_changes(scheme, tmp_path):
 def test_energy_balance(scheme, tol, tmp_path):
     """The stored heat rho cp int T changes by the time integral of the heat flowing in: the reaction at a
     temperature BC and h (T_inf - T) over a convection face (an integral QoI of T on the face). The face
-    temperature ramps smoothly away from the initial value (a sudden jump would make the reaction at t = 0
-    infinite, like 1 / sqrt(t), which no quadrature in time integrates). Backward Euler with its own
+    temperature and the fluid temperature ramp smoothly away from the initial value (a sudden jump of either
+    makes the heat flow at t = 0 infinite, like 1 / sqrt(t), which no quadrature in time integrates: a jump
+    of the fluid temperature by 100 K leaves 0.25 % of the heat exchanged on the first steps). Backward Euler with its own
     reaction (the backward difference) balances to round-off (1e-9); Crank-Nicolson and BDF2 reactions use a
     second-order difference and the trapezoidal rule integrates them: 0.1 % of the heat exchanged."""
     mesh = strip(tmp_path / "s.msh", 0.05, 0.01, 20, 2, order=2)
-    h, Tf = 500.0, 400.0
+    h, Tf = 500.0, "300.0 + 100.0 * (1.0 - exp(-t / 20.0))"
     q = [QoI(name="E", type="integral", field="T"), QoI(name="R", type="reaction", group="left", component=0),
          QoI(name="F", type="integral", field="T", group="right")]
     c = heat(mesh, {"t_end": 200.0, "n_steps": 200, "scheme": scheme, "initial": {"T": 300.0}},
@@ -382,7 +383,8 @@ def test_energy_balance(scheme, tol, tmp_path):
     t = r.times
     stored = RHO * CP * (r.series(q[0]) - r.series(q[0])[0])
     area = 0.01                                    # face length x thickness 1
-    inflow = r.series(q[1]) + h * (Tf * area - r.series(q[2]))
+    Tf_t = 300.0 + 100.0 * (1.0 - np.exp(-t / 20.0))
+    inflow = r.series(q[1]) + h * (Tf_t * area - r.series(q[2]))
     if scheme == "backward_euler":                 # rectangle rule of the scheme
         put_in = np.concatenate([[0.0], np.cumsum(inflow[1:] * np.diff(t))])
     else:
