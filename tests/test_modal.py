@@ -223,7 +223,7 @@ def test_axisymmetric_mass_and_fv41_effective_mass(tmp):
     p = get_problem("nafems_fv41")
     mesh = p.mesh(tmp / "fv41.msh", 0.4)
     r = solve(p.case(mesh))
-    assert r.total_mass == pytest.approx(RHO * math.pi * (2.2**2 - 1.8**2) * 10.0, rel=1e-4)   # curved? no: exact
+    assert r.total_mass == pytest.approx(RHO * math.pi * (2.2**2 - 1.8**2) * 10.0, rel=1e-12)   # straight edges: exact
     assert r.rigid_modes == 1
     assert np.all(np.isnan(r.effective_mass[:, 0]))
 

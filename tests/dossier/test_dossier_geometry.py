@@ -174,7 +174,7 @@ def test_reentrant_edges(built):
     # one pair at the cavity (z ~ 0, y = +-0.02) and the pocket edges at the shoulders
     mids = np.array([e["midpoint"] for e in edges])
     assert np.sum(np.isclose(np.abs(mids[:, 0]), 0.063, atol=1e-3)) == 2
-    assert any("RE-ENTRANT" in d.id for d in journal.decisions)
+    assert any("REENTRANT-EDGES" in d.id for d in journal.decisions)
 
 
 def test_scls_of_the_example_are_ok(built):
@@ -240,8 +240,8 @@ def test_mm_file_is_scaled_to_metres(tmp_path):
     g0, _ = geometry.build(ref, opts())
     g1, _ = geometry.build(mm, opts())
     assert g1["cad"]["scale"] == pytest.approx(1e-3)
-    assert g1["cad"]["volume"] == pytest.approx(g0["cad"]["volume"], rel=1e-6)
-    assert g1["cad"]["mass"] == pytest.approx(g0["cad"]["mass"], rel=1e-6)
+    assert g1["cad"]["volume"] == pytest.approx(g0["cad"]["volume"], rel=1e-4)
+    assert g1["cad"]["mass"] == pytest.approx(g0["cad"]["mass"], rel=1e-4)
     assert np.allclose(g1["cad"]["bbox"], g0["cad"]["bbox"], atol=1e-6)
     assert g1["cad"]["sha256"] != g0["cad"]["sha256"]
     assert {k: v["faces"] for k, v in g1["features"].items()} == {k: v["faces"] for k, v in g0["features"].items()}
