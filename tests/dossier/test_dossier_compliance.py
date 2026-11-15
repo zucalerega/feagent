@@ -155,10 +155,10 @@ def test_pass_is_a_converged_result_with_a_positive_conservative_margin(workproj
     assert (item.limit, item.limit_source) == (170e6, "yield strength of MAT-316L")
     assert (item.factor, item.factor_source) == (1.0, "criterion yield of REQ-MOV-002")
     assert (item.requirement, item.criterion, item.load_case, item.analysis) == ("REQ-MOV-002", 0, "LC-PROOF", "AN-PROOF")
-    assert item.result_key == MB + "scls" and item.origin.by == "engine:compliance" and item.origin.stage == "assess"
+    assert item.result_key == MB + "SCL-SHELL" and item.origin.by == "engine:compliance" and item.origin.stage == "assess"
     assert item.statement == (
-        "The von Mises membrane plus bending stress on the worst stress classification line is 71.3 MPa "
-        "with an uncertainty of 2 %. The allowable is 170 MPa (yield strength of MAT-316L). "
+        "The von Mises membrane plus bending stress on SCL-SHELL is 71.3 MPa "
+        "with an uncertainty of 2 %. Line SCL-SHELL governs of the 5 stress classification lines. The allowable is 170 MPa (yield strength of MAT-316L). "
         "The factor of safety is 1.0 (criterion yield of REQ-MOV-002). "
         "The margin of safety is +1.34 with the uncertainty on the unsafe side. The criterion passes.")
     assert item.reasons == ["The result has the status converged.",
@@ -197,7 +197,8 @@ def test_inconclusive_when_the_margin_is_smaller_than_the_uncertainty(workprojec
 
 
 def test_converged_result_without_an_uncertainty_is_used_as_it_is(workproject):
-    item = one(workproject, PROOF, res(MB + "scls", 150 * MPA, u=None))
+    # only a hand calculation or a derived result can decide without an uncertainty
+    item = one(workproject, PROOF, res(MB + "scls", 150 * MPA, u=None, method="derived"))
     # no uncertainty: MS = 170 / 150 - 1 = 0.13333
     assert item.verdict == "pass" and item.margin == pytest.approx(0.13333, abs=1e-5)
     assert item.uncertainty is None and item.conservative_value == 150e6
@@ -272,9 +273,9 @@ def test_not_converged_passes_when_the_margin_holds_with_k_times_the_uncertainty
     item = one(workproject, BURST, res("von_mises.membrane@scls", 116.3 * MPA, u=0.069, status="not_converged",
                                        near="SCL-SHELL"), "LC-BURST", checks=[check("CHK-EQUILIBRIUM", True)])
     # 1 x: 116.3 x 1.069 = 124.3247 MPa; MS = 485 / 124.3247 - 1 = +2.90108   (margin and conservative value)
-    # 2 x: 116.3 x 1.138 = 132.3494 MPa; MS = 485 / 132.3494 - 1 = +2.66455   >= 0: pass
+    # 2 x: 116.3 x 1.138 = 132.3494 MPa; MS = 485 / 132.3494 - 1 = +2.66455   >= 0: pass, and the margin shown
     assert workproject.policy.unconverged_margin_factor == 2.0
-    assert item.verdict == "pass" and item.margin == pytest.approx(2.90108, abs=1e-5)
+    assert item.verdict == "pass" and item.margin == pytest.approx(2.66455, abs=1e-5)
     assert item.conservative_value == pytest.approx(124.3247e6) and item.uncertainty == pytest.approx(0.069)
     assert item.reasons[:5] == ["The result has the status not converged.",
                                 "The uncertainty of the result is 6.9 %, and the policy limit is 5 %.",
@@ -282,18 +283,19 @@ def test_not_converged_passes_when_the_margin_holds_with_k_times_the_uncertainty
                                 "The policy accepts this margin for a result with the status not converged.",
                                 'The location of the value is "SCL-SHELL".']
     assert item.statement.endswith(
-        "The margin of safety is +2.90 with the uncertainty on the unsafe side and +2.66 with 2 times the uncertainty "
-        "on the unsafe side. The result has the status not converged, but the criterion passes with 2 times its uncertainty.")
+        "The margin of safety is +2.90 with the uncertainty on the unsafe side. The margin that decides the verdict is "
+        "+2.66, with 2 times the uncertainty on the unsafe side. "
+        "The result has the status not converged, but the criterion passes with 2 times its uncertainty.")
 
 
 def test_not_converged_fails_when_the_margin_is_negative_with_k_times_the_uncertainty_on_the_safe_side(workproject):
     item = one(workproject, PROOF, res(MB + "scls", 300 * MPA, u=0.10, status="not_converged"))
     # 1 x unsafe: 330 MPa; MS = 170 / 330 - 1 = -0.48485 (the margin)
-    # 2 x safe:   300 x 0.8 = 240 MPa; MS = 170 / 240 - 1 = -0.29167 < 0: fail
-    assert item.verdict == "fail" and item.margin == pytest.approx(-0.48485, abs=1e-5)
+    # 2 x safe:   300 x 0.8 = 240 MPa; MS = 170 / 240 - 1 = -0.29167 < 0: fail, and the margin shown
+    assert item.verdict == "fail" and item.margin == pytest.approx(-0.29167, abs=1e-5)
     assert "The margin of safety is -0.29 with 2 times this uncertainty on the safe side." in item.reasons
     assert "The criterion fails for each value in this wider band." in item.reasons
-    assert item.statement.endswith("and -0.29 with 2 times the uncertainty on the safe side. "
+    assert item.statement.endswith("The margin that decides the verdict is -0.29, with 2 times the uncertainty on the safe side. "
                                    "The result has the status not converged, but the criterion fails also with 2 times its uncertainty.")
 
 
@@ -314,10 +316,10 @@ def test_not_converged_is_inconclusive_when_the_sign_changes_inside_k_times_the_
 
 def test_not_converged_with_an_absolute_and_a_relative_uncertainty(workproject):
     rv = ResultValue(key=MB + "scls", value=92 * MPA, unit="Pa", uncertainty=0.0697, uncertainty_abs=6.4 * MPA,
-                     status="not_converged")
+                     status="not_converged", error_estimated=True)
     item = one(workproject, PROOF, rv)
     # the absolute one is used: 1 x: 98.4 MPa, MS = 170 / 98.4 - 1 = +0.72764; 2 x: 104.8 MPa, MS = +0.62214: pass
-    assert item.verdict == "pass" and item.margin == pytest.approx(0.72764, abs=1e-5)
+    assert item.verdict == "pass" and item.margin == pytest.approx(0.62214, abs=1e-5)
     assert item.reasons[1:3] == ["The uncertainty of the result is 6.4 MPa (7 %), and the policy limit is 5 %.",
                                  "The margin of safety is +0.62 with 2 times this uncertainty on the unsafe side."]
 
@@ -341,17 +343,18 @@ def test_not_converged_temperature_with_an_absolute_uncertainty(workproject):
     th = dict(lc_id="LC-TH-FIRE", analysis_type="thermal_steady")
 
     def t(value, du):
-        return temperature(value, uncertainty_abs=du).model_copy(update={"status": "not_converged"})
+        return temperature(value, uncertainty_abs=du).model_copy(update={"status": "not_converged",
+                                                                         "error_estimated": True})
 
     item = one(workproject, TEMP, t(251.3, 4.0), **th)
-    # absolute, in K: 1 x: 247.3 K, MS = 247.3 / 233 - 1 = +0.06137; 2 x: 243.3 K, MS = +0.04421: pass
-    assert item.verdict == "pass" and item.margin == pytest.approx(0.06137, abs=1e-5)
+    # absolute, in K: 1 x: 247.3 K, MS = 247.3 / 233 - 1 = +0.06137; 2 x: 243.3 K, MS = +0.04421: pass (shown)
+    assert item.verdict == "pass" and item.margin == pytest.approx(0.04421, abs=1e-5)
     assert item.conservative_value == pytest.approx(247.3)
     assert item.reasons[1:3] == ["The uncertainty of the result is 4 K.",
                                  "The margin of safety is +0.044 with 2 times this uncertainty on the unsafe side."]
     item = one(workproject, TEMP, t(220.0, 4.0), **th)
-    # 2 x safe: 228 K, MS = 228 / 233 - 1 = -0.02146: fail (the margin: 216 / 233 - 1 = -0.07296)
-    assert item.verdict == "fail" and item.margin == pytest.approx(-0.07296, abs=1e-5)
+    # 2 x safe: 228 K, MS = 228 / 233 - 1 = -0.02146: fail, the margin shown (1 x unsafe: 216 / 233 - 1 = -0.07296)
+    assert item.verdict == "fail" and item.margin == pytest.approx(-0.02146, abs=1e-5)
     assert "The margin of safety is -0.021 with 2 times this uncertainty on the safe side." in item.reasons
     item = one(workproject, TEMP, t(236.0, 3.0), **th)
     # 1 x: 233 K, MS = 0 (a pass if it were converged); 2 x unsafe: 230 K, MS = -0.01288; 2 x safe 242 K, +0.03863

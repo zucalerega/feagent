@@ -785,6 +785,8 @@ def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | No
             unc = ev.uncertainty_text()
             mesh = " on the finest mesh" if ev.status == "singular" and ev.finest else ""
             s.append(f"The {_what(ev.key)} is {shown}{mesh}{' with an uncertainty of ' + unc if unc else ''}.")
+            if ev.governs:
+                s.append(ev.governs)
     else:
         s.append(f"Load case {lc.id} gives no value for the {_what(key)}.")
     if isinstance(limit, _Limit):
@@ -807,8 +809,6 @@ def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | No
                 s.append(f"The margin that decides the verdict is {_ms(ev.k_margin)}, with {_times(ev.k)} the "
                          f"uncertainty on the {side} side.")
     decided_by_k = ev is not None and hc is None and ev.k is not None and verdict == ev.verdict
-    if ev is not None and ev.governs:
-        s.append(ev.governs)
     s.append(_verdict_sentence(verdict, cause, ev.k if decided_by_k else None))
     if caveats:
         s.append(f"Finding {caveats[0]} applies to the inputs of this item." if len(caveats) == 1
@@ -956,7 +956,7 @@ def _journal(project, inp: _Inputs, items: list[ComplianceItem], estimates: list
                         f"The margin of safety then uses {times} the uncertainty. "
                         f"The verdict is pass when this margin is zero or more with the uncertainty on the unsafe side. "
                         f"The verdict is fail when this margin is negative with the uncertainty on the safe side. "
-                        "Else the verdict is inconclusive. A result with no error estimate stays inconclusive. "
+                        "Else the verdict is inconclusive, also for a result with no error estimate. "
                         "The margin of the item is then the margin with this factor.",
                  rationale=f"Policy {pol.id} gives the factor unconverged_margin_factor of {_fac(k)}. "
                            "The mesh study gives an error estimate for a sequence that converges. "

@@ -690,6 +690,19 @@ def _data_jumps(system: _System, times: np.ndarray) -> list[int]:
     return sorted(jumps)
 
 
+def _jump_is_late(system: _System, t0: float, t1: float) -> bool:
+    """Whether a jump between t0 and t1 lies in the second half of the step (the data at the middle are
+    still those at t0), e.g. ``where(t < t1, ...)`` with t1 a step time."""
+    parts = [(d.f[system.I].copy(), d.g.copy(), d.h.copy()) for d in
+             (system.at(t) for t in (t0, 0.5 * (t0 + t1), t1))]
+    near_a = near_b = 0.0
+    for a, m, b in zip(*parts):           # each part in its own units
+        if a.size and np.linalg.norm(b - a) > 0.0:
+            near_a += np.linalg.norm(m - a) / np.linalg.norm(b - a)
+            near_b += np.linalg.norm(m - b) / np.linalg.norm(b - a)
+    return bool(near_a < near_b)
+
+
 def _first_cell_warning(md: skb._Model, rc: np.ndarray, nodes: np.ndarray, dt: float, warnings: list) -> None:
     """A face whose temperature jumps at t = 0: compare the penetration depth of one step, sqrt(alpha dt),
     with the size of the cells at the face."""
@@ -785,6 +798,7 @@ def solve(case: Case, **options) -> TransientHeatResult:
         W.append(f"info: {why}: Crank-Nicolson takes its first {n_startup} steps as {2 * n_startup} backward-Euler "
                  f"half-steps (Rannacher start-up)")
     half_steps = set(range(n_startup))
+    held: set[int] = set()                    # steps taken with the data at their start (a jump at their end)
     # a jump of the data later in the run excites the same undamped modes: the same start-up after it
     jumps = [n for n in _data_jumps(system, times) if n > 0 or n_startup == 0] if scheme == "crank_nicolson" else []
     if jumps:
@@ -796,10 +810,17 @@ def solve(case: Case, **options) -> TransientHeatResult:
                      f"after it (measured: 8.5 % of the step at Biot 10). Use cn_startup 'auto' or the scheme bdf2.")
         else:
             for n in jumps:
-                half_steps.update(range(n, min(n + STARTUP_STEPS, n_steps)))
+                # a jump in the second half of the step (at t_n+1 itself, say): the step ends at the left limit,
+                # the old data held to t_n+1, and the start-up begins there, as at t = 0
+                late = _jump_is_late(system, float(times[n]), float(times[n + 1]))
+                if late:
+                    held.add(n)
+                first = n + 1 if late else n
+                half_steps.update(range(first, min(first + STARTUP_STEPS, n_steps)))
             W.append(f"info: the boundary or load data jump between t = {at}: Crank-Nicolson takes the "
                      f"{STARTUP_STEPS} steps from each jump on as backward-Euler half-steps (Rannacher start-up "
-                     f"after a jump)")
+                     f"after a jump; a jump in the second half of a step is taken at its end, the state reported "
+                     f"there being the one just before the jump, as at t = 0)")
     _resolution_warnings(system, times, W)
 
     method = _direct_method(opts.get("linear_solver"), len(system.I), W)
@@ -851,15 +872,15 @@ def solve(case: Case, **options) -> TransientHeatResult:
     r0_D = r[D].copy()
     for n in range(n_steps):
         t_new = float(times[n + 1])
-        d_new = system.at(t_new)
+        d_new = system.at(t_new if n not in held else float(times[n]))     # held: the data before the jump
         if scheme == "backward_euler" or (scheme == "bdf2" and n == 0):
             T_new = stepper.solve(1.0 / dt, d_new, MT / dt + d_new.f)
         elif scheme == "bdf2":
             T_new = stepper.solve(1.5 / dt, d_new, (2.0 * MT - 0.5 * MT_old) / dt + d_new.f)
         elif n in half_steps:                 # two backward-Euler half-steps; same matrix as Crank-Nicolson
-            d_half = system.at(float(times[n]) + 0.5 * dt)
+            d_half = d_new if n in held else system.at(float(times[n]) + 0.5 * dt)
             T_half = stepper.solve(2.0 / dt, d_half, (2.0 / dt) * MT + d_half.f)
-            d_new = system.at(t_new)
+            d_new = d_new if n in held else system.at(t_new)
             T_new = stepper.solve(2.0 / dt, d_new, (2.0 / dt) * (M @ T_half) + d_new.f)
         else:
             T_new = stepper.solve(2.0 / dt, d_new, (2.0 / dt) * MT - r + d_new.f)
