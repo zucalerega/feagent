@@ -92,6 +92,7 @@ from feacore.solver.base import SolveInfo, TransientResult
 OWN_OPTIONS = ("cn_startup",)          # options of this module, beside skfem_backend.KNOWN_OPTIONS
 STARTUP_STEPS = 2                      # Crank-Nicolson steps replaced by two backward-Euler half-steps each
 JUMP_TOL = 1e-9                        # initial jump at a temperature BC, relative to the largest temperature
+JUMP_RATIO = 3.0                       # a later jump: the data's change over a step against its neighbours'
 RESOLVE_TOL = 0.02                     # a value in time: midpoint against the chord, relative to its range
 FLUX_FIELDS = ("qx", "qy", "qz", "q_mag")
 _SKIP_BC, _SKIP_LOAD = BC(type="-"), Load(type="-", value=0.0)     # ignored by the steady assembler
@@ -655,6 +656,38 @@ def _resolution_warnings(system: _System, times: np.ndarray, warnings: list) -> 
                 f"it leaves the straight line between its step values by {float(dev[j]):.3g} "
                 f"({100 * float(dev[j]) / rng:.0f} % of its range {rng:.3g}); the scheme sees the step values only. "
                 f"Reduce dt ({times[1] - times[0]:g}) or put a step where the value changes.")
+
+
+def _data_jumps(system: _System, times: np.ndarray) -> list[int]:
+    """The steps n over which the boundary or load data jump: between t_n and t_n+1 the change of the load
+    vector f, of the prescribed temperatures g or of the convection coefficients h is above JUMP_TOL of its
+    size and more than JUMP_RATIO times its change over each neighbouring step. Data that are smooth in time
+    and resolved by the step change by about as much from one step to the next (a sine with 11 steps per
+    period: at most 1.2 times), a kink (a ramp that starts) changes less than its neighbours, and a jump
+    changes against neighbours that do not change at all."""
+    n_steps = len(times) - 1
+    if not system.time_dependent or n_steps < 2:
+        return []
+    deltas = {p: np.zeros(n_steps) for p in ("f", "g", "h")}
+    sizes = dict.fromkeys(deltas, 0.0)
+    prev = None
+    for n, t in enumerate(times):
+        d = system.at(float(t))
+        cur = {"f": d.f[system.I], "g": d.g, "h": d.h}
+        for p, v in cur.items():
+            if v.size:
+                sizes[p] = max(sizes[p], float(np.linalg.norm(v)))
+                if prev is not None:
+                    deltas[p][n - 1] = float(np.linalg.norm(v - prev[p]))
+        prev = {p: v.copy() for p, v in cur.items()}
+    jumps = set()
+    for p, dl in deltas.items():
+        if sizes[p] <= 0.0:
+            continue
+        nb = np.maximum(np.r_[0.0, dl[:-1]], np.r_[dl[1:], 0.0])
+        big = (dl > JUMP_TOL * sizes[p]) & (dl > JUMP_RATIO * nb)
+        jumps.update(int(n) for n in np.nonzero(big)[0])
+    return sorted(jumps)
 
 
 def _first_cell_warning(md: skb._Model, rc: np.ndarray, nodes: np.ndarray, dt: float, warnings: list) -> None:
