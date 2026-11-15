@@ -441,3 +441,7 @@ details.card>summary{grid-template-columns:minmax(0,1fr) auto auto}
 @media (max-width:60rem){details.card>summary{grid-template-columns:1fr}.card>summary .why{grid-column:1;grid-row:auto}}
 .t-matrix td:first-child,.t-matrix th:first-child{min-width:15rem;white-space:normal}
 .t-matrix td:nth-child(2){white-space:nowrap}
+.cgroup{display:block;margin:1.2rem 0}
+.grp-h{display:flex;flex-wrap:wrap;gap:.3rem .6rem;align-items:baseline;padding:.4rem .6rem;border-radius:var(--r);border-top:0}
+.grp-s{margin:.3rem .6rem}
+.tn-leaf{flex-wrap:wrap}

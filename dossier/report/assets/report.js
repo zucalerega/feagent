@@ -242,7 +242,7 @@
       var b = el("button", { type: "button", cls: "wp-tab", role: "tab", "aria-selected": "false", "data-tab": key }, [label + " (" + count + ")"]);
       b.addEventListener("click", function () { show(key); }); tabs.appendChild(b); return b;
     }
-    var nUp = 0; (function c(t) { t.children.forEach(function (k) { nUp++; c(k); }); })(up);
+    var seenUp = {}; (function c(t) { t.children.forEach(function (k) { seenUp[k.id] = 1; c(k); }); })(up); var nUp = Object.keys(seenUp).length;
     tabBtn("up", "What it rests on", nUp); tabBtn("down", "What it affects", down.length);
     p.appendChild(tabs); p.appendChild(body);
     function show(key) {
