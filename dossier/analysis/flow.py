@@ -616,7 +616,7 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
     try:
         q = res.evaluate_all()
         info = res.info
-        rho, nu = setup.rho, setup.mu / setup.rho
+        rho = setup.rho
         # ---- means of each cell layer
         xc = (res.C - bore.origin) @ e
         layer = np.clip(np.searchsorted(mesh.stations, xc) - 1, 0, len(mesh.stations) - 2)

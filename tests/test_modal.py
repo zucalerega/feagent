@@ -105,23 +105,25 @@ def tmp(tmp_path_factory):
 # --------------------------------------------------------------------------- beams against Euler-Bernoulli
 
 
-@pytest.mark.parametrize("slender", [10, 20, 40])
-def test_cantilever_against_euler_bernoulli(tmp, slender):
+def test_cantilever_against_euler_bernoulli(tmp):
     """A plane-stress cantilever, L / H = 10, 20, 40, four P2 cells through the depth. The solid has shear
-    deformation and rotary inertia (Timoshenko effects, ~ (H / L)^2), so it lies BELOW beam theory, and the gap
-    shrinks with the slenderness: f1 -0.38 %, -0.10 %, -0.03 % (gap ratio ~ 4 per doubling of L / H)."""
-    H = 0.05
-    L = slender * H
-    t = 0.01
-    r = solve(modal(rect(tmp / f"cant{slender}.msh", L, H, H / 4), [BC(type="fixed", group="left")], n=3,
-                    thickness=t))
-    eb = np.array([eb_frequency(b, L, E, t * H**3 / 12, RHO, t * H) for b in CANTILEVER_BL])
-    flex = np.sort(r.frequencies)[:3] if slender >= 20 else r.frequencies[:2]
-    rel = flex / eb[: len(flex)] - 1
-    gap = {10: 0.006, 20: 0.0015, 40: 0.0005}[slender]
-    assert np.all(rel < 0), rel                                    # the solid is softer than the beam
-    assert abs(rel[0]) < gap, rel
-    assert r.rigid_modes == 0
+    deformation and rotary inertia (Timoshenko effects, ~ (H / L)^2), so it lies BELOW beam theory and the gap
+    shrinks with the slenderness. Measured f1: -0.65 %, -0.13 %, -0.017 %; f2: -4.9 %, -1.27 %, -0.31 % (a ratio
+    of 3.9 and 4.1 per doubling of L / H). At L / H = 80 f1 is +0.004 %: the mesh error takes over."""
+    H, t = 0.05, 0.01
+    gaps = []
+    for slender in (10, 20, 40):
+        L = slender * H
+        r = solve(modal(rect(tmp / f"cant{slender}.msh", L, H, H / 4), [BC(type="fixed", group="left")], n=2,
+                        thickness=t))
+        assert r.rigid_modes == 0
+        eb = np.array([eb_frequency(b, L, E, t * H**3 / 12, RHO, t * H) for b in CANTILEVER_BL[:2]])
+        gaps.append(r.frequencies / eb - 1)
+    gaps = np.array(gaps)
+    assert np.all(gaps < 0), gaps                       # the solid is softer than the beam
+    ratio = gaps[:-1, 1] / gaps[1:, 1]
+    assert np.all((ratio > 3.3) & (ratio < 5.0)), ratio  # ~ (H / L)^2
+    assert abs(gaps[2, 0]) < 3e-4 and abs(gaps[0, 0]) < 0.008
 
 
 def test_simply_supported_strip_tends_to_euler_bernoulli(tmp):

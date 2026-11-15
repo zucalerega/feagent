@@ -262,7 +262,7 @@ def _convert(source: Path, dst: Path, k: float) -> None:
     """Write `dst`: `source` with the header length unit replaced, so that the kernel (default target
     millimetre) gives coordinates that are `k` times those it gives for `source`, that is metres. Only the
     header changes (the numbers and the surfaces are not touched, so the copy is exact). The copy is then
-    checked against the source face by face (kind, area x k^2, centre x k, volume x k^3)."""
+    checked against the source face by face (kind, area x k^2, centre x k, volume x k^3, to 1e-5: the kernel integrates a trimmed face with a tolerance)."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.stem + ".tmp" + dst.suffix)
     text = Path(source).read_text(errors="replace")
@@ -291,7 +291,7 @@ def _convert(source: Path, dst: Path, k: float) -> None:
         for key, (measure, centre, kind) in a.items():
             mb, cb, kb = b[key]
             want = measure * k ** key[0]
-            if kind != kb or abs(mb - want) > 1e-6 * abs(want) or np.abs(cb - centre * k).max() > 1e-6 * size:
+            if kind != kb or abs(mb - want) > 1e-5 * abs(want) or np.abs(cb - centre * k).max() > 1e-5 * size:
                 problems.append(f"{'face' if key[0] == 2 else 'solid'} {key[1]} differs")
     if problems:
         tmp.unlink(missing_ok=True)

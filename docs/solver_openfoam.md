@@ -279,7 +279,9 @@ about 2 s.
 
 Supersonic flow of a perfect gas: `feacore/solver/_foam_compressible.py` (the backend dispatches on
 `analysis.physics`). Tests: `tests/test_supersonic.py`. The benchmark is `supersonic_blunt_wedge_2d`
-(`docs/benchmarks_cfd.md`, "Supersonic blunted wedge").
+(`docs/benchmarks_cfd.md`, "Supersonic blunted wedge"). Internal flow (a reservoir `total_inlet`, a
+`pressure_outlet` that switches between subsonic and supersonic outflow, the `mass_flow` QoI, the nozzle
+benchmarks `cd_nozzle_*_2d`): `docs/solver_transient.md`, "Compressible internal flow".
 
 - **Case:**
   - Material: `gamma`, `gas_constant` (J/(kg K)) and `mu`. `mu = 0` is inviscid (Euler); `mu > 0`
