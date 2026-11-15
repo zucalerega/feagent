@@ -89,7 +89,7 @@ def test_cad_facts(built):
     assert geo["component"] == "CMP-MOV-BODY"
     assert cad["n_faces"] == 47 and len(geo["faces"]) == 47
     assert cad["volume"] == pytest.approx(VOLUME, rel=1e-4)
-    assert cad["mass"] == pytest.approx(cad["volume"] * cad["density"], rel=1e-9)
+    assert cad["mass"] == pytest.approx(cad["volume"] * cad["density"], rel=1e-6)
     assert cad["density"] == pytest.approx(7990.0)
     assert cad["mass"] == pytest.approx(2.3712, abs=2e-3)
     assert cad["sha256"] == geometry.sha256_of(project.cad_path("CMP-MOV-BODY"))

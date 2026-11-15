@@ -572,3 +572,100 @@ def test_loads_the_engine_cannot_idealize_are_not_supported(tube):
         assert any(f.subject == lc_id and f.category == "model" for f in out.journal.findings)
     lc = tube.load_case("LC-FLOW", [], supports=["INT-ROOT"], analysis_type="flow")
     assert tube.run(lc, tube.mesh2[:1]).record.status == "not_supported"
+
+
+# =========================================================================== the convergence rule
+
+
+def test_convergence_rule_monotone_order_and_absolute_uncertainty():
+    """Monotone with the theoretical order: Richardson value, the order, u = max(1.25 GCI, 3 x GCI(p_theory))."""
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 101.0, 101.25], 2.0, 0.02)
+    assert st.kind == "monotone" and st.status == "converged"
+    assert st.order == pytest.approx(2.0) and st.extrapolated == pytest.approx(101.25 + 0.25 / 3)
+    assert st.absolute == pytest.approx(3.0 * 0.25 / 3.0)               # the conservative index governs
+    assert st.uncertainty == pytest.approx(st.absolute / 101.25)
+
+
+def test_convergence_rule_order_far_above_theory_is_no_order():
+    """A change that stops abruptly gives a huge observed order: not asymptotic, so no order, no
+    extrapolation, and u = 3 x the spread of the three values."""
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 110.0, 110.0001], 2.0, 0.02)
+    assert st.kind == "monotone" and st.order is None and st.extrapolated is None
+    assert st.absolute == pytest.approx(3.0 * 10.0001) and st.status == "not_converged"
+
+
+def test_convergence_rule_oscillation_uses_the_last_change():
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 103.0, 101.5], 2.0, 0.05)
+    assert st.kind == "oscillatory" and st.order is None
+    assert st.absolute == pytest.approx(3.0 * 1.5) and st.status == "converged"
+    assert structural.study([4.0, 2.0, 1.0], [100.0, 103.0, 101.5], 2.0, 0.02).status == "not_converged"
+    # alternating with growing changes: the spread
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 101.0, 98.0], 2.0, 0.5)
+    assert st.kind == "oscillatory_divergent" and st.absolute == pytest.approx(9.0)
+
+
+def test_convergence_rule_divergence_two_levels_reference_and_noise():
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 101.0, 103.0], 2.0, 0.5)
+    assert st.kind == "divergent" and st.absolute == pytest.approx(9.0) and st.grew
+    st = structural.study([2.0, 1.0], [100.0, 101.0], 2.0, 0.05)       # r = 2: factor 1 / (r^2 - 1) < 1 is not used
+    assert st.kind == "two_levels" and st.absolute == pytest.approx(3.0) and st.status == "converged"
+    st = structural.study([1.2, 1.0], [100.0, 101.0], 2.0, 0.05)       # r = 1.2: 3 x 1 / 0.44
+    assert st.absolute == pytest.approx(3.0 / (1.44 - 1.0)) and st.status == "not_converged"
+    # a small component of a large field is judged against the field (the reference)
+    st = structural.study([4.0, 2.0, 1.0], [0.5, 0.2, 0.1], 2.0, 0.02, reference=100.0)
+    assert st.status == "converged" and st.uncertainty > 1.0 and st.absolute == pytest.approx(0.15)
+    assert structural.study([4.0, 2.0, 1.0], [0.5, 0.2, 0.1], 2.0, 0.02).status == "not_converged"
+    # the line noise is a floor of the uncertainty
+    st = structural.study([4.0, 2.0, 1.0], [100.0, 101.0, 101.25], 2.0, 0.02, noise=1.0)
+    assert st.absolute == pytest.approx(3.0) and st.status == "not_converged"
+    assert structural.study([1.0], [5.0], 2.0, 0.02).status == "not_converged"
+
+
+def test_aggregate_covers_every_line_with_its_absolute_uncertainty():
+    def rv(v, u, status="converged"):
+        return model.ResultValue(key="k", value=v, unit="Pa", uncertainty=None if u is None else u / v,
+                                 uncertainty_abs=u, status=status, per_level=[v])
+    agg = structural._aggregate("von_mises.membrane@scls", {"A": rv(100.0, 1.0), "B": rv(95.0, 10.0, "not_converged")}, [])
+    assert agg.value == 100.0 and agg.near == "A"
+    assert agg.uncertainty_abs == pytest.approx(5.0) and agg.uncertainty == pytest.approx(0.05)
+    assert agg.status == "not_converged"                     # B can reach the worst value
+    agg = structural._aggregate("von_mises.membrane@scls", {"A": rv(100.0, 1.0), "B": rv(50.0, 10.0, "not_converged")}, [])
+    assert agg.uncertainty_abs == pytest.approx(1.0) and agg.status == "converged"
+
+
+def test_scaled_result_scales_the_absolute_uncertainty():
+    r = model.ResultValue(key="von_mises.peak@part", value=100.0, unit="Pa", uncertainty=0.02, uncertainty_abs=2.0,
+                          status="converged", per_level=[99.0, 100.0])
+    s = scaled.scale_result(r, 1.5, "AN-BASE")
+    assert s.value == 150.0 and s.uncertainty_abs == pytest.approx(3.0) and s.uncertainty == 0.02
+
+
+# =========================================================================== (e) the example's proof test
+
+
+@pytest.mark.slow
+def test_example_proof_test_quick(workproject):
+    """LC-PROOF of the example (a free part under the proof pressure) with Options(quick=True): two levels,
+    a done record with every SCL result, the peak at a re-entrant edge never converged, the information-only
+    error estimate with passed=None, and no failed check. About 40 s."""
+    from dossier import context as context_mod
+    from dossier import pipeline
+    opts = Options(quick=True, log=lambda s: None)
+    pipeline.run(workproject, "context", "plan", opts)
+    ctx = context_mod.load(workproject)
+    geo = pipeline.load_geometry(workproject)
+    lc = next(x for x in workproject.collection("load_cases") if x.id == "LC-PROOF")
+    rec = pipeline.analyze_one(workproject, ctx, geo, lc, opts).record
+    assert rec.status == "done", rec.message
+    assert len(rec.mesh) == 2
+    peak = rec.results["von_mises.peak@part"]
+    assert peak.status in ("singular", "not_converged") and peak.uncertainty is None and peak.order is None
+    for key in ("von_mises.membrane@scls", "von_mises.membrane_bending@scls"):
+        r = rec.results[key]
+        assert r.uncertainty_abs is not None and 1e6 < r.value < peak.value
+    for r in rec.results.values():
+        if r.uncertainty is not None and r.uncertainty_abs is not None and r.value:
+            assert r.uncertainty_abs == pytest.approx(r.uncertainty * abs(r.value))
+    assert not [c for c in rec.checks if c.passed is False]
+    zz = [c for c in rec.checks if c.kind == "error_estimate"]
+    assert zz and all(c.passed is None and c.limit is None for c in zz)

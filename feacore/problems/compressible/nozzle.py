@@ -16,12 +16,12 @@ the symmetry plane, the curved wall slips (no viscosity), out-of-plane thickness
 of depth through the half nozzle.
 
 Gas: gamma = 1.4, R = 287 J/(kg K), reservoir p0 = 1e5 Pa, T0 = 300 K. Regimes (back pressure pb at x = L;
-critical values for Ae / At = 1.5: p1 / p0 = 0.8776 (choked, subsonic exit), p2 / p0 = 0.6087 (normal shock in
-the exit plane), p3 / p0 = 0.1590 (shock-free supersonic exit)):
+critical values for Ae / At = 1.5: p1 / p0 = 0.8805 (choked, subsonic exit), p2 / p0 = 0.6157 (normal shock in
+the exit plane), p3 / p0 = 0.1602 (shock-free supersonic exit)):
 
     subsonic    pb / p0 = 0.92   not choked: subsonic everywhere, the area-Mach relation with the fictitious
                                  sonic area A* = Ae / (A/A*)(Me), Me from pb / p0
-    shock       pb / p0 = 0.75   choked; a normal shock in the diverging part at x_s / L = 0.6108
+    shock       pb / p0 = 0.80   choked; a normal shock in the diverging part at x_s / L = 0.5864 (M1 = 1.494)
     supersonic  pb / p0 = 0.10   choked, supersonic to the exit, Me = 1.8541; the exit flow and the mass flow
                                  do not depend on pb below p2 (here the jet expands outside the domain)
 
@@ -227,6 +227,9 @@ def shock_position(res, prob: CDNozzle2D, n: int = 2001) -> float | None:
     L = prob.params["L"]
     x = np.linspace(0.0, L * (1 - 1e-9), n)
     p = section_average(res, prob, x, "p")
+    m = section_average(res, prob, x[::20], "mach")
+    if m.max() < 1.02 or m[-1] >= 1.0:       # no supersonic region that ends subsonic: no shock in the nozzle
+        return None
     i = int(np.argmin(p))
     if i >= n - 2:
         return None
