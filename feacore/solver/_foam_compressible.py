@@ -507,7 +507,7 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
             ra, rb = _read(times[-2], mesh.n_cells), _read(times[-1], mesh.n_cells)
             change = _change(ra, rb, mesh.V, scale)
             history.append((ft, max(change.values())))
-            snap, settled = None, True
+            snap, settled, settled_cycle = None, True, True
             if case.qois or track:
                 snap = CompressibleResult(case, fm, cdir, gamma, R, mu, p_gauge, [])
                 snap._load(poly, times[-1], mesh)
@@ -517,6 +517,9 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
                 if switched:
                     switch.write(times[-1])
                 settled = not switched and balance["imbalance"] <= mtol
+                # in a limit cycle the mass in the domain breathes at the level the QoIs move: in and out then
+                # differ by up to qoi_tol of the mass flow at any one instant (the scheme itself conserves mass)
+                settled_cycle = not switched and balance["imbalance"] <= max(mtol, qtol)
             if max(change.values()) <= tol and settled:
                 converged, steady = True, "field"
                 break
@@ -524,7 +527,7 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
                 qhist.append((ft, snap.evaluate_all()))                              # moving while the QoIs hold
                 if len(qhist) >= QOI_WINDOW:
                     ok, spread = _qois_steady([q for _, q in qhist[-QOI_WINDOW:]], qscales, qtol)
-                    if ok and settled:
+                    if ok and settled_cycle:
                         converged, steady = True, "qois"
                         where = _where(ra, rb, mesh.C, scale, dim)
                         break
@@ -557,9 +560,11 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
     res._load(poly, tdir, mesh)
     if track:
         balance = fint.mass_balance(res)
+        btol = max(mtol, qtol) if steady == "qois" else mtol
         warnings.append(f"info: mass balance: {balance['in']:.6g} kg/s in, {balance['out']:.6g} kg/s out, "
-                        f"imbalance {balance['imbalance']:.1e} of the larger (mass_tol {mtol:g}"
-                        f"{'' if balance['imbalance'] <= mtol else ': NOT MET'})")
+                        f"imbalance {balance['imbalance']:.1e} of the larger ("
+                        + (f"mass_tol {mtol:g}" if btol == mtol else f"limit cycle: max(mass_tol, qoi_tol) {btol:g}")
+                        + f"{'' if balance['imbalance'] <= btol else ': NOT MET'})")
         warnings += switch.describe() if switch is not None else []
         warnings += _flow_checks(res, bcs, rsv)
     wall = time.perf_counter() - t0

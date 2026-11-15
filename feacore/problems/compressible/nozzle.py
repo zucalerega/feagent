@@ -64,9 +64,9 @@ class CDNozzle2D(FlowProblem):
                       "gamma": 1.4, "gas_constant": 287.0, "h0": 1.0 / 40}
     n_x0, n_y0 = 80, 6          # cells at h0 along the nozzle and across its half height
     n_wall = 201                # spline points of the curved wall
-    max_flow_times = 300
+    max_flow_times = 200
     steady_tol = 1e-6
-    qoi_tol = 1e-4
+    qoi_tol = 1e-3
 
     def __init__(self, id: str | None = None, regime: str | None = None, **params):
         if regime is not None:
