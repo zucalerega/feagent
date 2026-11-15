@@ -486,14 +486,17 @@ The limiter is Minmod for internal flow (vanAlbada for external flow). On cd_noz
 vanAlbada keeps a transverse acoustic oscillation in the converging part that never decays (the field
 changes by 4e-3 per flow time after 300 flow times, the mass flow by 2e-3 of its value); Minmod leaves a
 limit cycle ten times smaller (5e-4 per flow time, mass flow 3e-4) at the same error at h0 (table below,
-and the vanAlbada errors at h0: mass flow -0.044 % choked / -0.62 % subsonic, shock +0.16 % of L). The nozzle
+and the vanAlbada errors at h0: mass flow -0.044 % choked / -0.62 % subsonic, shock +0.16 % of L). The cycle
+does not vanish with Minmod either: the field still changes by ~5e-4 per flow time on the choked cases at
+h0 / 2 and h0 / 4 and by 7e-3 in the subsonic case at h0 / 2 (its QoIs by up to 9e-4), all far below the
+tolerances. The nozzle
 benchmarks therefore use `qoi_tol` 1e-3, as the blunted wedge does for its limit cycle.
 
 **Verification: the converging-diverging nozzle** (`cd_nozzle_*_2d`). Upper half of a planar nozzle,
 -1 <= x <= 1 m, 0 <= y <= h(x) = 0.1 (1 + 0.5 x^2) m (A / A_t = h / h_t, inlet and exit area ratio 1.5),
 symmetry at y = 0, slip wall, inviscid air (gamma 1.4, R 287), p0 = 1e5 Pa, T0 = 300 K. Wall slope at most
 0.1, throat radius of curvature 10 h_t: the departure from quasi-1D flow is O(h'^2) ~ 1e-2 locally and the
-planar throat's discharge deficit ~2.5e-4 (Kliegel and Levine 1969: (gamma + 1) / 96 (h_t / R_c)^2). Quad
+planar throat's discharge deficit small (measured below 1e-4, see the table). Quad
 meshes, 80 x 6 cells at h0 (cells nearly square at the throat). The exact solution (area-Mach relation,
 isentropic and normal-shock relations, scipy `brentq`) is itself checked against NACA Report 1135's tables
 (isentropic M = 0.5, 1, 2, 3; normal shock M = 1.5, 2, 3; choked flux 0.040418 sqrt(T0) / p0) to 1e-4.
@@ -508,16 +511,31 @@ Measured (Minmod, one core, the shared 4-core machine under load; errors relativ
 `nozzle.shock_position`, the section-averaged pressure's mid-jump point; profile = the largest deviation of
 the section-averaged p (/ p0) and Mach number at 39 stations, 0.1 away from the shock):
 
-COMPRESSIBLE_TABLE
+| regime | mesh (cells) | mass flow | p_exit | Mach_exit | x_s - exact (/ L) | profile max dp / p0, dM | flow times | wall (s) |
+|---|---|---|---|---|---|---|---|---|
+| subsonic | 2 h0 (40 x 3) | -1.55 % | 0 (imposed) | -1.37 % | - | 0.010, 0.015 | 45 | 12 |
+| subsonic | h0 (80 x 6) | -0.64 % | 0 | -0.47 % | - | 0.0035, 0.006 | 40 | 38 |
+| subsonic | h0 / 2 (160 x 12) | -0.41 % | 0 | -0.25 % | - | 0.0030, 0.005 | 45 | 126 |
+| shock | 2 h0 | -0.147 % | 0 | +0.000 % | -0.10 % | 0.015 (shock smeared), 0.005 | 25 | 11 |
+| shock | h0 | -0.055 % | 0 | +0.09 % | +0.17 % | 0.0009, 0.001 | 25 | 29 |
+| shock | h0 / 2 | -0.034 % | 0 | +0.12 % | +0.18 % | 0.0006, 0.0008 | 25 | 97 |
+| shock | h0 / 4 (320 x 24) | -0.012 % | 0 | +0.14 % | +0.05 % | 0.0005, 0.0008 | 25 | 502 |
+| supersonic | 2 h0 | -0.144 % | +0.52 % | -0.40 % | - | 0.007, 0.005 | 20 | 9 |
+| supersonic | h0 | -0.055 % | +0.41 % | -0.23 % | - | 0.0008, 0.003 | 20 | 22 |
+| supersonic | h0 / 2 | -0.040 % | +0.34 % | -0.16 % | - | 0.0006, 0.003 | 20 | 80 |
 
 Reading it:
-- The choked mass flow is within 0.06 % at every mesh from h0 on; its remaining error is the planar throat's
-  discharge deficit (~ -0.03 %) plus the limit cycle (+-0.02 % at h0 / 2), so it does not converge further
-  towards the 1D value, as expected.
-- The shock position agrees to 0.2 % of L at every mesh (the shock is captured in about two cells; the mid-jump
-  point sits within a tenth of a cell of the 1D position, the remainder being the 2D shock's slight curvature).
-- The unchoked (subsonic) mass flow is the sensitive one: it follows from p0 - pb = 8 % of p0 and carries the
-  scheme's total-pressure loss: SUBSONIC_ORDER.
+- The choked mass flow converges to the 1D value: -0.147, -0.055, -0.034, -0.012 % from 2 h0 to h0 / 4
+  (order ~1.2 overall; the h0 / 2 value carries the limit cycle's +-0.02 %), so the planar throat's 2D
+  discharge deficit is below ~1e-4 here, as the mild throat curvature leads one to expect.
+- The shock position agrees to 0.2 % of L at every mesh, a tenth of a cell or less (the shock is captured in
+  about two cells; the mid-jump point is not monotone in h at that level, which is the 2D shock's slight
+  curvature and the sampling, not a trend).
+- The unchoked (subsonic) mass flow is the sensitive one: it follows from p0 - pb = 8 % of p0, and each 0.1 %
+  of p0 lost to the scheme's dissipation costs 0.6 % of it at this back pressure. It converges at about
+  second order (-1.55, -0.64, -0.41 %); the Richardson extrapolation (-0.33 %) is the 2D effect at the exit,
+  where the wall turns the flow by up to 5.7 deg (the axial share of a uniform speed alone is -0.17 %). It
+  is within the regime's 1 % tolerance from h0 on.
 - The exit pressure of the supersonic regime converges towards a 2D offset of ~0.3 % (the exit flow is not
   parallel: the wall turns it by 5.7 deg), and the exit Mach number with it.
 - The result does not depend on the back pressure below p2: pb / p0 = 0.05, 0.10 and 0.40 give the same
@@ -534,11 +552,14 @@ effects.
 - Mach range: about 0.1 (largest Mach number of the flow) up to the hypersonic range of the external path.
   Inflow through a `total_inlet` must stay subsonic (warned).
 - Steady flow only: the run is time-accurate, but only the end state is returned; limit cycles of the
-  scheme (above) are averaged by nothing: the QoIs are the last snapshot, within `qoi_tol`.
+  scheme (above) are not averaged: the QoIs are the last snapshot, steady to `qoi_tol`.
 - Serial, explicit: about 1.4 us per cell per step on one core; a flow time at h0 (480 cells) takes
   ~700 steps, at h0 / 2 ~1500.
 
-Run times (one core, shared machine): RUNTIME_LINE.
+Run times (one core of the shared machine under load; table above): about 10 s at 2 h0, 20-40 s at h0,
+80-130 s at h0 / 2 and 500 s at h0 / 4. Steps per flow time: ~350 at 2 h0, doubling with each refinement.
+Choked cases stop by the QoI rule after 20-25 flow times, subsonic ones after 40-45 (acoustic waves in a
+subsonic duct leave only through its ends).
 
 **Example.**
 

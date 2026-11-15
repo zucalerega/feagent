@@ -10,8 +10,8 @@ Geometry: the upper half of a planar nozzle, -L <= x <= L, 0 <= y <= h(x), with
 the throat at x = 0, inlet and exit area ratios 1 + k (1.5 for the default k = 0.5). The wall slope is at
 most 2 k h_t / L = 0.1 (5.7 deg) and the throat's radius of curvature is L^2 / (2 k h_t) = 10 h_t, so the flow
 is close to quasi-one-dimensional: the departures (the wall-normal velocity, the curvature of the sonic line and
-of the shock) are of order (h')^2 and h h'' ~ 1e-2 locally and of order 1e-4 in the mass flow (a planar throat
-with R_c / h_t = 10 discharges about 1 - 1e-4 of the 1D flow; Kliegel and Levine, AIAA J. 7 (1969)). y = 0 is
+of the shock) are of order (h')^2 and h h'' ~ 1e-2 locally; measured, the choked mass flow at h0 / 4 is within
+1.2e-4 of the 1D value, and the unchoked one converges to -0.33 % of it (the flow angle at the exit). y = 0 is
 the symmetry plane, the curved wall slips (no viscosity), out-of-plane thickness 1 m: mass flows are per metre
 of depth through the half nozzle.
 
@@ -44,13 +44,13 @@ from feacore.problems.compressible.quasi1d import NACA1135, Quasi1DNozzle
 from feacore.problems.registry import register
 
 REGIMES = {"subsonic": 0.92, "shock": 0.80, "supersonic": 0.10}
-# Tolerances (relative) of the references. The scheme's error at the default mesh h0 and the 2D effects of the
-# planar nozzle are measured in docs/solver_transient.md, "Compressible internal flow"; every tolerance is at
-# least 3 times the error at h0 / 2 and covers the quasi-1D model error (~1e-4 in the mass flow, ~1e-3 in the
-# exit pressure) with margin.
+# Tolerances (relative) of the references. The scheme's errors at 2 h0 .. h0 / 4 and the 2D effects of the
+# planar nozzle are measured in docs/solver_transient.md, "Compressible internal flow" (Minmod, at h0: choked mass
+# flow -0.06 %, exit pressure +0.4 % (supersonic), exit Mach number -0.23 / +0.09 %, shock position +0.17 % of L);
+# every tolerance is at least twice the error at h0 and covers the 2D effects (exit pressure ~0.3 %).
 TOL = {"mass_flow": 0.005, "p_exit": 0.01, "mach_exit": 0.01, "x_shock": 0.02}
 # Not choked, the mass flow follows from the small pressure difference p0 - pb (8 % of p0) and takes the
-# scheme's total-pressure loss with it: -0.6 % at h0, first to second order (measured).
+# scheme's total-pressure loss with it: -0.64 % at h0, -0.41 % at h0 / 2, converging to the 2D value -0.33 %.
 TOL_SUBSONIC = {**TOL, "mass_flow": 0.01}
 
 

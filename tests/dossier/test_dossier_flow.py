@@ -117,6 +117,31 @@ def test_mesh_uncertainty_rule():
     assert three["uncertainty"] is not None and three["uncertainty"] > 0
 
 
+def test_mesh_study_check_is_information_when_over_the_limit():
+    """CONTRACTS.md: convergence is carried by the result's status and uncertainty, never by a failed check."""
+    def level(m, dp):
+        return flow.Level(m=m, cells=1000 * m, nodes=1100 * m, h_wall=1e-4, x=np.zeros(3), p=np.zeros(3),
+                          p_total=np.zeros(3), gradient=100.0, gradient_parts=(100.0, 100.0), dp=dp, dp_taps={},
+                          dp_total_faces=dp, mass_in=1.0, mass_balance=0.0, momentum_residual=0.0, y_plus={},
+                          iterations=200, converged=True, residuals={"p": 1e-6}, qoi_change=None, warnings=[],
+                          solve_s=1.0, quality={})
+    setup = flow.Setup(mass_flow=1.0, rho=1000.0, mu=1e-3, regime="laminar", upstream=0.1, downstream=0.1)
+    bore = flow.Bore(origin=np.zeros(3), axis=np.array([1.0, 0, 0]), xs=[0.0, 0.1], radii=[0.01],
+                     volume=math.pi * 1e-4 * 0.1, source="test.step")
+
+    def mesh_study(u):
+        out = flow._checks("AN-FLOW-X", [level(1, 14.0e3), level(2, 14.4e3)], setup, bore, "laminar", 1000.0,
+                           u, 0.05, {}, None, SimpleNamespace(features=[], interface="INT-X"), 0.02)
+        return next(c for c in out if c.id.endswith("MESH-STUDY"))
+
+    c = mesh_study(0.08)
+    assert c.passed is None and c.value == pytest.approx(0.08) and c.limit == 0.05
+    assert "8 %" in c.statement and "5 %" in c.statement and "information only" in c.statement
+    c = mesh_study(0.02)
+    assert c.passed is True and "information only" not in c.statement
+    assert mesh_study(None).passed is None
+
+
 def test_benchmark_problem_registered():
     from feacore.problems.registry import get
     p = get("pipe_turbulent_3d")
