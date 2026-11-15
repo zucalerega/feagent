@@ -60,7 +60,9 @@ The uncertainty of the result (ResultValue.uncertainty) is the sum of three part
 gives each: the mesh study (Grid Convergence Index, safety factor 3), the model (MODEL_UNCERTAINTY), and the
 wall roughness when the flow domain gives one (the analysis has smooth walls; the Colebrook formula gives the
 increase of the friction loss). The status "converged" needs a mesh part under policy.max_uncertainty and a
-solver that reached its residual tolerance on every mesh.
+solver that converged on every mesh: the residual tolerance (1e-5), or residuals that stalled under
+RESIDUAL_STALL_MAX while the pressure drop changed less than QOI_TOL in the last QOI_WINDOW iterations (steady
+SIMPLE does not reach 1e-5 behind a step: the separated shear layer keeps the residuals near 1e-4).
 
 Not verified: swirl or a distorted profile from a pump at the inlet, cavitation, compressible flow, rough
 walls in the solver, bores that are not circular, and any bend. `opts.quick` gives two coarse meshes: a first
@@ -556,6 +558,12 @@ class Level:
     log: str = ""
 
 
+Level.solved = property(lambda lv: bool(
+    lv.converged or (lv.residuals and max(lv.residuals.values()) <= RESIDUAL_STALL_MAX and lv.qoi_change
+                     and lv.qoi_change["change"] <= QOI_TOL)),
+    doc="Iteratively converged: the residual tolerance, or stalled residuals with a steady pressure drop.")
+
+
 def _interp(x: np.ndarray, v: np.ndarray, at: float) -> float:
     return float(np.interp(at, x, v))
 
@@ -746,8 +754,9 @@ def mesh_uncertainty(sizes: list[float], values: list[float]) -> dict:
 
 
 def level_plan(quick: bool, levels: int) -> list[int]:
-    """Cells per quadrant of each mesh, coarse to fine: a ratio of about 1.4 (quick: two coarse meshes)."""
-    return ([4, 6] if quick else [5, 7, 10, 14])[: max(1, min(int(levels), 4))]
+    """Cells per quadrant of each mesh, coarse to fine: a ratio of about 1.4 (quick: the two coarsest). Four cells
+    per quadrant put y+ over the validated range at the example's Reynolds number."""
+    return ([5, 7] if quick else [5, 7, 10, 14])[: max(1, min(int(levels), 4))]
 
 
 # =========================================================================== the engine
@@ -1015,7 +1024,7 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
     friction_share = min(1.0, max(0.0, levels[-1].gradient * bore.length / value)) if value > 0 else 1.0
     u_model = MODEL_UNCERTAINTY if regime == "turbulent" else 0.0
     u_rough = rough_part * friction_share
-    solved = all(lv.converged for lv in levels)
+    solved = all(lv.solved for lv in levels)
     max_u = float(project.policy.max_uncertainty)
     if u_mesh is None:
         status, total = "not_converged", None
@@ -1123,15 +1132,27 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
         f"The pressure forces and the momentum flows on the inlet and the outlet balance the force on the walls "
         f"to {_pct(mom, 2)} of the wall force. The limit is {_pct(MOMENTUM_TOL, 0)}.",
         mom <= MOMENTUM_TOL if math.isfinite(mom) else None, mom, MOMENTUM_TOL)
-    bad = [i for i, lv in enumerate(levels) if not lv.converged]
+    bad = [i for i, lv in enumerate(levels) if not lv.solved]
+    stalled = [i for i, lv in enumerate(levels) if lv.solved and not lv.converged]
     res_worst = max((max(lv.residuals.values()) for lv in levels if lv.residuals), default=float("nan"))
     if bad:
         text = (f"The solver did not reach the residual tolerance of {setup.residual_tol:g} on mesh "
                 f"{', '.join(str(i) for i in bad)}. The largest residual at the end is {res_worst:.1e}.")
+        changes = [lv.qoi_change["change"] for lv in levels if lv.qoi_change]
+        if changes:
+            text += (f" In the last {QOI_WINDOW} iterations the pressure drop changed by up to {_pct(max(changes), 2)}. "
+                     f"The limit is {_pct(QOI_TOL, 1)}.")
+    elif stalled:
+        changes = [levels[i].qoi_change["change"] for i in stalled]
+        text = (f"The residuals stopped decreasing on mesh {', '.join(str(i) for i in stalled)}, at {res_worst:.1e} or "
+                f"less (limit {RESIDUAL_STALL_MAX:.0e}). In the last {QOI_WINDOW} iterations the pressure drop changed "
+                f"by {_pct(max(changes), 3)} or less (limit {_pct(QOI_TOL, 1)}). Thus the iteration error of the "
+                f"result is small. The other meshes reached the residual tolerance of {setup.residual_tol:g}.")
     else:
         text = (f"The solver reached the residual tolerance of {setup.residual_tol:g} on each mesh, after "
                 f"{', '.join(str(lv.iterations) for lv in levels)} iterations.")
-    add("residuals", "residuals", text, not bad, res_worst, setup.residual_tol)
+    limit = RESIDUAL_STALL_MAX if stalled and not bad else setup.residual_tol
+    add("residuals", "residuals", text, not bad, res_worst, limit)
     if regime == "turbulent":
         yp = fine.y_plus
         inside = min(lv.y_plus.get("in_range", 0.0) for lv in levels)

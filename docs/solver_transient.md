@@ -407,8 +407,11 @@ mesh uncertainty).
   the range above.
 - Smooth walls only (no roughness in the wall functions), Re 1e5 to 1.4e6, internal flow without swirl,
   curvature, heat transfer or other models (`kEpsilon` etc. raise "not wired up yet").
-- Separated flow: steady SIMPLE does not reach residual_tol 1e-5 behind a step; judge such runs by the
-  stability of the QoI, and treat the residual check as failed.
+- Separated flow: steady SIMPLE does not reach residual_tol 1e-5 behind a step (the residuals stall near
+  1e-4 to 3e-3). Judge such runs by the stability of the QoI: the option `history_interval` makes the solver
+  write the fields every N iterations, and `res.history_times()` / `res.at_time(t)` give the earlier
+  solutions (the dossier flow engine accepts a stalled run when the residuals are under 1e-3 and the pressure
+  drop changed less than 0.1 % in the last 200 iterations).
 
 ## Compressible internal flow
 

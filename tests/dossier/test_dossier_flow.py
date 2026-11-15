@@ -222,7 +222,8 @@ def test_laminar_straight_bore_against_hagen_poiseuille(workproject, flow_lc, tm
 @pytest.mark.slow
 @pytest.mark.parametrize("re,m", [(1e5, 5), (1e5, 7), (1.384e6, 5), (1.384e6, 7), (1.384e6, 10)])
 def test_kOmegaSST_developed_pipe_against_colebrook(re, m, tmp_path):
-    """Measured (OpenFOAM v1912): Re 1e5: -3.3 % (m 4), -4.6 % (m 7); Re 1.384e6: -2.8 % (m 5), -3.0 % (m 7).
+    """Measured (OpenFOAM v1912): Re 1e5: -4.1 % (m 5), -4.6 % (m 7); Re 1.384e6: -2.6 % (m 5), -2.9 % (m 7),
+    -3.2 % (m 10). About 6 s to 2 min each.
     The engine's stated band is VALIDATION["pipe"]["error"]; acceptance 10 %."""
     r = flow.developed_pipe(re, m, tmp_path)
     lo, hi = flow.VALIDATION["pipe"]["error"]
