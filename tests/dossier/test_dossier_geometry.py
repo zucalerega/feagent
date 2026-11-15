@@ -63,19 +63,23 @@ def _copy_with(tmp_path, edit=None, step=None, unit=None):
     return Project.load(dst)
 
 
-def _step_scaled(path: Path, factor: float, header: str = "mm") -> Path:
-    """The example CAD with its numbers multiplied by `factor` (dilated in the kernel) and written to `path`."""
+def _step_in_mm(path: Path) -> Path:
+    """The example body built again by its own script with the numbers in millimetres (MM = 1) and a header
+    in millimetres: a genuine millimetre file, with analytic surfaces (a scaled copy would be B-splines)."""
+    import importlib.util
+
     import gmsh
 
     from feacore.geometry.gmsh_tools import gmsh_session
     from tests.dossier.conftest import EXAMPLE
-    src = EXAMPLE / "components" / "mov_body" / "geometry.step"
-    with gmsh_session("scale-step"):
-        gmsh.option.setString("Geometry.OCCTargetUnit", "MM")
-        gmsh.model.occ.importShapes(str(src), highestDimOnly=True)
-        gmsh.model.occ.synchronize()
-        gmsh.model.occ.dilate(gmsh.model.getEntities(3), 0, 0, 0, factor, factor, factor)
-        gmsh.model.occ.synchronize()
+    script = EXAMPLE / "components" / "mov_body" / "make_geometry.py"
+    spec = importlib.util.spec_from_file_location("make_geometry_mm", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.MM = 1.0
+    with gmsh_session("body-mm"):
+        gmsh.model.add("mov_body_mm")
+        mod.build(fillets=True)
         gmsh.write(str(path))
     return path
 
@@ -230,7 +234,7 @@ def test_wetted_in_two_interfaces_gives_a_finding(tmp_path):
 
 def test_mm_file_is_scaled_to_metres(tmp_path):
     """The same body with its numbers in millimetres (header mm) and length_unit: mm gives the metre result."""
-    big = _step_scaled(tmp_path / "body_mm.step", 1000.0)
+    big = _step_in_mm(tmp_path / "body_mm.step")
     ref = _copy_with(tmp_path / "a")
     mm = _copy_with(tmp_path / "b", step=big, unit="mm")
     g0, _ = geometry.build(ref, opts())
@@ -247,7 +251,7 @@ def test_mm_file_is_scaled_to_metres(tmp_path):
 
 def test_wrong_length_unit_is_not_silent(tmp_path):
     """mm numbers declared as metres: the part is 1000 times too big, and the stage says so."""
-    big = _step_scaled(tmp_path / "body_mm.step", 1000.0)
+    big = _step_in_mm(tmp_path / "body_mm.step")
     project = _copy_with(tmp_path / "w", step=big)             # length_unit stays m
     try:
         geo, journal = geometry.build(project, opts())
