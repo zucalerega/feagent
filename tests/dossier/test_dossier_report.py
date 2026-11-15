@@ -218,6 +218,8 @@ class Stub(BaseHTTPRequestHandler):
         if self.path.split("#")[0].split("?")[0] in ("/", "/index.html"):
             html = Stub.page.replace("</head>", '<script>window.DOSSIER_API = "/api/dossier/x";</script></head>')
             return self._send(html.encode(), "text/html")
+        if self.path.startswith("/favicon"):
+            return self._send(b"", "image/x-icon", 200)
         return self._send(b"{}", code=404)
 
     def do_POST(self):

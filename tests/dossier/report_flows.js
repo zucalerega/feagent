@@ -76,6 +76,7 @@ const { chromium } = require('playwright');
     const id2 = await page.evaluate(() => { const b = document.querySelector('.fld.review[data-state=open]'); return b && b.getAttribute('data-review-of'); });
     await openAll(id2);
     const b2 = page.locator(`.fld.review[data-review-of="${id2}"]`);
+    await b2.locator('input[type=text]').fill('Test Person');
     await b2.locator('.rv-btn.reject').click();
     R.reject_needs_comment = (await b2.locator('.rv-err').textContent()).length > 0;
     await b2.locator('textarea').fill('Not right.'); await b2.locator('.rv-btn.reject').click(); await page.waitForTimeout(500);

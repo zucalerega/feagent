@@ -90,9 +90,11 @@ ARC_ELEMENTS = 3            # a fillet is small when its quarter arc has fewer g
 GRADING = 0.4               # largest size change per unit length in a refined zone, on the coarsest level
 FILL = (0.70, 0.87)         # the finest mesh: accepted over FILL[0] x node_cap, aimed at FILL[1] x node_cap
 MAX_TRIALS = 6
+MAX_LEVEL_TRIALS = 4       # trial meshes per coarser level, to get the size ratio RATIO
+LEVEL_RATIO_TOL = 0.06     # the ratio of the representative sizes of successive levels: RATIO within 6 %
 VOLUME_TOL = 1e-3           # mesh volume against CAD volume: a minor finding over it, a major one over 10 times it
 MIN_LEVEL_RATIO = 1.15      # successive levels must differ at least by this in representative size
-RECIPE_VERSION = 1          # change it when the sizing rules change: cached meshes are then made again
+RECIPE_VERSION = 2          # change it when the sizing rules change: cached meshes are then made again
 C_VOLUME, C_SURFACE = 2.84, 5.53      # first guess: nodes ~ C_VOLUME V / h^3 + C_SURFACE A / h^2 (P2 tetrahedra)
 INDEX_SCHEMA = 1
 
@@ -356,18 +358,31 @@ def _make(project, geo: dict, cad, plan: dict, key: str, groups: dict, log) -> d
         recipe, finest, trials = _search(part, plan, work, log)
         n = plan["levels"]
         records = []
+        factor, prev_rep = 1.0, None
         for level in range(n - 1, -1, -1):                     # the finest first: it exists already
-            factor = RATIO ** (n - 1 - level)
-            h, refs = _scaled(recipe, factor)
             path = mesh_dir / f"{key}_L{level}.msh"
             written.append(path)
             if level == n - 1:
+                h, refs = _scaled(recipe, 1.0)
                 Path(finest["path"]).replace(path)
                 res = finest
+                check = _verify(path, groups, plan["volume"])
             else:
-                res = _mesh(part, path, h, refs)
-                log(f"meshes: level {level}: h = {res['h_used'] * 1e3:.3g} mm, {res['nodes']} nodes ({res['seconds']:.0f} s)")
-            check = _verify(path, groups, plan["volume"])
+                # The local refinement does not coarsen with h, so a size ratio of RATIO gives a smaller ratio
+                # of the representative sizes. The scale of the level is adjusted until the representative
+                # size (volume / cells)^(1/3) is RATIO times that of the next finer level.
+                factor *= RATIO
+                for attempt in range(MAX_LEVEL_TRIALS):
+                    h, refs = _scaled(recipe, factor)
+                    res = _mesh(part, path, h, refs)
+                    check = _verify(path, groups, plan["volume"])
+                    got = (check["volume"] / res["elements"]) ** (1.0 / 3.0) / prev_rep
+                    log(f"meshes: level {level}, trial {attempt + 1}: h = {res['h_used'] * 1e3:.3g} mm, "
+                        f"{res['nodes']} nodes, size ratio {got:.2f} ({res['seconds']:.0f} s)")
+                    if abs(got / RATIO - 1.0) <= LEVEL_RATIO_TOL:
+                        break
+                    factor *= (RATIO / got) ** 2.0          # the size ratio goes about with the square root of the scale
+            prev_rep = (check["volume"] / res["elements"]) ** (1.0 / 3.0)
             records.append({
                 "level": level, "h": float(f"{res['h_used']:.6g}"), "nodes": int(res["nodes"]),
                 "cells": int(res["elements"]), "order": ORDER, "min_quality": float(res["min_quality"]),

@@ -325,3 +325,46 @@ def test_shapes_probe_vtu(tmp):
     assert "mode_1" in m.point_data and "mode_2" in m.point_data
     s = r.summary()
     assert s["modal"]["rigid_modes"] == 0 and len(s["modal"]["frequencies"]) == 2
+
+
+# --------------------------------------------------------------------------- the registered dynamics problems
+
+
+def _dynamics_problems():
+    discover()
+    from feacore.problems.registry import all_problems
+    return [p for p in all_problems() if type(p).__module__.startswith("feacore.problems.dynamics")]
+
+
+DYN = _dynamics_problems()
+
+
+def test_dynamics_suite_registered():
+    assert {"nafems_fv32", "nafems_fv41", "nafems_fv52", "ss_strip_modes", "ss_thick_plate_modes",
+            "bar_wave_step"} <= {p.id for p in DYN}
+
+
+@pytest.mark.parametrize("problem", DYN, ids=[p.id for p in DYN])
+def test_dynamics_problem_setup(problem, tmp_path):
+    import json
+
+    case = problem.case("MESH.msh").check()
+    again = Case.from_dict(json.loads(json.dumps(case.to_dict())))
+    assert again.to_dict() == case.to_dict()
+    names = {q.name for q in case.qois}
+    refs = problem.references()
+    assert refs and all(r.qoi in names and 0 < r.tolerance <= 0.05 and len(r.source) > 40 for r in refs)
+    priv = problem.private()
+    assert len(priv["study_sizes"]) >= 3
+    text = problem.description()
+    for r in refs:                                   # the statement never gives the answer
+        for fmt in ("{:.4g}", "{:.5g}"):
+            assert fmt.format(r.value) not in text, (r.qoi, fmt.format(r.value))
+    if problem.dim == 2:                             # every group the case uses is in the mesh
+        import meshio
+
+        m = meshio.read(problem.mesh(tmp_path / "m.msh", problem.params["h0"]))
+        for b in case.bcs:
+            assert b.group in m.field_data
+    path = problem.export_step(tmp_path / "g.step")
+    assert path.read_text(errors="ignore").startswith("ISO-10303-21")
