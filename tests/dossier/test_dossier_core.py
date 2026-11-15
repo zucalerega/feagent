@@ -18,6 +18,17 @@ def test_units_parse_convert_and_display():
     assert units.si_unit(units.parse("90 N*m")) == "N*m" and units.si_unit(units.parse("2 kJ")) == "J"
 
 
+def test_a_degree_in_a_derived_unit_is_a_temperature_difference():
+    # pint reads "1/degC" as one over an absolute temperature, which is wrong by a factor of 274
+    assert units.si(units.parse("1.3e-5 1/degC")) == pytest.approx(1.3e-5)
+    assert units.si(units.parse("16 um/m/degC")) == pytest.approx(16e-6)
+    assert units.si(units.parse("15 W/(m*degC)")) == pytest.approx(15.0)
+    assert units.si(units.parse("12 W/(m^2*degC)")) == pytest.approx(12.0)
+    assert units.si(units.parse("7.2e-6 1/degF")) == pytest.approx(7.2e-6 * 1.8)
+    assert units.si(units.parse("20 degC")) == pytest.approx(293.15)          # a plain temperature stays absolute
+    assert units.si(units.parse("13e-6 1/K")) == pytest.approx(13e-6)
+
+
 def test_expressions_check_dimensions_and_reject_code():
     n = {"p": units.parse("10 MPa"), "l": units.parse("2 m"), "f": units.parse({"value": [0, 3, 4], "unit": "N"})}
     assert units.si(units.evaluate("p * pi * (25 * mm)**2 / 4", n)) == pytest.approx(10e6 * math.pi * 0.025**2 / 4)
