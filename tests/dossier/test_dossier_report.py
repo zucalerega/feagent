@@ -66,11 +66,20 @@ def parse(html: str) -> Checker:
     return c
 
 
-@pytest.fixture()
-def built(workproject):
-    fixture_records.make_records(workproject)
-    res = report.build(workproject)
-    return workproject, res, Path(res["html"]).read_text()
+EXAMPLE = Path(__file__).resolve().parents[2] / "dossier" / "examples" / "mov_valve"
+
+
+def _copy(dst: Path) -> Project:
+    shutil.copytree(EXAMPLE, dst, ignore=shutil.ignore_patterns("out", "__pycache__", "reviews.yaml"))
+    return Project.load(dst)
+
+
+@pytest.fixture(scope="module")
+def built(tmp_path_factory):
+    proj = _copy(tmp_path_factory.mktemp("rep") / "mov_valve")
+    fixture_records.make_records(proj)
+    res = report.build(proj)
+    return proj, res, Path(res["html"]).read_text()
 
 
 def test_build_result_and_files(built):
@@ -155,7 +164,8 @@ def test_ste_summary_when_checker_importable(built):
 def test_numbers_are_shown_in_display_units(built):
     proj, res, html = built
     assert "MPa" in html and "margin" in html
-    assert "e+06" not in html
+    text = re.sub(r"<script.*?</script>|<svg.*?</svg>|<[^>]*>", " ", html, flags=re.S)
+    assert not re.search(r"\d[eE][+-]\d", text)
 
 
 def test_context_only_project(workproject):
@@ -177,8 +187,9 @@ def test_empty_project_without_any_stage(workproject):
     assert parse(html).errors == []
 
 
-def test_missing_diagram_is_said(built):
-    proj, res, html = built
+def test_missing_diagram_is_said(workproject):
+    fixture_records.make_records(workproject)
+    proj = workproject
     (proj.out / "system.svg").unlink(missing_ok=True)
     res = report.build(proj)
     assert "system.svg" in Path(res["html"]).read_text()

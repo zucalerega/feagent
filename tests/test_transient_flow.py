@@ -266,14 +266,20 @@ def test_at_rest_stays_at_rest(tmp_path):
 
 def test_steady_inflow_converges_to_the_steady_solution(channel, steady_channel):
     """From rest with a constant inflow, the flow settles on the steady backend's solution (the
-    viscous time H^2 / nu = 1 s at Re 10, but the start-up is mostly convective: 0.2 s suffice)."""
+    viscous time H^2 / nu = 1 s at Re 10, but the start-up is mostly convective: 0.2 s suffice).
+
+    The wall shear force differs by about 1e-4: pimpleFoam's face flux (Rhie-Chow interpolation with
+    the time term in its coefficient) depends on the step, so its steady state is not simpleFoam's to
+    round-off; the difference falls with the step (8.8e-5, 7.8e-5, 3.0e-5 at 4, 2, 1 ms) and is far
+    below the discretization error."""
     case = _channel_case(channel, {"t_end": 0.2, "dt": 0.002, "output_every": 1000})
     res = solve(case, backend="openfoam")
     want = steady_channel.evaluate_all()
     got = res.evaluate_all()
     res.cleanup()
-    for k in ("dp", "fx_walls", "u_mid", "u_max"):
+    for k in ("dp", "u_mid", "u_max"):
         assert got[k] == pytest.approx(want[k], rel=1e-5), k
+    assert got["fx_walls"] == pytest.approx(want["fx_walls"], rel=2e-4)   # see the note below
     assert got["q_out"] == pytest.approx(want["q_out"], rel=1e-9)
 
 
@@ -288,7 +294,8 @@ def test_steady_initial_state(channel, steady_channel):
             if q.name in ("dp", "fx_walls", "u_mid", "u_max"):
                 s = res.series(q)
                 assert s[0] == pytest.approx(want[q.name], rel=1e-9), q.name
-                np.testing.assert_allclose(s, want[q.name], rtol=1e-5, err_msg=q.name)
+                tol = 2e-4 if q.name == "fx_walls" else 1e-5     # see the steady test above
+                np.testing.assert_allclose(s, want[q.name], rtol=tol, err_msg=q.name)
         assert res.info.outer_iterations <= 3
     finally:
         res.cleanup()
@@ -301,7 +308,8 @@ def test_adaptive_step_lands_on_the_result_steps(channel):
     try:
         np.testing.assert_allclose(res.times, [0.0, 0.005, 0.01, 0.015, 0.02], atol=1e-12)
         assert res.info.solver_steps > res.info.n_steps
-        assert res.info.courant_max <= 0.2 * 1.05
+        # the first step runs at dt from rest; the Courant number of each later step is at most max_co
+        assert res.courant[2:].max() <= 0.2 * 1.05
         assert res.info.dt_min < 0.005
     finally:
         res.cleanup()
