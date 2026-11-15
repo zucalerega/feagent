@@ -108,7 +108,8 @@ def vague_word(env: Env) -> None:
         hits = wording.vague(r.text)
         if not hits:
             continue
-        kinds = list(dict.fromkeys(h.kind for h in hits))
+        # the kinds in the text, the worst first (the first three get a sentence)
+        kinds = [k for k in ("open", "measure", "escape", "list", "ambiguous", "approximate") if any(h.kind == k for h in hits)]
         # An open value is always major. Other words are major when no criterion gives the measure in their place.
         major = "open" in kinds or (not r.criteria and any(k != "approximate" for k in kinds))
         quoted = join(quote(h.word, True) for h in hits)
@@ -155,7 +156,7 @@ def criterion_vocabulary(env: Env) -> None:
             if value in known:
                 continue
             near = nearest(value, known)
-            env.find(subject=r.id, key=f"{criterion_key(r, i)}-{what}", title=f"Unknown {what} in a criterion of {r.id}",
+            env.find(subject=r.id, key=f"criterion-{criterion_key(r, i)}-{what}", title=f"Unknown {what} in a criterion of {r.id}",
                      statement=[f"{cap(_of(r, i))} asks for the {what} {quote(value)}.",
                                 f"The analysis gives no result with this {what}."],
                      rationale=[f"The result key of the criterion is {c.key()}.",
@@ -196,7 +197,7 @@ def criterion_location(env: Env) -> None:
     comp = env.comp
     ids = [*comp.features, *(it.id for it in comp.interfaces), *(s.id for s in comp.scls)]
     for r, i, c in _criteria(env):
-        key = criterion_key(r, i)
+        key = f"criterion-{criterion_key(r, i)}"
         kind = _location_kind(env, c.location)
         if kind is None:
             near = nearest(c.location, [*FIXED_LOCATIONS, *ids])
@@ -271,18 +272,19 @@ def criterion_allowable(env: Env) -> None:
     for r, i, c in _criteria(env):
         if c.allowable is None:
             continue
-        key = f"{criterion_key(r, i)}-allowable"
+        key = f"criterion-{criterion_key(r, i)}-allowable"
         if c.allowable not in have:
-            given = c.allowable in type(m).model_fields
-            near = None if given else nearest(c.allowable, have)
+            empty = c.allowable in type(m).model_fields and getattr(m, c.allowable) is None    # a property without a value
+            near = None if empty else nearest(c.allowable, have)
             env.find(subject=r.id, key=key, title=f"Allowable of a criterion of {r.id} is not a material property",
                      statement=[f"{cap(_of(r, i))} has the allowable {quote(c.allowable)}.",
-                                (f"The material {m.id} gives no value for this property." if given and getattr(m, c.allowable) is None
+                                (f"The material {m.id} gives no value for this property." if empty
                                  else f"The material {m.id} has no property with this name that is a quantity.")],
                      rationale=[f"The material of the part is {m.id} ({quote(m.name)}).",
                                 f"Its properties with a value are: {join(have)}."],
-                     suggestion=(f"Change the allowable to {near}, if that is the correct property." if near
-                                 else f"Give the property in the material file, or change the allowable of the criterion."),
+                     suggestion=(f"Add {c.allowable} to the material file, or change the allowable of the criterion." if empty
+                                 else f"Change the allowable to {near}, if that is the correct property." if near
+                                 else "Change the allowable to a property of the material, for example yield_strength."),
                      values={"criterion": i, "allowable": c.allowable}, links=[("evidence", m.id)])
             continue
         unit = QUANTITY_UNIT.get(c.quantity)
@@ -303,7 +305,7 @@ def criterion_limit(env: Env) -> None:
     for r, i, c in _criteria(env):
         if c.limit is None:
             continue
-        key = f"{criterion_key(r, i)}-limit"
+        key = f"criterion-{criterion_key(r, i)}-limit"
         written = quote(c.limit.expr) if not c.limit.is_literal else None
         reads = [n for n in c.limit.names() if n in env.ctx.params]
         try:
@@ -341,7 +343,7 @@ def criterion_limit(env: Env) -> None:
 def criterion_factor(env: Env) -> None:
     policy = env.policy
     for r, i, c in _criteria(env):
-        key = f"{criterion_key(r, i)}-factor"
+        key = f"criterion-{criterion_key(r, i)}-factor"
         f = c.factor
         if isinstance(f, str):
             try:

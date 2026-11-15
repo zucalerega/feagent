@@ -32,6 +32,7 @@ from dossier.model import (AnalysisRecord, CalcInput, CalcOutput, Check, Compari
 from dossier.project import make_id
 
 ORIGIN_BY = "engine:handcalc"
+BAND_ROUNDING = 1e-9        # a ratio on the end of its band is in the band, whatever the rounding of the division
 
 
 # --------------------------------------------------------------------------- applies
@@ -322,7 +323,7 @@ def _one(hc: HandCalcResult, cmp: Comparison, analysis: AnalysisRecord, policy_b
 
     if cmp.tolerance_si is not None:
         diff = abs(fe - hand)
-        ok = diff <= cmp.tolerance_si
+        ok = diff <= cmp.tolerance_si * (1.0 + BAND_ROUNDING)
         statement = (f"{gives} {said} The difference is {shown(diff, unit)}. The accepted difference is "
                      f"{shown(cmp.tolerance_si, unit)}. The two results {'agree' if ok else 'do not agree'}.{status}")
         return (cmp.model_copy(update={"fe_value": fe, "ratio": None, "agree": ok}),
@@ -334,7 +335,7 @@ def _one(hc: HandCalcResult, cmp: Comparison, analysis: AnalysisRecord, policy_b
         return undecided(f"{gives} The hand calculation {hc.id} gives zero for {cmp.output}. A ratio is not "
                          f"possible.", fe)
     ratio = fe / hand
-    ok = lo <= ratio <= hi
+    ok = lo - BAND_ROUNDING <= ratio <= hi + BAND_ROUNDING
     statement = (f"{gives} {said} The ratio of the analysis result to the hand calculation is {_number(ratio)}. "
                  f"The accepted band is {lo:g} to {hi:g}. The two results {'agree' if ok else 'do not agree'}.{status}")
     return (cmp.model_copy(update={"fe_value": fe, "ratio": ratio, "band": (lo, hi), "agree": ok}),

@@ -16,13 +16,15 @@ from typing import Iterable
 from dossier import units
 from dossier.model import LoadItem, Phase
 
-ANALYSIS_WORDS = {
-    "static_structural": "static structural analysis",
-    "thermo_structural": "thermo-structural analysis",
-    "thermal_steady": "steady-state thermal analysis",
-    "flow": "flow analysis",
-    "fatigue": "fatigue analysis",
+# the analysis types in words: "a thermo-structural load case", "a thermo-structural analysis"
+TYPE_WORDS = {
+    "static_structural": "static structural",
+    "thermo_structural": "thermo-structural",
+    "thermal_steady": "steady-state thermal",
+    "flow": "flow",
+    "fatigue": "fatigue",
 }
+ANALYSIS_WORDS = {kind: f"{words} analysis" for kind, words in TYPE_WORDS.items()}
 
 # (singular, plural) of each effect kind as a load
 KIND_WORDS = {

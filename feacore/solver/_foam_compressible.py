@@ -53,6 +53,7 @@ from pathlib import Path
 import numpy as np
 
 from feacore.case import COMPRESSIBLE_FIELDS, Case, CaseError, QoI
+from feacore.solver import _foam_internal as fint
 from feacore.solver import _foam_io as fio
 from feacore.solver._foam_env import require_openfoam, run
 from feacore.solver._foam_fv import DIRICHLET, FvMesh
@@ -62,16 +63,20 @@ from feacore.solver.openfoam_backend import (FlowSolveInfo, OpenFOAMResult, Solv
                                              _is_time, _vec3)
 
 KNOWN_OPTIONS = ("max_co", "steady_tol", "qoi_tol", "max_flow_times", "chunk", "flux_scheme", "limiter", "prandtl",
-                 "timeout", "case_dir", "keep_case", "init_from")
+                 "timeout", "case_dir", "keep_case", "init_from", "mass_tol")
 # vanAlbada at Courant 0.2: on the blunt body (supersonic_blunt_wedge_2d, h0, alpha 0) vanLeer settles into
 # a limit cycle (a wave train in the shock layer behind the sonic line, the field changing by 4e-3 of p_inf
 # per flow time, p_stag by 0.1 %) at any Courant number from 0.1 to 0.4, and vanAlbada does at 0.4;
 # vanAlbada at 0.2 leaves 6e-4 per flow time and steady QoIs (2e-5).
 DEFAULTS = {"max_co": 0.2, "steady_tol": 1e-6, "qoi_tol": 1e-4, "max_flow_times": 400, "chunk": 10,
-            "flux_scheme": "Kurganov", "limiter": "vanAlbada", "prandtl": 0.72, "timeout": None}
+            "flux_scheme": "Kurganov", "limiter": "vanAlbada", "prandtl": 0.72, "timeout": None, "mass_tol": 1e-4}
+# Internal flow (a total_inlet): one flow time is L / a*, an acoustic time, and the pressure outlets switch at
+# the end of a chunk, so the chunks are shorter (docs/solver_transient.md, "Compressible internal flow").
+INTERNAL_DEFAULTS = {"chunk": 5}
 QOI_WINDOW = 3        # chunks over which every QoI must hold still (qoi_tol)
 LIMITERS = ("vanAlbada", "vanLeer", "Minmod")     # scalar names; U uses the V version (vanLeerV, ...)
-PATCH_TYPE = {"freestream": "patch", "outlet": "patch", "wall": "wall", "slip": "patch", "symmetry": "symmetry"}
+PATCH_TYPE = {"freestream": "patch", "outlet": "patch", "wall": "wall", "slip": "patch", "symmetry": "symmetry",
+              **fint.PATCH_TYPE}
 # OpenFOAM's universal gas constant RR = k / mu * 1e3 (J/(kmol K)) from its physicoChemical constants
 # (etc/controlDict: k = 1.38065e-23, mu = 1.66054e-27): specie molWeight = RR / gas_constant gives back
 # the case's gas constant to ~1e-6.
@@ -87,6 +92,8 @@ class CompressibleSolveInfo(FlowSolveInfo):
     history: list = field(default_factory=list)   # [(flow times, max relative change over one flow time)]
     qoi_history: list = field(default_factory=list)   # [(flow times, {qoi: value})] at the end of each chunk
     steady: str = ""              # "field" (the flow stopped changing), "qois" (only the QoIs did) or ""
+    mass_balance: dict = field(default_factory=dict)   # internal flow: {"in", "out" (kg/s), "imbalance"}
+    outlets: dict = field(default_factory=dict)   # {pressure_outlet group: share of its faces that impose p}
 
 
 # --------------------------------------------------------------------------- setup
@@ -139,11 +146,17 @@ def _bc_type(bc, viscous: bool) -> str:
     return bc.type if bc is not None else ("wall" if viscous else "slip")
 
 
-def _boundary_fields(bcs: dict, viscous: bool, U_inf, p_inf: float, T_inf: float, dim: int) -> tuple:
+def _boundary_fields(bcs: dict, viscous: bool, U_inf, p_inf: float, T_inf: float, dim: int,
+                     gamma: float = 1.4, switch: "fint.OutletSwitch | None" = None) -> tuple:
     U, P, T = {}, {}, {}
+    outlets = {q.name: q for q in switch.patches} if switch is not None else {}
     for p, bc in bcs.items():
         t = _bc_type(bc, viscous)
-        if t == "freestream":
+        if t == fint.INLET:
+            U[p], P[p], T[p] = fint.inlet_fields(bc, gamma)
+        elif t == fint.OUTLET:      # T_inf: the temperature of gas that re-enters (reservoir or freestream)
+            U[p], P[p], T[p] = fint.outlet_fields(outlets[p].p_back, outlets[p].frac, T_inf)
+        elif t == "freestream":
             u = _vec3([float(v) for v in bc.value])
             U[p] = {"type": "inletOutlet", "inletValue": u, "value": u}
             P[p] = {"type": "inletOutlet", "inletValue": float(bc.p_inf), "value": float(bc.p_inf)}
@@ -265,11 +278,15 @@ def _read(tdir: Path, n: int) -> dict:
 
 
 def _qoi_scales(case: Case, T_inf: float, speed: float, mach: float, rho_inf: float, L: float,
-                depth: float) -> dict:
+                depth: float, internal: "fint.Reservoir | None" = None, area: float = 0.0) -> dict:
     """The natural scale of every QoI, against which qoi_tol measures its drift: the dynamic pressure
     q_inf = rho_inf |U_inf|^2 / 2 for pressures (the scale of Cp), q_inf * L * depth for forces,
-    the freestream values for the rest."""
+    the freestream values for the rest. Internal flow (``internal``: the reservoir): the total pressure for
+    pressures and forces, the critical speed of sound a* for velocities, 1 for the Mach number and, with
+    ``area`` the smaller of the inlet and outlet areas, the choked mass flow rho* a* area for mass flows."""
     q_inf = 0.5 * rho_inf * speed ** 2
+    if internal is not None:
+        q_inf, mach = internal.p0, 1.0
     field = {"p": q_inf, "T": T_inf, "rho": rho_inf, "mach": mach, "ux": speed, "uy": speed, "uz": speed,
              "u_mag": speed}
     out = {}
@@ -277,7 +294,9 @@ def _qoi_scales(case: Case, T_inf: float, speed: float, mach: float, rho_inf: fl
         if q.type == "force":
             out[q.name] = q_inf * L * depth
         elif q.type == "flow_rate":
-            out[q.name] = speed * L * depth
+            out[q.name] = speed * (area if internal is not None else L * depth)
+        elif q.type == "mass_flow":
+            out[q.name] = internal.flux * area if internal is not None else rho_inf * speed * L * depth
         elif q.type == "integral":
             out[q.name] = field.get(q.field, 1.0) * L ** case.dim
         else:
@@ -324,7 +343,7 @@ def solve(case: Case, **options) -> "CompressibleResult":
     if fio.FOAMLIB_ERROR is not None:
         raise ImportError(f"the openfoam backend needs foamlib (pip install foamlib): {fio.FOAMLIB_ERROR}")
     fe = require_openfoam()
-    opts = {**DEFAULTS, **(a.options or {}), **options}
+    opts = {**DEFAULTS, **(INTERNAL_DEFAULTS if fint.is_internal(case) else {}), **(a.options or {}), **options}
     warnings: list[str] = []
     unknown = sorted(set(a.options or {}) - set(KNOWN_OPTIONS))
     if unknown:
@@ -362,12 +381,21 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
     timeout = opts.get("timeout")
     gamma, R, mu = _gas(case)
     viscous = mu > 0
-    U_inf, p_inf, T_inf = _freestream(case, warnings)
-    speed = float(np.linalg.norm(U_inf))
-    a_inf = math.sqrt(gamma * R * T_inf)
-    if speed / a_inf <= 1.0:
-        warnings.append(f"the freestream is subsonic (Mach {speed / a_inf:.3f}): the freestream and outlet BCs "
-                        "are written for supersonic flow, where every characteristic leaves through the outlet")
+    rsv = fint.reservoir(case, gamma, R, warnings) if fint.is_internal(case) else None
+    if rsv is not None:
+        # Internal flow: the reference state is the gas at rest in the reservoir of the first total_inlet. It
+        # is the initial field (the back pressure starts the flow as the burst of a diaphragm at the outlet
+        # would; the gas already has the reservoir's entropy, so only pressure waves have to settle), and its
+        # critical speed of sound a* is the velocity scale: one flow time is L / a*.
+        U_inf, p_inf, T_inf = np.zeros(3), rsv.p0, rsv.T0
+        speed, a_inf = rsv.a_star, rsv.a0
+    else:
+        U_inf, p_inf, T_inf = _freestream(case, warnings)
+        speed = float(np.linalg.norm(U_inf))
+        a_inf = math.sqrt(gamma * R * T_inf)
+        if speed / a_inf <= 1.0:
+            warnings.append(f"the freestream is subsonic (Mach {speed / a_inf:.3f}): the freestream and outlet BCs "
+                            "are written for supersonic flow, where every characteristic leaves through the outlet")
 
     fm = convert(case.mesh_path(), dim, float(a.thickness), cdir / "mesh.msh")
     warnings += fm.warnings
@@ -380,37 +408,57 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
     fio.set_patch_types(cdir, types)
     (cdir / "mesh.msh").unlink()
     _write_dicts(cdir, gamma, R, mu, opts)
-    Ub, Pb, Tb = _boundary_fields(bcs, viscous, U_inf, p_inf, T_inf, dim)
-    fio.write_field(cdir, "U", "volVectorField", {"length": 1, "time": -1}, list(U_inf), Ub)
-    fio.write_field(cdir, "p", "volScalarField", {"mass": 1, "length": -1, "time": -2}, p_inf, Pb)
-    fio.write_field(cdir, "T", "volScalarField", {"temperature": 1}, T_inf, Tb)
 
     poly = fio.read_poly(cdir)
     nb = fio.read_list(cdir / "constant" / "polyMesh" / "neighbour").astype(np.int64)
     mesh = FvMesh(poly["points"], poly["faces"], poly["owner"], nb, poly["patches"])
     if mesh.n_cells != fm.n_cells:
         raise SolverError(f"OpenFOAM mesh has {mesh.n_cells} cells, the input mesh {fm.n_cells}")
+    # pressure outlets: the back pressure is imposed where the gas leaves subsonically (fint.OutletSwitch)
+    outlets = {p: (bc.group, fint.back_pressure(bc, mesh.Cf[mesh.patch_slice(p)], dim))
+               for p, bc in bcs.items() if bc is not None and bc.type == fint.OUTLET}
+    switch = fint.OutletSwitch(mesh, outlets, gamma, R) if outlets else None
+    track = rsv is not None or switch is not None      # the mass balance is part of the stopping rule
+    p_gauge = p_inf                                    # reference pressure of the force QoI
+    if rsv is not None:
+        p_gauge = float(next(iter(outlets.values()))[1].mean())
+        warnings.append(f"info: forces use the gauge pressure p - {p_gauge:g} Pa (the back pressure of the first "
+                        "pressure_outlet: the ambient pressure outside the duct)")
+    Ub, Pb, Tb = _boundary_fields(bcs, viscous, U_inf, p_inf, T_inf, dim, gamma, switch)
+    fio.write_field(cdir, "U", "volVectorField", {"length": 1, "time": -1}, list(U_inf), Ub)
+    fio.write_field(cdir, "p", "volScalarField", {"mass": 1, "length": -1, "time": -2}, p_inf, Pb)
+    fio.write_field(cdir, "T", "volScalarField", {"temperature": 1}, T_inf, Tb)
     if opts.get("init_from"):
         src = Path(opts["init_from"]).resolve()
         run(fe, ["mapFields", str(src), "-consistent", "-sourceTime", "latestTime"], cdir, timeout=timeout)
         warnings.append(f"info: initial field mapped from {src} (mapFields -consistent)")
+        if switch is not None:          # the outlets' state follows from the mapped field, read as undisturbed
+            f0 = _read(cdir / "0", mesh.n_cells)
+            switch.start(f0["p"][0], f0["T"][0], f0["U"][0])
+            switch.write(cdir / "0")
 
-    # one flow time: the mesh's extent along the freestream / |U_inf|
-    e = U_inf / speed
+    # one flow time: the mesh's extent along the freestream / |U_inf|; internal flow: the extent from the
+    # inlets to the outlets / a*
+    e = U_inf / speed if rsv is None else _flow_axis(mesh, bcs)
     L = float(np.ptp(mesh.C @ e)) or float(np.max(np.ptp(mesh.C, axis=0)))
     t_ref = L / speed
     h_min = float(np.min(np.abs(mesh.V) / (fm.thickness if dim == 2 else 1.0)) ** (1.0 / dim))
     dt0 = 0.1 * float(opts["max_co"]) * h_min / (speed + a_inf)
     chunk = max(1.0, float(opts["chunk"]))
     max_ft = max(chunk, float(opts["max_flow_times"]))
-    tol, qtol = float(opts["steady_tol"]), float(opts["qoi_tol"])
+    tol, qtol, mtol = float(opts["steady_tol"]), float(opts["qoi_tol"]), float(opts["mass_tol"])
     scale = {"p": p_inf, "U": speed, "T": T_inf}
     depth = float(fm.thickness) if dim == 2 else L
-    qscales = _qoi_scales(case, T_inf, speed, speed / a_inf, p_inf / (R * T_inf), L, depth)
+    if rsv is None:
+        qscales = _qoi_scales(case, T_inf, speed, speed / a_inf, p_inf / (R * T_inf), L, depth)
+    else:
+        area = min(_area(mesh, bcs, fint.INLET), _area(mesh, bcs, fint.OUTLET))
+        qscales = _qoi_scales(case, T_inf, speed, 1.0, rsv.rho0, L, depth, rsv, area)
 
     t_solve = time.perf_counter()
     steps, end, change, reason, history, qhist = 0, 0.0, {}, None, [], []
     converged, steady, spread, where = False, "", float("nan"), ""
+    balance, switched = {}, 0
     while True:
         end = min(end + chunk * t_ref, max_ft * t_ref)
         _write_control(cdir, end, dt0, t_ref, float(opts["max_co"]))
@@ -433,16 +481,24 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
             ra, rb = _read(times[-2], mesh.n_cells), _read(times[-1], mesh.n_cells)
             change = _change(ra, rb, mesh.V, scale)
             history.append((ft, max(change.values())))
-            if max(change.values()) <= tol:
+            snap, settled = None, True
+            if case.qois or track:
+                snap = CompressibleResult(case, fm, cdir, gamma, R, mu, p_gauge, [])
+                snap._load(poly, times[-1], mesh)
+            if track:      # steady needs more than a still field: mass in = mass out, and no outlet face switching
+                balance = fint.mass_balance(snap)
+                switched = switch.update(snap.p, snap.T, snap.U) if switch is not None else 0
+                if switched:
+                    switch.write(times[-1])
+                settled = not switched and balance["imbalance"] <= mtol
+            if max(change.values()) <= tol and settled:
                 converged, steady = True, "field"
                 break
             if case.qois:          # a limit cycle (e.g. limiter chatter at a sonic point) can keep the field
-                snap = CompressibleResult(case, fm, cdir, gamma, R, mu, p_inf, [])   # moving while the QoIs hold
-                snap._load(poly, times[-1], mesh)
-                qhist.append((ft, snap.evaluate_all()))
+                qhist.append((ft, snap.evaluate_all()))                              # moving while the QoIs hold
                 if len(qhist) >= QOI_WINDOW:
                     ok, spread = _qois_steady([q for _, q in qhist[-QOI_WINDOW:]], qscales, qtol)
-                    if ok:
+                    if ok and settled:
                         converged, steady = True, "qois"
                         where = _where(ra, rb, mesh.C, scale, dim)
                         break
@@ -462,11 +518,24 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
                         f"itself still changes by {_fmt(change)} per flow time, most at {where} (a small limit "
                         "cycle, typically the limiter at a sonic point)")
     elif not converged:
+        why = ""
+        if track and balance and balance["imbalance"] > mtol:
+            why += f"; the mass flows in and out differ by {balance['imbalance']:.1e} (mass_tol {mtol:g})"
+        if switched:
+            why += (f"; {switched} pressure_outlet faces still switched between imposing the back pressure and "
+                    "extrapolating at the end of the last chunk")
         warnings.append(f"NOT CONVERGED: the flow still changes by {_fmt(change)} per flow time after "
-                        f"{flow_times:.1f} flow times (steady_tol {tol:g}, max_flow_times {max_ft:g})")
+                        f"{flow_times:.1f} flow times (steady_tol {tol:g}, max_flow_times {max_ft:g}){why}")
 
-    res = CompressibleResult(case, fm, cdir, gamma, R, mu, p_inf, warnings)
+    res = CompressibleResult(case, fm, cdir, gamma, R, mu, p_gauge, warnings)
     res._load(poly, tdir, mesh)
+    if track:
+        balance = fint.mass_balance(res)
+        warnings.append(f"info: mass balance: {balance['in']:.6g} kg/s in, {balance['out']:.6g} kg/s out, "
+                        f"imbalance {balance['imbalance']:.1e} of the larger (mass_tol {mtol:g}"
+                        f"{'' if balance['imbalance'] <= mtol else ': NOT MET'})")
+        warnings += switch.describe() if switch is not None else []
+        warnings += _flow_checks(res, bcs, rsv)
     wall = time.perf_counter() - t0
     measure = fm.measure if dim == 2 else float(res.V.sum())
     res.info = CompressibleSolveInfo(
@@ -476,12 +545,64 @@ def _run(case: Case, fe, cdir: Path, opts: dict, warnings: list, t0: float) -> "
         h_rep=float((measure / fm.n_cells) ** (1.0 / dim)), wall_time=float(wall), warnings=warnings,
         iterations=int(steps), converged=bool(converged), residuals=change, residual_tol=tol,
         openfoam=fe.version, flow_times=flow_times, t_ref=t_ref, time_steps=int(steps), history=history,
-        qoi_history=qhist, steady=steady)
+        qoi_history=qhist, steady=steady, mass_balance=balance,
+        outlets={q.group: float(np.mean(q.frac)) for q in switch.patches} if switch is not None else {})
     warnings.append(f"info: {fe.describe()}; rhoCentralFoam ({opts['flux_scheme']}, {opts['limiter']}, "
                     f"max_co {opts['max_co']}) "
                     f"{steps} time steps, {flow_times:.1f} flow times of {t_ref:.4g} s in {t_solve:.1f} s; "
                     f"change over the last flow time {_fmt(change)}")
     return res
+
+
+def _patches_of_type(bcs: dict, kind: str) -> list[str]:
+    return [p for p, bc in bcs.items() if bc is not None and bc.type == kind]
+
+
+def _area(mesh: FvMesh, bcs: dict, kind: str) -> float:
+    return float(sum(mesh.magSf[mesh.patch_slice(p)].sum() for p in _patches_of_type(bcs, kind)))
+
+
+def _flow_axis(mesh: FvMesh, bcs: dict) -> np.ndarray:
+    """Unit vector from the centroid of the total inlets to the centroid of the pressure outlets."""
+    c = []
+    for kind in (fint.INLET, fint.OUTLET):
+        sl = [mesh.patch_slice(p) for p in _patches_of_type(bcs, kind)]
+        w = np.concatenate([mesh.magSf[s] for s in sl])
+        c.append((np.vstack([mesh.Cf[s] for s in sl]) * w[:, None]).sum(axis=0) / w.sum())
+    d = c[1] - c[0]
+    n = float(np.linalg.norm(d))
+    return d / n if n > 0 else np.array([1.0, 0.0, 0.0])
+
+
+def _flow_checks(res: "CompressibleResult", bcs: dict, rsv) -> list[str]:
+    """Warnings about a result that the boundary conditions or the solver were not made for."""
+    out = []
+    for p, bc in bcs.items():
+        if bc is None or bc.type not in (fint.INLET, fint.OUTLET) or p not in res.patch:
+            continue
+        d = res.patch[p]
+        m = res._mass_flux(d)
+        total = float(np.abs(m).sum())
+        if bc.type == fint.OUTLET and total > 0 and float(-m[m < 0].sum()) > 1e-3 * total:
+            out.append(f"pressure_outlet {bc.group!r}: gas re-enters through {int(np.sum(m < 0))} of {len(m)} faces "
+                       f"({-m[m < 0].sum() / total:.1%} of the mass flow through it), at the inlet's total "
+                       "temperature: move the outlet downstream of the recirculation")
+        if bc.type == fint.INLET:
+            if total > 0 and float(m[m > 0].sum()) > 1e-3 * total:
+                out.append(f"total_inlet {bc.group!r}: gas leaves through {int(np.sum(m > 0))} of {len(m)} faces")
+            mach = res._face_values("mach", d)
+            if mach.size and float(mach.max()) >= 1.0:
+                out.append(f"total_inlet {bc.group!r}: the inflow reaches Mach {float(mach.max()):.3f}; a "
+                           "total_inlet is a subsonic inflow (the duct chokes at its inlet: move the inlet upstream "
+                           "into a wider section)")
+    if rsv is not None:
+        top = float(res._cell_values("mach").max())
+        if top < fint.LOW_MACH:
+            out.append(f"the largest Mach number is {top:.3f}: below about {fint.LOW_MACH} the density-based solver "
+                       "is out of its range (the acoustic time step is far smaller than the flow needs and the "
+                       "dissipation of the central scheme grows relative to the pressure differences); solve such "
+                       "a flow as incompressible (physics 'flow')")
+    return out
 
 
 def _fmt(r: dict) -> str:
@@ -597,7 +718,18 @@ class CompressibleResult(OpenFOAMResult):
                                                   1.0, p_ref=self.p_inf)
         return self.forces[group]
 
+    def _mass_flux(self, d: dict) -> np.ndarray:
+        """Mass flow through the faces of a patch (kg/s, positive out of the domain): rho U . Sf of the
+        boundary values, which is the flux the solver itself uses there."""
+        return d["p"] / (self.R * d["T"]) * d["phi"]
+
+    def mass_flow(self, group: str) -> float:
+        """Mass flow rate through the boundary group (kg/s; 2D: per ``analysis.thickness``), positive out."""
+        return float(sum(self._mass_flux(d).sum() for d in self._group_faces(group)))
+
     def evaluate(self, qoi: QoI) -> float:
+        if qoi.type == "mass_flow":
+            return self.mass_flow(qoi.group)
         if qoi.type in ("integral", "mean", "max", "min", "max_abs"):
             self._check_field(qoi.field)
         return super().evaluate(qoi)

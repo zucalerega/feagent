@@ -173,7 +173,7 @@ def limit_value(p: Page, c: Any) -> tuple[float | None, str, H]:
             q = v.quantity() if v is not None else None
             name = {"yield_strength": "Sy", "ultimate_strength": "Su"}.get(c.allowable)
             words = c.allowable.replace("_", " ")
-            shown = join([p.t("the {} of the material {}", words, p.ref(mat.id)),
+            shown = join([p.lt("the {} of the material {}", words, p.ref(mat.id)),
                           H(" (") + (p.ref(name) + H(" = ") if name in p.known else H(""))
                           + (p.qty(units.si(q), units.si_unit(q)) if q is not None else H("")) + H(")")], "")
             return (float(units.si(q)) if q is not None else None), (units.si_unit(q) if q is not None else ""), shown
@@ -189,7 +189,7 @@ def limit_value(p: Page, c: Any) -> tuple[float | None, str, H]:
 def criterion_sentence(p: Page, c: Any) -> H:
     """One criterion in words."""
     q, m, loc = fmt.split_key(c.key())
-    where = {"part": p.t("in the part"), "scls": p.t("at each stress classification line")}.get(loc) or p.t("at {}", p.ref(loc))
+    where = {"part": p.label("in the part"), "scls": p.label("at each stress classification line")}.get(loc) or p.lt("at {}", p.ref(loc))
     fval, fshow = factor_value(p, c)
     _, _, lshow = limit_value(p, c)
     words = _measure_words(c.key())
@@ -373,7 +373,7 @@ def load_case_card(p: Page, lc: Any, level: int = 4) -> H:
         p.field("Hand calculations", p.refs(lc.hand_calcs)) if lc.hand_calcs else H(""),
         p.field("Results the analysis must give", join([p.code(k) for k in lc.result_keys], " ")) if lc.result_keys else H(""),
         p.field("Analysis", p.recline(an.id)) if an is not None else
-        (p.field("Analysis", p.t("The analysis of this load case has not run.")) if not lc.scaled_from or True else H("")),
+        p.field("Analysis", p.t("The analysis of this load case has not run.")),
         p.field("Note", p.rec_text(lc.note)) if lc.note else H(""),
         p.about_block(lc.id),
         p.origin_field(lc),
@@ -396,16 +396,16 @@ def comparison_rows(p: Page, hc: Any) -> list[list]:
         unit = _hc_unit(hc, c)
         an = p.d.analysis_of(hc.load_case) if hc.load_case else None
         target = f"{an.id}:{c.result_key}" if an is not None and c.result_key in an.results else None
-        fe = p.qty(c.fe_value, unit) if c.fe_value is not None else p.t("no value")
+        fe = p.qty(c.fe_value, unit) if c.fe_value is not None else p.label("no value")
         if target:
             fe = tag("a", fe, href=f"#{target}", cls="sub", title="Open the result of the analysis")
         if c.band is not None or c.tolerance_si is None:
             measure = p.num(fmt.ratio(c.ratio)) if c.ratio is not None else H("")
-            accepted = p.t("ratio from {} to {}", p.num(f"{c.band[0]:g}"), p.num(f"{c.band[1]:g}")) if c.band else H("")
+            accepted = p.lt("ratio from {} to {}", p.num(f"{c.band[0]:g}"), p.num(f"{c.band[1]:g}")) if c.band else H("")
         else:
             diff = abs(c.fe_value - c.hand_value) if c.fe_value is not None else None
-            measure = p.t("difference {}", p.qty(diff, unit)) if diff is not None else H("")
-            accepted = p.t("difference up to {}", p.qty(c.tolerance_si, unit))
+            measure = p.lt("difference {}", p.qty(diff, unit)) if diff is not None else H("")
+            accepted = p.lt("difference up to {}", p.qty(c.tolerance_si, unit))
         rows.append([p.code(c.output), p.qty(c.hand_value, unit), join([fe, tag("div", p.code(c.result_key), cls="muted")], ""),
                      measure, accepted, p.badge("agree", c.agree), p.source(c.why, block=False) if c.why else H("")])
     return rows
@@ -503,9 +503,9 @@ def results_table(p: Page, an: Any, keys: list[str]) -> H:
         note = tag("div", p.rec_text(r.note), cls="muted") if r.note else None
         extra = []
         if r.extrapolated is not None:
-            extra.append(p.t("extrapolated {}", p.qty(r.extrapolated, r.unit)))
+            extra.append(p.lt("extrapolated {}", p.qty(r.extrapolated, r.unit)))
         if r.order is not None:
-            extra.append(p.t("observed order {}", p.num(f"{r.order:.1f}")))
+            extra.append(p.lt("observed order {}", p.num(f"{r.order:.1f}")))
         if r.method != "fe":
             extra.append(p.chip({"hand_calc": "hand calculation", "derived": "derived", "scaled": "scaled"}.get(r.method, r.method)))
         rows.append(([join([p.key(key), note], ""), result_value(p, r), p.badge("result", r.status), _where(p, r),
@@ -598,7 +598,7 @@ def analysis_block(p: Page, an: Any, level: int = 4) -> H:
     if an.checks:
         checks = p.items([join([p.badge("check", c.passed), tag("span", p.rec_text(c.statement)),
                                 tag("span", H("(") + p.code(c.kind)
-                                    + (H(", ") + p.t("value {}, limit {}", p.num(fmt.plain(c.value)), p.num(fmt.plain(c.limit)))
+                                    + (H(", ") + p.lt("value {}, limit {}", p.num(fmt.plain(c.value)), p.num(fmt.plain(c.limit)))
                                        if c.value is not None and c.limit is not None else H(""))
                                     + H(")"), cls="muted"),
                                 p.ref(c.link) if c.link else None], " ") for c in an.checks], cls="checks")
@@ -650,7 +650,7 @@ def margin_formula(p: Page, item: Any) -> H:
     return p.formula(latex)
 
 
-def source_numbers(p: Page, rid: str, limit: int = 40) -> H:
+def source_numbers(p: Page, rid: str, limit: int = 40) -> tuple[int, H]:
     """The named numbers a record rests on that have no expression: the numbers of the source documents.
     They are the leaves of dossier.trace.upstream."""
     from dossier import trace
@@ -668,14 +668,14 @@ def source_numbers(p: Page, rid: str, limit: int = 40) -> H:
 
     walk(trace.upstream(p.d.graph, rid, depth=10))
     if not seen:
-        return H("")
+        return 0, H("")
     rows = []
     for name in list(seen)[:limit]:
         prm = p.d.ctx.params[name]
         rows.append([p.ref(name), prm.title, p.qty(prm.si, prm.unit), p.chip(prm.basis, "basis"),
                      p.doc(prm.source) if prm.source else tag("span", p.label("no source document"), cls="muted")])
     more = tag("p", p.t("The table shows {} of {} numbers.", limit, len(seen)), cls="muted") if len(seen) > limit else None
-    return join([p.table(["Number", "What it is", "Value", "Basis", "Source document"], rows, cls="t-src"), more])
+    return len(seen), join([p.table(["Number", "What it is", "Value", "Basis", "Source document"], rows, cls="t-src"), more])
 
 
 def compliance_card(p: Page, item: Any, level: int = 5) -> H:
@@ -689,7 +689,7 @@ def compliance_card(p: Page, item: Any, level: int = 5) -> H:
     badges.append(p.ref(item.load_case))
     comp_word = "must not be more than the limit" if item.comparator == "<=" else "must not be less than the limit"
     rows = []
-    resp_src = join([p.key(item.result_key), (H(" ") + tag("a", p.t("result of {}", an.id), href=f"#{target}", cls="sub")) if target
+    resp_src = join([p.key(item.result_key), (H(" ") + tag("a", p.lt("result of {}", an.id), href=f"#{target}", cls="sub")) if target
                      else ((H(" ") + p.ref(item.analysis)) if item.analysis else None)], "")
     if item.value is not None:
         shown = p.qty(item.value, item.unit, item.uncertainty)
@@ -714,7 +714,7 @@ def compliance_card(p: Page, item: Any, level: int = 5) -> H:
                      criterion_sentence(p, req.criteria[item.criterion])], "")
     flow = p.kv([("Requirement", p.recline(item.requirement)), ("Criterion", crit), ("Load case", p.recline(item.load_case)),
                  ("Analysis", p.recline(item.analysis) if item.analysis else p.t("No analysis gives this value."))], cls="flow")
-    srcs = source_numbers(p, item.id)
+    n_src, srcs = source_numbers(p, item.id)
     body = join([
         p.field("Verdict", join([p.badge("verdict", item.verdict), p.rec_text(item.statement)], " "), cls="lead"),
         p.field("The numbers of the margin", join([numbers, tag("div", margin_formula(p, item), cls="msf")])),
@@ -722,8 +722,8 @@ def compliance_card(p: Page, item: Any, level: int = 5) -> H:
         p.field("Caveats", join([p.t("These findings question the requirement. The verdict is correct only if the requirement is correct."),
                                  p.items([p.recline(c) for c in item.caveats], cls="reclist")])) if item.caveats else H(""),
         p.field("Where it comes from", flow),
-        p.field("Source numbers", p.fold(p.t("{} numbers of source documents are the base of this item.",
-                                             len(srcs.split("<tr")) - 2 if srcs else 0), srcs)) if srcs else H(""),
+        p.field("Source numbers", p.fold(p.t("This item rests on {} numbers that have no expression. Each number has its source document.",
+                                             n_src), srcs)) if n_src else H(""),
         p.links_field(item, skip=[item.requirement, item.load_case, item.analysis or "", *item.caveats]),
         p.about_block(item.id),
         p.origin_field(item),

@@ -121,7 +121,21 @@ def _num(x: Any) -> str:
         return "yes" if x else "no"
     if isinstance(x, (int, float)):
         return f"{x:.4g}"
+    if isinstance(x, (list, tuple)):
+        return "[" + ", ".join(_num(v) for v in x) + "]"
+    if isinstance(x, dict):
+        return "{" + ", ".join(f"{k}: {_num(v)}" for k, v in x.items()) + "}"
     return str(x)
+
+
+def _same(a: Any, b: Any, rtol: float = 1e-3) -> bool:
+    """Two SI values (numbers or vectors) are the same within rtol of the larger magnitude."""
+    va = list(a) if isinstance(a, (list, tuple)) else [a]
+    vb = list(b) if isinstance(b, (list, tuple)) else [b]
+    if len(va) != len(vb) or not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (*va, *vb)):
+        return False
+    big = max(abs(x) for x in (*va, *vb)) or 1.0
+    return all(abs(x - y) <= rtol * big for x, y in zip(va, vb))
 
 
 def _yes(x: bool | None, unknown: str = "not evaluated") -> str:
@@ -264,9 +278,13 @@ class _Brief:
         s, c = self.p.system, self.comp
         by_conn = {it.connection: it for it in c.interfaces}
         out = ["### System", "", _c(s.description), ""]
-        out += _table(["element", "name", "kind", "group", "description"],
-                      [[_id(e.id) + (" (the component)" if e.id == c.element else ""), e.name, e.kind, e.group,
-                        e.description] for e in s.elements])
+        if self.role.name == "requirements-reviewer":
+            out += _table(["element", "name", "kind", "group", "description"],
+                          [[_id(e.id) + (" (the component)" if e.id == c.element else ""), e.name, e.kind, e.group,
+                            e.description] for e in s.elements])
+        else:
+            out.append("Elements: " + "; ".join(f"{_id(e.id)} {_s(e.name)}" + (" (the component)" if e.id == c.element else "")
+                                               for e in s.elements) + ".")
         out += ["", "Connections. A connection carries effects: what it does to an element in a phase.", ""]
         rows = []
         for cn in s.connections:
@@ -342,8 +360,9 @@ class _Brief:
         c = self.comp
         if self.role.name == "analysis-checker" and self.rec["load_cases"]:
             return ["### Effects on the component", "",
-                    "The loads of each phase are in the load cases below (section \"Load-case plan\"), with their "
-                    "effect ids. The plan reviewer checks the load cases against the effects of the phases.", ""]
+                    "Each analysis below gives its loads with their effect ids and values. The plan reviewer checks "
+                    "the load cases against the effects of the phases; the full tables are in its brief "
+                    f"(`python -m dossier.agents brief {self.p.root} plan-reviewer`).", ""]
         out = ["### Effects on the component, phase by phase", "",
                f"Each row is one effect on {_id(c.element)}: what a connection does to the component in the phase. "
                "\"from\" is the expression that gives the value: its names are in the table of the named numbers, "
@@ -583,15 +602,34 @@ class _Brief:
         return out
 
     # ------------------------------------------------------------------ plan
-    def _load(self, x: model.LoadItem) -> str:
-        on = f" on {_id(x.interface)}" + (f" ({x.role})" if x.role else "") if x.interface else (f" ({x.role})" if x.role else "")
-        value = "holds the component" if x.kind == "support" else (x.display or _show(x.si, x.unit))
-        return (f"{_id(x.effect)} {x.kind} {value}"
-                + (f", h = {_show(x.h_si, 'W/(m^2*K)')}" if x.h_si is not None else "")
-                + (f" × {x.factor:g}" if x.factor != 1.0 else "") + on)
+    def _load(self, x: model.LoadItem, value: bool = True) -> str:
+        """One load of a load case: the effect id; the value only when asked or when it is not the effect's."""
+        out = _id(x.effect)
+        if x.factor != 1.0:
+            out += f" × {x.factor:g}"
+        if value and x.kind != "support":
+            out += f" {x.kind} {x.display or _show(x.si, x.unit)}"
+            if x.h_si is not None:
+                out += f", h = {_show(x.h_si, 'W/(m^2*K)')}"
+            if x.interface:
+                out += f" on {_id(x.interface)}"
+        return out
+
+    def _changed(self, lc: model.LoadCase) -> list[str]:
+        """Loads of a load case whose value is not the value of their effect in the phase."""
+        if not lc.phase:
+            return []
+        effects = {e.id: e for e in self.ctx.effects_on(self.comp.element, lc.phase)}
+        out = []
+        for x in lc.loads:
+            e = effects.get(x.effect)
+            if e is None:
+                out.append(f"{_id(x.effect)} is not an effect of {_id(lc.phase)} on the component")
+            elif x.si is not None and e.si is not None and not _same(x.si, e.si):
+                out.append(f"{_id(x.effect)}: the load case has {x.display or _show(x.si, x.unit)}, the effect has {e.display}")
+        return out
 
     def _load_case(self, lc: model.LoadCase, full: bool) -> list[str]:
-        el = self.comp.element
         head = (f"{_id(lc.id)} [{lc.analysis_type}, {lc.status}"
                 + (f", scaled from {_id(lc.scaled_from)} by {lc.scale:.6g}" if lc.scaled_from else "") + "]"
                 + (f" phase {_id(lc.phase)}" if lc.phase else "") + f": **{_c(lc.title)}**")
@@ -603,15 +641,12 @@ class _Brief:
             out.append(f"- Statement: {_c(lc.statement)}")
         out.append(f"- Supports (interfaces that hold the part): {_ids(lc.supports) or 'none: the part is free'}."
                    + (f" Uses the results of: {_ids(lc.uses)}." if lc.uses else ""))
-        out.append(f"- Loads ({len(lc.loads)}): " + ("; ".join(self._load(x) for x in lc.loads) or "none") + ".")
-        if lc.phase:
-            used = {x.effect for x in lc.loads}
-            left = [e for e in self.ctx.effects_on(el, lc.phase) if e.kind != "signal" and e.id not in used]
-            loads = {x.effect: x for x in self.ctx.loads(self.p, self.comp.id, lc.phase)}
-            left = [e for e in left if not (e.kind == "support" and loads.get(e.id) is not None
-                                            and loads[e.id].interface in lc.supports)]
-            out.append(f"- Effects of {_id(lc.phase)} on the component that the load case does NOT contain: "
-                       + ("; ".join(f"{_id(e.id)} {e.kind} {e.display}".rstrip() for e in left) or "none") + ".")
+        loads = [x for x in lc.loads if x.kind != "support"]
+        out.append(f"- Loads ({len(loads)}; the values are in the table of the effects of the phase): "
+                   + (", ".join(self._load(x, value=False) for x in loads) or "none") + ".")
+        changed = self._changed(lc)
+        if changed:
+            out.append("- NOT THE VALUE OF THE EFFECT: " + "; ".join(changed) + ".")
         for cy in lc.cycles:
             out.append(f"- Cycle {_id(cy.duty_cycle)}: {cy.count:g} repetitions of the states {_ids(cy.states)}.")
         if lc.criteria:
@@ -628,25 +663,25 @@ class _Brief:
             out += ["- Decisions and assumptions of the planner about this load case:"] + [f"  {x}" for x in about]
         return out + [""]
 
-    def _hand_calc(self, h: model.HandCalcResult) -> list[str]:
-        out = [f"- {_id(h.id)} [model `{h.model}`, from {_id(h.spec)}"
-               + (f", for {_id(h.load_case)}" if h.load_case else "") + f"] **{_c(h.title)}.** "
-               + (f"Reference: {_c(h.reference)}. " if h.reference else "")
-               + "Inputs: " + ("; ".join(f"{i.name} = {i.display}" + (f" (from {_c(i.source)})" if i.source else "")
-                                         for i in h.inputs) or "none") + ". "
-               + "Outputs: " + ("; ".join(f"`{o.name}` = {o.display}" + (f" ({_c(o.description)})" if o.description else "")
-                                          for o in h.outputs) or "none") + "."]
-        if h.steps and not self.compact:
-            out.append("  - Steps: " + " ".join(f"{_c(s.text)}" + (f" [{_c(s.result)}]" if s.result else "") for s in h.steps))
-        if h.assumptions:
-            out.append("  - Assumptions of the formula: " + " ".join(_c(a) for a in h.assumptions))
-        if h.warnings:
-            out.append("  - WARNINGS (outside the validity range of the formula): " + " ".join(_c(w) for w in h.warnings))
-        for cmp in h.comparisons:
-            out.append("  - " + self._comparison(h, cmp))
+    def _not_in_a_load_case(self) -> list[str]:
+        """Per phase that has a load case: the effects on the component that no load case of the phase contains."""
+        out = []
+        for ph in self.p.system.phases:
+            cases = [lc for lc in self.rec["load_cases"] if lc.phase == ph.id]
+            if not cases:
+                continue
+            used = {x.effect for lc in cases for x in lc.loads}
+            held = {s for lc in cases for s in lc.supports}
+            items = {x.effect: x for x in self.ctx.loads(self.p, self.comp.id, ph.id)}
+            left = [e for e in self.ctx.effects_on(self.comp.element, ph.id)
+                    if e.kind != "signal" and e.id not in used
+                    and not (e.kind == "support" and items.get(e.id) is not None and items[e.id].interface in held)]
+            if left:
+                out.append(f"- {_id(ph.id)} (load cases {_ids(lc.id for lc in cases)}): "
+                           + "; ".join(f"{_id(e.id)} {e.kind} {e.display}".rstrip() for e in left) + ".")
         return out
 
-    def _comparison(self, h: model.HandCalcResult, cmp: model.Comparison) -> str:
+    def _comparison(self, h: model.HandCalcResult, cmp: model.Comparison, why: bool = True) -> str:
         unit = next((o.unit for o in h.outputs if o.name == cmp.output), None)
         band = (f"band {cmp.band[0]:g} to {cmp.band[1]:g}" if cmp.band else
                 f"tolerance {_show(cmp.tolerance_si, unit)}" if cmp.tolerance_si is not None else "no band")
@@ -654,7 +689,39 @@ class _Brief:
               else f"analysis {_show(cmp.fe_value, unit)}" if cmp.fe_value is not None else "the analysis has no such result yet")
         agree = {True: "agree", False: "DO NOT AGREE", None: "not compared"}[cmp.agree]
         return (f"`{cmp.output}` = {_show(cmp.hand_value, unit)} against `{cmp.result_key}`: {fe}; {band}: {agree}."
-                + (f" Why they must agree: {_c(cmp.why)}" if cmp.why else ""))
+                + (f" Why they must agree: {_c(cmp.why)}" if why and cmp.why else ""))
+
+    def _hand_calcs(self) -> list[str]:
+        """The hand-calculation results, by model of the component: what is the same for every load case once,
+        then one line per load case."""
+        groups: dict[str, list[model.HandCalcResult]] = {}
+        for h in self.rec["hand_calcs"]:
+            groups.setdefault(h.spec, []).append(h)
+        out = []
+        for spec, hs in groups.items():
+            h0 = hs[0]
+            out.append(f"- From {_id(spec)} [model `{h0.model}`]"
+                       + (f". Reference: {_s(h0.reference)}" if h0.reference else "")
+                       + ("" if not h0.inputs else ". Inputs: " + "; ".join(
+                           f"{i.name}" + (f" (from {_s(i.source)})" if i.source else "") for i in h0.inputs))
+                       + ("" if not h0.outputs else ". Outputs: " + "; ".join(
+                           f"`{o.name}`" + (f" ({_s(o.description)})" if o.description else "") for o in h0.outputs))
+                       + ("" if not h0.assumptions else ". Assumptions of the formula: " + " ".join(_c(a) for a in h0.assumptions)))
+            for h in hs:
+                line = (f"  - {_id(h.id)}" + (f" for {_id(h.load_case)}" if h.load_case else "") + ": "
+                        + ", ".join(f"{i.name} = {i.display}" for i in h.inputs) + " → "
+                        + ", ".join(f"`{o.name}` = {o.display}" for o in h.outputs) + ".")
+                if h.steps and not self.compact and h is h0:
+                    line += " Steps: " + " ".join(_c(s.text) + (f" [{_c(s.result)}]" if s.result else "") for s in h.steps)
+                if h.assumptions != h0.assumptions and h.assumptions:
+                    line += " Assumptions: " + " ".join(_c(a) for a in h.assumptions)
+                if h.warnings:
+                    line += " WARNINGS (outside the validity range of the formula): " + " ".join(_c(w) for w in h.warnings)
+                cmps = [self._comparison(h, c, why=False) for c in h.comparisons]
+                if cmps:
+                    line += " Compared: " + " ".join(cmps)
+                out.append(line)
+        return out
 
     def plan(self) -> list[str]:
         r, name = self.rec, self.role.name
@@ -669,6 +736,9 @@ class _Brief:
         with_case = {lc.phase for lc in r["load_cases"] if lc.phase}
         none = [ph.id for ph in self.p.system.phases if ph.id not in with_case]
         out += [f"Phases with no load case: {_ids(none) or 'none'}.", ""]
+        left = self._not_in_a_load_case()
+        out += (["Effects on the component that no load case of their phase contains:", "", *left, ""] if left else
+                ["Every effect of a phase that has a load case is in a load case of that phase.", ""])
         for lc in r["load_cases"]:
             out += self._load_case(lc, full=full_role and (not self.focus or lc.id in self.focus))
         if not full_role:
@@ -679,10 +749,9 @@ class _Brief:
         if rest:
             out += ["Other decisions and assumptions of the planner:", "", *rest, ""]
         if r["hand_calcs"]:
-            out += ["#### Hand-calculation results", ""]
-            for h in r["hand_calcs"]:
-                out += self._hand_calc(h)
-            out.append("")
+            out += ["#### Hand-calculation results", "",
+                    "By model of the component (section \"Hand-calculation models\" gives each model, its band and "
+                    "why the two values must agree).", "", *self._hand_calcs(), ""]
         else:
             out += ["The plan has no hand-calculation result.", ""]
         return out
@@ -703,6 +772,28 @@ class _Brief:
                          (v.method if v.method != "fe" else "") + (f" {v.note}" if v.note else "")])
         return rows, hidden
 
+    def _bc(self, b: model.BCItem, item: model.LoadItem | None, decisions: dict, told: set[str]) -> str:
+        on = _ids(b.features) or ", ".join(b.faces) or "the body"
+        if b.value is None:
+            value = ""
+        elif item is not None and item.si is not None and _same(b.value, item.si):
+            value = f" {item.display or _show(item.si, item.unit)}"
+        else:
+            value = f" value (SI) {_num(b.value)}" + (
+                f" (the load case gives {item.display or _show(item.si, item.unit)} for the effect)"
+                if item is not None and item.si is not None else "")
+        out = (f"  - `{b.type}` on {on}{value}" + (f" [effect {_id(b.effect)}]" if b.effect else "")
+               + (f" [interface {_id(b.interface)}]" if b.interface and not b.effect else "")
+               + (f": {_c(b.description)}" if b.description else ""))
+        d = decisions.get(b.decision) if b.decision else None
+        if d is None:
+            return out + (f" Decision {_id(b.decision)}: THE RECORD IS MISSING." if b.decision else " No decision record.")
+        if d.id in told:
+            return out + f" Decision {_id(d.id)} (above)."
+        told.add(d.id)
+        return (out + f" Decision {_id(d.id)} [{d.origin.by}; review: {self.review(d)}]: {_c(d.choice)} Why: {_c(d.rationale)}"
+                + "".join(f" Alternative: {_c(x.option)} (not chosen: {_c(x.why_not)})" for x in d.alternatives))
+
     def _analysis(self, a: model.AnalysisRecord, full: bool) -> list[str]:
         r = self.rec
         lc = next((x for x in r["load_cases"] if x.id == a.load_case), None)
@@ -711,6 +802,8 @@ class _Brief:
         if a.status != "done":
             return [f"#### {head}", "", f"- No result: {_c(a.message) or 'no reason given'}", ""]
         scaled = lc is not None and lc.scaled_from
+        heads = ["result", "value", "status", "uncertainty", "on each mesh, coarse → fine", "extrapolated", "order",
+                 "where", "note"]
         if not full or scaled:
             worst = [k for k, v in a.results.items() if v.status in ("not_converged", "singular")]
             failed = [c.id for c in a.checks if c.passed is False]
@@ -719,88 +812,82 @@ class _Brief:
                     + f"{len(a.results)} result(s)"
                     + (f"; not converged or singular: {', '.join(f'`{k}`' for k in worst)}" if worst else "")
                     + (f"; checks that did not pass: {_ids(failed)}" if failed else "") + ".")
-            if scaled and full:
+            if scaled and full and not self.compact:
                 rows, _ = self._result_rows(a, set(lc.result_keys))
-                return [line, "", *_table(["result", "value", "status", "uncertainty", "on each mesh, coarse → fine",
-                                           "extrapolated", "order", "where", "note"], rows), ""]
-            return [line]
+                return [line, "", *_table(heads[:2] + heads[2:3] + heads[7:], [[x[0], x[1], x[2], x[7], x[8]] for x in rows]), ""]
+            return [line, ""] if scaled else [line]
         out = [f"#### {head}", ""]
         if a.statement:
             out.append(f"- Statement: {_c(a.statement)}")
-        out.append(f"- Solver: {_c(a.solver) or 'not given'}." + (f" Run time: {a.runtime_s:g} s." if a.runtime_s else ""))
-        if a.material:
-            out.append("- Material properties used (SI): " + ", ".join(f"{k} = {_num(v)}" for k, v in a.material.items()) + ".")
-        if lc is not None:
-            out.append(f"- The load case asks for: supports {_ids(lc.supports) or 'none'}; loads: "
-                       + ("; ".join(self._load(x) for x in lc.loads) or "none") + ".")
+        out.append(f"- Solver: {_c(a.solver) or 'not given'}." + (f" Run time: {a.runtime_s:g} s." if a.runtime_s else "")
+                   + (" Material properties used (SI): " + ", ".join(f"{k} = {_num(v)}" for k, v in a.material.items()) + "."
+                      if a.material else ""))
+        items = {x.effect: x for x in lc.loads} if lc is not None else {}
         decisions = {d.id: d for d in r["decisions"]}
-        out.append("- Supports and loads of the analysis model:")
-        applied = set()
-        for b in a.bcs:
-            applied.add(b.effect)
-            value = "" if b.value is None else f" value (SI) {_num(b.value) if not isinstance(b.value, (list, dict)) else b.value}"
-            on = _ids(b.features) or ", ".join(b.faces)
-            d = decisions.get(b.decision) if b.decision else None
-            out.append(f"  - `{b.type}` on {on or 'the body'}{value}"
-                       + (f" [effect {_id(b.effect)}]" if b.effect else "") + (f" [interface {_id(b.interface)}]" if b.interface else "")
-                       + (f": {_c(b.description)}" if b.description else "")
-                       + (f" Decision {_id(d.id)}: {_c(d.choice)} Why: {_c(d.rationale)}"
-                          + ("".join(f" Alternative: {_c(x.option)} (not chosen: {_c(x.why_not)})" for x in d.alternatives))
-                          + f" [review: {self.review(d)}]" if d else
-                          (f" Decision {_id(b.decision)} (the record is missing)" if b.decision else " NO DECISION RECORD")))
-        if not a.bcs:
-            out.append("  - none recorded")
-        if lc is not None:
-            missing = [x for x in lc.loads if x.effect not in applied and x.kind != "support"]
-            if missing:
-                out.append("- Loads of the load case with no support or load of the model that names their effect: "
-                           + "; ".join(self._load(x) for x in missing) + ".")
+        told: set[str] = set()
+        out.append("- Supports and loads of the analysis model"
+                   + (f" (the load case asks for the supports {_ids(lc.supports) or 'none: the part is free'})" if lc else "") + ":")
+        out += [self._bc(b, items.get(b.effect), decisions, told) for b in a.bcs] or ["  - none recorded"]
+        applied = {b.effect for b in a.bcs}
+        missing = [x for x in items.values() if x.effect not in applied and x.kind != "support"]
+        if missing:
+            out.append("- LOADS OF THE LOAD CASE THAT NO SUPPORT OR LOAD OF THE MODEL NAMES: "
+                       + "; ".join(self._load(x) for x in missing) + ".")
         if a.mesh:
             out.append("- Meshes: " + "; ".join(
                 f"L{m.level}: h = {_show(m.h, 'm')}, {m.nodes} nodes, {m.cells} cells, order {m.order}"
                 + (f", min quality {m.min_quality:.3g}" if m.min_quality is not None else "") for m in a.mesh) + ".")
         rows, hidden = self._result_rows(a, set(lc.result_keys) if lc else set())
-        out += ["", *_table(["result", "value", "status", "uncertainty", "on each mesh, coarse → fine", "extrapolated",
-                             "order", "where", "note"], rows), ""]
+        out += ["", *_table(heads, rows), ""]
         if hidden:
-            note = (f"{a.id}: {hidden} converged result(s) that no criterion and no hand calculation uses "
-                    f"(`python -m dossier show {self.p.root} {a.id}` gives them)")
-            self.left_out.append(note)
-            out += [f"(The compact form leaves out {hidden} converged result(s) that no criterion and no hand "
-                    f"calculation uses.)", ""]
+            self.left_out.append(f"{hidden} converged result(s) of {a.id} that no criterion and no hand calculation uses")
+            out += [f"(Left out: {hidden} converged result(s) that no criterion and no hand calculation uses. "
+                    f"`python -m dossier show {self.p.root} {a.id}` gives them.)", ""]
+        hcs = [h for h in r["hand_calcs"] if h.load_case == a.load_case and h.comparisons]
+        compared = {h.id for h in hcs}
         if a.checks:
             out.append("- Checks of the analysis on itself:")
-            out += [f"  - `{c.id}` ({c.kind}): passed: {_yes(c.passed)}"
-                    + (f", value {_num(c.value)}" if c.value is not None else "")
-                    + (f", limit {_num(c.limit)}" if c.limit is not None else "")
-                    + f". {_c(c.statement)}" + (f" [{_id(c.link)}]" if c.link else "") for c in a.checks]
-        hcs = [h for h in r["hand_calcs"] if h.load_case == a.load_case and h.comparisons]
+            passed = []
+            for c in a.checks:
+                short = c.kind == "hand_calc" and c.link in compared        # its numbers are in the comparison below
+                numbers = ((f", value {_num(c.value)}" if c.value is not None else "")
+                           + (f", limit {_num(c.limit)}" if c.limit is not None else ""))
+                if self.compact and c.passed:
+                    passed.append(f"`{c.id}` ({c.kind}{'' if short else numbers})")
+                    continue
+                out.append(f"  - `{c.id}` ({c.kind}): passed: {_yes(c.passed)}"
+                           + ("" if short else numbers + f". {_c(c.statement)}") + (f" [{_id(c.link)}]" if c.link else ""))
+            if passed:
+                out.append("  - passed: " + "; ".join(passed) + ".")
         if hcs:
             out.append("- Hand-calculation comparisons:")
             for h in hcs:
-                out += [f"  - {_id(h.id)} ({_c(h.title)}; model `{h.model}`): {self._comparison(h, cmp)}"
-                        for cmp in h.comparisons]
+                out += [f"  - {_id(h.id)} (from {_id(h.spec)}, model `{h.model}`): "
+                        + self._comparison(h, cmp, why=not (self.compact and cmp.agree)) for cmp in h.comparisons]
                 if h.warnings:
                     out.append(f"    - WARNINGS of {_id(h.id)}: " + " ".join(_c(w) for w in h.warnings))
-        used = {b.decision for b in a.bcs if b.decision}
-        about = self.journal(lambda x: x.subject in (a.id, a.load_case) and x.id not in used
+        about = self.journal(lambda x: x.subject in (a.id, a.load_case) and x.id not in told
                              and (x.origin.stage or x.stage) != "plan")
         if about:
-            out += ["- Other decisions and assumptions of the engine about this analysis:"] + [f"  {x}" for x in about]
-        own_findings = [f for f in self.others("findings") if f.subject in (a.id, a.load_case)]
-        if own_findings:
-            out.append(f"- Existing findings about this analysis: {_ids(f.id for f in own_findings)} (see \"Existing findings\").")
-        pics = [x for x in a.artifacts if x.kind == "picture"]
-        if pics:
-            out.append("- Picture files (open them if you have file access):")
-            out += ["  " + self.picture(x.path, x.caption) for x in pics]
+            out += ["- Other decisions and assumptions about this analysis:"] + [f"  {x}" for x in about]
+        found = [f for f in self.others("findings") if f.subject in (a.id, a.load_case)]
+        if found:
+            out.append(f"- Existing findings about this analysis: {_ids(f.id for f in found)} (section \"Existing findings\").")
+        folders: dict[Path, list[str]] = {}
+        for x in a.artifacts:
+            if x.kind == "picture":
+                self.picture(x.path, x.caption)
+                path = (self.p.out / x.path).resolve()
+                folders.setdefault(path.parent, []).append(
+                    f"`{path.name}`" + (f" ({_s(x.caption)})" if x.caption else "") + ("" if path.exists() else " (THE FILE IS MISSING)"))
+        for folder, names in folders.items():
+            out.append(f"- Picture files in `{folder}` (open them if you have file access): " + "; ".join(names) + ".")
         rest: dict[str, int] = {}
         for x in a.artifacts:
             if x.kind != "picture":
                 rest[x.kind] = rest.get(x.kind, 0) + 1
         if rest:
-            out.append("- Other files of the record: " + ", ".join(f"{v} {k} file(s)" for k, v in rest.items())
-                       + f" in `{self.p.analysis_dir(a.load_case)}`.")
+            out.append("- Other files of the record: " + ", ".join(f"{v} {k} file(s)" for k, v in rest.items()) + ".")
         return out + [""]
 
     def analyses(self) -> list[str]:
@@ -811,7 +898,9 @@ class _Brief:
         out += [f"Status of a result: `converged` = the discretization uncertainty of the mesh study is under "
                 f"{_pct(self.p.policy.max_uncertainty)}; `NOT_CONVERGED`; `SINGULAR` = the value grows without bound "
                 "under refinement; `ESTIMATE` = a hand calculation or a bound. \"on each mesh\" is the value on each "
-                "mesh of the study, coarse to fine. The peak evaluation leaves out the zone next to a fixed support.", ""]
+                "mesh of the study, coarse to fine. The peak evaluation leaves out the zone next to a fixed support. "
+                "A support or load of the model shows the value of its effect in the load case; when the model has "
+                "another value, the line gives both.", ""]
         have = {a.load_case for a in r["analyses"]}
         missing = [lc.id for lc in r["load_cases"] if lc.id not in have]
         if missing:
@@ -865,9 +954,11 @@ def _dossier(project: Project, role: roles_mod.Role, focus: Iterable[str], compa
     if compact:
         head += ["This is the COMPACT form of the brief, because the full form is longer than the size the tool aims "
                  "for. It holds every record. It leaves out: "
-                 + ("; ".join(b.left_out) if b.left_out else "the steps of the hand calculations, the list of result "
-                    "keys of each load case and, for a role that does not review them, the evidence text of existing "
-                    "findings") + ".", ""]
+                 "the steps of the hand calculations; the result keys that each load case asks for; the statement of a "
+                 "check that passed; why a hand calculation and a result must agree, when they agree; the evidence text "
+                 "of an existing finding, for a role that does not review the requirements"
+                 + ("; " + "; ".join(b.left_out) if b.left_out else "") + ". `python -m dossier show "
+                 f"{project.root} ID` gives a record in full.", ""]
     text = "\n".join([*head, *body]).rstrip() + "\n"
     while "\n\n\n" in text:
         text = text.replace("\n\n\n", "\n\n")
@@ -894,9 +985,10 @@ def build(project: Project, role: "str | roles_mod.Role", focus: Iterable[str] =
     ins = roles_mod.instructions(r, project=str(project.root), shell=shell)
     data = dossier(project, r, focus, max_chars, reserve=len(head) + len(ins) + 1)
     text = head + ins + "\n" + data
-    if len(text) > max_chars:
+    if len(text) > max_chars and not list(focus or ()) and ("plan" in r.sections or "analyses" in r.sections):
         text += (f"\nNote of the tool: this brief has {len(text)} characters, more than the {max_chars} that the tool "
-                 f"aims for. Read one analysis or load case at a time with `--focus ID`.\n")
+                 f"aims for. `--focus ID` gives one load case or one analysis in full and the other ones on one line "
+                 f"each. Give one submission for the whole role at the end.\n")
     return text
 
 

@@ -18,12 +18,14 @@ const ROUTES = {
   nonlinear: () => import('./pages/nonlinear.js'),
   testdata: () => import('./pages/testdata.js'),
   tasks: () => import('./pages/tasks.js'),
+  projects: () => import('./pages/projects.js'),
 };
 
 // top-level sections; deeper pages highlight their parent
 const SECTION = { benchmarks: 'benchmarks', batch: 'benchmarks', runs: 'runs', study: 'runs', viewer: 'runs',
                   consensus: 'runs', swarm: 'agents', agents: 'agents', gold: 'gold', cad: 'cad', nonlinear: 'nonlinear',
-                  testdata: 'testdata', tasks: 'tasks', solve: 'solve', connect: 'connect', health: 'connect' };
+                  testdata: 'testdata', tasks: 'tasks', solve: 'solve', connect: 'connect', health: 'connect',
+                  projects: 'projects' };
 
 let cleanup = null;
 let renderToken = 0;

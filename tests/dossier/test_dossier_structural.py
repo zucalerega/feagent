@@ -368,3 +368,207 @@ def test_small_imbalance_goes_to_inertia_relief(cylinder):
     assert any(b.type == "body_force" and "residual" in b.description for b in rec.bcs)
     assert rec.results["max_principal.membrane@SCL-WALL"].value == pytest.approx(10 * MPa * RI / (RO - RI), rel=0.02)
     assert all(v.status in ("converged", "not_converged", "singular") and len(v.per_level) == 2 for v in rec.results.values())
+
+
+# =========================================================================== (c) cantilever tube with a moment
+
+
+TRI, TRO, TLEN, XS = 0.012, 0.020, 0.200, 0.120
+
+
+def _tube(occ):
+    a = occ.addCylinder(0, 0, 0, TLEN, 0, 0, TRO)
+    b = occ.addCylinder(0, 0, 0, TLEN, 0, 0, TRI)
+    occ.cut([(3, a)], [(3, b)])
+
+
+def _tube_features():
+    bore = 2 * math.pi * TRI * TLEN
+    return {
+        "FT-IN": (lambda f: f["kind"] == "Cylinder" and abs(f["area"] - bore) < 0.01 * bore,
+                  {"kind": "cylinder", "axis": [1, 0, 0], "radius": TRI}),
+        "FT-OUT": (lambda f: f["kind"] == "Cylinder" and abs(f["area"] - bore) > 0.01 * bore,
+                   {"kind": "cylinder", "axis": [1, 0, 0], "radius": TRO}),
+        "FT-ROOT": (lambda f: f["kind"] == "Plane" and abs(f["centroid"][0]) < 1e-9, {"kind": "plane"}),
+        "FT-TIP": (lambda f: f["kind"] == "Plane" and abs(f["centroid"][0] - TLEN) < 1e-9, {"kind": "plane"}),
+    }
+
+
+TUBE_INTERFACES = [{"id": "INT-ROOT", "features": {"seat": ["FT-ROOT"]}},
+                   {"id": "INT-TIP", "features": {"seat": ["FT-TIP"]}},
+                   {"id": "INT-SLIDE", "joint": "sliding", "features": {"seat": ["FT-ROOT"]}},
+                   {"id": "INT-EMPTY", "features": {"wetted": ["FT-IN"]}}]
+TUBE_SCLS = [{"id": "SCL-TOP", "start": (XS, 0.0, TRI), "end": (XS, 0.0, TRO)}]
+
+
+@pytest.fixture(scope="module")
+def tube(tmp_path_factory):
+    part = Part(tmp_path_factory.mktemp("tube"), _tube, _tube_features(), TUBE_INTERFACES, TUBE_SCLS)
+    part.mesh2 = part.levels([0.0062, 0.0044])
+    return part
+
+
+def test_moment_on_flange_face_against_beam_theory(tube):
+    """Bending M_y and torque T on the free end face of a cantilever tube: sigma = M z / I, tau = T r / J."""
+    T, My = 60.0, 150.0
+    lc = tube.load_case("LC-MOM", [dict(effect="EF-M", interface="INT-TIP", kind="moment", role="seat",
+                                        features=["FT-TIP"], si=[T, My, 0.0])],
+                        supports=["INT-ROOT"], result_keys=["displacement.max@FT-TIP", "sxx.membrane_bending@SCL-TOP"])
+    out = tube.run(lc, tube.mesh2, quick=True)
+    rec, j = out.record, out.journal
+    assert rec.status == "done"
+    ck = _checks(rec)
+    # the traction field is statically equivalent to the moment, and the support reactions balance it
+    m = ck["MOMENT-EF-M"]
+    assert m.passed and m.value < 1e-9 and m.limit == pytest.approx(0.01) and m.kind == "load_resultant"
+    assert ck["EQUILIBRIUM"].passed and ck["ASSEMBLY"].passed
+    bc = next(b for b in rec.bcs if b.type == "traction")
+    assert bc.value["moment"] == pytest.approx([T, My, 0.0]) and len(bc.value["expressions"]) == 3
+    assert bc.decision == "DEC-LC-MOM-IDEALIZE-MOMENT" and bc.effect == "EF-M"
+    dec = next(d for d in j.decisions if d.id == bc.decision)
+    assert not dec.needs_review and len(dec.alternatives) == 2            # a flat face: the classical field
+    # the traction itself: sigma_xx = M_y z / I on the face, shear T r / J around it
+    I = math.pi / 4 * (TRO ** 4 - TRI ** 4)
+    J = 2 * I
+    pts = np.array([[TLEN, 0.0, TRO], [TLEN, TRO, 0.0], [TLEN, 0.0, -0.016]])
+    t = idealize.eval_exprs(bc.value["expressions"], pts)
+    assert t[0] == pytest.approx([My * TRO / I, -T * TRO / J, 0.0], rel=1e-4, abs=1.0)
+    assert t[1] == pytest.approx([0.0, 0.0, T * TRO / J], rel=1e-4, abs=1.0)
+    assert t[2] == pytest.approx([-My * 0.016 / I, T * 0.016 / J, 0.0], rel=1e-4, abs=1.0)
+    # section stresses three diameters from the held face
+    rm = 0.5 * (TRI + TRO)
+    sig, tau = My * rm / I, T * rm / J
+    r = rec.results
+    assert r["sxx.membrane@SCL-TOP"].value == pytest.approx(sig, rel=0.02)
+    assert r["sxx.membrane_bending@SCL-TOP"].value == pytest.approx(My * TRO / I, rel=0.03)
+    assert r["von_mises.membrane@SCL-TOP"].value == pytest.approx(math.hypot(sig, math.sqrt(3) * tau), rel=0.02)
+    assert r["max_principal.membrane@SCL-TOP"].value == pytest.approx(sig / 2 + math.hypot(sig / 2, tau), rel=0.02)
+    assert r["von_mises.membrane_bending@SCL-TOP"].value == pytest.approx(
+        math.hypot(My * TRO / I, math.sqrt(3) * T * TRO / J), rel=0.03)
+    assert all(len(v.per_level) == 2 and v.uncertainty is not None for k, v in r.items() if "@SCL-TOP" in k)
+    # tip displacement: bending deflection M L^2 / (2 E I), section rotation M L / (E I), twist T L / (G J)
+    E, G = 200e9, 200e9 / 2.6
+    kap, phi = My / (E * I), T * TLEN / (G * J)
+    th = np.linspace(0, 2 * math.pi, 721)
+    y, z = TRO * np.cos(th), TRO * np.sin(th)
+    u = np.sqrt((kap * TLEN * z) ** 2 + (phi * z) ** 2 + (-kap * TLEN ** 2 / 2 + phi * y) ** 2)
+    assert r["displacement.max@FT-TIP"].value == pytest.approx(u.max(), rel=0.02)
+    assert r["displacement.max@FT-TIP"].status == "converged"
+    # the held face: fixed, a decision for review, a zone without peak evaluation
+    held = next(b for b in rec.bcs if b.type == "fixed")
+    assert held.interface == "INT-ROOT" and held.features == ["FT-ROOT"] and held.faces
+    ids = {d.id: d for d in j.decisions}
+    assert ids["DEC-LC-MOM-IDEALIZE-SUPPORT"].needs_review and ids["DEC-LC-MOM-PEAK-ZONE"].needs_review
+    assert any(a.id == "ASM-LC-MOM-RIGID-NEIGHBOUR" for a in j.assumptions)
+    peak = r["von_mises.peak@part"]
+    zone = 2.0 * rec.mesh[0].h_rep
+    assert peak.location[0] > zone and f"{1e3 * zone:.3g}"[:3] in ids["DEC-LC-MOM-PEAK-ZONE"].choice
+    assert peak.value == pytest.approx(math.hypot(My * TRO / I, math.sqrt(3) * T * TRO / J), rel=0.08)
+
+
+def test_force_with_a_point_of_application_gets_the_offset_moment(tube):
+    """A transverse force 50 mm beyond the end face: the engine adds the moment of the offset."""
+    Fz, e = 400.0, 0.050
+    lc = tube.load_case("LC-OFF", [dict(effect="EF-F", interface="INT-TIP", kind="force", role="seat",
+                                        features=["FT-TIP"], si=[0.0, 0.0, Fz], at_si=[TLEN + e, 0.0, 0.0])],
+                        supports=["INT-ROOT"])
+    out = tube.run(lc, tube.mesh2[:1])
+    rec = out.record
+    ck = _checks(rec)
+    assert rec.status == "done" and ck["MOMENT-EF-F-OFFSET"].passed and ck["EQUILIBRIUM"].passed
+    kinds = [b.type for b in rec.bcs]
+    assert kinds.count("force") == 1 and kinds.count("traction") == 1
+    off = next(b for b in rec.bcs if b.type == "traction")
+    assert off.value["moment"] == pytest.approx([0.0, -e * Fz, 0.0], abs=1e-9)
+    I = math.pi / 4 * (TRO ** 4 - TRI ** 4)
+    My = -(TLEN + e - XS) * Fz                                    # bending moment at the section of the line
+    assert rec.results["sxx.membrane@SCL-TOP"].value == pytest.approx(My * 0.5 * (TRI + TRO) / I, rel=0.03)
+    assert rec.results["sxx.membrane@SCL-TOP"].status == "not_converged"          # one mesh: no study
+    assert rec.results["sxx.membrane@SCL-TOP"].uncertainty is None
+
+
+# =========================================================================== (d) thermal contraction of a held part
+
+
+def _uniform_field(temperature: float):
+    """A stand-in for dossier.analysis.thermal.solve_temperature: one temperature at every node."""
+    from feacore.case import write_temperature_field
+
+    def solve(project, ctx, geo, thermal_lc, mesh, opts):
+        x = idealize.MeshGeom(project.out / mesh.path).x
+        T = np.full(len(x), float(temperature))
+        path = project.analysis_dir(thermal_lc.id) / f"T_L{mesh.level}.npz"
+        write_temperature_field(path, x, T)
+        return {"x": x, "T": T, "path": str(path)}
+    return solve
+
+
+def test_held_part_contracts_freely_with_the_neighbour(tube):
+    """90 K against a reference of 293.15 K: a fixed face gives hundreds of MPa; the engine's support gives none."""
+    from feacore.case import BC, Analysis, Case, Load, Material
+    from feacore.solver import solve
+
+    T_cold, T_ref, alpha, E, nu = 90.0, 293.15, 12e-6, 200e9, 0.3
+    th = model.LoadCase(id="LC-TH-COLD", title="cold", analysis_type="thermal_steady", component="CMP-T", phase="PH-T")
+    tube.project.write_stage("plan", load_cases=[th])
+    lc = tube.load_case("LC-COLD", [dict(effect="EF-T", interface="INT-ROOT", kind="fluid_temperature", role="wetted",
+                                         features=["FT-IN"], si=T_cold)],
+                        supports=["INT-ROOT"], analysis_type="thermo_structural", uses=["LC-TH-COLD"],
+                        result_keys=["displacement.max@FT-TIP"])
+    out = tube.run(lc, tube.mesh2[:1], thermal_solver=_uniform_field(T_cold))
+    rec, j = out.record, out.journal
+    assert rec.status == "done", rec.message
+    false_stress = E * alpha * (T_ref - T_cold) / (1 - nu)                  # of a fully fixed face: 696 MPa
+    peak = rec.results["von_mises.peak@part"]
+    assert peak.value < 1e-6 * false_stress
+    # the part contracts about the centroid of the held face: the far rim of the tip moves most
+    free = alpha * (T_ref - T_cold) * math.hypot(TLEN, TRO)
+    assert rec.results["displacement.max@FT-TIP"].value == pytest.approx(free, rel=1e-6)
+    sup = next(b for b in rec.bcs if b.type == "displacement")
+    assert sup.value["mean_temperature"] == pytest.approx(T_cold) and sup.value["components"] == [0, 1, 2]
+    assert sup.value["thermal_strain"] == pytest.approx(alpha * (T_cold - T_ref))
+    assert sup.value["centroid"] == pytest.approx([0.0, 0.0, 0.0], abs=1e-7)
+    assert any(b.type == "temperature" and b.value["T_ref"] == pytest.approx(T_ref) for b in rec.bcs)
+    dec = next(d for d in j.decisions if d.id == "DEC-LC-COLD-IDEALIZE-SUPPORT")
+    assert dec.needs_review and len(dec.alternatives) == 2 and "fully fixed" in dec.alternatives[0].option
+    asm = next(a for a in j.assumptions if a.id == "ASM-LC-COLD-NEIGHBOUR-EXPANSION")
+    assert asm.conservative is False and "not in the results" in asm.impact
+    assert any(lk.to == "AN-TH-COLD" for lk in rec.links)
+    assert _checks(rec)["EQUILIBRIUM"].passed
+    # the trap, for comparison: the same solve with the face fully fixed
+    mesh = tube.project.out / tube.mesh2[0].path
+    root = [f"f{t}" for t in tube.feature_tags["FT-ROOT"]]
+    case = Case(mesh=str(mesh), analysis=Analysis(physics="elasticity", formulation="3d", order=2, T_ref=T_ref),
+                materials={"m": Material(E=E, nu=nu, alpha=alpha)}, bcs=[BC(type="fixed", group=g) for g in root],
+                loads=[Load(type="temperature", value=T_cold)])
+    vm = solve(case, backend="skfem").nodal("von_mises")[1]
+    assert vm.max() > 0.5 * false_stress
+
+
+def test_thermo_structural_case_needs_its_thermal_case(tube):
+    lc = tube.load_case("LC-NOTH", [], supports=["INT-ROOT"], analysis_type="thermo_structural", uses=["LC-TH-MISSING"])
+    rec = tube.run(lc, tube.mesh2[:1]).record
+    assert rec.status == "not_supported" and "thermal load case" in rec.message
+
+
+# =========================================================================== loads without a model
+
+
+def test_loads_the_engine_cannot_idealize_are_not_supported(tube):
+    cases = {
+        "LC-NOFEAT": (dict(effect="EF-X", interface="INT-EMPTY", kind="force", role="seat", features=[], si=[1.0, 0, 0]),
+                      ["INT-ROOT"], "has no features"),
+        "LC-DISP": (dict(effect="EF-D", interface="INT-TIP", kind="displacement", role="seat", features=["FT-TIP"],
+                         si=[0, 0, 1e-4]), ["INT-ROOT"], "no rule for a load of the kind displacement"),
+        "LC-SLIDE": (dict(effect="EF-P", interface="INT-TIP", kind="pressure", role="seat", features=["FT-TIP"], si=1e6),
+                     ["INT-SLIDE"], "joint type sliding"),
+        "LC-NOSEAT": (dict(effect="EF-P", interface="INT-TIP", kind="pressure", role="seat", features=["FT-TIP"], si=1e6),
+                      ["INT-EMPTY"], "has no seat features"),
+    }
+    for lc_id, (load, supports, text) in cases.items():
+        out = tube.run(tube.load_case(lc_id, [load], supports=supports), tube.mesh2[:1])
+        assert out.record.status == "not_supported" and text in out.record.message, (lc_id, out.record.message)
+        assert not out.record.results
+        assert any(f.subject == lc_id and f.category == "model" for f in out.journal.findings)
+    lc = tube.load_case("LC-FLOW", [], supports=["INT-ROOT"], analysis_type="flow")
+    assert tube.run(lc, tube.mesh2[:1]).record.status == "not_supported"

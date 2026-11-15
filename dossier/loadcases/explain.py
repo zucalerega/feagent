@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from dossier import units
-from dossier.context import MECHANICAL, proportional
+from dossier.context import MECHANICAL, THERMAL, proportional
 from dossier.loadcases import wording as w
 from dossier.model import CycleUse, LoadCase, LoadItem, Phase, Requirement
 from dossier.project import make_id
@@ -145,8 +145,11 @@ def _serves(p: "Planner", lc: LoadCase) -> str:
     return w.fit(*[f"The load case gives the results for {c}{where}." for c in w.criteria_of(_criteria(p, lc))])
 
 
-def _do(what: str, phase: Phase, tail: str = "") -> str:
-    return w.fit(f"Do a {what} of the phase {w.phase_ref(phase)}{tail}.", f"Do a {what} of the phase {phase.id}{tail}.",
+def _make(kind: str, phase: Phase, tail: str = "") -> str:
+    """The choice of a `selected` decision. It says "make a load case", not "do an analysis": a scaled load
+    case is in the plan, but the analysis does not solve it."""
+    case = f"{w.TYPE_WORDS[kind]} load case"
+    return w.fit(f"Make a {case} of the phase {w.phase_ref(phase)}{tail}.", f"Make a {case} of the phase {phase.id}{tail}.",
                  limit=w.INSTRUCTION)
 
 
@@ -174,15 +177,15 @@ def selected(p: "Planner", lc: LoadCase) -> None:
     links: list = _criteria_links(p, lc) + ([("derives_from", lc.phase)] if lc.phase else [])
     if kind in STRUCTURAL_TYPES:
         title = f"Load case {lc.id}: {what} of the phase {lc.phase}"
-        choice = _do(what, phase, " at limit loads")
+        choice = _make(kind, phase, " at limit loads")
         rationale, alternatives, more = _structural(p, lc)
     elif kind == "thermal_steady":
         title = f"Load case {lc.id}: {what} of the phase {lc.phase}"
-        choice = _do(what, phase)
+        choice = _make(kind, phase)
         rationale, alternatives, more = _thermal(p, lc)
     elif kind == "flow":
         title = f"Load case {lc.id}: {what} of the phase {lc.phase}"
-        choice = _do(what, phase)
+        choice = _make(kind, phase)
         rationale = [_serves(p, lc),
                      "The pressure drop is a result of the flow through the part, thus the load case is a flow analysis.",
                      "The load case has the mass flow, the pressures and the fluid temperatures of the phase."]
@@ -193,8 +196,8 @@ def selected(p: "Planner", lc: LoadCase) -> None:
     else:
         ids = [c.duty_cycle for c in lc.cycles]
         title = f"Load case {lc.id}: {what} of {len(ids)} duty {_plural(len(ids), 'cycle', 'cycles')}"
-        choice = w.fit(f"Do a {what} of {w.the('duty cycle', ids)}.", f"Do a {what} of {len(ids)} duty cycles.",
-                       limit=w.INSTRUCTION)
+        choice = w.fit(f"Make a fatigue load case of {w.the('duty cycle', ids)}.",
+                       f"Make a fatigue load case of {len(ids)} duty cycles.", limit=w.INSTRUCTION)
         rationale, alternatives, more = _fatigue(p, lc)
     p.journal.decide(subject=lc.id, key="selected", title=title, choice=choice, rationale=" ".join(rationale),
                      alternatives=alternatives, links=links + more, by=SELECT)
@@ -256,6 +259,11 @@ def _structural(p: "Planner", lc: LoadCase) -> tuple[list[str], list[tuple[str, 
                      f"The largest temperature difference of {diff} is not more than the policy limit of {limit}."))
         links += [("uses", e.effect, "the largest temperature difference from the reference temperature"),
                   policy, reference]
+    elif th.items:                     # thermal effects without a temperature and without a heat flux
+        out.append("The thermal effects of this phase give no temperature and no heat flux, thus the analysis has "
+                   "no thermal strain.")
+        alts.append(("Do a thermo-structural analysis.",
+                     "The thermal effects of this phase give no temperature and no heat flux."))
     else:
         out.append("The system context gives no thermal effect on the part in this phase, thus the analysis has "
                    "no thermal strain.")
@@ -306,13 +314,15 @@ def _thermal(p: "Planner", lc: LoadCase) -> tuple[list[str], list[tuple[str, str
 
 def _fatigue(p: "Planner", lc: LoadCase) -> tuple[list[str], list[tuple[str, str]], list]:
     ids = [c.duty_cycle for c in lc.cycles]
+    named = p.cycle_named.get(lc.id, ids)
     reqs = w.unique(c.requirement for c in lc.criteria)
     out = [_serves(p, lc),
            w.fit(f"{w.cap(w.the('requirement', reqs))} {_plural(len(reqs), 'names', 'name')} "
-                 f"{w.the('duty cycle', ids)}.",
-                 f"{w.cap(w.the('requirement', reqs))} {_plural(len(reqs), 'names', 'name')} {len(ids)} duty cycles."),
+                 f"{w.the('duty cycle', named)}.",
+                 f"{w.cap(w.the('requirement', reqs))} {_plural(len(reqs), 'names', 'name')} {len(named)} duty cycles."),
            _counts(lc.cycles),
-           "The states of each duty cycle are the structural load cases of its phases, in sequence.",
+           "The states of each duty cycle are the structural load cases of its phases, in sequence, and then the "
+           "unloaded state.",
            "The counts have no factor: the margin applies the factor of the criterion."]
     gaps = {d: phases for d, phases in p.cycle_gaps.get(lc.id, {}).items()}
     lost = w.unique(ph for phases in gaps.values() for ph in phases)
@@ -659,6 +669,21 @@ def _envelope(p: "Planner", pid: str) -> tuple[LoadCase, float] | None:
     return found[0] if found else None
 
 
+def uncovered_finding(p: "Planner", pid: str) -> str | None:
+    """The id of the finding of the validation stage for a phase that no strength requirement covers, when that
+    stage makes one (dossier.requirements.coverage, rule req.phase_uncovered): the phase has a mechanical or
+    thermal effect on the part, no requirement of kind strength applies to it, and its loads are not a multiple
+    (scale <= 1) of the loads of a phase with a strength requirement. None: there is no such finding to link."""
+    items = p.loads[pid]
+    if pid in p.strength_phases or not any(x.kind in MECHANICAL or x.kind in THERMAL for x in items):
+        return None
+    for other in p.strength_phases:
+        s = proportional(p.loads[other], items)
+        if s is not None and s <= 1.0 + 1e-9:
+            return None
+    return make_id("FND", pid, "uncovered")
+
+
 def phase_left_out(p: "Planner", phase: Phase) -> None:
     """One decision for a phase whose loads no structural load case analyses, or that has no load case."""
     pid = phase.id
@@ -671,43 +696,44 @@ def phase_left_out(p: "Planner", phase: Phase) -> None:
     reqs = p.applies[pid]
     title = f"No {'structural ' if made else ''}load case for the phase {pid}"
     choice = _no_case(phase, structural=bool(made))
-    other = ([f"The plan has {w.join(c.id for c in made)} for this phase, but {_plural(len(made), 'it gives', 'they give')} "
-              f"no stress."] if made else [])
-    links: list = [("uses", x.effect) for x in mechanical]
 
-    if loaded and not reqs:                                  # loads that no requirement covers
-        finding = make_id("FND", pid, "uncovered")
+    if loaded:                                               # loads that no structural load case analyses
         rationale = _loads_sentence(p, phase, mechanical)
-        rationale.append("No requirement applies to the phase, thus the plan has no criterion for a result of this phase.")
-        alternatives = [("Make a load case for the phase without a criterion.", NO_CRITERION)]
+        links: list = [("uses", x.effect) for x in mechanical] + [("uses", r) for r in reqs]
+        if reqs:
+            rationale.append(w.fit(
+                f"{w.cap(w.the('requirement', reqs))} {_plural(len(reqs), 'applies', 'apply')} to the phase, but "
+                f"{_plural(len(reqs), 'it gives', 'they give')} no criterion on stress or displacement for analysis.",
+                f"{len(reqs)} requirements apply to the phase, but they give no criterion on stress or displacement "
+                f"for analysis."))
+            alternatives = [("Make a structural load case for the phase without a criterion.", NO_CRITERION)]
+        else:
+            rationale.append("No requirement applies to the phase, thus the plan has no criterion for a result of "
+                             "this phase.")
+            alternatives = [("Make a load case for the phase without a criterion.", NO_CRITERION)]
         env = _envelope(p, pid)
         covered = env is not None and env[1] <= 1.0 + 1e-9
         if covered:
             rationale.append(f"The loads of the phase are {w.number(env[1])} times the loads of {env[0].phase}, thus "
                              f"the results of {env[0].id} are an envelope for this phase.")
             links.append(("uses", env[0].id, "the envelope of this phase"))
+        elif env is not None:
+            rationale.append(f"The loads of the phase are {w.number(env[1])} times the loads of {env[0].phase}, thus "
+                             f"{env[0].id} is not an envelope for this phase.")
         else:
-            if env is not None:
-                rationale.append(f"The loads of the phase are {w.number(env[1])} times the loads of {env[0].phase}, "
-                                 f"thus {env[0].id} is not an envelope for this phase.")
-            else:
-                rationale.append("No load case of the plan has loads in proportion to the loads of this phase.")
-                alternatives.append((ENVELOPE_OPTION,
-                                     "The loads of this phase are not proportional to the loads of a different phase. "
-                                     "Larger loads do not always give a larger stress, because loads can cancel."))
+            rationale.append("No load case of the plan has loads in proportion to the loads of this phase.")
+            alternatives.append((ENVELOPE_OPTION,
+                                 "The loads of this phase are not proportional to the loads of a different phase. "
+                                 "Larger loads do not always give a larger stress, because loads can cancel."))
+        finding = uncovered_finding(p, pid)
+        if finding:
             rationale.append(f"The finding {finding} records this problem.")
             links.append(("about", finding))
-        p.journal.decide(subject=pid, key="no-load-case", title=title, choice=choice, rationale=" ".join(rationale + other),
+        if made:
+            rationale.append(f"The plan has {w.join(c.id for c in made)} for this phase, but "
+                             f"{_plural(len(made), 'it gives', 'they give')} no stress.")
+        p.journal.decide(subject=pid, key="no-load-case", title=title, choice=choice, rationale=" ".join(rationale),
                          alternatives=alternatives, needs_review=not covered, links=links, by=COVERAGE)
-    elif loaded:                                             # requirements apply, but none asks for a stress
-        rationale = _loads_sentence(p, phase, mechanical)
-        rationale.append(w.fit(f"{w.cap(w.the('requirement', reqs))} {_plural(len(reqs), 'applies', 'apply')} "
-                               f"to the phase.", f"{len(reqs)} requirements apply to the phase."))
-        rationale.append(f"No criterion of {_plural(len(reqs), 'this requirement', 'these requirements')} is a limit on "
-                         f"stress or displacement with verification by analysis.")
-        p.journal.decide(subject=pid, key="no-load-case", title=title, choice=choice, rationale=" ".join(rationale + other),
-                         alternatives=[("Make a structural load case for the phase without a criterion.", NO_CRITERION)],
-                         needs_review=True, links=links + [("uses", r) for r in reqs], by=COVERAGE)
     elif wanted:                                             # a criterion asks for a stress, but there is no load
         rationale = [w.fit(f"{w.cap(w.the('requirement', reqs))} {_plural(len(reqs), 'needs', 'need')} the stress "
                            f"or the displacement of the part in this phase.",

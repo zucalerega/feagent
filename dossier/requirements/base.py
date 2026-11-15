@@ -21,6 +21,7 @@ the finding does not question it.
 
 from __future__ import annotations
 
+import difflib
 import math
 import re
 from dataclasses import dataclass
@@ -117,16 +118,28 @@ def join(items: Iterable[Any], word: str = "and") -> str:
     return ", ".join(items[:-1]) + f" {word} " + items[-1]
 
 
-def some(items: Iterable[Any], most: int = 6, noun: str = "more") -> str:
-    """join() of a list that can be long: the first `most` items, then "and 3 more"."""
+def some(items: Iterable[Any], most: int = 6, noun: str = "", plural: str | None = None) -> str:
+    """join() of a list that can be long: the first `most` items, then "and 3 more phases" (`noun`: phase)."""
     items = [str(x) for x in items]
     if len(items) <= most:
         return join(items)
-    return ", ".join(items[:most]) + f" and {len(items) - most} {noun}"
+    rest = len(items) - most
+    word = f" {noun if rest == 1 else (plural or noun + 's')}" if noun else ""
+    return ", ".join(items[:most]) + f" and {rest} more{word}"
 
 
 def cap(text: str) -> str:
     return text[:1].upper() + text[1:]
+
+
+def article(noun: str) -> str:
+    """The noun with its article: a proof factor, an ultimate factor, an MEOP."""
+    first = (noun.split() or [""])[0]
+    if first.isupper() and len(first) > 1:                        # an acronym: by the sound of its first letter
+        vowel = first[0] in "AEFHILMNORSX"
+    else:
+        vowel = first[:1].lower() in "aeio" or (first[:1].lower() == "u" and not first.lower().startswith(("uni", "us")))
+    return f"{'an' if vowel else 'a'} {noun}"
 
 
 def number(x: float, sig: int = 4) -> str:
@@ -209,7 +222,7 @@ def criterion_key(req: Requirement, index: int) -> str:
 
 
 def nearest(word: str, known: Iterable[str]) -> str | None:
-    import difflib
+    """The known name that is nearest to a name that is not known (a likely typing error), or None."""
     known = list(known)
     by_lower = {k.lower(): k for k in known}
     hit = difflib.get_close_matches(str(word).lower(), list(by_lower), n=1, cutoff=0.6)
@@ -313,6 +326,7 @@ class Env:
         self.geo: dict = geo if isinstance(geo, dict) else {}
         self.journal = journal
         self.rule: Rule | None = None
+        self.strict = False                               # tests: an error of a rule stops the validation
         self.comp = project.subject
         self.element = self.comp.element
         self.material = project.material_of()
@@ -413,9 +427,14 @@ class Env:
 
     # ---- records
     def _key(self, prefix: str, subject: str, key: str) -> str:
+        """The key as plain ASCII (an id allows nothing else). Two records must never get one id: the keys of
+        the rules are made so that they cannot meet. If they do, it is an error of a rule (strict), and
+        outside the tests the second record gets a number so that no record is lost."""
         key = re.sub(r"[^A-Za-z0-9]+", "-", str(key)).strip("-") or "x"
         base, n = key, 1
         while make_id(prefix, subject, key) in self._ids:
+            if self.strict:
+                raise AssertionError(f"rule {self.rule.id}: the record id {make_id(prefix, subject, key)} is used twice")
             n += 1
             key = f"{base}-{n}"
         self._ids.add(make_id(prefix, subject, key))

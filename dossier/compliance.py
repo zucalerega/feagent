@@ -86,7 +86,12 @@ from dossier.records import Journal
 
 BY = "engine:compliance"
 ESTIMATE_REASON = "The value is an estimate from a hand calculation. No analysis confirms it."
+# A failed check of one of these kinds is a note, not a blocker: it sums up the convergence of all results
+# of the analysis, and the verdict of an item already uses the status and the uncertainty of its own result.
+NOT_BLOCKING = ("error_estimate",)
+_STRESS = ("von_mises", "max_principal", "sxx", "syy", "szz", "sxy", "syz", "sxz")
 _HOW_SINGULAR = "An engineer can use section stresses, model the real edge radius, or do an elastic-plastic analysis."
+_HOW_SINGULAR_OTHER = "An engineer can model the real edge radius, or use a result that does not include the edge."
 _HOW_REFINE = "An engineer can do the analysis again with a finer mesh or with more mesh levels."
 _RANK = {"fail": 0, "inconclusive": 1, "not_assessed": 2, "pass": 3}
 _TOL = 1e-9          # a margin this near to zero is zero: the rounding of the arithmetic
@@ -369,6 +374,8 @@ def _evaluate(rv: ResultValue, key: str, crit: Criterion, limit: _Limit, factor:
     levels = [_to_si(v, rv.unit)[0] for v in rv.per_level if _finite(v)]
     ev.status = rv.status
     ev.finest = bool(levels) and math.isclose(levels[-1], value, rel_tol=1e-9, abs_tol=0.0)
+    note = [f'The note of the result is: "{rv.note}"'] if rv.note else []
+    at_edge = _HOW_SINGULAR if key.partition(".")[0] in _STRESS else _HOW_SINGULAR_OTHER
 
     if rv.status == "converged":
         ev.reasons.append("The result has the status converged.")
@@ -396,27 +403,26 @@ def _evaluate(rv: ResultValue, key: str, crit: Criterion, limit: _Limit, factor:
         ev.verdict, ev.cause = "inconclusive", "the result is a singular peak"
         ev.reasons += ["The result has the status singular.",
                        "The value increases with each mesh refinement and has no upper bound."]
-        if rv.near:
-            ev.reasons.append(f"The peak is at {rv.near}.")
         if levels and ms(min(levels) if unsafe > 0 else max(levels)) < -_TOL:
             side = "the peak is above" if unsafe > 0 else "the value is below"
             ev.reasons += [f"The value on the coarsest mesh is {_show(levels[0], ev.unit)}.",
                            f"With the factor of safety, {side} the limit on every mesh of the study."]
-        ev.reasons.append(_HOW_SINGULAR)
+        ev.reasons.append(at_edge)
     elif rv.status == "not_converged":
         ev.verdict, ev.cause = "inconclusive", "the result has the status not converged"
         ev.reasons.append("The result has the status not converged.")
-        if ev.du is None:
-            ev.reasons.append(no_uncertainty)
-        elif _finite(rv.uncertainty):
-            ev.reasons.append(f"The uncertainty of the result is {_pct(abs(rv.uncertainty))}, "
-                              f"and the policy limit is {_pct(max_uncertainty)}.")
-        else:
-            ev.reasons.append(f"The uncertainty of the result is {ev.uncertainty_text()}.")
-        ev.reasons.append(_HOW_REFINE)
+        if _finite(rv.uncertainty):
+            ev.reasons += [f"The uncertainty of the result is {_pct(abs(rv.uncertainty))}, "
+                           f"and the policy limit is {_pct(max_uncertainty)}.", _HOW_REFINE]
+        elif ev.du is not None:
+            ev.reasons += [f"The uncertainty of the result is {ev.uncertainty_text()}.", _HOW_REFINE]
+        else:                   # no mesh study, or a value that has no limit: the note of the analysis says which
+            ev.reasons += [no_uncertainty, *note, _HOW_REFINE if len(levels) < 2 else at_edge]
     else:                                                   # estimate
         ev.verdict, ev.cause = "inconclusive", "the value is an estimate"
-        ev.reasons += ["The analysis gives this value as an estimate.", "An estimate does not confirm a criterion."]
+        ev.reasons += ["The analysis gives this value as an estimate.", *note, "An estimate does not confirm a criterion."]
+    if rv.near:
+        ev.reasons.append(f'The location of the {"peak" if rv.status == "singular" else "value"} is "{rv.near}".')
     return ev
 
 
@@ -502,18 +508,20 @@ def _upstream(lc: LoadCase, cases: dict[str, LoadCase], scaled: bool = True) -> 
     return out
 
 
-def _doubts(lc: LoadCase, an: AnalysisRecord, inp: _Inputs) -> tuple[list[tuple[str, list[str]]], list[str]]:
-    """What puts the evidence of a load case in doubt: (blockers, notes). A blocker is (cause, reasons): it
-    turns a pass or a fail into inconclusive. A note does not change the verdict."""
+def _doubts(lc: LoadCase, an: AnalysisRecord, inp: _Inputs) -> tuple[list[tuple[str, list[str]]], list[str], list[Link]]:
+    """What puts the evidence of a load case in doubt: (blockers, notes, links). A blocker is (cause,
+    reasons): it turns a pass or a fail into inconclusive. A note does not change the verdict. The links
+    go to the records of the failed checks (a hand calculation that does not agree)."""
     blockers: list[tuple[str, list[str]]] = []
     notes: list[str] = []
+    links: list[Link] = []
     project = inp.project
     if inp.is_stale(project.stage_path("plan")):
         blockers.append(("the input files changed after the plan stage",
                          ["The input files changed after the plan stage wrote the load cases.",
                           "Do the plan stage and the analyses again."]))
     checked: list[str] = []
-    failed = n_checks = 0
+    failed = estimates = n_checks = 0
     for case_id, rec in [(lc.id, an)] + [(i, inp.analyses.get(i)) for i in _upstream(lc, inp.cases)]:
         if rec is None or rec.status != "done":
             blockers.append((f"load case {case_id} has no complete analysis",
@@ -526,45 +534,59 @@ def _doubts(lc: LoadCase, an: AnalysisRecord, inp: _Inputs) -> tuple[list[tuple[
             blockers.append(("the input files changed after the analysis",
                              [f"The input files changed after analysis {rec.id}.", "Do the analysis again."]))
         for c in rec.checks:
-            if c.passed is False:
+            says = [f'The check says: "{c.statement}"'] if c.statement else []
+            if c.passed is False and c.kind in NOT_BLOCKING:
+                estimates += 1
+                notes += [f"Check {c.id} of analysis {rec.id} failed. It is an error estimate of the analysis as a whole.",
+                          *says]
+            elif c.passed is False:
                 failed += 1
-                blockers.append(("a check of the analysis failed",
-                                 [f"Check {c.id} of analysis {rec.id} failed."]
-                                 + ([f'The check says: "{c.statement}"'] if c.statement else [])))
+                blockers.append(("a check of the analysis failed", [f"Check {c.id} of analysis {rec.id} failed.", *says]))
+                links += inp.links(Link(rel="evidence", to=c.link or "", note=f"check {c.id} failed"))
             elif c.passed is None:
                 notes.append(f"Check {c.id} of analysis {rec.id} has no result.")
-    if n_checks and not failed:
+    if estimates:
+        notes.append("The status of each result gives its convergence, so an error estimate does not change the verdict.")
+    if n_checks and not failed and not estimates:
         notes.insert(0, f"No check of {'analysis' if len(checked) == 1 else 'the analyses'} {_join(checked)} failed.")
     if not an.checks:
         notes.append(f"The record of analysis {an.id} has no check.")
-    return blockers, notes
+    return blockers, notes, links
 
 
 def _caveats(req: Requirement, crit: Criterion, lc: LoadCase, limit, factor, inp: _Inputs) -> list[str]:
     """The findings of severity error or major about a record the item rests on (see the module text)."""
     ctx, project = inp.ctx, inp.project
     comp = project.components.get(lc.component, project.subject)
+    duty_cycles = {d.id: d for d in project.system.duty_cycles}
     subjects = {req.id, *req.parameters}
-    cases = [lc] + [inp.cases[i] for i in _upstream(lc, inp.cases, scaled=False) if i in inp.cases]
     effects: set[str] = set()
-    for c in cases:
+    todo: list[str] = [n for x in (limit, factor) if not isinstance(x, str) for n in x.names]
+    for c in [lc] + [inp.cases[i] for i in _upstream(lc, inp.cases, scaled=False) if i in inp.cases]:
         subjects |= {c.id, *([c.phase] if c.phase else []), *c.supports}
         if c.id in inp.analyses:
             subjects.add(inp.analyses[c.id].id)
         effects |= {x.effect for x in c.loads}
         subjects |= {i for x in c.loads for i in (x.interface, *x.features) if i}
+        for cy in c.cycles:                         # the count of a duty cycle feeds the damage
+            subjects.add(cy.duty_cycle)
+            if cy.duty_cycle in duty_cycles:
+                todo += duty_cycles[cy.duty_cycle].count.names()
     subjects |= effects
-    todo = [n for e in ctx.effects if e.id in effects for n in e.depends_on]
-    todo += [n for x in (limit, factor) if not isinstance(x, str) for n in x.names]
+    todo += [n for e in ctx.effects if e.id in effects for n in e.depends_on]
     names: set[str] = set()
-    while todo:                                   # every parameter the loads, the limit and the factor depend on
+    reached: dict[str, set[str]] = {}               # another requirement -> its parameters that the item reads
+    while todo:                                     # every parameter the loads, the limit and the factor depend on
         n = todo.pop()
         if n in names or n not in ctx.params:
             continue
         names.add(n)
         todo += ctx.params[n].depends_on
-        if ctx.params[n].origin in inp.req_ids or ctx.params[n].origin in project.materials:
-            subjects.add(ctx.params[n].origin)    # the requirement or the material that states the number
+        origin = ctx.params[n].origin
+        if origin in project.materials:
+            subjects.add(origin)
+        elif origin in inp.req_ids and origin != req.id:
+            reached.setdefault(origin, set()).add(n)
     subjects |= names
     if lc.analysis_type != "flow":
         subjects.add(comp.material)
@@ -573,7 +595,18 @@ def _caveats(req: Requirement, crit: Criterion, lc: LoadCase, limit, factor, inp
     elif crit.location != "part":
         subjects.add(crit.location)
         subjects |= {f for it in comp.interfaces if it.id == crit.location for fs in it.features.values() for f in fs}
-    return inp.major(subjects)
+
+    out = []
+    for f in inp.findings.values():
+        if f.severity not in ("error", "major"):
+            continue
+        if f.subject in subjects or any(l.rel == "about" and l.to in subjects for l in f.links):
+            out.append(f.id)
+        elif f.subject in reached:      # on a requirement that states a number the item reads: is it about that number?
+            named = {l.to for l in f.links} & set(project.requirement(f.subject).parameters)
+            if not named or named & reached[f.subject]:
+                out.append(f.id)
+    return out
 
 
 # --------------------------------------------------------------------------- one compliance item
@@ -644,12 +677,13 @@ def _item(req: Requirement, k: int, crit: Criterion, lc: LoadCase, item_id: str,
                 item.links += inp.links(Link(rel="evidence", to=hc.id, note="estimate from a hand calculation"))
                 estimates.append((item_id, key, lc, hc, output, why))
         elif ev.margin is not None:                     # an analysis value with a margin: is the evidence sound?
-            blockers, notes = _doubts(lc, an, inp)
+            blockers, notes, links = _doubts(lc, an, inp)
             for _, rs in blockers:
                 reasons += rs
             if blockers and verdict in ("pass", "fail"):
                 verdict, cause = "inconclusive", blockers[0][0]
             reasons += notes
+            item.links += [l for l in links if l not in item.links]
 
     if ev is not None and ev.value is not None:
         item.result_key, item.value, item.unit = ev.key, ev.value, ev.unit

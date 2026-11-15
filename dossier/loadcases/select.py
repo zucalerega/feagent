@@ -16,9 +16,10 @@ The rules
    context, `ctx.loads(project, component, phase)`; the planner never reads a load from a requirement.
 3. One structural load case per phase that needs one, `LC-<phase>`. It carries the mechanical loads of the
    phase (pressure, force, moment, acceleration, displacement); `supports` lists the interfaces that hold the
-   part. It is thermo-structural when a thermal effect of the phase differs from the component's reference
-   temperature by more than `policy.thermal_delta` (a heat flux always counts: only a thermal analysis gives
-   its temperature); then it uses the thermal load case of the phase. Otherwise it is static.
+   part (a support that does not act on the default role `seat` is also in `loads`, with its role and
+   features). It is thermo-structural when a thermal effect of the phase differs from the component's
+   reference temperature by more than `policy.thermal_delta` (a heat flux always counts: only a thermal
+   analysis gives its temperature); then it uses the thermal load case of the phase. Otherwise it is static.
 4. One thermal load case per phase that needs one, `LC-TH-<phase>` (steady state), for a temperature
    criterion or for a thermo-structural load case. It carries the thermal loads. An Assumption records that
    the steady state is analysed and that transient temperature gradients are not.
@@ -65,7 +66,8 @@ from dossier import units
 from dossier.context import MECHANICAL, THERMAL, Context, proportional
 from dossier.loadcases import explain, handcalcs
 from dossier.loadcases import wording as w
-from dossier.model import CriterionRef, CycleUse, DutyCycle, Link, LoadCase, LoadItem, Origin, Phase, Requirement
+from dossier.model import (DEFAULT_ROLE, CriterionRef, CycleUse, DutyCycle, Link, LoadCase, LoadItem, Origin, Phase,
+                           Requirement)
 from dossier.pipeline import Plan, StageError, analysis_order
 from dossier.project import Project, make_id
 from dossier.records import Journal
@@ -120,6 +122,7 @@ class Planner:
         self.fatigue_need: dict[tuple[str, ...], list[CriterionRef]] = {}    # duty cycles -> criteria
         self.state_of: dict[str, list[str]] = {}         # phase id -> duty cycles whose fatigue needs its stress
         self.applies: dict[str, list[str]] = {pid: [] for pid in self.phases}   # phase id -> requirements that name it
+        self.strength_phases: list[str] = []             # phases that a requirement of kind strength applies to
         self.skipped: list[tuple[Requirement, str]] = []     # requirements without a load case, with the reason
         self.problems: dict[str, list[str]] = {}         # requirement id -> findings of the plan about it
 
@@ -128,6 +131,7 @@ class Planner:
         self.structural_id: dict[str, str] = {}          # phase id -> its structural load case
         self.thermal_id: dict[str, str] = {}             # phase id -> its thermal load case
         self.cycle_gaps: dict[str, dict[str, list[str]]] = {}   # fatigue case -> duty cycle -> phases without a state
+        self.cycle_named: dict[str, list[str]] = {}      # fatigue case -> the duty cycles its requirements name
         self.reasons: dict[str, str] = {}                # a load case that is not supported -> the finding that says why
 
     # ------------------------------------------------------------------ the thermal effects of a phase
@@ -139,7 +143,7 @@ class Planner:
         fluxes = [x for x in thermal if x.kind == "heat_flux" and isinstance(x.si, (int, float)) and x.si != 0.0]
         worst = max(temps, key=lambda x: abs(x.si - self.t_ref), default=None)
         diff = abs(worst.si - self.t_ref) if worst is not None else 0.0
-        if diff > self.t_delta:
+        if diff > self.t_delta * (1.0 + 1e-9):          # "more than" the limit; the limit itself is not
             return ThermalState(thermal, "over", diff, worst)
         if fluxes:
             return ThermalState(thermal, "flux", diff, max(fluxes, key=lambda x: abs(x.si)))
@@ -155,6 +159,8 @@ class Planner:
             for pid in w.unique(named):
                 if pid in self.applies:
                     self.applies[pid].append(req.id)
+            if req.kind == "strength":
+                self.strength_phases += [pid for pid in phases if pid not in self.strength_phases]
             if req.verification != "analysis":
                 if req.criteria:
                     self.skipped.append((req, "method"))
@@ -224,13 +230,24 @@ class Planner:
         held = w.unique(x.interface for x in supports if x.interface)
         thermal_case = self.thermal_id[pid] if self.thermal[pid].significant else None
         kind = "thermo_structural" if thermal_case else "static_structural"
-        links = [Link(rel="uses", to=x.effect, note=f"the support at {x.interface}") for x in supports if x.interface]
+        # `supports` names an interface, and the analysis then holds the features of its default role. A support
+        # on another role (the bolt holes, not the seat face) goes into `loads` too, so that its role and its
+        # features reach the analysis.
+        default = DEFAULT_ROLE.get("support", "seat")
+        other_role = [x for x in supports if x.interface and x.role and x.role != default]
+        links = [Link(rel="uses", to=x.effect, note=f"the support at {x.interface}") for x in supports
+                 if x.interface and x not in other_role]
         links += [Link(rel="derives_from", to=dc, note="a state of this duty cycle") for dc in self.state_of.get(pid, [])]
         lc = self._case(self._new_id(f"the structural load case of {pid}", short(pid)), kind,
                         f"{phase.name}: {w.ANALYSIS_WORDS[kind]}",
-                        explain.structural_statement(phase, mechanical, held, thermal_case), pid, mechanical,
-                        self.need["structural"].get(pid, []), supports=held,
+                        explain.structural_statement(phase, mechanical, held, thermal_case), pid,
+                        mechanical + other_role, self.need["structural"].get(pid, []), supports=held,
                         uses=[thermal_case] if thermal_case else [], links=links)
+        if other_role:
+            ids = [x.effect for x in other_role]
+            lc.note = (f"The loads include {w.the('support effect', ids)}, because "
+                       f"{'it does' if len(ids) == 1 else 'they do'} not act on the role {default} of "
+                       f"{'its' if len(ids) == 1 else 'their'} interface.")
         self.structural_id[pid] = lc.id
         for x in supports:
             if not x.interface:
@@ -273,8 +290,8 @@ class Planner:
                 scale = proportional(self.loads[base.phase], self.loads[lc.phase])
                 if scale is not None:
                     lc.scaled_from, lc.scale, lc.status = base.id, float(scale), "scaled"
-                    lc.note = (f"The analysis does not solve this load case. Its results are {w.number(scale)} times "
-                               f"the results of {base.id}.")
+                    lc.note = " ".join(x for x in (lc.note, f"The analysis does not solve this load case. Its results "
+                                                            f"are {w.number(scale)} times the results of {base.id}.") if x)
                     break
             else:
                 bases.append(lc)
@@ -302,6 +319,7 @@ class Planner:
                             explain.fatigue_statement(cycles, uses), None, [], refs, uses=uses, cycles=cycles,
                             links=[Link(rel="derives_from", to=d, note="a duty cycle of the requirement") for d in dcs])
             self.cycle_gaps[lc.id] = gaps
+            self.cycle_named[lc.id] = list(dcs)
             if not cycles:
                 lc.status = "not_supported"
                 lc.note = ("The requirement names no duty cycle. A fatigue analysis needs the duty cycles and their "

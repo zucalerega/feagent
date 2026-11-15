@@ -28,6 +28,7 @@ def validate(project: Project, ctx: Context, geo: dict | None = None) -> Journal
     """Run every rule on the requirements of the component under verification."""
     journal = Journal("validate", "engine:requirements.validate")
     env = Env(project, ctx, geo, journal)
+    env.strict = STRICT
     for r in RULES:
         env.rule = r
         try:

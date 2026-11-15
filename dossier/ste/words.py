@@ -167,7 +167,7 @@ STATE_PARTICIPLES = frozenset({"converged", "unconverged", "gone", "finished"})
 # Words that end in "-ing" and are not forms of a verb.
 ING_NOT_VERB = frozenset("""
 during thing things nothing something anything everything morning evening ceiling ceilings missing
-lightning sibling siblings sterling herring inning innings awning awnings
+lightning sibling siblings sterling herring inning innings awning awnings meaning heading
 """.split())
 
 # General technical names that end in "-ing": things, physical effects and processes. STE permits an
@@ -177,7 +177,7 @@ housing bearing fitting opening coating casing bushing wiring piping tubing plat
 gearing spacing packing seating rating reading setting timing drawing marking warning lighting building
 landing cladding shielding bonding molding moulding ducting fairing cowling casting forging winding tooling
 bending buckling damping cooling heating welding brazing soldering machining engineering manufacturing
-handling
+handling finding
 """.split())
 
 # Base forms of common verbs of engineering text (this is not the list of approved STE verbs).

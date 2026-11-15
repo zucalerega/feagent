@@ -11,7 +11,8 @@ from __future__ import annotations
 import math
 
 from dossier import units
-from dossier.requirements.base import (INSTRUCTION, POLICY_FACTOR, ROLE_WORDS, TEMPERATURE_KINDS, Env, bound, cap, count,
+from dossier.requirements.base import (INSTRUCTION, POLICY_FACTOR, ROLE_WORDS, TEMPERATURE_KINDS, Env, article, bound, cap,
+                                       count,
                                        criterion_name, derivation, fit, join, names_in, number, percent, quote, rule,
                                        shown, some)
 
@@ -32,7 +33,7 @@ def _not_checked(env: Env, r, name: str, rp, role: str, missing: str, fix: str) 
     env.find(subject=r.id, key=env.role_key(r, role, name, f"{role}-not-checked"), severity="info",
              title=f"{cap(words)} of {r.id} has no value in the system context to compare with",
              statement=f"The validation did not compare the {words} of {r.id} with the system context.",
-             rationale=[f"The requirement {r.id} gives a {words} of {rp.display} (parameter {name}).", missing],
+             rationale=[f"The requirement {r.id} gives {article(words)} of {rp.display} (parameter {name}).", missing],
              suggestion=fix, values={"requirement": rp.si, "unit": rp.unit}, links=[("about", name)])
 
 
@@ -45,7 +46,7 @@ def _used_by(env: Env, name: str) -> str:
         return f"{cap(criterion_name(r, i))} of {r.id} uses the parameter {name}.{more}"
     readers = env.readers(name)
     if readers:
-        return f"The loads of {some(readers, 4, 'more phases')} read the parameter {name}."
+        return f"The loads of {some(readers, 4, 'phase')} read the parameter {name}."
     return f"No criterion and no load of the part reads the parameter {name}."
 
 
@@ -108,7 +109,7 @@ def temperature_range(env: Env) -> None:
             if (rp.si <= e.si + slack) if low else (rp.si >= e.si - slack):
                 continue
             lines, names = env.context_lines(e)
-            rationale = [f"The requirement {r.id} gives a {words} of {rp.display} (parameter {name}).", *lines]
+            rationale = [f"The requirement {r.id} gives {article(words)} of {rp.display} (parameter {name}).", *lines]
             same = [x for x in temps if x is not e and abs(x.si - e.si) <= slack]
             if same and len(rationale) < 6:
                 rationale.append(f"{count(len(same), 'other effect gives', 'other effects give')} the same temperature "
@@ -137,7 +138,7 @@ def rated_flow(env: Env) -> None:
         flows = [e for e in env.effects(kinds=("mass_flow",)) if e.phase in scope and isinstance(e.si, (int, float))]
         if not flows:
             _not_checked(env, r, name, rp, "rated_flow",
-                         f"The system context gives no mass flow through the part in {some(scope, 4, 'more phases')}.",
+                         f"The system context gives no mass flow through the part in {some(scope, 4, 'phase')}.",
                          "Add the mass flow to the system context, or correct the phases of the requirement.")
             continue
         if any(abs(rp.si - e.si) <= 0.01 * abs(e.si) for e in flows):
@@ -270,7 +271,7 @@ def policy_factor(env: Env) -> None:
     for role, key in POLICY_FACTOR.items():
         words = ROLE_WORDS[role]
         for r, name, _, rp in env.with_role(role):
-            given = [f"The requirement {r.id} gives a {words} of {rp.display} (parameter {name})."]
+            given = [f"The requirement {r.id} gives {article(words)} of {rp.display} (parameter {name})."]
             links = [("about", name), ("evidence", policy.id)]
             f = policy.factors.get(key)
             if f is None:

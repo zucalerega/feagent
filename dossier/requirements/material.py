@@ -14,7 +14,9 @@ from dossier.requirements.base import TEMPERATURE_KINDS, Env, quote, rule, shown
 _COLD = re.compile(r"\b(cryogenic|low(?:er)?[ -]temperatures?|cold|sub-?zero)\b", re.I)
 _HOT = re.compile(r"\b(elevated|high(?:er)?[ -]temperatures?|hot)\b", re.I)
 _CONSERVATIVE = re.compile(r"\bconservative\b", re.I)
-_NOT_CONSERVATIVE = re.compile(r"\b(?:not|non|never|un)[ -]?(?:\w+ ){0,2}conservative\b|\bunconservative\b|\bnonconservative\b", re.I)
+# a sentence with one of these words does not claim "conservative": it denies it, doubts it or assumes it
+_DOUBT = re.compile(r"\b(?:not|no|never|non|cannot|unknown|uncertain|unclear|may|might|could|if|whether|unless|except|"
+                    r"assum\w*|tbc|tbd)\b|n't|\?|\bun-?conservative\b|\bnon-?conservative\b", re.I)
 
 
 def _temperatures(env: Env) -> list:
@@ -101,19 +103,22 @@ def material_compatibility(env: Env) -> None:
             rated = list(m.compatibility)
             env.find(severity="minor", title=f"No compatibility rating of {m.id} with {medium}",
                      statement=f"The material file gives no compatibility rating of {m.id} with the medium {medium}.",
-                     rationale=[brings, (f"The material file rates {m.id} for {some(rated, 6, 'more media')}." if rated
+                     rationale=[brings, (f"The material file rates {m.id} for {some(rated, 6, 'medium', 'media')}." if rated
                                          else f"The material file rates {m.id} for no medium.")],
                      suggestion=f"Add the rating of {m.id} with {medium} to the material file, with its source.", **common)
 
 
 def _note_says_conservative(note: str, cold: bool, hot: bool) -> bool:
-    """Does the note of the material say that its properties are conservative on the sides that matter?"""
-    if not note or not _CONSERVATIVE.search(note) or _NOT_CONSERVATIVE.search(note):
-        return False
-    sides = {"cold": bool(_COLD.search(note)), "hot": bool(_HOT.search(note))}
-    if not any(sides.values()):
-        return True                                     # the note makes no difference between the sides
-    return (sides["cold"] or not cold) and (sides["hot"] or not hot)
+    """Does one sentence of the material note say, without doubt, that the properties are conservative on the
+    side that matters (`cold`: the context is colder than the properties temperature; `hot`: hotter)? A
+    sentence that names no side speaks for both. This reads words, not meaning: the record says so."""
+    for sentence in re.split(r"(?<=[.!?;])\s+", note or ""):
+        if not _CONSERVATIVE.search(sentence) or _DOUBT.search(sentence):
+            continue
+        says_cold, says_hot = bool(_COLD.search(sentence)), bool(_HOT.search(sentence))
+        if not (says_cold or says_hot) or ((says_cold or not cold) and (says_hot or not hot)):
+            return True
+    return False
 
 
 @rule("req.material_properties_temperature", "info", "material",

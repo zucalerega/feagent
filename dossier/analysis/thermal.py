@@ -144,6 +144,11 @@ def _join(items) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+def _count(n: int, noun: str) -> str:
+    """"1 face", "3 faces"."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
 def analysis_id(lc: LoadCase) -> str:
     return "AN-" + (lc.id[3:] if lc.id.startswith("LC-") else lc.id)
 
@@ -287,7 +292,7 @@ def solve_heat(mesh_path, k: float, bcs: list[ThermalBC], order: int = 2) -> tup
     The mesh has a facet group `f<tag>` for every CAD face. Returns the node coordinates x (n, 3), the
     temperatures T (n,) and the evaluation of the mesh (JSON data):
         faces      {tag: area, integral of T, min, max and where}, for every face group of the mesh
-        part       min, max (with where and on which face), mean over the volume, volume
+        part       min, max (with where), mean over the volume, volume
         reactions  for every boundary condition of kind temperature: the heat flow into the part, W
         n_nodes, n_cells, h_rep, min_quality, solver, warnings
     Areas and integrals use the quadrature of the solver, so `flows` balances to the accuracy of the solve."""
@@ -298,7 +303,6 @@ def solve_heat(mesh_path, k: float, bcs: list[ThermalBC], order: int = 2) -> tup
     x, T = res.nodal("T")
     md = res.model
     faces: dict[str, dict] = {}
-    node_face = np.full(len(T), -1, dtype=np.int64)
     for name, g in md.md.groups.items():
         if g.kind != "facets" or not (name.startswith("f") and name[1:].isdigit()):
             continue
@@ -307,12 +311,10 @@ def solve_heat(mesh_path, k: float, bcs: list[ThermalBC], order: int = 2) -> tup
         lo, hi = nodes[int(np.argmin(T[nodes]))], nodes[int(np.argmax(T[nodes]))]
         faces[name[1:]] = {"area": float(area), "integral": float(integral), "min": float(T[lo]), "max": float(T[hi]),
                            "xmin": x[lo].tolist(), "xmax": x[hi].tolist(), "nodes": int(len(nodes))}
-        node_face[nodes] = np.where(node_face[nodes] < 0, int(name[1:]), node_face[nodes])
     integral, volume = res._integral("T", None)
     lo, hi = int(np.argmin(T)), int(np.argmax(T))
     part = {"min": float(T[lo]), "max": float(T[hi]), "xmin": x[lo].tolist(), "xmax": x[hi].tolist(),
-            "fmin": int(node_face[lo]), "fmax": int(node_face[hi]), "mean": float(integral / volume),
-            "volume": float(volume)}
+            "mean": float(integral / volume), "volume": float(volume)}
     # prescribed temperatures: the heat that the constraint gives to the part (each node counts once)
     reactions, taken = [], np.zeros(len(T), dtype=bool)
     fixed = np.zeros(len(T), dtype=bool)
@@ -331,7 +333,7 @@ def solve_heat(mesh_path, k: float, bcs: list[ThermalBC], order: int = 2) -> tup
         "n_nodes": int(info.n_nodes), "n_cells": int(info.n_cells), "n_dofs": int(info.n_dofs),
         "order": int(info.order), "h_rep": float(info.h_rep), "wall_time": float(info.wall_time),
         "min_quality": float(mesh_quality(md.mesh).min()),
-        "solver": next((w[6:] for w in info.warnings if w.startswith("info: linear_solver")), ""),
+        "solver": next((w[6:].split(", n=")[0] for w in info.warnings if w.startswith("info: linear_solver")), ""),
         "warnings": [w for w in info.warnings if not w.startswith("info:")],
     }
     return np.ascontiguousarray(x), np.asarray(T, dtype=float), summary
@@ -445,8 +447,6 @@ def _location_faces(geo: dict, loc: str) -> list[int] | None:
 
 
 def _near(geo: dict, tag: int) -> str:
-    if tag < 0:
-        return ""
     feats = geo.get("faces", {}).get(str(tag), {}).get("features") or []
     return feats[0] if feats else f"f{tag}"
 
@@ -473,20 +473,25 @@ def evaluate(key: str, ideal: Idealization, geo: dict, summary: dict) -> tuple[f
         raise CannotServe(f"The thermal analysis gives the min, max, mean and range of a temperature. It does not "
                           f"give the measure {measure}.")
     tags = _location_faces(geo, loc)
+    every = {int(t): x for t, x in summary["faces"].items()}
+    f = every if tags is None else {t: every[t] for t in tags if t in every}
+    if not f:
+        raise CannotServe(f"The location {loc} has no face in the mesh.")
+    # Faces that meet at an edge share its nodes, so several faces can hold the same extreme (a face at a
+    # prescribed temperature and its neighbours). The face whose mean is nearest the extreme is the place.
+    lo = min(f, key=lambda t: (f[t]["min"], f[t]["integral"] / f[t]["area"]))
+    hi = max(f, key=lambda t: (f[t]["max"], f[t]["integral"] / f[t]["area"]))
     if tags is None:
         p = summary["part"]
         if measure == "mean":
             return p["mean"], None, ""
         if measure == "range":
             return p["max"] - p["min"], None, ""
-        return p[measure], p["x" + measure], _near(geo, p["f" + measure])
-    f = {t: summary["faces"][str(t)] for t in tags if str(t) in summary["faces"]}
-    if not f:
-        raise CannotServe(f"The location {loc} has no face in the mesh.")
+        t = lo if measure == "min" else hi
+        on_face = f[t][measure] == p[measure]           # else the extreme is at a node inside the part
+        return p[measure], p["x" + measure], _near(geo, t) if on_face else ""
     if measure == "mean":
         return sum(x["integral"] for x in f.values()) / sum(x["area"] for x in f.values()), None, ""
-    lo = min(f, key=lambda t: f[t]["min"])
-    hi = max(f, key=lambda t: f[t]["max"])
     if measure == "range":
         return f[hi]["max"] - f[lo]["min"], None, ""
     t = lo if measure == "min" else hi
@@ -555,7 +560,7 @@ def _result(key: str, values: list[float], hs: list[float], scale: float | None,
     if u is not None and math.isfinite(u):
         rel = (u / ref) if ref and ref > 0 else (0.0 if u == 0 else None)
     status = "converged" if rel is not None and rel <= limit else "not_converged"
-    note = _KIND_NOTE.get(c["kind"], "The values of the three finest meshes do not converge.")
+    note = _KIND_NOTE.get(c["kind"], "The changes between the three finest meshes do not decrease.")
     return ResultValue(key=key, value=float(values[-1]), unit="K" if is_temp else "W",
                        uncertainty=rel, uncertainty_abs=u if u is not None and math.isfinite(u) else None,
                        status=status, location=where, near=near, per_level=[float(x) for x in values],
@@ -666,8 +671,10 @@ def run_levels(project, ctx, geo: dict, lc: LoadCase, levels: list[MeshLevel], w
         + (f" in the phase {lc.phase}. " if lc.phase else ". ")
         + f"The fixed solver solves the heat conduction on {len(levels)} "
         + ("mesh" if len(levels) == 1 else "meshes") + f" of quadratic tetrahedra. The finest mesh has "
-        f"{fine['n_nodes']} nodes. The thermal loads are {loads} boundary conditions on {n_faces} faces. "
-        + (f"The other {len(ideal.adiabatic)} faces are adiabatic. " if ideal.adiabatic else "Every face has a thermal load. ")
+        f"{fine['n_nodes']} nodes. The thermal loads are {loads} boundary conditions on {_count(n_faces, 'face')}. "
+        + ("The other face is adiabatic. " if len(ideal.adiabatic) == 1
+           else f"The other {len(ideal.adiabatic)} faces are adiabatic. " if ideal.adiabatic
+           else "Every face has a thermal load. ")
         + f"The lowest temperature of the part is {fmt(fine['part']['min'], 'K')} and the highest is "
         f"{fmt(fine['part']['max'], 'K')}.")
     import skfem
@@ -678,9 +685,8 @@ def run_levels(project, ctx, geo: dict, lc: LoadCase, levels: list[MeshLevel], w
                + (f"; {fine['solver']}" if fine.get("solver") else ""),
         material={"id": ideal.material, "k": ideal.k, "k_unit": "W/(m*K)"},
         bcs=bc_items, mesh=mesh, results=results, checks=checks, artifacts=artifacts,
-        links=[Link(rel="uses", to=ideal.material), Link(rel="uses", to=conv),
-               *[Link(rel="uses", to=i) for i in asm_ids],
-               *[Link(rel="uses", to=d) for d in dict.fromkeys(b.decision for b in bc_items if b.decision)]],
+        links=[Link(rel="uses", to=i) for i in dict.fromkeys(
+            [ideal.material, *[b.decision for b in bc_items if b.decision], *asm_ids, conv])],
         origin=Origin(by=ENGINE, stage="analyze"), runtime_s=round(time.time() - t0, 1))
     return Analysis(record, j)
 
@@ -690,7 +696,7 @@ def run_levels(project, ctx, geo: dict, lc: LoadCase, levels: list[MeshLevel], w
 
 def _targets(b: ThermalBC) -> str:
     if b.role == "external" or not b.features:
-        return f"the {len(b.faces)} faces of the role {b.role or 'external'} of {b.interface}"
+        return f"the {_count(len(b.faces), 'face')} of the role {b.role or 'external'} of {b.interface}"
     if len(b.features) > MAX_NAMED:
         return f"the {len(b.features)} features of the role {b.role} of {b.interface}"
     return ("the feature " if len(b.features) == 1 else "the features ") + _join(b.features)
@@ -713,7 +719,7 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
                     ("Use a heat transfer coefficient that changes along the faces.",
                      "The system context gives one value for the role.")]
             value = {"h": b.h, "T_fluid": b.value}
-            text = f"Convection with {h} and a fluid temperature of {T} on {len(b.faces)} faces."
+            text = f"Convection with {h} and a fluid temperature of {T} on {_count(len(b.faces), 'face')}."
         elif b.kind == "temperature":
             title = f"Prescribed temperature on {where}"
             choice = f"The analysis prescribes a temperature of {T} on {_targets(b)}."
@@ -721,7 +727,7 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
             alts = [("Apply convection with a heat transfer coefficient.",
                      "The effect gives a surface temperature. It gives no fluid and no coefficient.")]
             value = {"T": b.value}
-            text = f"A prescribed temperature of {T} on {len(b.faces)} faces."
+            text = f"A prescribed temperature of {T} on {_count(len(b.faces), 'face')}."
         else:
             q = fmt(b.value, "W/m^2")
             title = f"Heat flux on {where}"
@@ -730,7 +736,7 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
             why = f"The effect {b.effect} gives this heat flux for {where}."
             alts = [("Prescribe a temperature on the faces.", "The effect gives a heat flux. It gives no temperature.")]
             value = {"q": b.value}
-            text = f"A heat flux of {q} into the part on {len(b.faces)} faces."
+            text = f"A heat flux of {q} into the part on {_count(len(b.faces), 'face')}."
         if b.role == "external":
             why += " The geometry stage gives the faces that no other role uses."
         d = j.decide(subject=lc.id, key=f"bc-{b.effect}", title=title, choice=choice, rationale=why, alternatives=alts,
@@ -741,7 +747,7 @@ def _bc_records(j: Journal, lc: LoadCase, geo: dict, ideal: Idealization, fine: 
         feats = list(dict.fromkeys(f for t in ideal.adiabatic for f in geo["faces"].get(str(t), {}).get("features", [])))
         items.append(BCItem(type="adiabatic", features=feats, faces=[f"f{t}" for t in ideal.adiabatic], value=None,
                             decision=make_id("ASM", lc.id, "adiabatic"),
-                            description=f"No heat flow through {len(ideal.adiabatic)} faces with no thermal load."))
+                            description=f"No heat flow through {_count(len(ideal.adiabatic), 'face')} with no thermal load."))
     return items
 
 
@@ -766,18 +772,23 @@ def _adiabatic_groups(project, geo: dict, lc: LoadCase, ideal: Idealization, fin
             oid = c.to if c.from_ == comp.element else c.from_
             other = oid if oid in elements else ""
         f = [fine["faces"][str(t)] for t in tags if str(t) in fine["faces"]]
-        out.append({"interface": iface, "names": feats + loose, "other": other,
+        out.append({"interface": iface, "features": feats, "faces": loose, "other": other,
                     "lo": min(x["min"] for x in f), "hi": max(x["max"] for x in f)})
     return out
 
 
-def _named(prefix: str, names: list[str]) -> list[str]:
-    """Sentences that list ids, at most MAX_NAMED in each."""
+def _named(iface: str, what: str, names: list[str]) -> list[str]:
+    """Sentences that name the adiabatic features (or faces) of an interface, at most MAX_NAMED in each."""
     out = []
     for i in range(0, len(names), MAX_NAMED):
         part = names[i:i + MAX_NAMED]
-        verb = "is" if len(part) == 1 and i == 0 and len(names) == 1 else "are"
-        out.append(f"{prefix if i == 0 else 'More of them'} {verb} {_join(part)}.")
+        noun = what if len(part) == 1 else what + "s"
+        if iface:
+            out.append(f"{'The interface ' + iface + ' has' if not out else 'It also has'} the adiabatic {noun} "
+                       f"{_join(part)}.")
+        else:
+            out.append(f"The adiabatic {noun} {_join(part)} " + ("is" if len(part) == 1 else "are")
+                       + " in no interface.")
     return out
 
 
@@ -805,8 +816,7 @@ def _assumptions(j: Journal, project, ctx, geo: dict, lc: LoadCase, ideal: Ideal
         groups = _adiabatic_groups(project, geo, lc, ideal, fine)
         st = ["The faces with no thermal load are adiabatic."]
         for g in groups:
-            st += _named(f"The adiabatic features of {g['interface']}" if g["interface"]
-                         else "The adiabatic faces of no interface", g["names"])
+            st += _named(g["interface"], "feature", g["features"]) + _named(g["interface"], "face", g["faces"])
         impact = ["No heat flows through an adiabatic face. In the hardware, the mating part exchanges heat with the face.",
                   "A mating part that is colder than the face makes the part colder than the analysis gives.",
                   "A mating part that is warmer than the face makes the part warmer than the analysis gives."]
@@ -838,8 +848,9 @@ def _assumptions(j: Journal, project, ctx, geo: dict, lc: LoadCase, ideal: Ideal
     mat = project.materials[ideal.material]
     k_text = fmt(ideal.k, "W/(m*K)")
     lo_T, hi_T = fine["part"]["min"], fine["part"]["max"]
-    impact = [f"The temperatures in the part depend on the conductivity. The analysis gives temperatures from "
-              f"{fmt(lo_T, 'K')} to {fmt(hi_T, 'K')}."]
+    impact = (f"The temperatures in the part depend on the conductivity. The analysis gives temperatures from "
+              f"{fmt(lo_T, 'K')} to {fmt(hi_T, 'K')}.")
+    probes = []
     probe = [k for k in lc.result_keys if k.startswith("temperature.") and k in results and results[k].value is not None][:3]
     probe = probe or ["temperature.mean@part"]
     try:
@@ -850,17 +861,17 @@ def _assumptions(j: Journal, project, ctx, geo: dict, lc: LoadCase, ideal: Ideal
         pc = f"{100 * K_PROBE:.0f} %"
         for key in probe:
             v0, v1, v2 = (evaluate(key, ideal, geo, s)[0] for s in (base, low, high))
-            impact.append(f"A conductivity that is {pc} lower changes {key} by {_signed(v1 - v0)}. A conductivity that "
-                          f"is {pc} higher changes it by {_signed(v2 - v0)}.")
-        impact.append("These changes come from the coarsest mesh.")
+            probes.append(f"A conductivity that is {pc} lower changes {key} by {_signed(v1 - v0)}, and one that is "
+                          f"{pc} higher changes it by {_signed(v2 - v0)}.")
+        probes.append("These changes come from two more solves on the coarsest mesh.")
     except CannotServe:
-        pass
+        probes = []
     a = j.assume(
         subject=lc.id, key="conductivity", title="One thermal conductivity for all temperatures", stage="idealize",
         statement=f"The thermal conductivity of the material {mat.id} is {k_text} at every temperature of the load case.",
         rationale="The material data give one value of the conductivity."
                   + (f' The note of the material says: "{" ".join(mat.note.split())}"' if mat.note.strip() else ""),
-        impact=" ".join(impact),
+        impact=impact + ("\n\n" + " ".join(probes) if probes else ""),
         verify_by=f"Compare {k_text} with the conductivity of the material specification at {fmt(lo_T, 'K')} and at "
                   f"{fmt(hi_T, 'K')}.",
         conservative=None, links=[("uses", mat.id)])
@@ -870,8 +881,8 @@ def _assumptions(j: Journal, project, ctx, geo: dict, lc: LoadCase, ideal: Ideal
 
 
 def _signed(dT: float) -> str:
-    """A temperature change with its sign: "+4.21 K", "-3.5 K"."""
-    return ("+" if dT >= 0 else "-") + fmt(abs(dT), "K")
+    """A temperature change with its sign: "+4.21 K", "-3.50 K"."""
+    return f"{dT:+.2f} K"
 
 
 def _convergence_decision(j: Journal, lc: LoadCase, n: int, t_range: float, limit: float, policy_id: str) -> str:

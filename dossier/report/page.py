@@ -136,6 +136,7 @@ class Page:
         self._sids: set[str] = set()
         self.t = self.own.t
         self.label = self.own.label
+        self.lt = self.own.lt
 
     # ------------------------------------------------------------------ ids
     def anchor(self, rid: str) -> str:
@@ -404,7 +405,7 @@ class Page:
 
     def origin_field(self, rec: Any) -> H:
         src = self.d.source_of.get(rec.id, "")
-        return self.field("Made by", join([self.origin(rec.origin.by), tag("span", self.t("in the file {}", self.code(src)),
+        return self.field("Made by", join([self.origin(rec.origin.by), tag("span", self.lt("in the file {}", self.code(src)),
                                                                               cls="muted") if src else None], " "))
 
     def review_block(self, rid: str) -> H:

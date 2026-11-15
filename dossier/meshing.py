@@ -28,9 +28,10 @@ Sizes
     1.5 times the wall thickness at the edge (geo["faces"][..]["thickness"], an estimate), not less than what
     keeps the size change per unit length under GRADING (0.4) on the coarsest level, and not more than 3 h.
     The global size of the finest level is found by trial meshes so that its node count is under
-    opts.node_cap and, when the trials allow, over 75 % of it. The first trial size comes from
-    nodes ~ k (2.84 V / h^3 + 5.53 A / h^2) (constants fitted to uniform meshes of the example body); later
-    trials fit that form, or a power law, to the trials made. A trial that is accepted is the finest level.
+    opts.node_cap and, when the trials allow, over 70 % of it (the trials aim at 87 %). The first trial size
+    comes from nodes ~ k (2.84 V / h^3 + 5.53 A / h^2) (constants fitted to uniform meshes of the example
+    body); later trials fit that form, or a power law, to the trials made. A trial that is accepted is the
+    finest level.
 
     `extra_refinements` are refinements in the format of ace.fea.make_mesh ({"group" | "edge" | "point" | "box",
     "size", "radius"}), with the sizes of the finest level; a coarser level scales the sizes, not the
@@ -47,7 +48,10 @@ Cache
 Checks on every level (results in the index; failures are findings in the journal)
     * the fixed solver's reader (feacore.solver._skfem_mesh.read_mesh) loads the file, and every group is there
       with at least one facet;
-    * the volume of the curved mesh against the CAD volume (finding over VOLUME_TOL = 1e-3);
+    * the volume of the curved mesh against the CAD volume (a minor finding over VOLUME_TOL = 1e-3, a major
+      one over 1e-2). Elements that are large against the radius of a hole or a fillet do not follow it: the
+      coarse levels of the example differ by 0.2 % to 0.6 %, the levels with a global size under 5 mm by less
+      than 0.1 %;
     * min element quality (gmsh minSICN of the straight cells) against ace.config.MIN_QUALITY;
     * no folded cell (MeshingError);
     * the ratio of the representative sizes of successive levels (finding under 1.15).
@@ -84,9 +88,9 @@ ORDER = 2                   # quadratic tetrahedra
 RHO = 0.5                   # local size / global size at re-entrant edges and small fillets (target)
 ARC_ELEMENTS = 3            # a fillet is small when its quarter arc has fewer global elements than this
 GRADING = 0.4               # largest size change per unit length in a refined zone, on the coarsest level
-FILL = (0.75, 0.92)         # the finest mesh: accepted over FILL[0] x node_cap, aimed at FILL[1] x node_cap
+FILL = (0.70, 0.87)         # the finest mesh: accepted over FILL[0] x node_cap, aimed at FILL[1] x node_cap
 MAX_TRIALS = 6
-VOLUME_TOL = 1e-3           # mesh volume against CAD volume
+VOLUME_TOL = 1e-3           # mesh volume against CAD volume: a minor finding over it, a major one over 10 times it
 MIN_LEVEL_RATIO = 1.15      # successive levels must differ at least by this in representative size
 RECIPE_VERSION = 1          # change it when the sizing rules change: cached meshes are then made again
 C_VOLUME, C_SURFACE = 2.84, 5.53      # first guess: nodes ~ C_VOLUME V / h^3 + C_SURFACE A / h^2 (P2 tetrahedra)
@@ -293,7 +297,9 @@ def _search(part, plan: dict, work: Path, log) -> tuple[dict, dict, list[dict]]:
     floor, h_max = plan["diagonal"] / 100.0, plan["diagonal"] / 4.0
     aim = FILL[1] * cap
     trials: list[dict] = []
-    h = _size_for(lambda x: 1.3 * _model_nodes(plan, x), aim if aim <= 40_000 else aim / 4.0, floor, h_max)
+    # first guess: local refinement about doubles the nodes of a coarse mesh; a large mesh gets a cheap trial first
+    k0 = 2.0 if plan["edges"] or plan["fillets"] or plan["extra"] else 1.2
+    h = _size_for(lambda x: k0 * _model_nodes(plan, x), aim if aim <= 40_000 else aim / 3.0, floor, h_max)
     best = None
     for k in range(MAX_TRIALS):
         recipe = _recipe(plan, h)
@@ -307,7 +313,7 @@ def _search(part, plan: dict, work: Path, log) -> tuple[dict, dict, list[dict]]:
             break
         if res["nodes"] > cap and recipe["h"] >= h_max * (1 - 1e-9):
             break
-        h_new = _next_size(plan, trials, aim if res["nodes"] <= cap else 0.88 * cap, floor, h_max)
+        h_new = _next_size(plan, trials, aim, floor, h_max)
         if any(abs(h_new / x["h"] - 1.0) < 5e-3 for x in trials):     # nothing new to learn from this size
             if best is not None:
                 break
@@ -345,6 +351,7 @@ def _make(project, geo: dict, cad, plan: dict, key: str, groups: dict, log) -> d
     mesh_dir = project.out / "meshes"
     work = mesh_dir / f"{key}.work"
     work.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
     try:
         recipe, finest, trials = _search(part, plan, work, log)
         n = plan["levels"]
@@ -353,6 +360,7 @@ def _make(project, geo: dict, cad, plan: dict, key: str, groups: dict, log) -> d
             factor = RATIO ** (n - 1 - level)
             h, refs = _scaled(recipe, factor)
             path = mesh_dir / f"{key}_L{level}.msh"
+            written.append(path)
             if level == n - 1:
                 Path(finest["path"]).replace(path)
                 res = finest
@@ -371,6 +379,10 @@ def _make(project, geo: dict, cad, plan: dict, key: str, groups: dict, log) -> d
                 "refinements": [dict(r, size=float(f"{s:.6g}")) for r, s in zip(refs, res["sizes_used"])],
             })
         records.reverse()
+    except BaseException:
+        for f in written:                   # no entry in the index: leave no file behind
+            f.unlink(missing_ok=True)
+        raise
     finally:
         for f in work.glob("*"):
             f.unlink()
@@ -459,8 +471,9 @@ def _journal(geo: dict, entry: dict, empty_features: list[str]) -> Journal:
         choice = (f"The mesh study has {n} levels of quadratic tetrahedra. The global sizes are {listing(sizes)}. "
                   f"The meshes have {listing(nodes)} nodes.")
     n_e, n_f = len(entry["edges"]), len(entry["small_fillets"])
-    where = listing([t for t in (f"{n_e} re-entrant edge{'' if n_e == 1 else 's'}" if n_e else "",
-                                 f"{n_f} small fillet{'' if n_f == 1 else 's'}" if n_f else "") if t]) if n_e + n_f else ""
+    places = ([f"{n_e} re-entrant edge{'' if n_e == 1 else 's'}"] if n_e else []) \
+        + ([f"{n_f} small fillet{'' if n_f == 1 else 's'}"] if n_f else [])
+    where = listing(places) if places else ""
     if where:
         choice += f" The local size at {where} is {entry['rho']:.2f} times the global size."
     else:
@@ -509,15 +522,18 @@ def _journal(geo: dict, entry: dict, empty_features: list[str]) -> Journal:
                              "poor stress result near it.",
                    suggestion="Examine the results near the poor elements, or change the node limit to get other meshes.",
                    values={"level": x["level"], "min_quality": x["min_quality"], "limit": MIN_QUALITY})
-        if x["volume_error"] > VOLUME_TOL:
-            j.find(rule="mesh.volume", severity="major", category="model", subject=comp, key=f"mesh-volume-L{x['level']}",
-                   title=f"Volume of mesh level {x['level']}",
-                   statement=f"The volume of the mesh level {x['level']} differs from the CAD volume by "
-                             f"{100 * x['volume_error']:.2g} %. The limit is {100 * VOLUME_TOL:g} %.",
-                   rationale="The mesh follows the curved faces with quadratic elements. A large difference shows that "
-                             "the elements are too large for the curved faces.",
-                   suggestion="Do not use this level for a result near a curved face.",
-                   values={"level": x["level"], "volume": x["volume"], "cad_volume": plan["volume"]})
+    off = [x for x in lv if x["volume_error"] > VOLUME_TOL]
+    if off:
+        which = listing([str(x["level"]) for x in off])
+        by = listing(["%.2g %%" % (100 * x["volume_error"]) for x in off])
+        j.find(rule="mesh.volume", severity="major" if max(x["volume_error"] for x in off) > 10 * VOLUME_TOL else "minor",
+               category="model", subject=comp, key="mesh-volume", title="Volume of the meshes",
+               statement=f"The volume of the mesh level{'' if len(off) == 1 else 's'} {which} differs from the CAD "
+                         f"volume by {by}. The limit of this check is {100 * VOLUME_TOL:g} %.",
+               rationale="An element that is large against the radius of a hole or of a fillet does not follow the "
+                         "curved face. The mesher also makes a curved element straight when it folds.",
+               suggestion="Use a result near a small hole or a small fillet only from a level that agrees with the CAD volume.",
+               values={"cad_volume": plan["volume"], "levels": {str(x["level"]): x["volume"] for x in off}})
     for a, b in zip(lv, lv[1:]):
         ratio = a["h_rep"] / b["h_rep"]
         if ratio < MIN_LEVEL_RATIO:

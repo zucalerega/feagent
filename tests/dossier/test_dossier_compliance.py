@@ -14,7 +14,7 @@ import pytest
 
 from dossier import compliance, context, pipeline
 from dossier.model import (AnalysisRecord, CalcOutput, Check, Comparison, CriterionRef, CycleUse, Finding,
-                           HandCalcResult, Link, LoadCase, ResultValue, Value)
+                           HandCalcResult, Link, LoadCase, ReqParameter, ResultValue, Value)
 from dossier.project import Project, make_id
 
 MPA = 1e6
@@ -226,10 +226,10 @@ def test_singular_peak_is_inconclusive_and_says_when_every_mesh_fails(workprojec
     assert item.reasons == [
         "The result has the status singular.",
         "The value increases with each mesh refinement and has no upper bound.",
-        "The peak is at the edge between FT-SEAT-OUT-SHOULDER and FT-OUTLET-BORE.",
         "The value on the coarsest mesh is 310 MPa.",
         "With the factor of safety, the peak is above the limit on every mesh of the study.",
         "An engineer can use section stresses, model the real edge radius, or do an elastic-plastic analysis.",
+        'The location of the peak is "the edge between FT-SEAT-OUT-SHOULDER and FT-OUTLET-BORE".',
         "The record of analysis AN-FIRE has no check."]
     assert item.statement == (
         "The peak von Mises stress in the part is 412 MPa on the finest mesh. "
@@ -249,23 +249,50 @@ def test_singular_peak_under_the_limit_is_still_inconclusive(workproject):
     # finest: 170 / 209 - 1 = -0.18660; coarsest: 170 / 132 - 1 = +0.28788: not above the limit on every mesh
     assert item.verdict == "inconclusive" and item.margin == pytest.approx(-0.18660, abs=1e-5)
     assert not any("every mesh" in r for r in item.reasons)
+    # a singular damage: section stresses are no help, the advice is another one
+    item = one(workproject, LIFE, res("damage.total@part", 0.05, unit="", u=None, status="singular", per_level=[0.02, 0.05]))
+    # MS = 1 / (4 x 0.05) - 1 = +4.0
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(4.0)
+    assert "An engineer can model the real edge radius, or use a result that does not include the edge." in item.reasons
 
 
 def test_not_converged_is_inconclusive_also_with_a_large_margin(workproject):
-    item = one(workproject, OP_YIELD, res("von_mises.peak@part", 100 * MPA, u=0.08, status="not_converged"))
+    item = one(workproject, OP_YIELD, res("von_mises.peak@part", 100 * MPA, u=0.08, status="not_converged",
+                                          near="FT-NECK-ROOT-FILLET"))
     # 100 x 1.08 = 108 MPa; MS = 170 / (1.1 x 108) - 1 = 170 / 118.8 - 1 = +0.43098
     assert item.verdict == "inconclusive" and item.margin == pytest.approx(0.43098, abs=1e-5)
-    assert item.reasons[:3] == ["The result has the status not converged.",
+    assert item.reasons[:4] == ["The result has the status not converged.",
                                 "The uncertainty of the result is 8 %, and the policy limit is 5 %.",
-                                "An engineer can do the analysis again with a finer mesh or with more mesh levels."]
+                                "An engineer can do the analysis again with a finer mesh or with more mesh levels.",
+                                'The location of the value is "FT-NECK-ROOT-FILLET".']
     assert item.statement.endswith("The verdict is inconclusive because the result has the status not converged.")
+    # no uncertainty: the note of the analysis gives the cause. One mesh level: a mesh study is the remedy
+    one_level = res("von_mises.peak@part", 100 * MPA, u=None, status="not_converged", per_level=[100 * MPA],
+                    note="The analysis has one mesh level.")
+    item = one(workproject, OP_YIELD, one_level)
+    # MS = 170 / (1.1 x 100) - 1 = +0.54545
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(0.54545, abs=1e-5)
+    assert item.reasons[:4] == ["The result has the status not converged.", "The analysis gives no uncertainty for this result.",
+                                'The note of the result is: "The analysis has one mesh level."',
+                                "An engineer can do the analysis again with a finer mesh or with more mesh levels."]
+    # several levels and no uncertainty: the value has no limit (a peak at an edge that did not grow each time)
+    at_edge = res("von_mises.peak@part", 100 * MPA, u=None, status="not_converged", per_level=[90 * MPA, 104 * MPA, 100 * MPA],
+                  note="The peak is at a sharp re-entrant edge, where the stress has no limit in linear theory.")
+    item = one(workproject, OP_YIELD, at_edge)
+    assert item.reasons[2:4] == ['The note of the result is: "The peak is at a sharp re-entrant edge, where the stress has no '
+                                 'limit in linear theory."',
+                                 "An engineer can use section stresses, model the real edge radius, or do an elastic-plastic analysis."]
 
 
 def test_estimate_status_is_inconclusive(workproject):
-    item = one(workproject, DROP, res("pressure_drop.total@part", 30e3, u=None, status="estimate", method="hand_calc"))
+    item = one(workproject, DROP, res("pressure_drop.total@part", 30e3, u=None, status="estimate", method="hand_calc",
+                                      note="The value comes from a loss coefficient."))
     # MS = 60 / 30 - 1 = +1.0
     assert item.verdict == "inconclusive" and item.margin == pytest.approx(1.0)
-    assert item.reasons[:2] == ["The analysis gives this value as an estimate.", "An estimate does not confirm a criterion."]
+    assert item.reasons[:3] == ["The analysis gives this value as an estimate.",
+                                'The note of the result is: "The value comes from a loss coefficient."',
+                                "An estimate does not confirm a criterion."]
+    assert item.statement.endswith("The verdict is inconclusive because the value is an estimate.")
 
 
 def test_failed_check_makes_the_verdict_inconclusive(workproject):
@@ -275,16 +302,46 @@ def test_failed_check_makes_the_verdict_inconclusive(workproject):
     assert item.verdict == "inconclusive" and item.margin == pytest.approx(1.33754, abs=1e-5)      # the margin stays
     assert "Check CHK-EQUILIBRIUM of analysis AN-X failed." in item.reasons
     assert 'The check says: "The reactions are 12 % smaller than the applied loads."' in item.reasons
+    assert not any(r.startswith("No check of") for r in item.reasons)
     assert item.statement.endswith("The verdict is inconclusive because a check of the analysis failed.")
-    # a hand calculation that disagrees is a failed check
-    hc = check("CHK-HC-SHELL-HOOP", False, "hand_calc", "The analysis gives 1.9 times the hand calculation.")
-    assert one(workproject, PROOF, good, checks=[hc]).verdict == "inconclusive"
     # a fail from an analysis with a failed check is not a reliable fail
     item = one(workproject, PROOF, res(MB + "scls", 300 * MPA), checks=[eq])
     assert item.verdict == "inconclusive" and item.margin == pytest.approx(170 / 306 - 1)          # -0.44444
     # a check that has no result is a note, not a blocker
     item = one(workproject, PROOF, good, checks=[check("CHK-EQUILIBRIUM", True), check("CHK-HC-FLOOR", None, "hand_calc")])
     assert item.verdict == "pass" and "Check CHK-HC-FLOOR of analysis AN-X has no result." in item.reasons
+
+
+def test_hand_calculation_that_does_not_agree_makes_the_verdict_inconclusive(workproject):
+    hc = HandCalcResult(id="HCR-SHELL-HOOP-PROOF", spec="HC-SHELL-HOOP", model="thick_cylinder_pressure", load_case="LC-PROOF")
+    bad = Check(id="CHK-PROOF-HC-SHELL-HOOP", kind="hand_calc", passed=False, value=1.9, limit=1.5, link=hc.id,
+                statement="The ratio of the analysis result to the hand calculation is 1.9. The accepted band is 0.6 to 1.5.")
+    out, items, verdicts = assess(workproject, [case("LC-PROOF", [PROOF])],
+                                  [analysis("LC-PROOF", [res(MB + "scls", 71.3 * MPA)], checks=[check("CHK-PROOF-EQ", True), bad])],
+                                  hand_calcs=[hc])
+    item = out.items[0]
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(1.33754, abs=1e-5)
+    assert "Check CHK-PROOF-HC-SHELL-HOOP of analysis AN-PROOF failed." in item.reasons
+    assert Link(rel="evidence", to=hc.id, note="check CHK-PROOF-HC-SHELL-HOOP failed") in item.links
+    assert verdicts["REQ-MOV-002"].statement == (
+        "The verdict for requirement REQ-MOV-002 is inconclusive. "
+        "Compliance item CMPL-REQ-MOV-002-YIELD-LC-PROOF decides the verdict with a margin of safety of +1.34. "
+        "The cause is that a check of the analysis failed.")
+
+
+def test_error_estimate_of_the_analysis_does_not_block_a_converged_result(workproject):
+    # the error estimate sums up all results of the analysis; this item uses the status of its own result
+    est = Check(id="CHK-TH-FIRE-ERROR-ESTIMATE", kind="error_estimate", passed=False, value=0.31, limit=0.05,
+                statement="The largest relative uncertainty of a result is 31 % (heat_flow.total@INT-ENV).")
+    item = one(workproject, TEMP, temperature(251.3, uncertainty_abs=4.0), "LC-TH-FIRE", analysis_type="thermal_steady",
+               checks=[check("CHK-TH-FIRE-HEAT-BALANCE", True, "heat_balance"), est])
+    assert item.verdict == "pass" and item.margin == pytest.approx(0.06137, abs=1e-5)
+    assert item.reasons[-3:] == [
+        "Check CHK-TH-FIRE-ERROR-ESTIMATE of analysis AN-TH-FIRE failed. It is an error estimate of the analysis as a whole.",
+        'The check says: "The largest relative uncertainty of a result is 31 % (heat_flow.total@INT-ENV)."',
+        "The status of each result gives its convergence, so an error estimate does not change the verdict."]
+    assert not any(r.startswith("No check of") for r in item.reasons)
+    assert "error_estimate" in compliance.NOT_BLOCKING
 
 
 def test_failed_check_in_an_analysis_the_result_rests_on(workproject):
@@ -622,46 +679,68 @@ def test_caveat_walk_reaches_the_requirement_that_states_a_load_parameter(workpr
     ans = [analysis("LC-PROOF", [res(MB + "scls", 71.3 * MPA)]), analysis("LC-BURST", [res("von_mises.membrane@scls", 96 * MPA)]),
            analysis("LC-FIRE", [res("von_mises.peak@part", 100 * MPA), res(MB + "scls", 90 * MPA)], analysis_type="thermo_structural"),
            analysis("LC-FATIGUE", [res("damage.total@part", 0.1, unit="")], analysis_type="fatigue")]
-    meop = finding("REQ-MOV-001", "meop", "major")               # the MEOP of REQ-MOV-001 is too low
-    fnd = [meop,
-           finding("REQ-MOV-001", "wording", "minor"),           # a minor finding is not a caveat
-           finding("REQ-MOV-004", "yield-factor", "major"),      # on the requirement itself
-           finding("burst_factor", "low", "error"),              # on a parameter that feeds the burst loads
-           finding("design_cycles", "cycles", "major"),          # on a parameter of REQ-MOV-006 itself
-           finding("PH-TRANSPORT", "uncovered", "major"),        # on a phase with no load case here
-           finding("MAT-316L", "temperature", "major"),          # on the material of the part
-           finding("SCL-ROOF", "outside", "major")]              # on a stress classification line
+    # the validation engine writes a finding on a requirement, with an "about" link to the parameter
+    meop = finding("REQ-MOV-001", "meop-low", links=[Link(rel="about", to="meop"), Link(rel="evidence", to="EF-IN-P-SHUTDOWN")])
+    fnd = [meop,                                                                # the MEOP of REQ-MOV-001 is too low
+           finding("REQ-MOV-001", "no-shall", "minor"),                         # a minor finding is not a caveat
+           finding("REQ-MOV-004", "yield-factor", links=[Link(rel="about", to="yield_factor")]),
+           finding("REQ-MOV-003", "burst-factor", "error", links=[Link(rel="about", to="burst_factor")]),
+           finding("REQ-MOV-006", "design-cycles", links=[Link(rel="about", to="design_cycles")]),
+           finding("PH-TRANSPORT", "uncovered"),                                # a phase with no load case here
+           finding("MAT-316L", "too-cold"),                                     # the material of the part
+           finding("SCL-ROOF", "outside"),                                      # a stress classification line
+           finding("INT-ENV", "overlap", "error"),                              # an interface that firing loads
+           finding("SYS-OXFEED", "count", links=[Link(rel="about", to="n_proof")])]   # the count of the proof cycle
     out, items, verdicts = assess(workproject, cases, ans, findings=fnd)
     proof, burst = items["CMPL-REQ-MOV-002-YIELD-LC-PROOF"], items["CMPL-REQ-MOV-003-ULTIMATE-LC-BURST"]
     fire_y, fire_u = items["CMPL-REQ-MOV-004-YIELD-LC-FIRE"], items["CMPL-REQ-MOV-004-ULTIMATE-LC-FIRE"]
     life = items["CMPL-REQ-MOV-006-DAMAGE-LC-FATIGUE"]
+    mat, scl, env = "FND-MAT-316L-TOO-COLD", "FND-SCL-ROOF-OUTSIDE", "FND-INT-ENV-OVERLAP"
     # the proof pressure is proof_factor * meop: the finding on REQ-MOV-001 reaches the proof and burst items
-    assert proof.caveats == [meop.id, "FND-MAT-316L-TEMPERATURE", "FND-SCL-ROOF-OUTSIDE"]
-    assert burst.caveats == [meop.id, "FND-BURST-FACTOR-LOW", "FND-MAT-316L-TEMPERATURE", "FND-SCL-ROOF-OUTSIDE"]
+    assert proof.caveats == [meop.id, mat, scl]
+    assert burst.caveats == [meop.id, "FND-REQ-MOV-003-BURST-FACTOR", mat, scl]
     # the loads of firing come from the system context: no requirement parameter feeds them
-    assert fire_y.caveats == ["FND-REQ-MOV-004-YIELD-FACTOR", "FND-MAT-316L-TEMPERATURE"]
-    assert fire_u.caveats == ["FND-REQ-MOV-004-YIELD-FACTOR", "FND-MAT-316L-TEMPERATURE", "FND-SCL-ROOF-OUTSIDE"]
-    # the fatigue case uses the proof case, so the MEOP reaches it too
-    assert life.caveats == [meop.id, "FND-DESIGN-CYCLES-CYCLES", "FND-MAT-316L-TEMPERATURE"]
+    assert fire_y.caveats == ["FND-REQ-MOV-004-YIELD-FACTOR", mat, env]
+    assert fire_u.caveats == ["FND-REQ-MOV-004-YIELD-FACTOR", mat, scl, env]
+    # the fatigue case uses the proof and firing cases, and the count of the proof duty cycle
+    assert life.caveats == [meop.id, "FND-REQ-MOV-006-DESIGN-CYCLES", mat, env, "FND-SYS-OXFEED-COUNT"]
     # a caveat does not change the verdict; the statement names it; the record links to it
     assert proof.verdict == "pass" and proof.margin == pytest.approx(1.33754, abs=1e-5)
     assert proof.statement.endswith(
-        "The criterion passes. The findings FND-REQ-MOV-001-MEOP, FND-MAT-316L-TEMPERATURE and FND-SCL-ROOF-OUTSIDE "
+        "The criterion passes. The findings FND-REQ-MOV-001-MEOP-LOW, FND-MAT-316L-TOO-COLD and FND-SCL-ROOF-OUTSIDE "
         "apply to the inputs of this item.")
     assert Link(rel="about", to=meop.id, note="open finding") in proof.refs()
     assert verdicts["REQ-MOV-002"].verdict == "pass" and meop.id in verdicts["REQ-MOV-002"].statement
     # requirements that analysis does not assess name their findings too
     assert verdicts["REQ-MOV-001"].statement == (
         "The verification method of requirement REQ-MOV-001 is review. The analysis gives no verdict for this requirement. "
-        "Finding FND-REQ-MOV-001-MEOP applies to this requirement.")
+        "Finding FND-REQ-MOV-001-MEOP-LOW applies to this requirement.")
 
 
-def test_one_caveat_and_an_about_link(workproject):
-    f = finding("EF-IN-P-PROOF", "basis", "major", links=[Link(rel="about", to="REQ-MOV-002")])
-    out, items, _ = assess(workproject, [case("LC-PROOF", [PROOF])], [analysis("LC-PROOF", [res(MB + "scls", 71.3 * MPA)])],
-                           findings=[f])
-    item = out.items[0]
-    assert item.caveats == [f.id] and item.verdict == "pass"
+def test_caveat_on_another_requirement_is_about_the_number_the_item_reads(workproject, example_ctx):
+    workproject.requirement("REQ-MOV-001").parameters["p_rated"] = ReqParameter.model_validate("9 MPa")   # no load reads it
+    cases = [case("LC-PROOF", [PROOF], "PH-PROOF", loads=example_ctx.loads(workproject, None, "PH-PROOF"))]
+    ans = [analysis("LC-PROOF", [res(MB + "scls", 71.3 * MPA)])]
+
+    def run(*fnd):
+        return assess(workproject, cases, ans, findings=fnd)[0].items[0]
+
+    def about(name):
+        return [Link(rel="about", to=name)]
+
+    assert run(finding("REQ-MOV-001", "meop-low", links=about("meop"))).caveats == ["FND-REQ-MOV-001-MEOP-LOW"]
+    assert run(finding("REQ-MOV-001", "rated", links=[Link(rel="evidence", to="p_rated")])).caveats == []   # another number
+    assert run(finding("REQ-MOV-001", "text")).caveats == ["FND-REQ-MOV-001-TEXT"]     # names no number: it counts
+    assert run(finding("REQ-MOV-005", "range")).caveats == []                          # states no number of these loads
+    # the effects of the load case and the parameters they depend on (a_bore = pi * d_bore**2 / 4)
+    assert run(finding("EF-IN-P-PROOF", "basis")).caveats == ["FND-EF-IN-P-PROOF-BASIS"]
+    assert run(finding("EF-IN-P-FIRE", "basis")).caveats == []                          # an effect of another phase
+    assert run(finding("SYS-OXFEED", "area", links=about("d_bore"))).caveats == ["FND-SYS-OXFEED-AREA"]
+    assert run(finding("SYS-OXFEED", "closure", links=about("t_close"))).caveats == []  # the proof loads do not read it
+    assert run(finding("FT-CAVITY-FLOOR", "faces", "error")).caveats == ["FND-FT-CAVITY-FLOOR-FACES"]   # a loaded feature
+    assert run(finding("FT-NECK", "faces", "error")).caveats == []                      # no load of the case acts on it
+    item = run(finding("EF-IN-P-PROOF", "basis"))
+    assert item.verdict == "pass"
     assert item.statement.endswith("The criterion passes. Finding FND-EF-IN-P-PROOF-BASIS applies to the inputs of this item.")
 
 

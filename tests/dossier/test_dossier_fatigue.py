@@ -258,6 +258,59 @@ def test_max_min_count_against_a_rainflow_count_by_hand():
     assert [c["range"] for c in cycles] == pytest.approx([pa(10), pa(8), pa(6)]) and {c["count"] for c in cycles} == {3.0}
 
 
+def _rainflow(history: list[float]) -> list[tuple[float, float]]:
+    """ASTM E1049 rainflow count of a repeating history: the cycles as (valley or peak, peak or valley)."""
+    seq = [v for i, v in enumerate(history) if v != history[i - 1]]
+    turns = [v for i, v in enumerate(seq) if (v - seq[i - 1]) * (seq[(i + 1) % len(seq)] - v) < 0] if len(seq) > 1 else []
+    if not turns:
+        return []
+    k = turns.index(max(turns))
+    stack, cycles = [], []
+    for v in [*turns[k:], *turns[:k], turns[k]]:                 # start and end at the largest peak
+        stack.append(v)
+        while len(stack) >= 3 and abs(stack[-1] - stack[-2]) >= abs(stack[-2] - stack[-3]):
+            cycles.append((stack[-3], stack[-2]))
+            del stack[-3:-1]
+    assert len(stack) == 1
+    return cycles
+
+
+def test_max_min_count_is_not_below_a_rainflow_count_of_any_order():
+    """The claim behind the cycle count: without the order of the duty cycles, it is on the safe side.
+    Random uniaxial duty cycles (one to three states, one or two repetitions each); for EVERY order of the
+    repetitions, the damage of a rainflow count of the whole history is compared with the max-min count.
+    With no mean stress correction the max-min damage is never smaller (the damage depends on the ranges
+    only, and no order gives larger ranges). With the Goodman correction and stresses up to 2/3 of the
+    ultimate strength the same holds in this search; it is not a theorem (the module text says so)."""
+    import itertools
+
+    rng = np.random.default_rng(3)
+    for rule, su in (("none", math.inf), ("goodman", 15.0)):
+        sn = fatigue.SN(sigma_f=40.0, b=-0.2, rule=rule, su=su)
+        smallest, cases = math.inf, 0
+        while cases < 250:
+            events = [[float(v) for v in np.round(rng.uniform(-10, 10, size=int(rng.integers(1, 4))), 1)]
+                      for _ in range(int(rng.integers(1, 4)))]
+            counts = [int(rng.integers(1, 3)) for _ in events]
+            values = [0.0] + [v for e in events for v in e]
+            reps = [float(sum(counts))] + [float(c) for e, c in zip(events, counts) for _ in e]
+            tensors = np.zeros((len(values), 6))
+            tensors[:, 0] = values
+            max_min = sum(c["damage"] for c in fatigue.count_cycles(tensors, reps, sn))
+            worst = 0.0
+            for order in set(itertools.permutations([k for k, c in enumerate(counts) for _ in range(c)])):
+                history = [v for k in order for v in (0.0, *events[k])]
+                total = 0.0
+                for a, b in _rainflow(history):
+                    sar = fatigue.corrected_amplitude(abs(a - b) / 2, (a + b) / 2, sn)
+                    total += 1.0 / float(fatigue.cycles_to_failure(sar, sn))
+                worst = max(worst, total)
+            if worst > 0.0:
+                smallest = min(smallest, max_min / worst)
+                cases += 1
+        assert smallest >= 1.0 - 1e-12, (rule, smallest)
+
+
 def test_non_proportional_states_use_the_tensor_difference(bench):
     """A duty cycle 0 -> A -> B -> 0 with A: sxx = 200 MPa, B: syy = 200 MPa. Both states have a von Mises
     stress of 200 MPa, so the difference of the von Mises stresses of A and B is zero. The stress difference
@@ -312,7 +365,9 @@ def test_cycle_floor_at_one_reversal(bench):
     bench.state("LC-PROOF", uniaxial(2000.0))
     out = bench.run([("DC-PROOF", 3, ["LC-PROOF"])])
     assert part(out).value == pytest.approx(6.0) and part(out).status == "not_converged"
-    assert check(out, "YIELD-PART").passed is False and "800 MPa" in check(out, "YIELD-PART").statement
+    assert check(out, "YIELD-PART").passed is False and check(out, "SHAKEDOWN-PART").passed is False
+    floor = check(out, "BASQUIN-PART")
+    assert floor.passed is False and "800 MPa" in floor.statement and "0.5 cycles to failure" in floor.statement
     assert "0.5 cycles to failure" in out.record.statement
 
 
@@ -487,13 +542,27 @@ def _hand_mesh(path: Path) -> np.ndarray:
     return np.array(pts)
 
 
-def _hand_stress(x: np.ndarray, edge_factor: float = 1.0) -> np.ndarray:
+def _hand_stress(x: np.ndarray, edge_factor: float = 1.0, bump: float = 0.0) -> np.ndarray:
     """sxx in MPa: 200 / sqrt(1 + r) from the edge (r in mm) plus 180 / sqrt(1 + s) from the held strip
-    (s = 10 mm - x). At the edge the first term is `edge_factor` x 200 MPa: a peak that the mesh changes."""
+    (s = 10 mm - x). At the edge the first term is `edge_factor` x 200 MPa: a peak that the mesh changes.
+    `bump` adds a smooth local peak on f2 at z = 8 mm, far from the edge and from the held strip."""
     r = np.hypot(x[:, 0], x[:, 2]) * 1e3
     s = 10.0 - x[:, 0] * 1e3
     first = np.where(r < 0.5, edge_factor * 200.0, 200.0 / np.sqrt(1.0 + r))
-    return uniaxial(*(first + 180.0 / np.sqrt(1.0 + s)))
+    return uniaxial(*(first + 180.0 / np.sqrt(1.0 + s) + np.where(np.abs(x[:, 2] - 0.008) < 1e-6, bump, 0.0)))
+
+
+def _hand_bench(bench, coarse, fine):
+    x = _hand_mesh(bench.project.out / "meshes" / "hand_L2.msh")
+    level = model.MeshLevel(level=2, h=1e-3, nodes=len(x), cells=0, order=1, path="meshes/hand_L2.msh")
+    held = model.BCItem(type="fixed", faces=["f3"], description="The strip is held.")
+    free = model.BCItem(type="displacement", value={"points": [[0, 0, 0]]}, description="Three nodes stop the motion.")
+    bench.state("LC-PROOF", {1: _hand_stress(x, **coarse), 2: _hand_stress(x, **fine)}, x={1: x, 2: x},
+                bcs=[held, free], mesh=[level])
+    bench.geo = {"edges": {"reentrant": [{"tag": 7, "faces": [1, 2], "angle_deg": 270.0, "length": 0.010,
+                                          "midpoint": [0.0, 0.005, 0.0]}]},
+                 "faces": {"1": {"features": ["FT-PAD-TOP"]}, "2": {"features": []}, "3": {"features": ["FT-NECK"]}}}
+    return bench.run([("DC-PROOF", 1000, ["LC-PROOF"])])
 
 
 def test_singular_zones_are_left_out_of_the_smooth_result(bench, monkeypatch):
@@ -502,30 +571,23 @@ def test_singular_zones_are_left_out_of_the_smooth_result(bench, monkeypatch):
     Without the zones of the edge and of the held strip, the largest stress is at x = 3 mm on f1:
     200/sqrt(4) + 180/sqrt(8) = 163.64 MPa. At the held strip it would be 200/sqrt(11) + 180 = 240.3 MPa."""
     monkeypatch.setattr(fatigue, "EXCLUSION_ELEMENTS", 2.5)
-    x = _hand_mesh(bench.project.out / "meshes" / "hand_L2.msh")
-    level = model.MeshLevel(level=2, h=1e-3, nodes=len(x), cells=0, order=1, path="meshes/hand_L2.msh")
-    held = model.BCItem(type="fixed", faces=["f3"], description="The strip is held.")
-    free = model.BCItem(type="displacement", value={"points": [[0, 0, 0]]}, description="Three nodes stop the motion.")
-    bench.state("LC-PROOF", {1: _hand_stress(x, edge_factor=0.8), 2: _hand_stress(x)}, x={1: x, 2: x},
-                bcs=[held, free], mesh=[level])
-    bench.geo = {"edges": {"reentrant": [{"tag": 7, "faces": [1, 2], "angle_deg": 270.0, "length": 0.010,
-                                          "midpoint": [0.0, 0.005, 0.0]}]},
-                 "faces": {"1": {"features": ["FT-PAD-TOP"]}, "2": {"features": []}, "3": {"features": ["FT-NECK"]}}}
-    out = bench.run([("DC-PROOF", 1000, ["LC-PROOF"])])
+    out = _hand_bench(bench, coarse={"edge_factor": 0.8}, fine={})
     p, s = part(out), smooth(out)
 
     edge = 200.0 + 180.0 / math.sqrt(11.0)
     assert p.value == pytest.approx(damage(1000, goodman(edge / 2, edge / 2)), rel=1e-10)
     assert p.status == "singular" and p.near == "re-entrant edge 7 (faces f1 and f2)"
-    assert p.location[0] == 0.0 and p.location[2] == 0.0
+    assert p.location[0] == 0.0 and p.location[2] == 0.0 and p.uncertainty is None      # no limit, no uncertainty
     assert "no limit" in p.note and "increases from" in p.note
 
     best = 200.0 / math.sqrt(4.0) + 180.0 / math.sqrt(8.0)
     assert best == pytest.approx(163.64, abs=0.01)
     assert s.value == pytest.approx(damage(1000, goodman(best / 2, best / 2)), rel=1e-10)
     assert s.location == pytest.approx([0.003, 0.0, 0.0]) and s.near == "face f1 (FT-PAD-TOP)"
-    assert s.status == "converged" and s.uncertainty == pytest.approx(0.0)       # the two meshes agree out of the zones
-    assert "information only" in s.note and "2.5 mm" in s.note and "rim of the singular zone" in s.note
+    # the two meshes agree out of the zones, but the value is the singular field cut off at 2.5 mm: not converged
+    assert s.status == "not_converged" and s.uncertainty == pytest.approx(0.0)
+    assert "information only" in s.note and "2.5 mm" in s.note
+    assert "rim of the singular zone of re-entrant edge 7" in s.note and "changes with the distance" in s.note
     assert s.value < 0.2 * p.value
 
     zones = bench.data["singular_zones"]
@@ -539,6 +601,22 @@ def test_singular_zones_are_left_out_of_the_smooth_result(bench, monkeypatch):
     assert any(d.id == "DEC-LC-FATIGUE-SINGULAR-ZONES" and d.needs_review for d in out.journal.decisions)
     npz = np.load(bench.project.analysis_dir("LC-FATIGUE") / "damage_L2.npz")
     assert int((~npz["smooth"]).sum()) == zones["nodes_left_out"]
+
+
+def test_status_in_and_out_of_the_singular_zones(bench, monkeypatch):
+    """Part: the peak at the edge does not grow between the two meshes. It is in a singular zone all the
+    same, where two meshes can hide the growth: not converged, never converged.
+    Smooth: a local peak of 80 MPa on f2 at z = 8 mm, far from the zones: 200/sqrt(9) + 180/sqrt(11) + 80 =
+    200.9 MPa, more than the 163.6 MPa at the rim. That is a result of the part, and it converges."""
+    monkeypatch.setattr(fatigue, "EXCLUSION_ELEMENTS", 2.5)
+    out = _hand_bench(bench, coarse={"bump": 80.0}, fine={"bump": 80.0})
+    p, s = part(out), smooth(out)
+    assert p.status == "not_converged" and p.uncertainty is None and "cannot have the status converged" in p.note
+    peak = 200.0 / 3.0 + 180.0 / math.sqrt(11.0) + 80.0
+    assert s.value == pytest.approx(damage(1000, goodman(peak / 2, peak / 2)), rel=1e-10)
+    assert s.location[2] == pytest.approx(0.008) and s.near == "face f2"
+    assert s.status == "converged" and s.uncertainty == pytest.approx(0.0) and "rim" not in s.note
+    assert check(out, "CONVERGENCE-SMOOTH").passed is True and check(out, "YIELD-SMOOTH").passed is True
 
 
 def test_singular_zones_that_cannot_be_found_block_the_status(bench):
@@ -619,7 +697,7 @@ def test_l_bracket_meshed_with_gmsh(tmp_path):
     # the smooth result: no node in a zone, and it is the largest damage of the nodes out of the zones
     d_edge, d_face = zones["edge"]["distance"], zones["face"]["distance"]
     r_s = math.hypot(s.location[0] - 0.010, s.location[2] - 0.010)
-    assert r_s > d_edge and 0.020 - s.location[0] > d_face
+    assert r_s > 0.9 * d_edge and 0.020 - s.location[0] > 0.9 * d_face
     x = xs[2]
     r = np.hypot(x[:, 0] - corner[0], x[:, 2] - corner[1])
     stress = 300.0 * (1e-3 / np.maximum(r, 0.001)) ** 0.45

@@ -327,7 +327,7 @@ def test_example_journal(example, example_plan):
 
     # a selected load case: the requirements and criteria, the phase, the kind of analysis and why
     fire = dec["DEC-LC-FIRE-SELECTED"]
-    assert "thermo-structural analysis of the phase PH-FIRE (Steady firing) at limit loads" in fire.choice
+    assert fire.choice == "Make a thermo-structural load case of the phase PH-FIRE (Steady firing) at limit loads."
     assert "criteria yield and ultimate of REQ-MOV-004 in the phase PH-FIRE" in fire.rationale
     for text in ("EF-IN-T-FIRE gives a fluid temperature of 90 K", "reference temperature of 293.15 K",
                  "difference of 203.15 K is more than the policy limit of 5 K", "temperature field of LC-TH-FIRE"):
@@ -454,7 +454,7 @@ def test_phase_without_thermal_effects_is_static(workproject):
     assert len(chill.loads) == 5 and chill.supports == ["INT-INLET"]
     assert "temperature field" not in chill.statement
     d = decisions(p)["DEC-LC-CHILL-SELECTED"]
-    assert "static structural analysis" in d.choice and "no thermal effect on the part in this phase" in d.rationale
+    assert "static structural load case" in d.choice and "no thermal effect on the part in this phase" in d.rationale
     # the other operation phases keep their thermal load cases, and the fatigue analysis uses the static one
     assert lcs["LC-FIRE"].analysis_type == "thermo_structural" and lcs["LC-FATIGUE"].cycles[0].states[0] == "LC-CHILL"
     # the chill-down loads are not a multiple of the proof loads (a seat force, a support): it is solved
@@ -778,3 +778,100 @@ def test_hand_calculation_engine_with_the_same_id_twice_is_a_finding(workproject
     p = make(workproject, SameId())
     assert len(p.hand_calcs) == 6 and len({h.id for h in p.hand_calcs}) == 6
     assert "FND-HC-SHELL-HOOP-LC-BURST-FAILED" in findings(p) and cases(p)["LC-BURST"].hand_calcs == []
+
+
+def test_hand_calculation_engine_that_is_not_there_is_a_finding(workproject, monkeypatch):
+    import sys
+
+    import dossier
+    monkeypatch.delattr(dossier, "handcalc", raising=False)
+    monkeypatch.setitem(sys.modules, "dossier.handcalc", None)          # the import now fails
+    p = sound(plan(workproject, context.build(workproject), None), workproject)
+    assert list(cases(p)) == list(EXPECTED) and p.hand_calcs == []
+    f = findings(p)["FND-CMP-MOV-BODY-HAND-CALC-ENGINE"]
+    assert (f.severity, f.category) == ("major", "model") and "6 hand calculations" in f.statement
+    assert all(lc.hand_calcs == [] for lc in p.load_cases)
+    assert cases(p)["LC-PROOF"].result_keys == ["von_mises.membrane_bending@scls", "von_mises.membrane@scls"]
+
+
+# --------------------------------------------------------------------------- more of what the records say
+
+
+def test_larger_proportional_loads_are_not_an_envelope(workproject):
+    def change(d):                                  # the burst requirement keeps its number and loses its phase
+        req = requirement(d, "REQ-MOV-003")
+        req.pop("applies"), req.pop("criteria"), req.update(verification="review")
+    project = edit(workproject, REQUIREMENTS, change)
+    p = sound(make(project), project)
+    assert "LC-BURST" not in cases(p)
+    d = decisions(p)["DEC-PH-BURST-NO-LOAD-CASE"]
+    assert "No requirement applies to the phase" in d.rationale
+    assert "1.667 times the loads of PH-PROOF, thus LC-PROOF is not an envelope" in d.rationale
+    assert d.needs_review and "FND-PH-BURST-UNCOVERED" in linked(d)
+    assert not any("envelope" in a.option for a in d.alternatives)
+
+
+def test_support_on_another_role_and_support_without_an_interface(workproject):
+    def change(d):
+        effect(d, "EF-IN-HOLD")["role"] = "bolts"                       # the bolt holes hold the valve, not the flange face
+        d["connections"].append({"id": "IF-BRACKET-MOV", "name": "Support bracket", "from": "EL-STRUCT", "to": "EL-MOV",
+                                 "kind": "mechanical",
+                                 "effects": [{"id": "EF-BRACKET-HOLD", "phase": "PH-FIRE", "kind": "support"}]})
+    project = edit(workproject, SYSTEM, change)
+    p = sound(make(project), project)
+    fire = cases(p)["LC-FIRE"]
+    assert fire.supports == ["INT-INLET"] and "8 mechanical loads" in fire.statement
+    held = [x for x in fire.loads if x.kind == "support"]
+    assert [(x.effect, x.role, x.features) for x in held] == [("EF-IN-HOLD", "bolts", ["FT-INLET-BOLT-HOLES"])]
+    assert fire.loads[-1] is held[0] and "support effect EF-IN-HOLD" in fire.note
+    assert ("uses", "EF-IN-HOLD") in {(l.rel, l.to) for l in fire.refs()}
+    f = findings(p)["FND-EF-BRACKET-HOLD-PH-FIRE-NO-INTERFACE"]
+    assert (f.severity, f.category, f.subject) == ("major", "model", "EF-BRACKET-HOLD")
+    assert set(findings(p)) == {f.id}                                   # one finding, for the one load case of PH-FIRE
+
+
+def test_duty_cycle_phase_without_load_is_not_a_state(workproject):
+    def system(d):
+        d["phases"].append({"id": "PH-COAST", "name": "Coast", "category": "storage"})
+        next(c for c in d["duty_cycles"] if c["id"] == "DC-RUN")["sequence"].append("PH-COAST")
+        d["duty_cycles"].append({"id": "DC-STORE", "name": "Storage cycle", "sequence": ["PH-COAST"], "count": 10})
+
+    def requirements(d):
+        requirement(d, "REQ-MOV-006")["applies"]["duty_cycles"].append("DC-STORE")
+        d["requirements"].append({
+            "id": "REQ-MOV-012", "title": "Life in storage", "kind": "life", "text": "The valve body shall withstand "
+            "the storage cycles without a fatigue crack.", "applies": {"duty_cycles": ["DC-STORE"]},
+            "criteria": [{"id": "damage", "quantity": "damage", "measure": "total", "location": "part",
+                          "comparator": "<=", "limit": 1.0}]})
+    project = edit(edit(workproject, SYSTEM, system), REQUIREMENTS, requirements)
+    p = sound(make(project), project)
+    lcs = cases(p)
+    fat = lcs["LC-FATIGUE"]
+    assert [(c.duty_cycle, c.states) for c in fat.cycles] == [
+        ("DC-RUN", ["LC-CHILL", "LC-PRESTART", "LC-FIRE", "LC-SHUTDOWN"]), ("DC-PROOF", ["LC-PROOF"]), ("DC-LEAK", ["LC-LEAK"])]
+    d = decisions(p)["DEC-LC-FATIGUE-SELECTED"]
+    assert "names the duty cycles DC-RUN, DC-PROOF, DC-LEAK and DC-STORE" in d.rationale
+    assert "The duty cycle DC-STORE gives no stress cycle" in d.rationale
+    # a fatigue requirement whose only duty cycle has no load stays in the plan, without an analysis
+    second = lcs["LC-FATIGUE-2"]
+    assert second.status == "not_supported" and second.cycles == [] and "No duty cycle of the requirement" in second.note
+    assert findings(p)["FND-REQ-MOV-012-NO-DUTY-CYCLE"].id in linked(decisions(p)["DEC-LC-FATIGUE-2-NOT-SUPPORTED"])
+    coast = decisions(p)["DEC-PH-COAST-NO-LOAD-CASE"]
+    assert "REQ-MOV-006 and REQ-MOV-012 need the stress" in coast.rationale and coast.needs_review
+
+
+def test_thermal_effect_without_a_temperature_keeps_the_analysis_static_and_unscaled(workproject):
+    def change(d):
+        conn = next(c for c in d["connections"] if c["id"] == "IF-ENV-MOV")
+        conn["effects"].append({"id": "EF-ENV-Q-PROOF", "phase": "PH-PROOF", "kind": "heat_flux", "role": "external",
+                                "value": "0 W/m^2"})
+    project = edit(workproject, SYSTEM, change)
+    p = sound(make(project), project)
+    lcs = cases(p)
+    assert lcs["LC-PROOF"].analysis_type == "static_structural" and "LC-TH-PROOF" not in lcs
+    assert "give no temperature and no heat flux" in decisions(p)["DEC-LC-PROOF-SELECTED"].rationale
+    assert "ASM-LC-PROOF-THERMAL-STRAIN" not in assumptions(p)
+    # dossier.context.proportional gives no scale for a phase with a thermal effect: the planner then solves
+    # the load case (more analysis, never less), and the leak check takes the burst test as its base
+    assert lcs["LC-BURST"].status == "selected" and lcs["LC-LEAK"].scaled_from == "LC-BURST"
+    assert lcs["LC-LEAK"].scale == pytest.approx(1 / 2.5)

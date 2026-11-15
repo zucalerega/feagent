@@ -3,13 +3,18 @@
 Coverage: loads come from the system context, so a phase in which the part has loads needs a requirement of
 kind strength that says what the part must withstand there. A phase whose loads are the same pattern as the
 loads of a covered phase, with a scale of 1 or less, needs none (`dossier.context.proportional`): the rule
-records this as an assumption, not as a finding.
+records this as an assumption, not as a finding, because the criteria of the covered phase are then taken as
+right for the smaller phase.
 
-When does `FND-<PHASE>-UNCOVERED` exist (the planner links to it)? For each phase with a mechanical or thermal
+When does `FND-<PHASE>-UNCOVERED` exist (the plan links to it)? For each phase with a mechanical or thermal
 effect on the part that no strength requirement applies to and that is not in proportion (scale <= 1) to a
 phase with a strength requirement. It is major when the part has a load there: a mechanical effect that is
 not zero, a heat flux, or a temperature that differs from the reference temperature of the component by more
-than `policy.thermal_delta`. It is info when the phase has only effects that load nothing.
+than `policy.thermal_delta`. It is info when the effects of the phase load nothing.
+
+Conflicts: two criteria conflict when they judge the same result (the same key and comparator) in the same
+phase against different limits on the response. A yield criterion and an ultimate criterion on the same
+result (two different allowables) are two checks, not a conflict.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ from dossier.requirements.base import (QUANTITY_NEEDS, QUANTITY_UNIT, ROLE_WORDS
 
 LOADS = (*MECHANICAL, *THERMAL)
 
-# --------------------------------------------------------------------------- phases and duty cycles
+# --------------------------------------------------------------------------- phases
 
 
 def _temperatures(env: Env) -> tuple[float, float]:
@@ -54,6 +59,7 @@ def _effects_sentences(env: Env, phase, mech: list, therm: list) -> list[str]:
 @rule("req.phase_uncovered", "major", "coverage",
       "A requirement of kind strength covers each phase in which the part has loads.")
 def phase_uncovered(env: Env) -> None:
+    """Key `uncovered`: the plan links to FND-<phase>-UNCOVERED (see the module text for when it exists)."""
     covered: dict[str, list[str]] = {}
     for r in env.reqs:
         if r.kind == "strength":
@@ -68,7 +74,7 @@ def phase_uncovered(env: Env) -> None:
         if not mech and not therm:
             continue
         under: tuple[float, str] | None = None            # the covered phase with the nearest larger loads
-        over: tuple[float, str] | None = None
+        over: tuple[float, str] | None = None             # the covered phase with the nearest smaller loads
         for c in covered_ids:
             s = proportional(env.loads(c), env.loads(ph.id))
             if s is None:
@@ -81,26 +87,33 @@ def phase_uncovered(env: Env) -> None:
             _covered_by_scale(env, ph, under[0], under[1], covered[under[1]])
             continue
         rationale = _effects_sentences(env, ph, mech, therm)
-        rationale.append(f"The requirements of kind strength apply to {some(covered_ids, 6, 'more phases')}." if covered_ids
+        values = {"category": ph.category, "mechanical_effects": len(mech), "thermal_effects": len(therm),
+                  "loads": {e.id: e.si for e in (*mech, *therm)}}
+        links = [("evidence", e.id) for e in (*mech, *therm)]
+        name = f"the phase {ph.id} ({quote(ph.name)})"
+        if not real:                                       # the effects are there, and they load nothing
+            zero = "The phase has no mechanical effect" if not mech else "The mechanical effects of the phase are zero"
+            rationale.append(f"{zero}, and its temperatures are within {shown(t_delta, 'K')} of the reference temperature "
+                             f"{shown(t_ref, 'K')}." if therm else f"{zero}.")
+            env.find(subject=ph.id, key="uncovered", severity="info", title=f"No strength requirement for the phase {ph.id}",
+                     statement=[f"No requirement of kind strength applies to {name}.",
+                                "The effects of this phase do not load the part."],
+                     rationale=rationale,
+                     suggestion=["No change is necessary.", f"Make sure that the system context has all loads of {ph.id}."],
+                     values=values, links=links)
+            continue
+        rationale.append(f"The requirements of kind strength apply to {some(covered_ids, 6, 'phase')}." if covered_ids
                          else "The part has no requirement of kind strength.")
         if over is not None:
-            rationale.append(f"The loads of {ph.id} are {number(over[0])} times the loads of {over[1]}, thus "
-                             f"{over[1]} does not cover them.")
+            rationale.append(f"The loads of {ph.id} are {number(over[0])} times the loads of {over[1]}, thus {over[1]} "
+                             f"does not cover them.")
         elif covered_ids:
             rationale.append(f"The loads of {ph.id} are not in proportion to the loads of one of these phases.")
-        if not real:
-            rationale.append(f"The mechanical effects are zero, and the temperatures are within {shown(t_delta, 'K')} of the "
-                             f"reference temperature {shown(t_ref, 'K')}.")
-        env.find(subject=ph.id, key="uncovered", severity=None if real else "info",
-                 title=f"No strength requirement for the phase {ph.id}",
-                 statement=[f"No requirement of kind strength applies to the phase {ph.id} ({quote(ph.name)}).",
-                            "The part has loads in this phase." if real else "The effects of this phase do not load the part."],
+        env.find(subject=ph.id, key="uncovered", title=f"No strength requirement for the phase {ph.id}",
+                 statement=[f"No requirement of kind strength applies to {name}.", "The part has loads in this phase."],
                  rationale=rationale,
-                 suggestion=(f"Add a requirement of kind strength that applies to {ph.id}, with criteria for its loads." if real
-                             else f"No change is necessary. Make sure that the system context has all loads of {ph.id}."),
-                 values={"category": ph.category, "mechanical_effects": len(mech), "thermal_effects": len(therm),
-                         "loads": {e.id: e.si for e in (*mech, *therm)}},
-                 links=[("evidence", e.id) for e in (*mech, *therm)])
+                 suggestion=f"Add a requirement of kind strength that applies to {ph.id}, with criteria for its loads.",
+                 values=values, links=links)
 
 
 def _covered_by_scale(env: Env, ph, scale: float, other: str, reqs: list[str]) -> None:
@@ -118,6 +131,9 @@ def _covered_by_scale(env: Env, ph, scale: float, other: str, reqs: list[str]) -
                        f"If {ph.id} needs different criteria, it needs a strength requirement of its own."],
                verify_by=f"Make sure that the criteria of {join(reqs)} are correct for {ph.id}.",
                conservative=None, links=[("evidence", other), *(("evidence", r) for r in reqs)])
+
+
+# --------------------------------------------------------------------------- duty cycles
 
 
 @rule("req.duty_cycle_uncovered", "minor", "coverage", "A requirement of kind life names each duty cycle that loads the part.")
@@ -139,9 +155,10 @@ def duty_cycle_uncovered(env: Env) -> None:
                      else f"The system context gives no count for the duty cycle {dc.id}."]
         if dc.source:
             rationale.append(f"The source of the count is {quote(dc.source)}.")
-        rationale.append(fit(f"Its phases are {join(sequence)}, and the part has loads in {join(loaded)}.",
+        rationale.append(f"Its phase is {sequence[0]}, and the part has loads in this phase." if len(sequence) == 1 else
+                         fit(f"Its phases are {join(sequence)}, and the part has loads in {join(loaded)}.",
                              f"It has {count(len(sequence), 'phase')}, and the part has loads in {len(loaded)} of them."))
-        rationale.append(f"The requirements of kind life name {some(named, 6, 'more duty cycles')}." if named
+        rationale.append(f"The requirements of kind life name {some(named, 6, 'duty cycle')}." if named
                          else "The part has no requirement of kind life that names a duty cycle.")
         env.find(subject=dc.id, key="uncovered", title=f"No life requirement for the duty cycle {dc.id}",
                  statement=f"No requirement of kind life names the duty cycle {dc.id} ({quote(dc.name)}).",
@@ -152,6 +169,8 @@ def duty_cycle_uncovered(env: Env) -> None:
                  links=[*(("evidence", ph) for ph in sequence),
                         *(("evidence", x) for x in sorted(dc.count.names()) if x in env.ctx.params)])
 
+
+# --------------------------------------------------------------------------- where a requirement applies
 
 _NEEDS_WORDS = {THERMAL: "thermal effect", ("mass_flow",): "mass flow", LOADS: "mechanical or thermal effect"}
 
@@ -166,13 +185,16 @@ def phase_without_effect(env: Env) -> None:
         empty = [ph for ph in phases if not [e for e in env.effects(ph) if e.kind not in ("support", "signal")]]
         if empty:
             these = "this phase" if len(empty) == 1 else "these phases"
-            how = (f"{r.id} applies to the phases of category {r.applies.category}." if r.applies.category
-                   and any(ph not in r.applies.phases for ph in empty) else f"{r.id} lists {these} in its phases.")
+            listed = all(ph in r.applies.phases for ph in empty)
             env.find(subject=r.id, key="no-effect", title=f"{r.id} applies to a phase without effects on the part",
-                     statement=f"{r.id} applies to {some(empty, 4, 'more phases')}, but the part has no effect in {these}.",
-                     rationale=[how, f"The system context gives no load, no temperature and no flow on the part in {these}."],
-                     suggestion=[f"Remove {these} from {r.id}.",
-                                 "If the part has loads there, add the effects to the system context."],
+                     statement=f"{r.id} applies to {some(empty, 4, 'phase')}, but the part has no effect in {these}.",
+                     rationale=[(f"{r.id} lists {these} in its phases." if listed
+                                 else f"{r.id} applies to the phases of category {r.applies.category}."),
+                                f"The system context gives no load, no temperature and no flow on the part in {these}."],
+                     suggestion=([f"Remove {these} from the phases of {r.id}.",
+                                  "If the part has loads there, add the effects to the system context."] if listed else
+                                 [f"No change is necessary if the part has no load in {these}.",
+                                  "If it has loads there, add the effects to the system context."]),
                      values={"phases": empty}, links=[("evidence", ph) for ph in empty])
         for i, c in enumerate(r.criteria):
             needs = QUANTITY_NEEDS.get(c.quantity)
@@ -183,14 +205,14 @@ def phase_without_effect(env: Env) -> None:
                 continue
             word = _NEEDS_WORDS.get(tuple(needs), "effect")
             has = list(dict.fromkeys(e.kind for e in env.effects(lacking[0]) if e.kind != "signal"))
-            env.find(subject=r.id, key=f"{criterion_key(r, i)}-no-effect",
+            env.find(subject=r.id, key=f"criterion-{criterion_key(r, i)}-no-effect",
                      title=f"A criterion of {r.id} applies to a phase without the effect it needs",
-                     statement=f"{cap(criterion_name(r, i))} of {r.id} needs a {word} in {some(lacking, 4, 'more phases')}, "
+                     statement=f"{cap(criterion_name(r, i))} of {r.id} needs a {word} in {some(lacking, 4, 'phase')}, "
                                f"but the system context gives none.",
                      rationale=[f"The result key of the criterion is {c.key()}.",
                                 f"The quantity {c.quantity} needs an effect of kind {join(needs, 'or')}.",
                                 f"In {lacking[0]}, the system context gives these kinds on the part: {join(has)}."],
-                     suggestion=[f"Remove {some(lacking, 4, 'more phases')} from the phases of {r.id}.",
+                     suggestion=[f"Remove {some(lacking, 4, 'phase')} from the phases of {r.id}.",
                                  "If the effect exists, add it to the system context."],
                      values={"criterion": i, "phases": lacking, "needs": list(needs)},
                      links=[("evidence", ph) for ph in lacking])
@@ -225,7 +247,7 @@ def role_conflict(env: Env) -> None:
         words = ROLE_WORDS[role]
         first = got[0][0]
         reqs = list(dict.fromkeys(g[0].id for g in got))
-        distinct = len({round(v / max(abs(max(values)), 1e-300), 9) for v in values})
+        distinct = len({round(v / max(abs(max(values)), abs(min(values))), 9) for v in values})
         rationale = [f"{r.id} gives {rp.display} (parameter {name})." for r, name, _, rp in got[:4]]
         rationale.append(f"The role {role} says that each of these parameters is the {words}.")
         env.find(subject=first.id, key=f"conflict-{role}", title=f"Different values for the {words}",
@@ -289,19 +311,20 @@ def criteria_conflict(env: Env) -> None:
             rb, ib, cb, (lb, fb, eb, _), sb = items[b]
             if ca.key() != cb.key() or ca.comparator != cb.comparator:
                 continue
+            if ca.allowable and cb.allowable and ca.allowable != cb.allowable:
+                continue                                   # yield and ultimate on one result: two checks, no conflict
             common = sorted(sa & sb, key=lambda x: order.get(x, 0))
             if (ra is not rb and not common) or abs(ea - eb) <= 1e-9 * max(abs(ea), abs(eb)):
                 continue
-            where = f" in {some(common, 3, 'more phases')}" if common else ""
+            where = f" in {some(common, 3, 'phase')}" if common else ""
 
             def line(r, i, c, limit, factor, effective) -> str:
                 detail = f" ({shown(limit, unit)} with the factor {number(factor)})" if factor != 1.0 else ""
                 return f"{cap(criterion_name(r, i))} of {r.id} gives {c.key()} {c.comparator} {shown(effective, unit)}{detail}."
 
-            strict_a = ea < eb if ca.comparator == "<=" else ea > eb
-            strict = (ra, ia) if strict_a else (rb, ib)
-            loose = (rb, ib) if strict_a else (ra, ia)
-            env.find(subject=ra.id, key=f"conflict-{criterion_key(ra, ia)}-{rb.id}-{criterion_key(rb, ib)}",
+            a_is_strict = ea < eb if ca.comparator == "<=" else ea > eb
+            strict, loose = ((ra, ia), (rb, ib)) if a_is_strict else ((rb, ib), (ra, ia))
+            env.find(subject=ra.id, key=f"criterion-{criterion_key(ra, ia)}-conflict-{rb.id}-{criterion_key(rb, ib)}",
                      title=f"Two limits for the result {ca.key()}",
                      statement=(f"{ra.id} and {rb.id} judge the result {ca.key()}{where} against different limits."
                                 if ra is not rb else

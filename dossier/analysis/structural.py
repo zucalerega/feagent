@@ -45,6 +45,11 @@ Convergence rule (exact). u is the absolute uncertainty of the value v on the fi
                                         u = 3 x |v_fine - v_medium|
                    diverging, or no order   u = 3 x spread, spread = max - min of the three values
                    changes < 1e-6       u = 1.25 x the larger change (round-off)
+  line noise     A result on a stress classification line also depends on where the line cuts the elements
+                 (the recovered stress scatters at the element scale). On every level the engine evaluates
+                 the line four more times, moved by a quarter of the local element size in the two
+                 directions across the line. u is not less than 3 x (max - min) of these five values on the
+                 finest mesh. Three levels at one fixed line can agree by chance; this floor does not.
   status         converged when u <= policy.max_uncertainty x max(|v|, reference), else not_converged.
                  The reference is the size of the field that a small value comes from: the largest principal
                  stress (absolute) of the section tensor for a stress component and for max_principal on a
@@ -130,6 +135,7 @@ GROWTH = 1e-3                   # a peak "grew" when its magnitude rose by more 
 EXCLUSION = 2.0                 # peak evaluation: nodes within this many coarse element sizes of a held face are left out
 NEAR_EDGE = 2.5                 # a peak is at a re-entrant edge within this many local element sizes
 NEAR_ZONE = 2.0                 # ... or within this many local element sizes of the border of the left-out zone
+LINE_SHIFT = 0.25               # a line is also evaluated moved by this part of the local element size
 SCL_OUTSIDE = 0.02              # a sample point farther outside the mesh than this part of the line: no result
 EQUILIBRIUM_TOL = 1e-6
 ASSEMBLY_TOL = 1e-6
@@ -177,9 +183,10 @@ class Study:
 
 
 def study(h: list[float], values: list[float], p_theory: float, max_uncertainty: float,
-          reference: float | None = None) -> Study:
+          reference: float | None = None, noise: float | None = None) -> Study:
     """The convergence of one result over the levels (coarse to fine). The rule is in the module docstring.
-    `reference` is the size that a small value is judged against (None: the value itself)."""
+    `reference` is the size that a small value is judged against (None: the value itself). `noise` is the
+    change of the value on the finest mesh when its line moves by a quarter of an element (lines only)."""
     from feacore.verification.gci import gci3
 
     v = np.asarray(values, dtype=float)
@@ -243,8 +250,12 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
             u = SAFETY_SPREAD * spread
             note = (f"The changes between the mesh levels do not become smaller. The uncertainty is "
                     f"{SAFETY_SPREAD:g} times the spread of the three values ({pct(spread)}).")
+    if noise is not None and SAFETY_SPREAD * noise > u:
+        u = SAFETY_SPREAD * noise
+        note += (f" A move of the line by a quarter of an element changes the value by {pct(noise)}. The uncertainty "
+                 f"is {SAFETY_SPREAD:g} times this change, which is more than the estimate from the mesh levels.")
     status = "converged" if u <= max_uncertainty * size else "not_converged"
-    if abs(fine) < size:
+    if abs(fine) < 0.5 * size:
         note += (f" The value is small against the size of its field ({size:.4g}). The uncertainty is {pct(u)} of "
                  "that size.")
     rel = float(u / abs(fine)) if abs(fine) > 0 else None
@@ -420,6 +431,7 @@ class Evaluator:
         self.sampler = sampler
         self.free = free
         self._sections: dict[str, Any] = {}
+        self._shifted: dict[str, list] = {}
         self._inv: dict[str, np.ndarray] = {}
         self._U_rel = None
         self.used_datum = False
@@ -458,12 +470,31 @@ class Evaluator:
             else:
                 try:
                     self._sections[sid] = scl_mod.section(self.sampler, s["start"], s["end"])
+                    self._shifted[sid] = self._moved_lines(np.asarray(s["start"], float), np.asarray(s["end"], float))
                 except (ValueError, CannotServe) as e:
                     self._sections[sid] = CannotServe(f"The line {sid} has no result: {e}")
         sec = self._sections[sid]
         if isinstance(sec, Exception):
             raise sec
         return sec
+
+    def _moved_lines(self, a: np.ndarray, b: np.ndarray) -> list:
+        """The sections of the line moved by LINE_SHIFT of the local element size, in the two directions
+        across it (four lines). A moved line that leaves the material is left out."""
+        mg = self.mg
+        d = (b - a) / np.linalg.norm(b - a)
+        e1 = np.cross(d, np.eye(3)[int(np.argmin(np.abs(d)))])
+        e1 = e1 / np.linalg.norm(e1)
+        e2 = np.cross(d, e1)
+        mid = 0.5 * (a + b)
+        h = float(mg.node_h()[int(np.argmin(np.einsum("ij,ij->i", mg.x - mid, mg.x - mid)))])
+        out = []
+        for e in (e1, -e1, e2, -e2):
+            try:
+                out.append(scl_mod.section(self.sampler, a + LINE_SHIFT * h * e, b + LINE_SHIFT * h * e))
+            except (ValueError, CannotServe):
+                continue
+        return out
 
     # ---- one key
     def value(self, key: str) -> tuple[float, dict | None, dict]:
@@ -475,13 +506,15 @@ class Evaluator:
             if measure not in ("membrane", "membrane_bending"):
                 raise CannotServe(f"A stress classification line has no measure {measure}.")
             sec = self.section(location)
-            extra = {}
+            v = sec.value(quantity, measure)
+            others = [o.value(quantity, measure) for o in self._shifted.get(location, [])]
+            extra = {"noise": float(max([v, *others]) - min([v, *others])), "moved": len(others)} if len(others) >= 2 else {}
             if measure == "membrane_bending" and quantity in scl_mod.INVARIANTS:
                 extra["end"] = sec.governing_end(quantity)
             if quantity != "von_mises":          # a component or a principal stress can be small in a large stress state
                 states = [sec.membrane] if measure == "membrane" else [sec.at_start(), sec.at_end()]
                 extra["ref"] = float(max(np.abs(scl_mod.principals(t)).max() for t in states))
-            return sec.value(quantity, measure), None, extra
+            return v, None, extra
         if location == "scls":
             raise CannotServe("The engine gives the measures membrane and membrane_bending of von_mises for all "
                               "lines together.")
@@ -875,7 +908,8 @@ def _solve_checks(res, mg: MeshGeom, real: Realized, ideal: Idealizer, U: np.nda
     # equilibrium: the reactions of the supports against the applied loads
     R, M_R = rn.sum(axis=0), np.cross(mg.x, rn).sum(axis=0)
     r_abs = float(np.abs(rn).sum())
-    scale_f = max(fs, 0.01 * r_abs, 1e-300)
+    # the size of the forces: the largest load, the reactions, and the nodal loads (thermal loads have no resultant)
+    scale_f = max(fs, 0.01 * r_abs, 1e-3 * float(np.abs(fn).sum()), 1e-300)
     scale_m = max(ms, scale_f * 0.5 * mg.diag)
     err = max(float(np.linalg.norm(R + F_i) / scale_f), float(np.linalg.norm(about_c(R + F_i, M_R + M_i)) / scale_m))
     out["equilibrium"] = {
@@ -972,7 +1006,8 @@ def _results(data: list[LevelData], keys: list[str], scls: dict, max_unc: float,
             continue
         have = [d for d in data if key in d.values]
         vals = [d.values[key] for d in have]
-        st = study([d.h for d in have], vals, p_theory_of(key), max_unc, reference=fine.info.get(key, {}).get("ref"))
+        st = study([d.h for d in have], vals, p_theory_of(key), max_unc, reference=fine.info.get(key, {}).get("ref"),
+                   noise=fine.info.get(key, {}).get("noise"))
         note = st.note
         if len(have) < len(data):
             note += f" {len(data) - len(have)} coarser mesh levels have no value for this result."

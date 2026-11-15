@@ -51,10 +51,16 @@ Method (what is computed, and where it comes from)
    the number of repetitions of the duty cycles but not their order. When two duty cycles load a point in
    opposite directions and alternate in time, the real cycle spans both (0 -> +s -> 0 -> -s -> 0 is one
    cycle of range 2 s, not two of range s). Counting each duty cycle alone misses this and the secondary
-   cycles inside a repetition, and it errs to the unsafe side. The max-min count is the largest damage
-   over every order of the events, so it errs to the safe side: it can pair states that are not load
-   reversals of the real sequence, and counts at most one cycle per state and repetition.
-   The data file also gives the simple count (one cycle per repetition, duty cycles alone) for comparison.
+   cycles inside a repetition, and it errs to the unsafe side.
+   What the max-min count guarantees: no order of the duty cycles gives larger ranges. For stress in one
+   direction its ranges dominate those of a rainflow count (ASTM E1049) of the history in ANY order, and
+   the damage rises faster than the range, so without a mean stress correction its damage is an upper
+   bound. With the Goodman correction the same held for every order of 250 random histories with stresses
+   up to 2/3 of S_u (a test repeats this); it is not a theorem: with the mean stress at 90 % of S_u a
+   search found one history 0.6 % above it. The price of the bound: it can pair states that are not load
+   reversals of the real sequence (at most one cycle per state and repetition).
+   The data file and the statement also give the simple count (one cycle per repetition, each duty cycle
+   alone), so the reader sees how much the order matters.
 
 6. Damage: Miner's linear sum D = sum n_k / N_k over the counted cycles, at each node.
 
@@ -64,11 +70,14 @@ Method (what is computed, and where it comes from)
 
 7. Singular zones. The elastic stress has no limit at a sharp re-entrant edge (`geo["edges"]["reentrant"]`)
    and at the rim of a held face (the `fixed` and `displacement` items with faces in the `bcs` of the state
-   analyses). The nodes on them come from the finest mesh file of the structural analysis (`f<tag>`
-   groups; an edge is the nodes that its two faces share). The zone of an edge or face is everything nearer
-   than EXCLUSION_ELEMENTS (3) element sizes of the finest mesh there, about two elements of the next
-   coarser mesh. `damage.total@smooth` leaves the zones out. Its value still depends on that distance when
-   its node is at the rim of a zone; the note of the result says so.
+   analyses; point restraints without faces are not zones). The nodes on them come from the finest mesh
+   file of the structural analysis (`f<tag>` groups; an edge is the nodes that its two faces share, as in
+   the structural engine). The zone of an edge or face is everything nearer than EXCLUSION_ELEMENTS (3)
+   element sizes of the finest mesh there, about two elements of the next coarser mesh.
+   `damage.total@smooth` leaves the zones out. When its node is at the rim of a zone whose nodes have more
+   damage (within RIM_FACTOR x the distance), the value is the singular field cut off at that distance:
+   the note says so and the status is `not_converged`. When a zone cannot be found in the mesh, no result
+   is converged, and when none can be found `damage.total@smooth` has no value.
 
 8. Convergence. The damage is computed on the two finest meshes. For the node with the largest damage
    on the finest mesh, the nearest node of the coarser mesh is taken (the meshes share no nodes), and
@@ -77,8 +86,10 @@ Method (what is computed, and where it comes from)
    the uncertainty of the DAMAGE: the larger relative difference between the two meshes of (a) the
    damage at that location and (b) the largest damage in the zone. Because D ~ dS^(-1/b), a 1 % change in
    stress is about a 10 % change in damage for b = -0.1; the margin must see that, the status must not
-   demand a stress that is converged to 0.5 %. `singular`: the node is in a singular zone and the range
-   grows under refinement. One mesh only: `not_converged`.
+   demand a stress that is converged to 0.5 %.
+   A node in a singular zone is never `converged` (the rule of the structural engine for its peaks): it is
+   `singular` when the range grows by more than GROWTH (0.1 %) from the coarser to the finest mesh, else
+   `not_converged`; its `uncertainty` is empty. One mesh only: `not_converged`, no uncertainty.
 
 9. Validity. Elastic stress-life is right only where the material stays elastic. Two checks per zone:
    the largest range dS <= 2 S_y (elastic shakedown), and the largest von Mises stress of a state <= S_y
@@ -138,6 +149,8 @@ from dossier.records import Journal
 EXCLUSION_ELEMENTS = 3.0     # element sizes of the finest mesh left out around a singular edge or a held face
 HELD_BC_TYPES = ("fixed", "displacement")   # BC items of a structural analysis that hold a face
 MIN_CYCLES = 0.5             # one load reversal: the smallest number of cycles to failure
+GROWTH = 1e-3                # a stress range grows under refinement when it rises by more than this (relative)
+RIM_FACTOR = 2.0             # the rim of a singular zone: out of the zone, within this x its distance
 NODE_TOLERANCE = 1e-9        # two meshes are the same when their nodes differ by less than this x the part size
 PAIRS_PER_CHUNK = 1_500_000  # nodes x pairs of time points evaluated at once (memory)
 UNLOADED = "the unloaded state"
@@ -861,7 +874,8 @@ def _zone_result(key: str, zone: str, levels: list[Level], nodals: list[Nodal], 
     r.uncertainty = worst - 1.0 if math.isfinite(worst) else None
     r.convergence = {"levels": [coarse.level, fine.level], "pair": [a, b], "node_distance": float(dist),
                      "range_fine": range_f, "range_coarse": range_c,
-                     "range_change": change if math.isfinite(change) else None, "grows": range_f > range_c,
+                     "range_change": change if math.isfinite(change) else None,
+                     "grows": range_f > range_c * (1.0 + GROWTH),
                      "damage_fine": r.value, "damage_coarse": float(nodal_c.damage[c]),
                      "damage_ratio_at_node": here if math.isfinite(here) else None,
                      "damage_ratio_of_zone": peak if math.isfinite(peak) else None,
@@ -870,11 +884,13 @@ def _zone_result(key: str, zone: str, levels: list[Level], nodals: list[Nodal], 
 
 
 def _status(r: ZoneResult, zones: Zones, two_levels: bool) -> str:
+    """A result in a singular zone, or cut off at the rim of one, is never converged: the stress there has
+    no limit, and two meshes can hide the growth (the rule of the structural engine for its peaks)."""
     if r.value is None:
         return "not_run"
-    if r.in_singular and two_levels and r.convergence.get("grows"):
-        return "singular"
-    if not zones.located or not two_levels:
+    if r.in_singular:
+        return "singular" if two_levels and r.convergence.get("grows") else "not_converged"
+    if r.rim or not zones.located or not two_levels:
         return "not_converged"
     if not (r.elastic["shakedown"]["passed"] and r.elastic["yield"]["passed"]):
         return "not_converged"
@@ -934,57 +950,65 @@ def _distances(zones: Zones) -> str:
 
 def _cycle_sentences(c: dict, points: list[Point]) -> list[str]:
     a, b = points[c["a"]].label, points[c["b"]].label
-    life = (f"The Basquin relation gives {_num(c['cycles_to_failure'])} cycles to failure."
+    life = ([f"The Basquin relation gives {_num(c['cycles_to_failure'])} cycles to failure."]
             if c["cycles_to_failure"] > MIN_CYCLES else
-            "The corrected stress amplitude is over the fatigue strength coefficient. "
-            f"The analysis uses {_num(MIN_CYCLES)} cycles to failure.")
+            ["The corrected stress amplitude is over the fatigue strength coefficient.",
+             f"The analysis uses {_num(MIN_CYCLES)} cycles to failure."])
     return [f"The critical cycle is between {a} and {b}, with {_count_text(c['count'], 'repetition')}.",
             f"Its stress range is {_pa(c['range'])}, its stress amplitude is {_pa(c['amplitude'])} and its mean stress "
             f"is {_pa(c['mean_stress'])}.",
-            life,
+            *life,
             f"This cycle gives {_pct(c['share'])} of the damage at this node."]
 
 
-def _status_sentences(r: ZoneResult, zones: Zones, sn: SN, limit: float) -> list[str]:
-    """Why the result has its status, and what the reader must know about its accuracy."""
-    out = []
+def _accuracy(r: ZoneResult, zones: Zones, sn: SN, limit: float) -> list[list[str]]:
+    """Why the result has its status and what the reader must know about its accuracy: a paragraph about
+    the mesh, one about a singular zone and one about the validity of the method (six sentences or fewer)."""
+    mesh, zone, valid = [], [], []
     cv = r.convergence
     if r.status == "singular":
-        out += [f"The critical node is in the singular zone of {r.near}.",
-                f"The stress range of the critical cycle increases from {_pa(cv['range_coarse'])} to "
-                f"{_pa(cv['range_fine'])} between the two finest meshes.",
-                "The elastic stress at a sharp re-entrant edge or at the rim of a held face has no limit.",
-                "The value depends on the mesh and is not a result of the part."]
+        zone += [f"The critical node is in the singular zone of {r.near}.",
+                 f"The stress range of the critical cycle increases from {_pa(cv['range_coarse'])} to "
+                 f"{_pa(cv['range_fine'])} between the two finest meshes.",
+                 "The elastic stress at a sharp re-entrant edge or at the rim of a held face has no limit.",
+                 "The value changes with the mesh and is not a result of the part."]
     elif not cv:
-        out.append("The analysis has the stress fields of one mesh only. It gives no mesh uncertainty.")
+        mesh += ["The analysis has the stress fields of one mesh only.", "It gives no mesh uncertainty."]
     elif cv["range_change"] is None:
-        out.append("The stress range of the critical cycle is zero on one of the two finest meshes.")
+        mesh.append("The stress range of the critical cycle is zero on one of the two finest meshes.")
     else:
-        out.append(f"The stress range of the critical cycle changes by {_pct(cv['range_change'])} between the two "
-                   f"finest meshes. The policy limit is {_pct(limit)}.")
-    if cv and r.status != "singular" and r.in_singular:
-        out.append(f"The critical node is in the singular zone of {r.near}.")
-    if cv and r.uncertainty is not None and r.value:
-        out.append(f"The damage is in proportion to the stress range to the power {_num(sn.power)}. "
-                   f"The damage changes by a factor of {_num(1.0 + r.uncertainty)} between the two finest meshes.")
+        mesh += [f"The stress range of the critical cycle changes by {_pct(cv['range_change'])} between the two finest "
+                 f"meshes.", f"The policy limit is {_pct(limit)}."]
+    if r.status != "singular" and r.in_singular:
+        zone += [f"The critical node is in the singular zone of {r.near}.",
+                 "The elastic stress has no limit there, and two meshes can hide an increase.",
+                 "This result cannot have the status converged."]
+    if cv and cv.get("damage_ratio_of_zone") is not None and r.value:
+        factor = max(cv["damage_ratio_of_zone"], cv["damage_ratio_at_node"] or 1.0)
+        mesh += [f"The damage is in proportion to the stress range to the power {_num(sn.power)}.",
+                 f"The damage changes by a factor of {_num(factor)} between the two finest meshes."]
     e = r.elastic
     if e and not (e["shakedown"]["passed"] and e["yield"]["passed"]):
-        out += [f"The stress is over the elastic range in the {_zone_name(r.zone)} (see the checks).",
-                "The elastic stress-life method does not apply at those nodes. "
-                "The damage there can be too small or too large."]
+        valid += [f"The stress is over the elastic range in the {_zone_name(r.zone)} (see the checks).",
+                  "The elastic stress-life method does not apply at those nodes.",
+                  "The damage there can be too small or too large."]
     if not zones.located:
-        out.append("The analysis did not find all singular zones in the mesh. Then no result can have the status "
-                   "converged.")
-    return out
+        valid += ["The analysis did not find all singular zones in the mesh.",
+                  "Then no result can have the status converged."]
+    return [p for p in (mesh, zone, valid) if p]
 
 
 def _zone_name(zone: str) -> str:
     return "part" if zone == "part" else "smooth zone"
 
 
+def _text(paragraphs: list[list[str]]) -> str:
+    return "\n\n".join(" ".join(p) for p in paragraphs if p)
+
+
 def _notes(part: ZoneResult, smooth: ZoneResult, zones: Zones, sn: SN, limit: float) -> None:
-    part.note = " ".join(["This is the largest damage of all nodes, for the specified repetitions without a life factor.",
-                          *_status_sentences(part, zones, sn, limit)])
+    part.note = _text([["This is the largest damage of all nodes, for the specified repetitions without a life factor."],
+                       *_accuracy(part, zones, sn, limit)])
     if smooth.value is None:
         why = ("The analysis did not find the singular zones in the mesh." if zones.wanted else
                "The part has no node out of the singular zones.")
@@ -997,9 +1021,9 @@ def _notes(part: ZoneResult, smooth: ZoneResult, zones: Zones, sn: SN, limit: fl
         head = [f"This value leaves out the nodes nearer than {_distances(zones)} to a sharp re-entrant edge or a held "
                 f"face.", "It is for information only."]
         if smooth.rim:
-            head.append(f"The critical node is at the rim of the singular zone of {smooth.rim}. "
-                        f"The value changes with the distance.")
-    smooth.note = " ".join([*head, *_status_sentences(smooth, zones, sn, limit)])
+            head += [f"The critical node is at the rim of the singular zone of {smooth.rim}.",
+                     "The value changes with the distance. It cannot have the status converged."]
+    smooth.note = _text([head, *_accuracy(smooth, zones, sn, limit)])
 
 
 def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], part: ZoneResult, smooth: ZoneResult,
@@ -1012,30 +1036,29 @@ def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], 
               f"It uses {_count_text(len(duty), 'duty cycle')} and the elastic stress fields of "
               f"{_count_text(len(bases), 'structural load case')}.",
               ("It calculates the damage on the two finest meshes." if len(levels) > 1 else
-               "It calculates the damage on one mesh."),
-              "A cycle is a pair of stress states. Its stress range is the von Mises stress of the difference between "
-              "the two stress tensors.",
+               "It calculates the damage on one mesh.")],
+             ["A cycle is a pair of stress states.",
+              "Its stress range is the von Mises stress of the difference between the two stress tensors.",
               (f"The Basquin relation gives the cycles to failure, with the {rule} for the mean stress." if rule else
                "The Basquin relation gives the cycles to failure, without a mean stress correction."),
-              "The Miner rule adds the damage of all cycles at each node."]]
-    p2 = [f"The largest damage in the part is {_num(part.value)}, for the specified repetitions without a life factor.",
-          f"The critical node is at {_at(part.location)}" + (f", at {part.near}." if part.near else ".")]
+              "The Miner rule adds the damage of all cycles at each node."],
+             [f"The largest damage in the part is {_num(part.value)}, for the specified repetitions without a life "
+              f"factor.",
+              f"The critical node is at {_at(part.location)}" + (f", at {part.near}." if part.near else "."),
+              f"This result has the status {part.status.replace('_', ' ')}."]]
     if part.cycles:
         lead = max(part.cycles, key=lambda q: (q["damage"], q["corrected_amplitude"], q["range"]))
-        p2 += _cycle_sentences(lead, points)
+        paras.append(_cycle_sentences(lead, points))
     else:
-        p2.append("No cycle has a stress range at this node.")
-    paras.append(p2)
-    paras.append([f"This result has the status {part.status.replace('_', ' ')}.",
-                  *_status_sentences(part, zones, sn, limit)])
+        paras.append(["No cycle has a stress range at this node."])
+    paras += _accuracy(part, zones, sn, limit)
     if smooth.value is not None and zones.features:
-        p3 = [f"Out of the singular zones, the largest damage is {_num(smooth.value)} at {_at(smooth.location)}"
-              + (f", at {smooth.near}." if smooth.near else "."),
-              f"The singular zones are the nodes nearer than {_distances(zones)} to a sharp re-entrant edge or a held "
-              f"face.",
-              "This value is for information only.",
-              f"It has the status {smooth.status.replace('_', ' ')}."]
-        paras.append(p3)
+        paras.append([f"Out of the singular zones, the largest damage is {_num(smooth.value)} at {_at(smooth.location)}"
+                      + (f", at {smooth.near}." if smooth.near else "."),
+                      f"The singular zones are the nodes nearer than {_distances(zones)} to a sharp re-entrant edge or "
+                      f"a held face.",
+                      "This value is for information only.",
+                      f"It has the status {smooth.status.replace('_', ' ')}."])
     elif smooth.value is None:
         paras.append([smooth.note])
     if part.simple is not None:
@@ -1045,7 +1068,7 @@ def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], 
                       "The cycle count of this analysis includes them."])
     for d in part.duty:
         if d["a"] is None:
-            paras.append([f"Duty cycle {d['duty_cycle']} has no repetition or no stress state. It gives no damage."])
+            paras.append([f"Duty cycle {d['duty_cycle']} has no repetition or no stress state.", "It gives no damage."])
             continue
         a, b = points[d["a"]].label, points[d["b"]].label
         paras.append([f"Duty cycle {d['duty_cycle']} has {_count_text(d['count'], 'repetition')}.",
@@ -1054,7 +1077,7 @@ def _statement(project, lc: LoadCase, points: list[Point], levels: list[Level], 
                       f"One such cycle for each repetition gives {_num(d['cycles_to_failure'])} cycles to failure and "
                       f"a damage of {_num(d['damage_alone'])}.",
                       f"The cycle count gives this duty cycle {_pct(d['share'])} of the damage at the critical node."])
-    return "\n\n".join(" ".join(p) for p in paras)
+    return _text(paras)
 
 
 def _checks(lc: LoadCase, ctx, points: list[Point], levels: list[Level], part: ZoneResult, smooth: ZoneResult,
@@ -1118,15 +1141,17 @@ def _checks(lc: LoadCase, ctx, points: list[Point], levels: list[Level], part: Z
         text += (" The material does not yield." if y["passed"] else
                  f" {_count_text(y['nodes_over'], 'node')} of {_num(y['nodes'], 7)} "
                  f"{'is' if y['nodes_over'] == 1 else 'are'} over the yield strength. "
-                 f"The material yields in the first cycle at these nodes. "
-                 f"The mean stress of the elastic analysis is then not correct. "
-                 f"A strain-life method with a plasticity correction is necessary there.")
-        if e["floor_nodes"]:
-            text += (f" At {_count_text(e['floor_nodes'], 'node')}, the corrected stress amplitude is over the fatigue "
-                     f"strength coefficient of {_pa(sn.sigma_f)}. The analysis uses {_num(MIN_CYCLES)} cycles to failure "
-                     f"there.")
+                 f"The material yields in the first cycle there, and the mean stress of the elastic analysis is not "
+                 f"correct. A strain-life method with a plasticity correction is necessary there.")
         out.append(Check(id=cid(f"yield-{r.zone}"), kind="elastic_range", statement=text, passed=y["passed"],
                          value=y["value"], limit=y["limit"]))
+        if e["floor_nodes"]:
+            out.append(Check(id=cid(f"basquin-{r.zone}"), kind="fatigue_data", passed=False,
+                             value=float(e["floor_nodes"]), limit=0.0,
+                             statement=f"At {_count_text(e['floor_nodes'], 'node')} of the {where}, the corrected stress "
+                                       f"amplitude is over the fatigue strength coefficient of {_pa(sn.sigma_f)}. "
+                                       f"The Basquin relation gives no life there. "
+                                       f"The analysis uses {_num(MIN_CYCLES)} cycles to failure at these nodes."))
         cv = r.convergence
         if not cv:
             out.append(Check(id=cid(f"convergence-{r.zone}"), kind="error_estimate", passed=None, limit=limit,
@@ -1135,7 +1160,7 @@ def _checks(lc: LoadCase, ctx, points: list[Point], levels: list[Level], part: Z
         else:
             ch = cv["range_change"]
             text = (f"At the critical node of the {where}, the stress range of the critical cycle is "
-                    f"{_pa(cv['range_coarse'])} on the coarser mesh and {_pa(cv['range_fine'])} on the finest mesh. "
+                    f"{_pa(cv['range_fine'])} on the finest mesh. It is {_pa(cv['range_coarse'])} on the coarser mesh. "
                     + (f"The change is {_pct(ch)}. " if ch is not None else "")
                     + f"The policy limit is {_pct(limit)}.")
             out.append(Check(id=cid(f"convergence-{r.zone}"), kind="error_estimate", statement=text,
@@ -1204,7 +1229,7 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
                     "The count then continues with the repetitions that stay, until it finds no more pairs. "
                     "The states of all duty cycles and the unloaded state are in one count.",
              rationale="The system model gives the repetitions of each duty cycle, but not the order of the duty cycles. "
-                       "This count gives the largest damage of all possible orders. "
+                       "No order of the duty cycles can give larger stress ranges than this count. "
                        "It also counts the secondary cycles in a duty cycle. "
                        "ASME BPVC Section VIII Division 2, Annex 5-B, paragraph 5-B.5 gives this count.",
              alternatives=[("Count one cycle of the largest stress range for each repetition of each duty cycle.",
@@ -1234,8 +1259,10 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
         j.decide(s, "convergence", "Mesh convergence and uncertainty of the damage",
                  choice="The convergence criterion is the change of the stress range of the critical cycle at the "
                         f"critical node between the two finest meshes. The limit is {_pct(limit)} (policy). "
-                        "The uncertainty of the damage is the larger of two relative differences between the two "
-                        "meshes: the damage at the critical node, and the largest damage in the zone.",
+                        "The uncertainty of the damage is the larger of two relative differences between the two meshes. "
+                        "The first is the damage at the critical node. The second is the largest damage in the zone. "
+                        "A result with its critical node in a singular zone, or at the rim of one, cannot have the "
+                        "status converged.",
                  rationale="The policy limit applies to a response of the finite element analysis, which is the stress. "
                            f"The damage is in proportion to the stress range to the power {_num(sn.power)}. "
                            f"A change of the stress range of 1 % changes the damage by {_pct(1.01 ** sn.power - 1)}. "
@@ -1263,12 +1290,17 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
                  basis="rule", links=[("uses", mat.id)])
 
     # ---- what the analysis takes as true
-    j.assume(s, "order", "Order of the duty cycles",
+    least = (f" The count of one cycle for each repetition of each duty cycle gives {_num(part.simple)}."
+             if part.simple is not None else "")
+    j.assume(s, "order", "Order of the duty cycles and load reversals in a duty cycle",
              statement="The system model does not give the order of the duty cycles in the life of the part. "
-                       "The cycle count uses the order that gives the largest damage.",
+                       "The cycle count pairs the stress states for the largest stress ranges. "
+                       "It takes each state of a duty cycle as a possible load reversal.",
              rationale="The system model gives the number of repetitions of each duty cycle only. "
-                       "A cycle between two duty cycles occurs when they alternate.",
-             impact="With a specified order of the duty cycles, the damage can be smaller. It cannot be larger.",
+                       "A cycle between two duty cycles occurs when they alternate. "
+                       "A count for one specified order cannot give larger stress ranges.",
+             impact="With a specified order of the duty cycles, the damage can be smaller than this analysis gives."
+                    f"{least}",
              verify_by="Compare with the operation plan of the part.", conservative=True)
     j.assume(s, "states", "Stress between the states of a duty cycle",
              statement="Between two states of a duty cycle, the stress is not larger than in these states. "
@@ -1300,7 +1332,7 @@ def _journal(j: Journal, project, lc: LoadCase, mat, sn: SN, points: list[Point]
                        "The geometry record does not show the welds or the surface finish.",
              impact="A weld or a rough surface has a smaller fatigue strength than a smooth specimen. "
                     "The damage at such a location is then larger than this analysis gives.",
-             verify_by="Find the welds and the surface finish on the drawing. Apply the reduction factors of the "
+             verify_by="Find the welds and the surface finish in the design data. Apply the reduction factors of the "
                        "applicable standard.",
              conservative=False, links=[("uses", mat.id)])
     j.assume(s, "unloaded-state", "No stress in the unloaded state",
@@ -1418,13 +1450,18 @@ def _run(project, ctx, geo: dict, lc: LoadCase, workdir: Path, opts, t0: float) 
             continue
         k = int(classes[-1][1][r.node])
         r.near = zones.features[k].label if k >= 0 else zones.face_at(r.location, geo)
-        if r.zone == "smooth" and zones.features:          # is the node at the rim of a singular zone?
-            for f in zones.features:
+        if r.zone == "smooth":
+            # At the rim of a singular zone whose nodes have more damage, the value is the singular field cut
+            # off at the distance of the zone: it follows the distance, not the part.
+            for q, f in enumerate(zones.features):
                 d, _ = f.tree().query(fine.x[r.node])
-                if d <= 2.0 * f.distance:
+                mine = classes[-1][1] == q
+                if d <= RIM_FACTOR * f.distance and mine.any() and float(nodals[-1].damage[mine].max()) > r.value:
                     r.rim = f.label
                     break
         r.status = _status(r, zones, two)
+        if r.in_singular:
+            r.uncertainty = None                           # a value without a limit has no uncertainty
     _notes(part, smooth, zones, sn, limit)
 
     # ---- files

@@ -13,9 +13,15 @@ from typing import Any, Iterable
 
 
 class H(str):
-    """HTML that is already safe to put in the page."""
+    """HTML that is already safe to put in the page. `+` keeps it safe: the other side is escaped unless it is H."""
 
     __slots__ = ()
+
+    def __add__(self, other: Any) -> "H":
+        return H(str.__add__(self, esc(other)))
+
+    def __radd__(self, other: Any) -> "H":
+        return H(str.__add__(esc(other), self))
 
 
 def esc(x: Any) -> H:
@@ -100,6 +106,17 @@ class Own:
         """A short label of the report: a column head, a field name, a button caption."""
         self.add("label", text)
         return esc(text)
+
+    def lt(self, template: str, *parts: Any) -> H:
+        """A label with `{}` places for values: a part of a sentence, not a sentence ("ratio from {} to {}")."""
+        segs = template.split("{}")
+        if len(segs) - 1 != len(parts):
+            raise ValueError(f"template {template!r} has {len(segs) - 1} places, got {len(parts)} parts")
+        out = [esc(segs[0])]
+        for part, seg in zip(parts, segs[1:]):
+            out += [esc(part), esc(seg)]
+        self.add("label", " ".join(" ".join(segs).split()))
+        return H("".join(out))
 
     def heading(self, text: str) -> H:
         self.add("heading", text)

@@ -46,6 +46,8 @@ class Token:
     tech: bool = False                       # a part of a project technical name, or a technical verb
     name: str = ""                           # LATIN: the group of the abbreviation
     first: bool = False                      # the first word of the sentence
+    proper: bool = False                     # a word with a capital letter inside a sentence (a name)
+    known: bool = False                      # a part of a group of words that the dictionary approves
 
     def __post_init__(self):
         if not self.lower:
@@ -364,9 +366,14 @@ def tokens_of(text: str, masked: str, spans: dict, a: int, b: int, latin: re.Pat
                     if part == "/":
                         out.append(Token(OP, "/", p, p + 1))
                     elif part:
-                        out.append(Token(_classify(part) or WORD, text[p:p + len(part)], p, p + len(part)))
+                        k = _classify(part) or WORD
+                        if k == WORD and part == "A":
+                            k = VAR
+                        out.append(Token(k, text[p:p + len(part)], p, p + len(part)))
                     p += len(part)
             else:
+                if kind == WORD and run == "A" and any(t.kind in COUNTED for t in out):
+                    kind = VAR                                  # "option A", "N/A": a letter, not the article
                 out.append(Token(kind, text[i:end], i, end))
             i = end
             continue
