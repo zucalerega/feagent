@@ -858,7 +858,7 @@ def _assumptions(j: Journal, project, ctx, geo: dict, lc: LoadCase, ideal: Ideal
             rationale=(f"The system context gives no thermal effect for these faces"
                        + (f" in the phase {lc.phase}." if lc.phase else ".")
                        + " The analysis does not guess a heat transfer coefficient or a temperature of an adjacent part."),
-            impact=" ".join(impact) + "\n\n" + " ".join(temps),
+            impact=" ".join(impact) + "\n\n" + "\n\n".join(temps),
             verify_by="Compare the temperature of each adjacent part with the temperatures that the analysis gives on "
                       "its faces. If the difference is important, add a thermal effect for the interface to the "
                       "system context.",

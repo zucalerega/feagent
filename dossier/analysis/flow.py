@@ -927,8 +927,8 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
     reqs = sorted({c.requirement for c in lc.criteria})
     j.decide(sub, "pressure-drop", "Definition of the pressure drop",
              choice=f"The pressure drop is the static pressure {TAP_UP:g} diameters upstream of the inlet face less the "
-                    f"static pressure {TAP_DOWN:g} diameters downstream of the outlet face, less the friction loss of "
-                    f"these two lengths.",
+                    f"static pressure {TAP_DOWN:g} diameters downstream of the outlet face. "
+                    f"From this difference, the engine subtracts the friction loss of these two lengths.",
              rationale="This is the pressure drop that a flow test of the part measures. The flow is developed at "
                        "the two positions, thus the static pressure difference is the loss of total pressure. The "
                        "result includes the loss downstream of the part that the steps cause. The friction loss "
@@ -1049,8 +1049,8 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
     j.decide(sub, "uncertainty", "Uncertainty of the pressure drop",
              choice="The uncertainty of the result is the sum of the mesh part, the model part and the roughness part.",
              rationale=" ".join(parts[:-1] if opts.quick else parts)
-                       + (" In the validation, the model gave a friction loss that is 3 % to 5 % too low and a loss at a "
-                          "sudden expansion that is 7 % too high. The model part covers the two errors."
+                       + (" In the validation, the model gave a friction loss that is 3 % to 5 % too low. "
+                          "It gave a loss at a sudden expansion that is 7 % too high. The model part covers the two errors."
                           if regime == "turbulent" else ""),
              alternatives=[("Give the mesh part only.",
                             "The error of the turbulence model is larger than the mesh error, thus the margin must include it.")],

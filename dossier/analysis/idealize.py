@@ -475,7 +475,7 @@ class Idealizer:
                        "features. The point c is the area centroid of the faces. The vector w is the moment divided "
                        "by the tensor of the second moments of area of the faces.",
                 rationale="On a flat face this field is the linear normal stress of beam theory for the moment "
-                          "components in the plane, with the product of inertia. For the component along the normal "
+                          "components in the plane. The product of inertia is in the field. For the component along the normal "
                           "it is a shear stress in proportion to the distance from the centroid. The net force of the "
                           "field is zero. The engine integrates the field on each mesh and checks its moment.",
                 alternatives=[("Apply the moment as two opposite point forces.",
@@ -506,7 +506,7 @@ class Idealizer:
                           "the gasket, and the system context does not give these local forces.",
                 impact="The stress next to a loaded seat face is approximate. The stress at a distance of more than "
                        "the width of the seat face does not change.",
-                verify_by="Compare the governing stress location with the loaded seat faces.",
+                verify_by="Compare the location of the governing stress with the loaded seat faces.",
                 conservative=None, links=[ld.item.effect for ld in self.loads if ld.kind in ("force", "moment")],
                 by="rule:structural.load_path")
         held = [h.interface for h in self.held]

@@ -1190,7 +1190,8 @@ def _late_decisions(j: Journal, lc: LoadCase, ideal: Idealizer, data: list[Level
     rule = ("One mesh level gives no convergence study, so no result is converged." if n == 1 else
             f"With two mesh levels the uncertainty is {SAFETY_TWO_LEVELS:g} times the change between the levels." if n == 2
             else "With three mesh levels the uncertainty is the larger of two grid convergence indexes "
-                 f"(safety factors 1.25 and 3), or {SAFETY_SPREAD:g} times the spread when the values show no order.")
+                 f"(safety factors 1.25 and 3). When the values show no order, the uncertainty is "
+                 f"{SAFETY_SPREAD:g} times the spread.")
     j.decide(
         subject=lc.id, key="convergence", title="Rule for the convergence status of a result",
         choice=f"The engine calls a result converged when its discretization uncertainty is not more than "
