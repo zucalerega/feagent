@@ -79,38 +79,59 @@ class Result(ABC):
 
 
 def dominant_frequency(times, values) -> float:
-    """The dominant frequency (Hz) of a sampled, nearly periodic signal: the mean is removed and the
-    frequency is one over the mean time between upward zero crossings (crossing times are interpolated
-    linearly between samples). Needs at least two full periods; raises ValueError otherwise. For a signal
-    with several strong frequencies this is the mean crossing rate, not a spectral peak."""
+    """The dominant frequency (Hz) of a sampled, nearly periodic signal. A straight-line fit is removed
+    first (a mean and a slow drift), then the frequency is one over the mean time between upward zero
+    crossings (crossing times are interpolated linearly between samples). Raises ValueError when the series
+    has fewer than two full periods or fewer than 8 samples per period: a signal that is sampled too coarsely
+    would otherwise give a wrong, lower frequency without any sign. For a signal with several strong
+    frequencies this is the mean crossing rate, not a spectral peak."""
     t = np.asarray(times, dtype=float)
     y = np.asarray(values, dtype=float)
     if t.size < 8 or t.size != y.size:
         raise ValueError("dominant_frequency needs at least 8 samples")
-    y = y - np.trapezoid(y, t) / (t[-1] - t[0])
+    span = t[-1] - t[0]
+    if not span > 0:
+        raise ValueError("dominant_frequency needs increasing times")
+    y = y - np.polyval(np.polyfit(t - t[0], y, 1), t - t[0])
     up = np.nonzero((y[:-1] < 0.0) & (y[1:] >= 0.0))[0]
     if up.size < 3:
         raise ValueError(f"dominant_frequency needs at least two full periods in the window "
                          f"({max(up.size - 1, 0)} found)")
     tc = t[up] - y[up] * (t[up + 1] - t[up]) / (y[up + 1] - y[up])
-    return float((tc.size - 1) / (tc[-1] - tc[0]))
+    f = float((tc.size - 1) / (tc[-1] - tc[0]))
+    per_period = (t.size - 1) / (span * f)
+    if per_period < 8.0:
+        raise ValueError(f"dominant_frequency: only {per_period:.1f} samples per period of the frequency found "
+                         f"({f:.4g} Hz); at least 8 are needed, so use a smaller time step or keep more steps")
+    return f
+
+
+def _window(t: np.ndarray, y: np.ndarray, window) -> tuple[np.ndarray, np.ndarray]:
+    """The part of a series inside [t0, t1], with the values at the two ends interpolated."""
+    t0, t1 = max(float(window[0]), float(t[0])), min(float(window[1]), float(t[-1]))
+    if not t1 > t0:
+        if float(window[0]) <= t[-1] and float(window[1]) >= t[0] and t1 == t0:      # the window is one instant
+            return np.array([t0]), np.array([float(np.interp(t0, t, y))])
+        raise ValueError(f"reduce_series: the window {list(window)} is outside the series "
+                         f"({t[0]:g} to {t[-1]:g})")
+    eps = 1e-12 * max(abs(float(t[-1])), 1.0)
+    inner = (t > t0 + eps) & (t < t1 - eps)
+    tw = np.concatenate([[t0], t[inner], [t1]])
+    return tw, np.interp(tw, t, y)
 
 
 def reduce_series(times, values, how=None, window=None) -> float:
     """One number from a time series, as ``QoI.time`` asks: None = the last value; a number = the value at
     that time (linear between steps); "max", "min", "max_abs"; "mean" and "rms" (time-weighted, of the value
-    itself); "frequency" (``dominant_frequency``). ``window`` = [t0, t1] restricts the series first."""
+    itself); "frequency" (``dominant_frequency``). ``window`` = [t0, t1] restricts the series first; the
+    values at the window ends are interpolated. A mean or an rms needs a span of time: a window that holds
+    one instant raises ValueError."""
     t = np.asarray(times, dtype=float)
     y = np.asarray(values, dtype=float)
     if t.shape != y.shape or t.size == 0:
         raise ValueError("reduce_series: times and values must be 1D arrays of the same, non-zero length")
     if window is not None:
-        eps = 1e-12 * max(abs(float(t[-1])), 1.0)
-        keep = (t >= window[0] - eps) & (t <= window[1] + eps)
-        if not keep.any():
-            raise ValueError(f"reduce_series: no time step in the window {list(window)} "
-                             f"(steps from {t[0]:g} to {t[-1]:g})")
-        t, y = t[keep], y[keep]
+        t, y = _window(t, y, window)
     if how is None:
         return float(y[-1])
     if isinstance(how, (int, float)) and not isinstance(how, bool):
@@ -124,8 +145,8 @@ def reduce_series(times, values, how=None, window=None) -> float:
     if how == "max_abs":
         return float(np.abs(y).max())
     if how in ("mean", "rms"):
-        if t.size < 2:
-            return float(y[0]) if how == "mean" else float(abs(y[0]))
+        if t.size < 2 or not t[-1] > t[0]:
+            raise ValueError(f"reduce_series: a {how} needs a span of time, and the series or window holds one instant")
         span = t[-1] - t[0]
         return float(np.trapezoid(y, t) / span) if how == "mean" else float(np.sqrt(np.trapezoid(y * y, t) / span))
     if how == "frequency":

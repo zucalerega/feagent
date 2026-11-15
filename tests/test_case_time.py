@@ -52,6 +52,7 @@ def test_transient_options_are_validated():
     assert "cannot depend on t" in errors(dict(TR, initial={"T": "300 + t"}))
     assert "output_times or output_every" in errors(dict(TR, output_times=[1.0], output_every=2))
     assert "max_co is for flow" in errors(dict(TR, max_co=1.0))
+    assert "not a whole number of steps" in errors({"t_end": 1.0, "dt": 0.4})
 
 
 def test_time_dependent_values_need_a_transient_analysis():
@@ -113,6 +114,17 @@ def test_reductions_of_a_series():
     assert reduce_series(t, t**2, None, [0.0, 1.0]) == pytest.approx(1.0)
     with pytest.raises(ValueError, match="two full periods"):
         dominant_frequency(t[:40], y[:40])
+    # a slow drift under the oscillation does not change the frequency (the trend is removed first)
+    drift = t + 0.2 * np.sin(2 * np.pi * 10.0 * t)
+    assert dominant_frequency(t, drift) == pytest.approx(10.0, rel=1e-3)
+    # a signal sampled too coarsely is refused, not read as a lower frequency
+    coarse = np.linspace(0.0, 2.0, 19)
+    with pytest.raises(ValueError, match="samples per period|two full periods"):
+        dominant_frequency(coarse, np.sin(2 * np.pi * 10.0 * coarse))
+    # a window: its ends are interpolated, and a mean needs a span of time
+    assert reduce_series(t, t, "mean", [0.5001, 1.4999]) == pytest.approx(1.0, abs=1e-9)
+    with pytest.raises(ValueError, match="span of time"):
+        reduce_series(t, t, "mean", [1.0, 1.0])
     with pytest.raises(ValueError, match="outside the series"):
         reduce_series(t, y, 5.0)
 

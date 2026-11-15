@@ -473,7 +473,8 @@ class Case:
                     errs.append(f"{tag}: where only for fixed / displacement / temperature on a group")
                 else:
                     try:
-                        _compile(b.where)
+                        if "t" in _compile(b.where).co_names:
+                            errs.append(f"{tag}: a where filter selects nodes once; it cannot depend on the time t")
                     except (CaseError, SyntaxError) as e:
                         errs.append(f"{tag}: bad where expression: {e}")
             if b.type == "displacement":
@@ -690,6 +691,10 @@ def _validate_time(case: "Case") -> list[str]:
             errs.append(f"{tag}: give exactly one of dt (s) and n_steps")
         elif dt is not None and (not _num(dt) or not dt > 0 or (t_end is not None and dt > t_end)):
             errs.append(f"{tag}.dt must be a number > 0 and at most t_end")
+        elif dt is not None and t_end is not None and abs(t_end / dt - round(t_end / dt)) > 1e-6 * max(t_end / dt, 1.0) \
+                and tr.get("max_co") is None:
+            errs.append(f"{tag}: t_end / dt = {t_end / dt:.6g} is not a whole number of steps; give a dt that "
+                        f"divides t_end, or n_steps (the solver would otherwise change the step in silence)")
         elif n is not None and (not isinstance(n, int) or isinstance(n, bool) or n < 1):
             errs.append(f"{tag}.n_steps must be an integer >= 1")
         schemes = TRANSIENT_SCHEMES.get(a.physics, ())
