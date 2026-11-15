@@ -1097,36 +1097,65 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
     values = [lv.dp for lv in levels]
     sizes = [1.0 / lv.m for lv in levels]
     est = mesh_uncertainty(sizes, values)
-    value = values[-1]
+    smooth = values[-1]                     # the solver's value: smooth walls
     u_mesh = est["uncertainty"]
-    friction_share = min(1.0, max(0.0, levels[-1].gradient * bore.length / value)) if value > 0 else 1.0
-    u_model = MODEL_UNCERTAINTY if regime == "turbulent" else 0.0
-    u_rough = rough_part * friction_share
+    # every part in Pa first; the uncertainty of the result is their sum over the reported value
+    corr = (fr_rough[KS_PER_RA] - fr_smooth) if fr_rough else 0.0
+    value = smooth + corr
+    friction_share = min(1.0, max(0.0, fr_smooth / smooth)) if smooth > 0 else 1.0
+    a_model = (MODEL_UNCERTAINTY if regime == "turbulent" else 0.0) * abs(smooth)
+    a_rough = max(abs(fr_rough[k] - fr_smooth - corr) for k in KS_PER_RA_RANGE) if fr_rough else 0.0
+    iter_spread = max((lv.qoi_change["spread"] for lv in levels if not lv.converged and lv.qoi_change),
+                      default=0.0)
+    a_iter = iter_spread * abs(smooth)
+    alt = [v for t, v in levels[-1].dp_taps.items() if t != TAP_DOWN and math.isfinite(v)]
+    tap_spread = max((abs(v / smooth - 1.0) for v in alt), default=0.0) if smooth else 0.0
+    a_tap = tap_spread * abs(smooth) if tap_spread >= TAP_NEGLIGIBLE else 0.0
     solved = all(lv.solved for lv in levels)
     max_u = float(project.policy.max_uncertainty)
-    if u_mesh is None:
+    if u_mesh is None or value <= 0:
         status, total = "not_converged", None
     else:
-        total = u_mesh + u_model + u_rough
+        a_mesh = u_mesh * abs(smooth)
+        total = (a_mesh + a_model + a_iter + a_rough + a_tap) / value
         status = "converged" if (est["estimated"] and u_mesh <= max_u and solved and value > 0) else "not_converged"
-    parts = [f"The mesh study gives {_pct(u_mesh)} ({est['method']})." if u_mesh is not None
-             else "One mesh gives no estimate of the mesh error."]
+
+    def part(a: float) -> str:
+        return f"{_pa(a)} ({_pct(a / value) if value else '-'})"
+
+    parts = []
+    if corr:
+        parts.append(f"The pressure drop is the solver's value for smooth walls, {_pa(smooth)}, plus the roughness "
+                     f"correction of the friction loss, {_pa(corr)} (ks = {KS_PER_RA:g} Ra; the friction of the "
+                     f"sections, each with its own diameter, is {_pct(friction_share, 0)} of the smooth value).")
+    parts.append(f"The mesh study gives {part(u_mesh * abs(smooth))} ({est['method']})." if u_mesh is not None
+                 else "One mesh gives no estimate of the mesh error.")
     if regime == "turbulent":
-        parts.append(f"The turbulence model adds {_pct(u_model, 0)}.")
-        if u_rough > 0:
-            parts.append(f"The wall roughness adds {_pct(u_rough)}: the friction part is "
-                         f"{_pct(friction_share, 0)} of the pressure drop.")
+        parts.append(f"The turbulence model adds {part(a_model)} ({_pct(MODEL_UNCERTAINTY, 0)} of the solver's value).")
+    if a_iter > 0:
+        parts.append(f"The iteration part adds {part(a_iter)}: the residuals stalled, and over the last "
+                     f"{QOI_WINDOW} iterations the pressure drop spread over {_pct(iter_spread, 3)}.")
+    if a_rough > 0:
+        parts.append(f"The roughness correction adds {part(a_rough)}: the change of the correction for ks = "
+                     f"{KS_PER_RA_RANGE[0]:g} Ra to {KS_PER_RA_RANGE[1]:g} Ra.")
+    if a_tap > 0:
+        parts.append(f"The position of the downstream pressure tap adds {part(a_tap)}: the pressure drop changes by "
+                     f"{_pct(tap_spread, 2)} with the tap at {' or '.join(f'{t:g}' for t in TAP_DOWN_ALT)} diameters.")
     if total is not None:
-        parts.append(f"The uncertainty of the result is the sum, {_pct(total)}.")
+        parts.append(f"The uncertainty of the result is the sum, {_pa(total * value)} ({_pct(total)}).")
     if opts.quick:
         parts.append("The meshes are coarse. This result is a first look.")
     an.results[RESULT_KEY] = ResultValue(
         key=RESULT_KEY, value=float(value), unit="Pa", uncertainty=total, status=status,
         error_estimated=bool(est["estimated"] and total is not None and solved),
-        per_level=[float(v) for v in values], extrapolated=est["extrapolated"], order=est["order"], method="fe",
+        per_level=[float(v + corr) for v in values],
+        extrapolated=None if est["extrapolated"] is None else float(est["extrapolated"] + corr),
+        order=est["order"], method="fe",
         near="the bore from the inlet face to the outlet face", note=" ".join(parts))
     j.decide(sub, "uncertainty", "Uncertainty of the pressure drop",
-             choice="The uncertainty of the result is the sum of the mesh part, the model part and the roughness part.",
+             choice="The uncertainty of the result is the sum of the mesh part, the model part, the iteration part "
+                    "(stalled runs), the uncertainty of the roughness correction and the tap position part (when it "
+                    "is not negligible).",
              rationale=" ".join(parts[:-1] if opts.quick else parts)
                        + (" In the validation, the model gave a friction loss that is 3 % to 5 % too low. "
                           "It gave a loss at a sudden expansion that is 7 % too high. The model part covers the two errors."
@@ -1214,19 +1243,27 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
     bad = [i for i, lv in enumerate(levels) if not lv.solved]
     stalled = [i for i, lv in enumerate(levels) if lv.solved and not lv.converged]
     res_worst = max((max(lv.residuals.values()) for lv in levels if lv.residuals), default=float("nan"))
+    def window_text(idx: list[int]) -> str:
+        qc = [levels[i].qoi_change for i in idx if levels[i].qoi_change]
+        if not qc:
+            return (f" The run is too short for the check of the pressure drop over the last {QOI_WINDOW} iterations "
+                    f"(at least {QOI_MIN_SNAPSHOTS} snapshots, one every {HISTORY_INTERVAL} iterations).")
+        return (f" Over the last {QOI_WINDOW} iterations ({min(c['snapshots'] for c in qc)} or more snapshots, one every "
+                f"{HISTORY_INTERVAL} iterations), the pressure drop spread over {_pct(max(c['spread'] for c in qc), 3)} "
+                f"(largest minus smallest), and a straight line through the snapshots changes it by "
+                f"{_pct(max(c['trend'] for c in qc), 3)} from the start of the window to the end of the run. The limit "
+                f"is {_pct(QOI_TOL, 1)} for each.")
+
     if bad:
         text = (f"The solver did not reach the residual tolerance of {setup.residual_tol:g} on mesh "
-                f"{', '.join(str(i) for i in bad)}. The largest residual at the end is {res_worst:.1e}.")
-        changes = [lv.qoi_change["change"] for lv in levels if lv.qoi_change]
-        if changes:
-            text += (f" In the last {QOI_WINDOW} iterations the pressure drop changed by up to {_pct(max(changes), 2)}. "
-                     f"The limit is {_pct(QOI_TOL, 1)}.")
+                f"{', '.join(str(i) for i in bad)}. The largest residual at the end is {res_worst:.1e}; a stalled run "
+                f"needs residuals under {RESIDUAL_STALL_MAX:.0e} and a steady pressure drop."
+                + window_text([i for i in bad if not levels[i].converged]))
     elif stalled:
-        changes = [levels[i].qoi_change["change"] for i in stalled]
         text = (f"The residuals did not decrease any more on mesh {', '.join(str(i) for i in stalled)}, at {res_worst:.1e} or "
-                f"less (limit {RESIDUAL_STALL_MAX:.0e}). In the last {QOI_WINDOW} iterations the pressure drop changed "
-                f"by {_pct(max(changes), 3)} or less (limit {_pct(QOI_TOL, 1)}). Thus the iteration error of the "
-                f"result is small."
+                f"less (limit {RESIDUAL_STALL_MAX:.0e}, the stall level of the validation behind a sudden expansion)."
+                + window_text(stalled)
+                + " The spread is added to the uncertainty of the result as the iteration part."
                 + (f" The other meshes reached the residual tolerance of {setup.residual_tol:g}."
                    if len(stalled) < len(levels) else ""))
     else:
@@ -1259,7 +1296,9 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
         spread = max(abs(v / fine.dp - 1.0) for v in alt)
         add("tap-position", "sensitivity",
             f"The pressure drop changes by {_pct(spread, 2)} when the downstream pressure tap moves to "
-            f"{' or '.join(f'{t:g}' for t in TAP_DOWN_ALT)} diameters. The limit is {_pct(TAP_TOL, 0)}.",
+            f"{' or '.join(f'{t:g}' for t in TAP_DOWN_ALT)} diameters. The limit is {_pct(TAP_TOL, 0)}."
+            + (f" The change is added to the uncertainty of the result." if spread >= TAP_NEGLIGIBLE else
+               f" The change is less than {_pct(TAP_NEGLIGIBLE, 1)} and is not added to the uncertainty."),
             spread <= TAP_TOL, spread, TAP_TOL)
     if fine.dp:
         ratio = fine.dp_total_faces / fine.dp
@@ -1279,7 +1318,7 @@ def _checks(an_id: str, levels: list[Level], setup: Setup, bore: Bore, regime: s
     if u_mesh is not None:
         vals = ", ".join(_pa(lv.dp) for lv in levels)
         add("mesh-study", "error_estimate",
-            f"The pressure drop on the meshes is {vals}, coarse to fine. The mesh uncertainty of the finest value "
+            f"The pressure drop on the meshes (the solver's values, smooth walls) is {vals}, coarse to fine. The mesh uncertainty of the finest value "
             f"is {_pct(u_mesh)}. The policy permits {_pct(max_u, 0)}."
             + ("" if u_mesh <= max_u else " The uncertainty is more than this limit, and the status and the uncertainty of the result show it. "
                "This check is information only."),
