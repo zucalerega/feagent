@@ -59,6 +59,7 @@ _DIRICHLET = ("fixed", "displacement", "symmetry")
 _NEUMANN = ("pressure", "traction", "force")
 _DISPLACEMENT_FIELDS = ("ux", "uy", "uz", "u_mag")
 HHT_ALPHA_DEFAULT = -0.05
+SMALL_FOR_SUPERLU = 30000     # unknowns below which the kept factorizations use SuperLU unless a solver is named
 
 
 # --------------------------------------------------------------------------- values in time
@@ -363,6 +364,9 @@ def solve(case: Case, **options) -> "SkfemDynamicsResult":
     opts = {**(a.options or {}), **options}
     md = skb._Model(case, opts)
     method = opts.get("linear_solver")
+    step_method = method
+    if method is None and md.N < SMALL_FOR_SUPERLU:
+        step_method = "scipy"        # PARDISO's solve phase costs milliseconds even for a small system
     scheme = tr.get("scheme") or "newmark"
     alpha = float(tr["alpha"]) if tr.get("alpha") is not None else (HHT_ALPHA_DEFAULT if scheme == "hht" else 0.0)
     damp = (opts.get("damping") or {}).get("rayleigh", [0.0, 0.0])
@@ -436,7 +440,7 @@ def solve(case: Case, **options) -> "SkfemDynamicsResult":
     MI_I = M[I][:, I].tocsr()
     r0 = f - K @ u - (C @ v if C is not None else 0.0) - M[:, D] @ aD0
     if np.any(r0[I] != 0.0):
-        mfac = Factorization(MI_I, method, definite=True)
+        mfac = Factorization(MI_I, step_method, definite=True)
         acc[I] = mfac.solve(r0[I])
         mfac.close()
 
@@ -448,7 +452,7 @@ def solve(case: Case, **options) -> "SkfemDynamicsResult":
     Keff = Keff.tocsr()
     KII = Keff[I][:, I].tocsr()
     KID = Keff[I][:, D].tocsr()
-    fac = Factorization(KII, method, definite=True)
+    fac = Factorization(KII, step_method, definite=True)
     notes = [f"linear solver: {s}" for s in fac.notes]
 
     # QoIs evaluated at every step
@@ -459,7 +463,7 @@ def solve(case: Case, **options) -> "SkfemDynamicsResult":
             qmap[k] = q
             keys.append(k)
         need_stress |= _needs_stress(q)
-    recover = _Recovery(md, method)
+    recover = _Recovery(md, step_method)
     shared = {"locator": _LocatorMemo(Locator(md.mesh, md.md.bbox_diag)), "integrals": {}}
     kept = _kept_steps(tr, times)
     kept_set = set(int(k) for k in kept)
