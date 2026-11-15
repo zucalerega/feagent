@@ -217,6 +217,26 @@ caption and numbers are in [`talk_plots/cfd/`](talk_plots/cfd/README.md).
 
 ---
 
+## Verification dossier (`dossier/`)
+
+The same fixed solver also serves a different question: does one component meet its specification, in the
+context of the system it works in, and is the specification itself right? `dossier` takes YAML inputs (the system
+with its phases and loads, the component with its CAD and named features, the requirements) and runs seven stages:
+context, geometry, validate, plan, analyze, assess, report. It checks the specification against the system,
+selects and scales the load cases, runs structural, thermal, fatigue and flow analyses with hand-calculation
+checks, and gives each requirement a verdict (pass, fail, inconclusive or not assessed) with its margin. Every
+record links to what it rests on, and a person reviews decisions and assumptions. The result is one linked
+report. The worked example is the body of a liquid-oxygen valve with invented data and six planted defects in
+its specification. In a full run it finds all six defects and gives 4 passes, 3 inconclusive verdicts and 3 not assessed, with no fail. It runs from the command line (`python -m dossier run dossier/examples/mov_valve`)
+and from the dashboard's Projects page. Language-model reviewer roles exist but have not run through the API on
+a real model. Details, rules and limits: [`dossier/README.md`](dossier/README.md).
+
+The solver also has transient heat conduction, modal analysis, transient dynamics, transient incompressible
+flow, turbulent flow (RANS, in a validated range only) and compressible internal flow:
+[`docs/solver_transient.md`](docs/solver_transient.md).
+
+---
+
 ## Technical description
 
 ### Repository layout
@@ -233,6 +253,7 @@ caption and numbers are in [`talk_plots/cfd/`](talk_plots/cfd/README.md).
 | [`meshing-harness/`](meshing-harness/README.md) | The YAML-spec gmsh mesh harness (package `feagent`): STEP → a named, quality-gated mesh, with an MCP server and a skill for Claude Code agents. |
 | [`experiments/`](experiments/README.md) | The mesh-system study and crush-to-failure runs of Result 4, the material fit, the wingbox, the DGX Spark scripts. |
 | [`wsp/`](wsp/README.md) | Teaching a small open model to mesh: weight-space programming and LoRA distillation, scored like the swarm. |
+| [`dossier/`](dossier/README.md) | Verification of one component by analysis in the context of its system: validated specification, load cases, analyses, verdicts, a linked report, reviews. |
 | [`single_agent/`](single_agent/README.md) | One analyst agent (Opus or Sonnet) from component design data to a verified analysis, graded by a deterministic scorecard; no swarm. |
 | `feabench/`, `teams/`, `docs/` | The benchmark-suite runner; Sculptured team definitions; solver, benchmark and dashboard docs. |
 | `scripts/` | Setup, baselines, figure and video scripts, and the gold pipeline. |
@@ -291,7 +312,7 @@ trained 8-agent swarm (`--init-from`). `--pre-teach` lets the teacher adapt thei
   Run it with `python -m feacore.cli case.json --out result.json`.
 - **Backends:** scikit-fem is the solver of record (CPU, with an optional NVIDIA cuDSS direct solve on GPU).
   CalculiX is an independent cross-check and runs the elastoplastic J2/NLGEOM path. OpenFOAM solves the flow
-  problems: steady, laminar, with forces and probes computed in numpy (`docs/solver_openfoam.md`).
+  problems: steady laminar, steady turbulent RANS in a validated range, compressible, and transient laminar, with forces and probes computed in numpy (`docs/solver_openfoam.md`, `docs/solver_transient.md`).
 - **Verification:**
   - Richardson extrapolation and GCI (Celik et al. 2008);
   - method-of-manufactured-solutions code checks;

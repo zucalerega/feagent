@@ -1,0 +1,29 @@
+# EXAMPLE VALUES for this demonstration. E, density and the strength minimums follow the usual
+# room-temperature data of the named specification; the thermal and fatigue values are illustrative.
+# Replace every number with the value of your material specification and give its source.
+materials:
+  - id: MAT-316L
+    name: Stainless steel 316L, forged, annealed
+    spec: ASTM A182 F316L
+    source: Example values. Strength minimums as usually quoted for ASTM A182 F316L at room temperature.
+    note: >
+      Austenitic stainless steel. Its strength increases at low temperature, so room-temperature strength
+      is conservative for cryogenic service. Thermal properties are mean values between 90 K and 293 K.
+    E: 193 GPa
+    nu: 0.29
+    rho: 7990 kg/m^3
+    alpha: 13.0e-6 1/K
+    k: 12 W/(m*K)
+    cp: 400 J/(kg*K)
+    yield_strength: 170 MPa
+    ultimate_strength: 485 MPa
+    properties_temperature: 293.15 K
+    service_temperature: [4 K, 700 K]
+    compatibility: {LOX: ok, kerosene: ok, helium: ok}
+    fatigue:
+      model: basquin
+      sigma_f: 1000 MPa
+      b: -0.10
+      mean_stress: goodman
+      source: Illustrative stress-life constants. Not design data.
+      note: Stress amplitude S_a = sigma_f (2N)^b at zero mean stress.

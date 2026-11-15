@@ -65,7 +65,12 @@ def test_case_check(problem, order):
     assert case.analysis.physics == "flow"
     assert case.analysis.formulation == problem.formulation
     assert case.analysis.order == order
-    assert case.analysis.options.get("residual_tol", 1) <= 1e-6
+    # Laminar problems converge tightly: 1e-6 or less. A steady RANS run (k-omega SST with wall functions,
+    # SIMPLE) stalls above 1e-6: the turbulent validation runs stop converged at 1e-5 (final initial residuals
+    # p < 5e-7, k and omega < 5e-6, U up to 4e-5 in minor components that the backend rescales by max|U|;
+    # docs/solver_transient.md, "Turbulent flow (RANS)"). So a turbulent problem is held to 1e-5, no looser.
+    turbulent = case.analysis.options.get("turbulence", "laminar") != "laminar"
+    assert case.analysis.options.get("residual_tol", 1) <= (1e-5 if turbulent else 1e-6)
     m = case.material_for("fluid")
     assert m.rho > 0 and m.mu > 0
     names = [q.name for q in case.qois]
@@ -78,7 +83,9 @@ def test_case_check(problem, order):
     for r in refs:
         assert r.qoi in names
         assert r.kind in REFERENCE_KINDS
-        assert 0 < r.tolerance <= 0.05
+        # a RANS reference also carries the model error (validation: friction -4.7 % to -2.6 %, separation
+        # loss +7 %; the stated model uncertainty is 10 %), so a turbulent problem may state up to 10 %
+        assert 0 < r.tolerance <= (0.10 if turbulent else 0.05)
         assert len(r.source) > 40 and ("http" in r.source or "(19" in r.source or "(20" in r.source)
         assert math.isfinite(r.value) and r.value != 0
 

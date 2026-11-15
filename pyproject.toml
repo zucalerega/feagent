@@ -1,7 +1,7 @@
 [project]
 name = "feagent"
 version = "0.1.0"
-description = "Agentic FEA: meshing harness (feagent) plus the fixed solver, solution verification and benchmarks (feacore)"
+description = "Agentic FEA: meshing harness (feagent), the fixed solver with solution verification and benchmarks (feacore), and verification of a component by analysis in its system context (dossier)"
 readme = "README.md"
 authors = [
     { name = "Alexander Aghili", email = "alexander.w.aghili@gmail.com" }
@@ -12,7 +12,9 @@ dependencies = [
     "mcp[cli]>=2.3.0",
     "meshio>=5.3",
     "numpy>=2.5.4",
+    "pint>=0.24",
     "pyamg>=5.4.1",
+    "pydantic>=2",
     "pyvista>=0.49.2",
     "pyyaml>=6.0.3",
     "scikit-fem>=12.0.2",
@@ -39,7 +41,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["meshing-harness/src/feagent", "feacore", "ace", "feabench", "wsp", "single_agent"]
+packages = ["meshing-harness/src/feagent", "feacore", "ace", "feabench", "wsp", "single_agent", "dossier"]
 
 [dependency-groups]
 dev = [

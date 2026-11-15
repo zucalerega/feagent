@@ -23,8 +23,17 @@ Options (``analysis.options`` or keywords): ``turbulence`` ("laminar"), ``max_it
 ``residual_tol`` (1e-8: initial residuals of p and U, as ``residualControl``), ``relaxation_U``
 (0.9), ``relaxation_p`` (none: SIMPLEC), ``n_non_orth_correctors`` (0), ``timeout`` (s),
 ``case_dir`` (run there instead of a temp dir and keep it), ``keep_case`` (keep the temp dir),
-``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size), ``skew_correction``
-("auto": on in 3D, off in 2D; or true / false). See docs/solver_openfoam.md.
+``turbulence_intensity`` (0.05), ``turbulence_length`` (0.07 * hydraulic size), ``turbulence_velocity``
+(reference speed of the inlet k: default the largest constant inlet speed, 1 m/s when every inlet is an
+expression), ``skew_correction`` ("auto": on in laminar 3D, off in 2D and in turbulent runs; or true / false), ``history_interval``
+(none: also write the fields every N iterations; ``OpenFOAMResult.history_times()`` / ``at_time()`` read
+them, e.g. to judge iterative convergence by a QoI when the residuals stall). See docs/solver_openfoam.md.
+
+Turbulent runs (RANS) use wall functions on every wall (``nutkWallFunction``, ``kqRWallFunction``,
+``omegaWallFunction``): the first cell must be in the log layer. ``OpenFOAMResult.y_plus(group)`` gives y+ of
+the wall faces and a turbulent solve reports its range (an ``info`` line; a warning when part of the wall is
+under y+ = 30, and one when more than 5 % of a wall's area is outside the validated 60-1600), and warns when
+the mesh has cells other than hexahedra. Validation and limits: docs/solver_transient.md, "Turbulent flow (RANS)".
 """
 
 from __future__ import annotations
@@ -48,7 +57,7 @@ from feacore.solver.base import Result, SolveInfo
 
 KNOWN_OPTIONS = ("turbulence", "max_iterations", "residual_tol", "relaxation_U", "relaxation_p",
                  "n_non_orth_correctors", "timeout", "case_dir", "keep_case", "turbulence_intensity",
-                 "turbulence_length", "skew_correction")
+                 "turbulence_length", "skew_correction", "turbulence_velocity", "history_interval")
 DEFAULTS = {"turbulence": "laminar", "max_iterations": 5000, "residual_tol": 1e-8, "relaxation_U": 0.9,
             "relaxation_p": None, "n_non_orth_correctors": 0, "timeout": None, "turbulence_intensity": 0.05,
             "skew_correction": "auto"}
@@ -205,6 +214,15 @@ def solve(case: Case, **options) -> "OpenFOAMResult":
         return _foam_compressible.solve(case, **options)
     if a.physics != "flow":
         raise CaseError(f"the openfoam backend solves physics 'flow' and 'compressible' only (got {a.physics!r})")
+    if a.transient is not None:               # pimpleFoam (feacore/solver/_foam_transient.py)
+        try:
+            from feacore.solver import _foam_transient
+        except ModuleNotFoundError as e:
+            if e.name != "feacore.solver._foam_transient":
+                raise
+            raise NotImplementedError("openfoam backend: transient flow is not installed in this version "
+                                      "(feacore.solver._foam_transient)") from e
+        return _foam_transient.solve(case, **options)
     if fio.FOAMLIB_ERROR is not None:
         raise ImportError(f"the openfoam backend needs foamlib (pip install foamlib): {fio.FOAMLIB_ERROR}")
     mat = _fluid_material(case)
@@ -221,7 +239,7 @@ def solve(case: Case, **options) -> "OpenFOAMResult":
         raise CaseError(f"analysis.options.turbulence must be 'laminar' or one of {RAS_MODELS}")
     if turbulence not in ("laminar", "kOmegaSST", "kOmega"):
         raise CaseError(f"turbulence model {turbulence!r} is not wired up yet (use laminar or kOmegaSST)")
-    opts["skew_correction"] = _skew_correction(opts["skew_correction"], case.dim)
+    opts["skew_correction"] = _skew_correction(opts["skew_correction"], case.dim, turbulence != "laminar")
     tol = float(opts["residual_tol"])
     max_it = int(opts["max_iterations"])
     mesh_path = case.mesh_path()
@@ -264,7 +282,8 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
         if r.group != "*" and r.group not in fm.cell_groups:
             warnings.append(f"region group {r.group!r} is not a cell group of the mesh "
                             f"(cell groups: {sorted(fm.cell_groups)}); the fluid fills the whole mesh")
-    fio.write_control(cdir, max_it)
+    hist = opts.get("history_interval")
+    fio.write_control(cdir, max_it, interval=int(hist) if hist else None)
     run(fe, ["gmshToFoam", "mesh.msh"], cdir, timeout=timeout)
     bcs = _patch_bcs(case, fm, warnings)
     types = {p: (PATCH_TYPE[bc.type] if bc is not None else "wall") for p, bc in bcs.items()}
@@ -282,6 +301,8 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
 
     turbulent = turbulence != "laminar"
     turb = _turbulence_inlet(case, fm, opts, nu) if turbulent else None
+    if turbulent:
+        _cell_type_warning(fm, warnings)
     closed = not any(b.type == "pressure_outlet" for b in case.bcs)
     ref = {"pRefCell": 0, "pRefValue": 0.0} if closed else None
     skew = opts["skew_correction"]
@@ -331,6 +352,8 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
 
     res = OpenFOAMResult(case, fm, cdir, rho, nu, closed, warnings)
     res._load(poly, tdir)
+    if turbulent:
+        _report_y_plus(res, case, warnings)
     if stagnated:
         # A minor velocity component (e.g. Uy of a nearly parallel flow) has its residual normalised
         # by its own small scale, so it stalls at a round-off floor. Rescaled by max|U| it is converged.
@@ -362,12 +385,14 @@ def _run(case, fe, cdir: Path, opts, rho, nu, turbulence, tol, max_it, warnings,
     return res
 
 
-def _skew_correction(value, dim: int) -> bool:
-    """Option ``skew_correction``: "auto" (on in 3D), or a bool. 3D tet meshes need it: with the plain
+def _skew_correction(value, dim: int, turbulent: bool = False) -> bool:
+    """Option ``skew_correction``: "auto" (on in laminar 3D), or a bool. 3D tet meshes need it: with the plain
     schemes their solution converges to a wrong one (pressure gradient 12-15 % high in a pipe or a
-    channel). 2D triangle meshes are accurate without it, so 2D keeps the validated plain schemes."""
+    channel). 2D triangle meshes are accurate without it, so 2D keeps the validated plain schemes. A
+    turbulent (RANS) run keeps the plain schemes: the RANS validation used them, on hexahedra (and on
+    tetrahedra and prisms the skew-corrected schemes did worse: -26 % and +13 to +17 %)."""
     if value == "auto" or value is None:
-        return dim == 3
+        return dim == 3 and not turbulent
     if isinstance(value, bool):
         return value
     raise CaseError(f"analysis.options.skew_correction must be 'auto', true or false (got {value!r})")
@@ -385,6 +410,56 @@ def _is_time(name: str) -> bool:
         return False
 
 
+Y_PLUS_LOG = 30.0      # wall functions: the first cell centre should be above this y+ (log layer)
+Y_PLUS_VALIDATED = (60.0, 1600.0)   # y+ range of the RANS validation (docs/solver_transient.md)
+Y_PLUS_SHARE = 0.05    # a warning when more than this share of a wall's area is outside the validated range
+RANS_CELLS = {2: {"quad"}, 3: {"hexahedron"}}     # cell types of the RANS validation (2D: extruded to hexahedra)
+
+
+def _cell_type_warning(fm: FoamMesh, warnings: list) -> None:
+    """A turbulent run on cells other than hexahedra is outside the validated range."""
+    types = set(fm.cell_type.split("+")) - {""}
+    other = sorted(types - RANS_CELLS.get(fm.dim, set()))
+    if other:
+        warnings.append(f"turbulent run on {', '.join(other)} cells: the RANS model is validated on hexahedra only "
+                        f"(developed pipe flow: tetrahedra gave a friction factor 15 to 26 % low, triangular prisms "
+                        f"13 to 17 % high; docs/solver_transient.md, 'Turbulent flow (RANS)'). Use a hexahedral "
+                        f"mesh or state a model uncertainty of that size.")
+
+
+def _report_y_plus(res: "OpenFOAMResult", case: Case, warnings: list) -> None:
+    """info line with the y+ range of each wall group; a warning when part of a wall is under Y_PLUS_LOG, and
+    one when more than Y_PLUS_SHARE of a wall's area is outside the validated range Y_PLUS_VALIDATED."""
+    for b in case.bcs:
+        if b.type != "wall" or b.group not in res.patch:
+            continue
+        try:
+            y = res.y_plus(b.group)
+        except (CaseError, ValueError):
+            continue
+        yp, a = y["y_plus"], y["area"]
+        if yp.size == 0:
+            continue
+        order = np.argsort(yp)
+        cum = np.cumsum(a[order]) / a.sum()
+        pct = {q: float(yp[order][min(int(np.searchsorted(cum, q)), yp.size - 1)]) for q in (0.05, 0.5, 0.95)}
+        low = float(a[yp < Y_PLUS_LOG].sum() / a.sum())
+        warnings.append(f"info: y+ on wall {b.group!r} ({y['basis']}): 5 % {pct[0.05]:.3g}, median {pct[0.5]:.3g}, "
+                        f"95 % {pct[0.95]:.3g} of the wall area")
+        if low > 0.05:
+            warnings.append(f"y+ is under {Y_PLUS_LOG:g} on {low:.0%} of wall {b.group!r}: the wall functions need "
+                            f"the first cell in the log layer there (validated range y+ 60-1600, "
+                            f"docs/solver_transient.md)")
+        lo, hi = Y_PLUS_VALIDATED
+        below = float(a[(yp >= Y_PLUS_LOG) & (yp < lo)].sum() / a.sum())
+        above = float(a[yp > hi].sum() / a.sum())
+        if below + above > Y_PLUS_SHARE:
+            warnings.append(f"y+ is outside the validated range {lo:g}-{hi:g} on {below + above:.0%} of wall "
+                            f"{b.group!r} ({below:.0%} between {Y_PLUS_LOG:g} and {lo:g}, {above:.0%} above {hi:g}): "
+                            f"the wall-function results are not validated there (the friction factor drifts with "
+                            f"y+; docs/solver_transient.md, 'Turbulent flow (RANS)')")
+
+
 def _turbulence_inlet(case: Case, fm: FoamMesh, opts: dict, nu: float) -> dict:
     """k and omega from a turbulence intensity and a length scale (inlet speed from the BCs)."""
     speeds = []
@@ -392,6 +467,8 @@ def _turbulence_inlet(case: Case, fm: FoamMesh, opts: dict, nu: float) -> dict:
         if b.type == "velocity_inlet" and not _is_expr(b.value):
             speeds.append(float(np.linalg.norm(b.value)) if isinstance(b.value, list) else abs(float(b.value)))
     Uref = max(speeds) if speeds else 1.0
+    if opts.get("turbulence_velocity"):
+        Uref = float(opts["turbulence_velocity"])
     I = float(opts.get("turbulence_intensity") or 0.05)
     size = float(np.min(np.ptp(fm.bbox, axis=0))) if fm.bbox is not None else 1.0
     L = float(opts.get("turbulence_length") or 0.07 * size)
@@ -423,6 +500,7 @@ class OpenFOAMResult(Result):
 
     # ---- load results
     def _load(self, poly: dict, tdir: Path) -> None:
+        self._poly, self.time = poly, float(tdir.name)
         nb = fio.read_list(self.cdir / "constant" / "polyMesh" / "neighbour").astype(np.int64)
         mesh = FvMesh(poly["points"], poly["faces"], poly["owner"], nb, poly["patches"])
         self.mesh = mesh
@@ -433,6 +511,7 @@ class OpenFOAMResult(Result):
         p, bp = fio.read_field(tdir / "p", n)
         p = p.ravel()
         nut_b, nut = {}, None
+        self.k = fio.read_field(tdir / "k", n)[0].ravel() if (tdir / "k").exists() else None
         if (tdir / "nut").exists():
             nut, bnut = fio.read_field(tdir / "nut", n)
             nut = nut.ravel()
@@ -477,6 +556,42 @@ class OpenFOAMResult(Result):
         self.gradU = mesh.grad(U, Ub)                         # [c, i, j] = d U_j / d x_i
         self.gradp = mesh.grad(p, pb) * self.rho
         self.p = (p - self.pshift) * self.rho
+
+    def history_times(self) -> list[float]:
+        """Iterations with written fields (all of them with option history_interval), ascending."""
+        return sorted(float(d.name) for d in Path(self.cdir).iterdir()
+                      if d.is_dir() and _is_time(d.name) and float(d.name) > 0)
+
+    def at_time(self, time: float) -> "OpenFOAMResult":
+        """The solution at an earlier written iteration, as a result object (same case, mesh and info)."""
+        dirs = [d for d in Path(self.cdir).iterdir() if d.is_dir() and _is_time(d.name) and float(d.name) == float(time)]
+        if not dirs:
+            raise CaseError(f"no fields written at iteration {time:g} (use the option history_interval)")
+        r = OpenFOAMResult(self.case, self.fm, self.cdir, self.rho, self.nu, self.closed, list(self._warnings))
+        r._load(self._poly, dirs[0])
+        r.info = self.info
+        return r
+
+    def y_plus(self, group: str) -> dict:
+        """y+ of the cells next to the wall faces of `group`: {"y_plus", "area", "Cf", "basis"} (arrays per
+        face). Turbulent runs: from k, y+ = Cmu^0.25 sqrt(k) y / nu, as the wall functions compute it;
+        laminar runs: from the wall shear, y+ = y u_tau / nu. y is the wall-normal distance of the cell centre."""
+        if group not in self.patch:
+            raise CaseError(f"no boundary group {group!r} in the flow result")
+        mesh = self.mesh
+        sl = mesh.patch_slice(group)
+        own = mesh.owner[sl]
+        nrm = mesh.Sf[sl] / mesh.magSf[sl][:, None]
+        yn = np.abs(np.einsum("ij,ij->i", nrm, mesh.Cf[sl] - mesh.C[own]))
+        if self.k is not None:
+            yp = 0.09 ** 0.25 * np.sqrt(np.maximum(self.k[own], 0.0)) * yn / self.nu
+            basis = "k"
+        else:
+            ut = self.U[own] - nrm * np.einsum("ij,ij->i", self.U[own], nrm)[:, None]
+            tau = self._nu_b[group] * np.linalg.norm(ut, axis=1) / np.maximum(yn, 1e-300)
+            yp = yn * np.sqrt(tau) / self.nu
+            basis = "wall shear"
+        return {"y_plus": yp, "area": mesh.magSf[sl].copy(), "Cf": mesh.Cf[sl].copy(), "basis": basis}
 
     # ---- fields
     def _check_field(self, fld):

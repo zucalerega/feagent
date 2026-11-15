@@ -34,12 +34,18 @@ BC mapping (pressure in the case is static pressure in Pa; OpenFOAM gets p / rho
 | `symmetry` | `symmetry` | `symmetry` |
 | boundary group without a BC, `unassigned` | `noSlip` (with an info warning) | `zeroGradient` |
 
+Known limit: a `slip` wall is first-order accurate. In the transient Taylor-Green vortex the decay comes out
+too fast by 5.6 % of the viscous rate at 16 cells and 2.9 % at 32 with `slip` walls; the same case with
+`symmetry` converges with order 2. The likely cause is that on a plain patch the explicit viscous-stress
+gradient is extrapolated rather than mirrored. Use `symmetry` for a flat frictionless wall; keep `slip` for
+curved inviscid walls and expect first-order convergence there. Not fixed yet.
+
 RANS (`analysis.options.turbulence = "kOmegaSST"` or `"kOmega"`): the inlet k and omega come from
 `turbulence_intensity` (default 0.05) and `turbulence_length` (default 0.07 times the smallest bbox
 extent). Walls use `kqRWallFunction` / `omegaWallFunction` / `nutkWallFunction`; outlets use
 `inletOutlet`. This path is wired and sanity-checked: it runs, conserves mass and drags the walls.
-It is not validated, and SIMPLE + SST may stall around 1e-5 instead of reaching a tight
-`residual_tol`.
+SIMPLE + SST may stall around 1e-5 instead of reaching a tight `residual_tol`. The validation is in
+`docs/solver_transient.md`, section "Turbulent flow (RANS)".
 
 ## Results and QoIs
 
@@ -82,8 +88,8 @@ Options (`analysis.options`, or keywords to `solve`): `turbulence` ("laminar"), 
 (5000), `residual_tol` (1e-8), `relaxation_U` (0.9), `relaxation_p` (none: SIMPLEC),
 `n_non_orth_correctors` (0), `timeout` (seconds; the solver writes and stops at the limit),
 `case_dir` (run there and keep it; it must be new or empty, never in the repo), `keep_case`,
-`turbulence_intensity`, `turbulence_length`, `skew_correction` ("auto": on in 3D, off in 2D; or
-true / false).
+`turbulence_intensity`, `turbulence_length`, `skew_correction` ("auto": on in laminar 3D, off in 2D and
+in turbulent runs, whose validation used the plain schemes; or true / false).
 
 ## 3D meshes: skew-consistent schemes (`skew_correction`)
 
@@ -279,7 +285,9 @@ about 2 s.
 
 Supersonic flow of a perfect gas: `feacore/solver/_foam_compressible.py` (the backend dispatches on
 `analysis.physics`). Tests: `tests/test_supersonic.py`. The benchmark is `supersonic_blunt_wedge_2d`
-(`docs/benchmarks_cfd.md`, "Supersonic blunted wedge").
+(`docs/benchmarks_cfd.md`, "Supersonic blunted wedge"). Internal flow (a reservoir `total_inlet`, a
+`pressure_outlet` that switches between subsonic and supersonic outflow, the `mass_flow` QoI, the nozzle
+benchmarks `cd_nozzle_*_2d`): `docs/solver_transient.md`, "Compressible internal flow".
 
 - **Case:**
   - Material: `gamma`, `gas_constant` (J/(kg K)) and `mu`. `mu = 0` is inviscid (Euler); `mu > 0`
@@ -344,5 +352,6 @@ Supersonic flow of a perfect gas: `feacore/solver/_foam_compressible.py` (the ba
   (interior surfaces) are detected but not supported yet.
 * `write_vtu` writes cell centres with values as a point cloud. Use `case_dir` and ParaView for
   the full mesh.
-* RANS: only `kOmegaSST` / `kOmega` with wall functions, and not validated (see above).
+* RANS: only `kOmegaSST` / `kOmega` with wall functions. The validation and its limits are in
+  `docs/solver_transient.md`, section "Turbulent flow (RANS)".
 * A closed domain's pressure is defined up to a constant; it is reported with zero mean.

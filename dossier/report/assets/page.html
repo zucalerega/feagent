@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{TITLE}}</title>
+<style>{{CSS}}</style>
+</head>
+<body>
+{{SPRITE}}
+<a class="skip" href="#main">Skip to the content</a>
+<div class="shell">
+<nav class="side" id="side" aria-label="Sections of the report">
+  <div class="side-top">
+    <div class="side-name">{{HEADLINE}}</div>
+    <div class="side-tools">
+      <button type="button" class="btn ico" id="theme" title="Change between the light and the dark theme" aria-label="Change theme"><svg class="i"><use href="#i:moon"/></svg></button>
+      <button type="button" class="btn ico" id="sidex" title="Close the navigation" aria-label="Close the navigation"><svg class="i"><use href="#i:cross"/></svg></button>
+    </div>
+  </div>
+  <ol class="navl">{{NAV}}</ol>
+  <div class="side-foot" id="side-foot"></div>
+</nav>
+<button type="button" class="btn ico menu-btn" id="menu" aria-label="Open the navigation" aria-controls="side"><svg class="i"><use href="#i:menu"/></svg></button>
+<main id="main" class="main" tabindex="-1">
+{{BODY}}
+</main>
+</div>
+<div id="why-panel" class="why-panel" role="dialog" aria-modal="false" aria-label="What a record rests on" hidden></div>
+<div id="peek" class="peek" role="tooltip" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script id="dossier-data" type="application/json">{{DATA}}</script>
+<script>{{JS}}</script>
+</body>
+</html>

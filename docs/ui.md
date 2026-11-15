@@ -10,7 +10,7 @@ One web app for the whole project, `python -m feacore.ui`, on top of `feacore`. 
 - the **run store** (`feacore/runstore.py`): solves, studies, agent submissions and task outputs as files, readable by the evaluator and the improvers.
 - the **multi-agent consensus view**: every agent's answer with its own error band, against the population and the reference.
 
-Navigation: **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **Swarm** view), **Nonlinear**, **Test data**, **Runs**, **Tasks**, **Solve** and **Connect** (plus Health). Pages (single-page app, no build step, `feacore/ui/static/`):
+Navigation: **Projects**, **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **Swarm** view), **Nonlinear**, **Test data**, **Runs**, **Tasks**, **Solve** and **Connect** (plus Health). Pages (single-page app, no build step, `feacore/ui/static/`):
 
 | page | what it shows |
 |---|---|
@@ -23,6 +23,7 @@ Navigation: **Benchmarks**, **Gold**, **Your CAD**, **Agents** (with the live **
 | Swarm `#/swarm` | the ACE agent loop, live: loop and generation selectors, score distribution per generation, per-problem leaderboards (score, QoI vs reference, mesh, DOFs, solves, gates) linking to the field viewer and the problem's Consensus view. Empty state until the ACE bridge writes records |
 | Nonlinear `#/nonlinear` | nonlinear runs with their force-travel curves over the Instron test, run pages with videos and *Resume*, the analysis tools (scoring ramp, elastoplastic ramp, crush to fracture, renderers), the gallery. See "Nonlinear and Test data pages" below |
 | Test data `#/testdata` | the physical tests and printable parts; upload a machine export, check its parsing and save it as an `--evidence` folder |
+| Projects `#/projects` | `dossier` projects: list with stage status and verdict counts, one project with report, inputs, numbers, load cases and reviews, and buttons that run the pipeline as tasks. See "Projects page (dossier)" below |
 | Tasks `#/tasks` | every task (agent runs, gold meshing, crush runs, renders, ...) with its state, command, output folder and live log; *Stop* (graceful, where the tool supports it) and *Kill* |
 | Run study `#/study` | pick problem / backend / element order / refinement; live progress; per QoI: QoI vs log h with the Richardson extrapolation, the GCI band and the reference; error vs h (log-log, observed vs theoretical slope); verdict and flags in plain words |
 | Consensus `#/consensus/<problem>` | forest plot per QoI: each submission's finest-mesh value ± GCI, extrapolated value, consensus median, reference ± tolerance; per-submission verdicts and flags |
@@ -386,6 +387,17 @@ curl -X POST $S/api/cad/uploads/<upload>/sets -H 'Content-Type: application/json
   (`ace.config.TASKS` entry: scored QoI and node cap). Without a reference its runs are judged
   reference-free (`ace.infer`: ZZ estimate, agreement); the `cad.reference` tool or a finished P2 study
   (`POST /api/cad/problems/<id>/adopt`) certifies references with the gold rules.
+
+## Projects page (dossier)
+
+`#/projects` is the entry point for `dossier`, the package that verifies one component by analysis in the context of its system (`dossier/CONTRACTS.md`). Projects live in `<runs dir>/dossier/<folder>/`. *New project from example* copies a shipped example (`dossier/examples/`, like `python -m dossier new`); the examples themselves are never written.
+
+- **List**: a card per project with the component, a strip of the seven stages (done, stale, not run), verdict counts, major findings and review progress.
+- **One project** (`#/projects/<folder>`): the buttons *Check inputs*, *Run verification (quick)*, *Run verification (full)* and *Build report* start tasks (tools `dossier.run`, `dossier.report`, group `dossier`) with the live log. Tabs: *Report* (the report page in a frame, reloaded when a run ends), *Inputs* (the YAML files and a text editor; Save writes the file and shows the problems with file, line and message), *Numbers*, *Load cases*, *Reviews*.
+- A stage whose engine is missing fails plainly in the task log and the stage status.
+- **API** (`/api/dossier`, `feacore/ui/dossier_api.py`): list and create, `{project}` status, `/check`, `/tasks`, `/files` (GET, PUT for input YAML only, `/cad/{component}` upload), `/params`, `/records`, `/trace`, `/reviews`, `/report/{path}` (index.html gets `window.DOSSIER_API` injected), `/out/{path}` (read-only, inside `out/`).
+
+Tests: `python -m pytest tests/test_ui_dossier.py -q`.
 
 ## Nonlinear and Test data pages
 

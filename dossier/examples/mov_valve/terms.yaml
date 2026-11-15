@@ -1,0 +1,25 @@
+# Project words for the ASD-STE100 check (STE rules on technical names and technical verbs).
+# A technical name is a noun of the subject field; a technical verb is a verb of the subject field.
+technical_names:
+  - valve body
+  - main oxidizer valve
+  - shell
+  - nozzle
+  - neck
+  - flange
+  - seat pocket
+  - stem bore
+  - cavity
+  - actuator
+  - pump
+  - injector
+  - liquid oxygen
+  - LOX
+  - MEOP
+  - proof pressure
+  - mating part
+  - mating face
+  - burst pressure
+technical_verbs:
+  - mesh
+  - pressurize

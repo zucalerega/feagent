@@ -35,7 +35,7 @@ Files: `feacore/solver/skfem_backend.py` (driver, physics, `SkfemResult`), `_skf
 | Groups | by dimension: cells (mesh dim), facets (dim-1), edges (curves in 3D), vertices (points). An unknown name raises an error that lists every group with its kind and size |
 | Elasticity BCs | `fixed`, `displacement` (any subset of components; scalar, per-component list or expressions), `symmetry`, `pressure`, `traction`, `force`. Dirichlet types also accept point groups, curve groups (3D), `point` = nearest solution node, and a `where` node filter |
 | Heat BCs | `temperature` (group or point; expression allowed), `flux` (into the body; expression allowed), `convection` (`h`, `T_inf`) |
-| Loads | elasticity: `body_force` (vector, expressions), `temperature` (thermal strain `alpha (T - T_ref)`, expression); heat: `source` (expression). Applied on a cell group or `"*"` |
+| Loads | elasticity: `body_force` (vector, expressions), `temperature` (thermal strain `alpha (T - T_ref)`; a number, an expression, or a field file `{"field": "T.npz"}`, see "Temperature field from a file"); heat: `source` (expression). Applied on a cell group or `"*"` |
 | Materials | multi-material `regions` (first matching region wins, as in `Case.material_for`; uncovered cells are an error) |
 | QoIs | `point`, `max`, `min`, `max_abs`, `reaction`, `integral`, `mean`, `strain_energy` |
 | Fields | elasticity: `ux uy uz u_mag sxx syy szz sxy syz sxz stt von_mises tresca s1 s2 s3`; heat: `T qx qy qz q_mag` |
@@ -88,17 +88,53 @@ Files: `feacore/solver/skfem_backend.py` (driver, physics, `SkfemResult`), `_skf
   differ.
 - **Loads**: body forces add up. Temperature loads assign `T` on their cell group; a later load
   overrides an earlier one on overlapping cells. Cells without a temperature load are at `T_ref`.
+  This holds for a number, an expression and a field file alike.
 - **Heat `2d`**: multiplied by the thickness too, so reactions (heat flows) and integrals are per
   thickness. Convection adds `∫ h T v` to the matrix and `∫ h T_inf v` to the load.
 - **QoI failures**: `evaluate()` raises. `evaluate_all()` / `summary()` give NaN for that QoI and add
   a warning, so one bad probe point does not lose the other QoIs. The CLI writes it as `null`.
 - **Expressions**: `feacore.case.eval_expr` in x, y, z, where axisymmetric x = r and y = z. Dirichlet
-  values are evaluated at the node locations; load and flux values at the quadrature points.
+  values are evaluated at the node locations; load and flux values at the quadrature points. A
+  temperature field file is given at the nodes and interpolated to the quadrature points.
 - `SolveInfo`: `n_nodes` = nodes of the mesh actually used (the corner mesh for P1 on a quadratic
   file); `n_dofs` = unknowns before Dirichlet elimination; `measure` = area/volume of the discrete
   mesh (no thickness or `2 pi`); `h_rep = (measure / n_cells)^(1/dim)`; `wall_time` = mesh read +
   assembly + solve + recovery. `warnings` holds real warnings and `info:` lines (linear solver used,
   axis constraint, P1 on a quadratic mesh).
+
+## Temperature field from a file (thermal stress from a heat solution)
+
+A temperature load takes a number, an expression, or the temperatures of a heat-conduction solve:
+
+```python
+from feacore.case import Load, write_temperature_field
+heat = solve(heat_case)                                  # physics "heat", the same mesh and order
+write_temperature_field("T.npz", *heat.nodal("T"))       # x (n, dim) node coordinates, T (n,)
+elastic_case.loads = [Load(type="temperature", value={"field": "T.npz"})]
+```
+
+- **The file** is an `.npz` with `x` (n, dim) and `T` (n,); other arrays in it are ignored, the order of
+  the points is free, and a 2D case also takes three coordinates when the third is constant. A path that
+  is not absolute is relative to the folder of the case file (`Case.base_dir`), as the mesh path is. The
+  case still round-trips through JSON (`"value": {"field": "T.npz"}`); `Case.validate` checks the form.
+- **Mapping**: each node of the scalar solution space takes the value of its nearest field point
+  (`scipy.spatial.cKDTree`). If a node of the load's cell group has no field point within 1e-6 of the
+  bounding-box diagonal (`feacore.case.FIELD_MATCH_TOL`), the solve stops with a `CaseError` that gives the
+  number of such nodes, the largest distance and the two node counts: the field does not belong to this
+  mesh. There is no interpolation between different meshes. Only the cells of the load's group need
+  values, so a field of one part of the mesh can load that part.
+- **Same mesh, same order**: a heat solve on the same `.msh` and `analysis.order` has exactly these nodes
+  (distance 0). The nodes of an order-1 analysis are the corners of the quadratic mesh, so a field at the
+  nodes of an order-2 solve also serves it; an order-1 field for an order-2 analysis is refused.
+- **Between the nodes** the temperature is the FE interpolant of the nodal values (the scalar basis,
+  evaluated at the quadrature points). An expression is evaluated at the quadrature points exactly. The two
+  agree to round-off for a field the FE space holds (order 2 on straight-sided cells: a quadratic; order 1,
+  or curved cells: a linear field); otherwise they differ by the interpolation error, O(h^(order+1)).
+- What was mapped goes into `SolveInfo.warnings` as an `info: loads[i] temperature field ...` line (points,
+  nodes, largest distance, temperature range).
+- Coupling is one way: the heat solve does not see the deformation. The material properties do not
+  depend on the temperature (one `E`, `nu`, `alpha` per material).
+- The ccx backend refuses a field file (`NotImplementedError`).
 
 ## Stress (and heat flux) recovery
 
@@ -171,6 +207,24 @@ interleaved per node.
   axisymmetric hollow cylinder heat flow matches 2πkH ΔT/ln(b/a) to 2.4e-7 (P2); 3D slab.
 - Linear solvers: PARDISO = SciPy to 1e-10 on a 3D P2 elasticity system. The cuDSS test runs only
   with a CUDA GPU and nvmath (it compares against SciPy to 1e-10), so it is skipped here.
+- Temperature field from a file (`tests/test_thermal_field_load.py`, about 3 s):
+  - A uniform field gives the displacements of the number, and a field the FE space holds gives the
+    results of its expression, both to round-off (observed 5e-15 in the displacements, 1e-14 in the
+    stresses): a quadratic field on straight-sided P2 tetrahedra, a linear field on P1, with the points
+    of the file shuffled and stored in single precision, and for a field on one cell group.
+  - Long hollow cylinder (a = 1, b = 2) with the steady radial temperature profile, hoop and axial stress
+    at both surfaces against Timoshenko and Goodier (free ends: the plane-strain axial stress less its
+    mean over the section). The test first checks the closed form itself against equilibrium, the free
+    surfaces, zero axial force and compatibility. Axisymmetric P2, with the temperatures of a heat solve
+    on the same mesh: errors 8.8e-4 (r = a) and 1.5e-4 (r = b) at h = 0.05, 2.6e-3 and 4.7e-4 at h = 0.1.
+    3D quarter cylinder on curved tet10 (6910 nodes), heat solve → file → elasticity: hoop -2.7e-3 and
+    axial -7.1e-4 at r = a, -2.3e-4 and -3.2e-4 at r = b (means over ten points; one point is off by up
+    to 7e-3).
+  - A field from another mesh, from a lower order, moved by more than the tolerance or in other length
+    units is refused; a bad file is a `CaseError`; the case round-trips through JSON with a relative path.
+  - Existing cases are unchanged bit for bit: 31 thermal, mechanical and heat cases (every formulation,
+    P1 and P2, two linear solvers) give identical solution vectors, load vectors, stiffness entries,
+    recovered fields and case JSON before and after the change.
 
 ## Performance
 
@@ -208,8 +262,10 @@ benchmark problem at its coarsest study size, the solve takes 0.05-4 s.
 ## Limitations / not done
 
 - Linear elastostatics and steady heat only: no contact, plasticity, large deformation, dynamics,
-  modal or buckling analysis. No coupled thermo-mechanics: thermal loads are prescribed temperature
-  fields (scalar or expression), not a heat solution.
+  modal or buckling analysis. Thermo-mechanics is sequential and one way: a thermal load is a
+  prescribed temperature field (a number, an expression, or the nodal temperatures of a heat solve on
+  the same mesh and order from a file). There is no coupled solve, no transient thermal stress, no
+  temperature-dependent material, and no transfer of a field between different meshes.
 - Simplices only (tri3/tri6/tet4/tet10). Quads, hexes, wedges and 3rd-order cells raise a clear error.
 - One material per cell (regions by cell groups). Isotropic linear elasticity only.
 - max/min are nodal and do not search inside the cells for P2. Recovered stresses at re-entrant

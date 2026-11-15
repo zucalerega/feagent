@@ -73,3 +73,159 @@ class Result(ABC):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.summary(), indent=2))
         return path
+
+
+# --------------------------------------------------------------------------- time-dependent and modal results
+
+
+def dominant_frequency(times, values) -> float:
+    """The dominant frequency (Hz) of a sampled, nearly periodic signal. A straight-line fit is removed
+    first (a mean and a slow drift), then the frequency is one over the mean time between upward zero
+    crossings (crossing times are interpolated linearly between samples). Raises ValueError when the series
+    has fewer than two full periods or fewer than 8 samples per period: a signal that is sampled too coarsely
+    would otherwise give a wrong, lower frequency without any sign. For a signal with several strong
+    frequencies this is the mean crossing rate, not a spectral peak."""
+    t = np.asarray(times, dtype=float)
+    y = np.asarray(values, dtype=float)
+    if t.size < 8 or t.size != y.size:
+        raise ValueError("dominant_frequency needs at least 8 samples")
+    span = t[-1] - t[0]
+    if not span > 0:
+        raise ValueError("dominant_frequency needs increasing times")
+    def crossings(v):
+        up = np.nonzero((v[:-1] < 0.0) & (v[1:] >= 0.0))[0]
+        if up.size < 3:
+            raise ValueError(f"dominant_frequency needs at least two full periods in the window "
+                             f"({max(up.size - 1, 0)} found)")
+        return t[up] - v[up] * (t[up + 1] - t[up]) / (v[up + 1] - v[up])
+
+    # first a straight-line fit of the samples; it is slightly biased by the oscillation itself, so the
+    # trend is then fitted again through the mean of each full period, which the oscillation does not bias
+    tc = crossings(y - np.polyval(np.polyfit(t - t[0], y, 1), t - t[0]))
+    mids, means = [], []
+    for a, b in zip(tc[:-1], tc[1:]):
+        tw = np.concatenate([[a], t[(t > a) & (t < b)], [b]])
+        means.append(np.trapezoid(np.interp(tw, t, y), tw) / (b - a))
+        mids.append(0.5 * (a + b))
+    trend = np.polyfit(mids, means, 1) if len(mids) >= 2 else [0.0, means[0]]
+    tc = crossings(y - np.polyval(trend, t))
+    f = float((tc.size - 1) / (tc[-1] - tc[0]))
+    per_period = (t.size - 1) / (span * f)
+    if per_period < 8.0:
+        raise ValueError(f"dominant_frequency: only {per_period:.1f} samples per period of the frequency found "
+                         f"({f:.4g} Hz); at least 8 are needed, so use a smaller time step or keep more steps")
+    return f
+
+
+def _window(t: np.ndarray, y: np.ndarray, window) -> tuple[np.ndarray, np.ndarray]:
+    """The part of a series inside [t0, t1], with the values at the two ends interpolated."""
+    t0, t1 = max(float(window[0]), float(t[0])), min(float(window[1]), float(t[-1]))
+    if not t1 > t0:
+        if float(window[0]) <= t[-1] and float(window[1]) >= t[0] and t1 == t0:      # the window is one instant
+            return np.array([t0]), np.array([float(np.interp(t0, t, y))])
+        raise ValueError(f"reduce_series: the window {list(window)} is outside the series "
+                         f"({t[0]:g} to {t[-1]:g})")
+    eps = 1e-12 * max(abs(float(t[-1])), 1.0)
+    inner = (t > t0 + eps) & (t < t1 - eps)
+    tw = np.concatenate([[t0], t[inner], [t1]])
+    return tw, np.interp(tw, t, y)
+
+
+def reduce_series(times, values, how=None, window=None) -> float:
+    """One number from a time series, as ``QoI.time`` asks: None = the last value; a number = the value at
+    that time (linear between steps); "max", "min", "max_abs"; "mean" and "rms" (time-weighted, of the value
+    itself); "frequency" (``dominant_frequency``). ``window`` = [t0, t1] restricts the series first; the
+    values at the window ends are interpolated. A mean or an rms needs a span of time: a window that holds
+    one instant raises ValueError."""
+    t = np.asarray(times, dtype=float)
+    y = np.asarray(values, dtype=float)
+    if t.shape != y.shape or t.size == 0:
+        raise ValueError("reduce_series: times and values must be 1D arrays of the same, non-zero length")
+    if window is not None:
+        t, y = _window(t, y, window)
+    if how is None:
+        return float(y[-1])
+    if isinstance(how, (int, float)) and not isinstance(how, bool):
+        if not t[0] - 1e-12 <= how <= t[-1] * (1 + 1e-12) + 1e-12:
+            raise ValueError(f"reduce_series: time {how:g} is outside the series ({t[0]:g} to {t[-1]:g})")
+        return float(np.interp(float(how), t, y))
+    if how == "max":
+        return float(y.max())
+    if how == "min":
+        return float(y.min())
+    if how == "max_abs":
+        return float(np.abs(y).max())
+    if how in ("mean", "rms"):
+        if t.size < 2 or not t[-1] > t[0]:
+            raise ValueError(f"reduce_series: a {how} needs a span of time, and the series or window holds one instant")
+        span = t[-1] - t[0]
+        return float(np.trapezoid(y, t) / span) if how == "mean" else float(np.sqrt(np.trapezoid(y * y, t) / span))
+    if how == "frequency":
+        return dominant_frequency(t, y)
+    raise ValueError(f"reduce_series: unknown reduction {how!r}")
+
+
+class TransientResult(Result):
+    """A time-dependent solution (``analysis.options["transient"]``).
+
+    ``times``   every step, from 0 to t_end
+    ``kept``    the indices into ``times`` of the steps whose full state is kept
+    Subclasses give ``series(qoi)`` (the QoI at every step, evaluated while the solver runs) and
+    ``state(t)`` (the kept state nearest to t, a ``Result`` with probe / nodal / evaluate).
+    ``evaluate`` reduces the series as ``QoI.time`` and ``QoI.window`` ask; ``probe`` and ``nodal``
+    are those of the final state."""
+
+    times: np.ndarray
+    kept: np.ndarray
+
+    @abstractmethod
+    def series(self, qoi: QoI) -> np.ndarray:
+        """The QoI at every step (the same length as ``times``), ignoring ``qoi.time`` and ``qoi.window``."""
+
+    @abstractmethod
+    def state(self, t: float | None = None) -> Result:
+        """The kept state nearest to time t (default: the last one)."""
+
+    def history(self, qoi: QoI) -> tuple[np.ndarray, np.ndarray]:
+        return np.asarray(self.times, dtype=float), np.asarray(self.series(qoi), dtype=float)
+
+    def evaluate(self, qoi: QoI) -> float:
+        t, y = self.history(qoi)
+        return reduce_series(t, y, qoi.time, qoi.window)
+
+    def evaluate_qoi(self, qoi: QoI) -> float:
+        return self.evaluate(qoi)
+
+    def probe(self, field: str, points) -> np.ndarray:
+        return self.state().probe(field, points)
+
+    def nodal(self, field: str) -> tuple[np.ndarray, np.ndarray]:
+        return self.state().nodal(field)
+
+
+class ModalResult(Result):
+    """Natural frequencies and mode shapes (``analysis.options["modal"]``).
+
+    ``frequencies``     Hz, the elastic modes in ascending order (rigid-body modes are not counted)
+    ``rigid_modes``     how many rigid-body modes the model has (0 for a restrained model)
+    ``effective_mass``  (n_modes, dim): the share of the total mass each mode moves along each axis
+    Subclasses give ``shape(mode)``: (coordinates (n, dim), displacements (n, dim)) of a mass-normalised
+    mode. ``nodal`` and ``probe`` are those of mode 1 unless the subclass takes a mode."""
+
+    frequencies: np.ndarray
+    rigid_modes: int
+    effective_mass: np.ndarray
+
+    @abstractmethod
+    def shape(self, mode: int = 1) -> tuple[np.ndarray, np.ndarray]:
+        """(coordinates (n, dim), displacements (n, dim)) of mode ``mode`` (1 = lowest elastic mode)."""
+
+    def evaluate(self, qoi: QoI) -> float:
+        n = len(self.frequencies)
+        if qoi.type not in ("natural_frequency", "effective_mass"):
+            raise ValueError(f"a modal result gives natural_frequency and effective_mass, not {qoi.type!r}")
+        if qoi.mode is None or not 1 <= qoi.mode <= n:
+            raise ValueError(f"QoI {qoi.name!r}: mode {qoi.mode} is not one of the {n} modes that were computed")
+        if qoi.type == "natural_frequency":
+            return float(self.frequencies[qoi.mode - 1])
+        return float(self.effective_mass[qoi.mode - 1, qoi.component])

@@ -1,0 +1,262 @@
+# System context of the main oxidizer valve (MOV): the oxidizer feed branch of a pump-fed
+# LOX / kerosene engine. EXAMPLE DATA, written for this demonstration.
+#
+# Reading guide
+#   parameters    named numbers with their source. `expr` derives one number from others; the unit of the
+#                 result is checked. Requirement parameters (meop, proof_factor, ...) are also names here.
+#   phases        operating states. The effects of one phase act together.
+#   connections   interfaces between elements. `effects` say what the connection does to the valve in a
+#                 phase. Vectors are in the CAD frame of the valve body: x = flow direction (inlet at -x),
+#                 z = stem axis (up, to the actuator), origin at the ball centre.
+id: SYS-OXFEED
+name: Oxidizer feed branch of a pump-fed LOX / kerosene engine
+description: >
+  A turbopump delivers liquid oxygen (LOX) from the tank through the main oxidizer valve to the
+  injector. A pneumatic actuator turns the ball of the valve. The valve is bolted to the pump discharge
+  flange and carries the injector feed line on its outlet flange.
+
+parameters:
+  # ---- pressures
+  p_pump_max:     {value: 10.4 MPa, title: Maximum pump discharge pressure, source: "ENG-ICD-002 rev B, table 4", note: "At maximum pump speed, with the controller tolerance."}
+  p_deadhead:     {value: 7.2 MPa, title: Pump dead-head pressure at start speed, source: "ENG-ICD-002 rev B, table 4"}
+  p_chill:        {value: 0.6 MPa, title: Line pressure during chill-down, source: "ENG-ICD-002 rev B, table 4"}
+  p_purge:        {value: 0.15 MPa, title: Injector purge pressure, source: "ENG-ICD-002 rev B, table 4"}
+  p_inj_shutdown: {value: 0.5 MPa, title: Injector feed pressure at valve closure, source: "ENG-ICD-002 rev B, table 4"}
+  dp_valve_est:   {value: 50 kPa, title: Estimated pressure drop of the open valve, basis: assumed, note: "Budget value. The flow analysis replaces it."}
+  p_out_fire:     {expr: "p_pump_max - dp_valve_est", unit: MPa, title: Outlet pressure during firing, basis: derived}
+  # ---- flow
+  mdot_ox:  {value: 5.3 kg/s, title: Rated LOX mass flow, source: "ENG-ICD-002 rev B, table 2"}
+  rho_lox:  {value: 1141 kg/m^3, title: Density of LOX at 90 K, basis: reference, source: "Saturated liquid oxygen near 90 K (NIST Chemistry WebBook)"}
+  mu_lox:   {value: 1.95e-4 Pa*s, title: Viscosity of LOX at 90 K, basis: reference, source: "Saturated liquid oxygen near 90 K (NIST Chemistry WebBook)"}
+  k_lox:    {value: 0.151 W/(m*K), title: Thermal conductivity of LOX at 90 K, basis: reference, source: "Saturated liquid oxygen near 90 K (NIST Chemistry WebBook)"}
+  cp_lox:   {value: 1700 J/(kg*K), title: Specific heat of LOX at 90 K, basis: reference, source: "Saturated liquid oxygen near 90 K (NIST Chemistry WebBook)"}
+  d_bore:   {value: 25 mm, title: Flow bore diameter, source: "Drawing MOV-100-001 rev A"}
+  d_stem:   {value: 16 mm, title: Stem bore diameter, source: "Drawing MOV-100-001 rev A"}
+  d_seal:   {value: 30 mm, title: Mean sealing diameter of the ball seat, source: "Drawing MOV-100-001 rev A"}
+  a_bore:   {expr: "pi * d_bore**2 / 4", unit: mm^2, title: Flow bore area, basis: derived}
+  a_stem:   {expr: "pi * d_stem**2 / 4", unit: mm^2, title: Stem bore area, basis: derived}
+  a_seal:   {expr: "pi * d_seal**2 / 4", unit: mm^2, title: Seat sealing area, basis: derived}
+  v_lox:    {expr: "mdot_ox / (rho_lox * a_bore)", unit: m/s, title: LOX velocity in the flow bore, basis: derived}
+  # ---- pressure surge at closure
+  l_line:   {value: 1.5 m, title: Length of the LOX duct between pump and valve, source: "ENG-ICD-002 rev B, figure 3"}
+  t_close:  {value: 50 ms, title: Effective closing time of the valve, source: "ACT-SPEC-004 rev A, 3.2.4", note: "The time in which the flow area goes from 50 % to zero."}
+  dp_surge: {expr: "rho_lox * l_line * v_lox / t_close", unit: MPa, title: Pressure surge at valve closure, basis: derived, note: "Rigid-column estimate: the closing time is much longer than the wave travel time of the duct."}
+  p_max_inlet: {expr: "p_pump_max + dp_surge", unit: MPa, title: Maximum pressure at the valve inlet, basis: derived}
+  # ---- temperatures and heat transfer
+  t_lox:    {value: 90 K, title: LOX temperature, source: "ENG-ICD-002 rev B, table 2"}
+  t_amb:    {value: 293.15 K, title: Ambient temperature, source: "ENG-ICD-002 rev B, table 6"}
+  t_purge:  {value: 280 K, title: Injector purge gas temperature, source: "ENG-ICD-002 rev B, table 6"}
+  re_lox:   {expr: "rho_lox * v_lox * d_bore / mu_lox", unit: "", title: Reynolds number of the LOX flow, basis: derived}
+  pr_lox:   {expr: "cp_lox * mu_lox / k_lox", unit: "", title: Prandtl number of LOX, basis: derived}
+  h_lox:    {expr: "0.023 * re_lox**0.8 * pr_lox**0.4 * k_lox / d_bore", unit: "W/(m^2*K)", title: Heat transfer coefficient of the flowing LOX, basis: derived, note: "Dittus-Boelter correlation for turbulent flow in a tube."}
+  h_stagnant: {value: 400 W/(m^2*K), title: Heat transfer coefficient of stagnant LOX, basis: assumed, note: "Natural convection in the closed valve."}
+  h_chill:  {value: 600 W/(m^2*K), title: Heat transfer coefficient during chill-down, basis: assumed, note: "Low bleed flow with boiling at the wall."}
+  h_purge:  {value: 50 W/(m^2*K), title: Heat transfer coefficient of the purge gas, basis: assumed, note: "Forced convection of a low gas flow in the outlet bore."}
+  h_amb:    {value: 12 W/(m^2*K), title: Heat transfer coefficient to the ambient air, basis: assumed, note: "Natural convection in air, with frost on the cold surfaces."}
+  # ---- actuator and mechanical environment
+  m_act:    {value: 2.8 kg, title: Actuator mass, source: "ACT-SPEC-004 rev A, 3.1"}
+  h_cg:     {value: 62 mm, title: Height of the actuator centre of gravity above its mounting face, source: "ACT-SPEC-004 rev A, 3.1"}
+  tq_break: {value: 55 N*m, title: Breakaway torque of the actuator, source: "ACT-SPEC-004 rev A, 3.2.1"}
+  tq_run:   {value: 40 N*m, title: Running torque of the actuator, source: "ACT-SPEC-004 rev A, 3.2.1"}
+  a_axial:  {value: 8 g0, title: Quasi-static axial acceleration, source: "ENG-ICD-002 rev B, table 7"}
+  a_lat:    {value: 25 g0, title: Quasi-static lateral acceleration, source: "ENG-ICD-002 rev B, table 7", note: "Equivalent of the random vibration, three standard deviations."}
+  a_transport: {value: 15 g0, title: Transport shock acceleration, source: "ENG-ICD-002 rev B, table 8"}
+  f_line_ax:  {value: 600 N, title: Axial force of the injector feed line, source: "ENG-ICD-002 rev B, table 5", note: "Without the pressure thrust."}
+  f_line_lat: {value: 300 N, title: Lateral force of the injector feed line, source: "ENG-ICD-002 rev B, table 5"}
+  m_line:     {value: 90 N*m, title: Bending moment of the injector feed line, source: "ENG-ICD-002 rev B, table 5"}
+  # ---- life
+  n_runs:     {value: 65, title: Engine runs in the life of one valve, source: "ENG-ICD-002 rev B, table 9", note: "Acceptance tests, qualification margin and flight."}
+  n_proof:    {value: 2, title: Proof pressure tests, source: "MOV-ATP-001 rev A"}
+  n_checkout: {value: 200, title: Leak checks at MEOP, source: "ENG-ICD-002 rev B, table 9"}
+  n_pressure_cycles: {expr: "n_runs + n_proof + n_checkout", unit: "", title: Pressure cycles in the life of one valve, basis: derived}
+
+phases:
+  - id: PH-PROOF
+    name: Proof pressure test
+    category: test
+    description: Acceptance test of each valve at ambient temperature. Both flanges and the stem opening are closed with blind covers. The ball is half open. A fixture holds the valve without load.
+    duration: 5 min
+    state: {ball: half open, temperature: ambient}
+  - id: PH-BURST
+    name: Burst pressure test
+    category: test
+    description: Qualification test of one valve at ambient temperature, in the configuration of the proof test.
+    state: {ball: half open, temperature: ambient}
+  - id: PH-LEAK
+    name: Leak check at MEOP
+    category: test
+    description: Leak check at ambient temperature, in the configuration of the proof test.
+    state: {ball: half open, temperature: ambient}
+  - id: PH-TRANSPORT
+    name: Transport
+    category: handling
+    description: The engine is in its transport container. The valve is installed on the pump. There is no pressure.
+    state: {ball: closed, temperature: ambient}
+  - id: PH-CHILL
+    name: Chill-down
+    description: A small LOX bleed flow cools the pump, the duct and the closed valve before the start.
+    duration: 120 s
+    state: {ball: closed, temperature: cryogenic}
+  - id: PH-PRESTART
+    name: Pump start against the closed valve
+    description: The pump runs at start speed against the closed valve. The actuator gets the command to open and gives its breakaway torque.
+    state: {ball: closed, temperature: cryogenic}
+  - id: PH-FIRE
+    name: Steady firing
+    description: The valve is open. LOX flows at the rated mass flow. The engine vibrates and accelerates.
+    duration: 400 s
+    state: {ball: open, temperature: cryogenic}
+  - id: PH-SHUTDOWN
+    name: Shutdown, valve closure
+    description: The actuator closes the valve against the full flow. The closure causes a pressure surge at the inlet.
+    state: {ball: closing, temperature: cryogenic}
+
+duty_cycles:
+  - id: DC-RUN
+    name: Engine run
+    description: One engine run, from ambient conditions through chill-down, start, firing and shutdown back to ambient conditions.
+    sequence: [PH-CHILL, PH-PRESTART, PH-FIRE, PH-SHUTDOWN]
+    count: {expr: n_runs}
+    source: "ENG-ICD-002 rev B, table 9"
+  - id: DC-PROOF
+    name: Proof pressure cycle
+    sequence: [PH-PROOF]
+    count: {expr: n_proof}
+    source: "MOV-ATP-001 rev A"
+  - id: DC-LEAK
+    name: Leak check cycle
+    sequence: [PH-LEAK]
+    count: {expr: n_checkout}
+    source: "ENG-ICD-002 rev B, table 9"
+
+elements:
+  - {id: EL-TANK,   name: LOX tank, kind: tank, group: Oxidizer feed, description: Flight tank with liquid oxygen.}
+  - {id: EL-PUMP,   name: LOX turbopump, kind: pump, group: Oxidizer feed, description: Raises the LOX pressure. Its discharge flange carries the valve.}
+  - {id: EL-MOV,    name: Main oxidizer valve, kind: valve, group: Oxidizer feed, component: CMP-MOV-BODY, description: Ball valve. It opens and closes the LOX flow to the injector.}
+  - {id: EL-INTERNALS, name: "Ball, seats and stem", kind: internal parts, group: Oxidizer feed, description: The moving and sealing parts in the valve body.}
+  - {id: EL-INJ,    name: Injector feed line and injector, kind: injector, group: Oxidizer feed, description: Takes the LOX from the valve outlet to the combustion chamber.}
+  - {id: EL-CHAMBER, name: Combustion chamber, kind: chamber, group: Oxidizer feed}
+  - {id: EL-ACT,    name: Pneumatic actuator, kind: actuator, group: Actuation, description: Turns the ball. It is bolted to the top of the valve neck.}
+  - {id: EL-HE,     name: Helium supply, kind: gas supply, group: Actuation, description: Supplies the actuator.}
+  - {id: EL-CTRL,   name: Engine controller, kind: controller, group: Actuation, description: Commands the actuator.}
+  - {id: EL-STRUCT, name: Thrust frame, kind: structure, group: Structure and environment, description: Carries the turbopump.}
+  - {id: EL-ENV,    name: Environment, kind: environment, group: Structure and environment, description: "Ambient air, vibration and acceleration of the engine."}
+
+connections:
+  - {id: IF-TANK-PUMP, name: Pump inlet duct, from: EL-TANK, to: EL-PUMP, kind: fluid, medium: LOX}
+  - {id: IF-STRUCT-PUMP, name: Pump mount, from: EL-STRUCT, to: EL-PUMP, kind: mechanical}
+  - {id: IF-INJ-CHAMBER, name: Injection, from: EL-INJ, to: EL-CHAMBER, kind: fluid, medium: LOX}
+  - {id: IF-HE-ACT, name: Actuator supply line, from: EL-HE, to: EL-ACT, kind: fluid, medium: helium}
+  - id: IF-CTRL-ACT
+    name: Valve command
+    from: EL-CTRL
+    to: EL-ACT
+    kind: signal
+    effects:
+      - {id: EF-CMD-OPEN, phase: PH-PRESTART, kind: signal, description: Command to open the valve.}
+      - {id: EF-CMD-CLOSE, phase: PH-SHUTDOWN, kind: signal, description: Command to close the valve.}
+
+  # ------------------------------------------------------------------ valve inlet
+  - id: IF-PUMP-MOV
+    name: Pump discharge to valve inlet
+    from: EL-PUMP
+    to: EL-MOV
+    kind: fluid
+    medium: LOX
+    description: The inlet flange of the valve is bolted to the discharge flange of the pump housing. The pump housing is much stiffer than the valve body.
+    effects:
+      - {id: EF-IN-HOLD, phase: [PH-TRANSPORT, PH-CHILL, PH-PRESTART, PH-FIRE, PH-SHUTDOWN], kind: support, description: The pump discharge flange holds the valve.}
+      - {id: EF-IN-P-PROOF, phase: PH-PROOF, kind: pressure, value: {expr: "proof_factor * meop", unit: MPa}, description: Proof pressure in the valve.}
+      - {id: EF-IN-F-PROOF, phase: PH-PROOF, kind: force, value: {expr: ["-proof_factor * meop * a_bore", 0, 0], unit: N}, description: The blind cover pulls on the inlet flange with the pressure force on the bore area.}
+      - {id: EF-IN-P-BURST, phase: PH-BURST, kind: pressure, value: {expr: "burst_factor * meop", unit: MPa}, description: Burst pressure in the valve.}
+      - {id: EF-IN-F-BURST, phase: PH-BURST, kind: force, value: {expr: ["-burst_factor * meop * a_bore", 0, 0], unit: N}, description: The blind cover pulls on the inlet flange with the pressure force on the bore area.}
+      - {id: EF-IN-P-LEAK, phase: PH-LEAK, kind: pressure, value: {expr: "meop", unit: MPa}, description: MEOP in the valve.}
+      - {id: EF-IN-F-LEAK, phase: PH-LEAK, kind: force, value: {expr: ["-meop * a_bore", 0, 0], unit: N}, description: The blind cover pulls on the inlet flange with the pressure force on the bore area.}
+      - {id: EF-IN-P-CHILL, phase: PH-CHILL, kind: pressure, value: {expr: p_chill}, description: Line pressure on the inlet side and in the cavity.}
+      - {id: EF-IN-T-CHILL, phase: PH-CHILL, kind: fluid_temperature, value: {expr: t_lox}, h: {expr: h_chill}, description: LOX on the inlet side and in the cavity.}
+      - {id: EF-IN-P-PRESTART, phase: PH-PRESTART, kind: pressure, value: {expr: p_deadhead}, description: Pump dead-head pressure on the inlet side and in the cavity.}
+      - {id: EF-IN-T-PRESTART, phase: PH-PRESTART, kind: fluid_temperature, value: {expr: t_lox}, h: {expr: h_stagnant}, description: Stagnant LOX on the inlet side and in the cavity.}
+      - {id: EF-IN-P-FIRE, phase: PH-FIRE, kind: pressure, value: {expr: p_pump_max}, description: Maximum pump discharge pressure.}
+      - {id: EF-IN-FLOW-FIRE, phase: PH-FIRE, kind: mass_flow, value: {expr: mdot_ox}, description: Rated LOX mass flow through the open valve.}
+      - {id: EF-IN-T-FIRE, phase: PH-FIRE, kind: fluid_temperature, value: {expr: t_lox}, h: {expr: h_lox}, description: Flowing LOX.}
+      - {id: EF-IN-P-SHUTDOWN, phase: PH-SHUTDOWN, kind: pressure, value: {expr: p_max_inlet}, description: Pump discharge pressure plus the surge of the closure.}
+      - {id: EF-IN-T-SHUTDOWN, phase: PH-SHUTDOWN, kind: fluid_temperature, value: {expr: t_lox}, h: {expr: h_stagnant}, description: LOX on the inlet side and in the cavity.}
+
+  # ------------------------------------------------------------------ valve outlet
+  - id: IF-MOV-INJ
+    name: Valve outlet to injector feed line
+    from: EL-MOV
+    to: EL-INJ
+    kind: fluid
+    medium: LOX
+    description: The injector feed line is bolted to the outlet flange of the valve. The line is flexible in comparison with the valve body.
+    effects:
+      - {id: EF-OUT-P-PROOF, acts_on: EL-MOV, phase: PH-PROOF, kind: pressure, value: {expr: "proof_factor * meop", unit: MPa}, description: Proof pressure in the valve.}
+      - {id: EF-OUT-F-PROOF, acts_on: EL-MOV, phase: PH-PROOF, kind: force, value: {expr: ["proof_factor * meop * a_bore", 0, 0], unit: N}, description: The blind cover pulls on the outlet flange with the pressure force on the bore area.}
+      - {id: EF-OUT-P-BURST, acts_on: EL-MOV, phase: PH-BURST, kind: pressure, value: {expr: "burst_factor * meop", unit: MPa}, description: Burst pressure in the valve.}
+      - {id: EF-OUT-F-BURST, acts_on: EL-MOV, phase: PH-BURST, kind: force, value: {expr: ["burst_factor * meop * a_bore", 0, 0], unit: N}, description: The blind cover pulls on the outlet flange with the pressure force on the bore area.}
+      - {id: EF-OUT-P-LEAK, acts_on: EL-MOV, phase: PH-LEAK, kind: pressure, value: {expr: "meop", unit: MPa}, description: MEOP in the valve.}
+      - {id: EF-OUT-F-LEAK, acts_on: EL-MOV, phase: PH-LEAK, kind: force, value: {expr: ["meop * a_bore", 0, 0], unit: N}, description: The blind cover pulls on the outlet flange with the pressure force on the bore area.}
+      - {id: EF-OUT-P-CHILL, acts_on: EL-MOV, phase: PH-CHILL, kind: pressure, value: {expr: p_purge}, description: Purge pressure on the outlet side.}
+      - {id: EF-OUT-T-CHILL, acts_on: EL-MOV, phase: PH-CHILL, kind: fluid_temperature, value: {expr: t_purge}, h: {expr: h_purge}, description: Purge gas on the outlet side.}
+      - {id: EF-OUT-P-PRESTART, acts_on: EL-MOV, phase: PH-PRESTART, kind: pressure, value: {expr: p_purge}, description: Purge pressure on the outlet side.}
+      - {id: EF-OUT-T-PRESTART, acts_on: EL-MOV, phase: PH-PRESTART, kind: fluid_temperature, value: {expr: t_purge}, h: {expr: h_purge}, description: Purge gas on the outlet side.}
+      - {id: EF-OUT-P-FIRE, acts_on: EL-MOV, phase: PH-FIRE, kind: pressure, value: {expr: p_out_fire}, description: Pump discharge pressure less the pressure drop of the valve.}
+      - {id: EF-OUT-T-FIRE, acts_on: EL-MOV, phase: PH-FIRE, kind: fluid_temperature, value: {expr: t_lox}, h: {expr: h_lox}, description: Flowing LOX.}
+      - {id: EF-OUT-F-FIRE, acts_on: EL-MOV, phase: PH-FIRE, kind: force, value: {expr: ["p_out_fire * a_bore + f_line_ax", "f_line_lat", 0], unit: N}, description: Force of the feed line on the outlet flange. It includes the pressure thrust on the bore area.}
+      - {id: EF-OUT-M-FIRE, acts_on: EL-MOV, phase: PH-FIRE, kind: moment, value: {expr: [0, "m_line", 0], unit: "N*m"}, description: Bending moment of the feed line on the outlet flange.}
+      - {id: EF-OUT-P-SHUTDOWN, acts_on: EL-MOV, phase: PH-SHUTDOWN, kind: pressure, value: {expr: p_inj_shutdown}, description: Decaying injector feed pressure on the outlet side.}
+      - {id: EF-OUT-T-SHUTDOWN, acts_on: EL-MOV, phase: PH-SHUTDOWN, kind: fluid_temperature, value: {expr: t_lox}, h: {expr: h_stagnant}, description: LOX on the outlet side.}
+      - {id: EF-OUT-F-SHUTDOWN, acts_on: EL-MOV, phase: PH-SHUTDOWN, kind: force, value: {expr: ["p_inj_shutdown * a_bore + f_line_ax", "f_line_lat", 0], unit: N}, description: Force of the feed line on the outlet flange.}
+
+  # ------------------------------------------------------------------ internal parts
+  - id: IF-INT-MOV
+    name: Ball, seats and stem in the body
+    from: EL-INTERNALS
+    to: EL-MOV
+    kind: mechanical
+    description: The closed ball floats and pushes the downstream seat ring against the seat pocket of the outlet nozzle. The stem bore holds a stagnant gas column at the cavity pressure.
+    effects:
+      - {id: EF-STEM-P-PROOF, phase: PH-PROOF, kind: pressure, value: {expr: "proof_factor * meop", unit: MPa}, description: Proof pressure in the stem bore.}
+      - {id: EF-STEM-P-BURST, phase: PH-BURST, kind: pressure, value: {expr: "burst_factor * meop", unit: MPa}, description: Burst pressure in the stem bore.}
+      - {id: EF-STEM-P-LEAK, phase: PH-LEAK, kind: pressure, value: {expr: "meop", unit: MPa}, description: MEOP in the stem bore.}
+      - {id: EF-STEM-P-CHILL, phase: PH-CHILL, kind: pressure, value: {expr: p_chill}, description: Cavity pressure in the stem bore.}
+      - {id: EF-STEM-P-PRESTART, phase: PH-PRESTART, kind: pressure, value: {expr: p_deadhead}, description: Cavity pressure in the stem bore.}
+      - {id: EF-STEM-P-FIRE, phase: PH-FIRE, kind: pressure, value: {expr: p_pump_max}, description: Cavity pressure in the stem bore.}
+      - {id: EF-STEM-P-SHUTDOWN, phase: PH-SHUTDOWN, kind: pressure, value: {expr: p_max_inlet}, description: Cavity pressure in the stem bore.}
+      - {id: EF-SEAT-F-CHILL, phase: PH-CHILL, kind: force, value: {expr: ["(p_chill - p_purge) * a_seal", 0, 0], unit: N}, description: The closed ball pushes the downstream seat with the pressure difference on the sealing area.}
+      - {id: EF-SEAT-F-PRESTART, phase: PH-PRESTART, kind: force, value: {expr: ["(p_deadhead - p_purge) * a_seal", 0, 0], unit: N}, description: The closed ball pushes the downstream seat with the pressure difference on the sealing area.}
+      - {id: EF-SEAT-F-SHUTDOWN, phase: PH-SHUTDOWN, kind: force, value: {expr: ["(p_max_inlet - p_inj_shutdown) * a_seal", 0, 0], unit: N}, description: The closed ball pushes the downstream seat with the pressure difference on the sealing area.}
+
+  # ------------------------------------------------------------------ actuator
+  - id: IF-ACT-MOV
+    name: Actuator on the valve neck
+    from: EL-ACT
+    to: EL-MOV
+    kind: mechanical
+    description: The actuator is bolted to the mounting face at the top of the neck. Its adapter closes the stem bore and takes the pressure force on the stem area.
+    effects:
+      - {id: EF-ACT-F-PROOF, phase: PH-PROOF, kind: force, value: {expr: [0, 0, "proof_factor * meop * a_stem"], unit: N}, description: The stem cover pulls on the mounting face with the pressure force on the stem area.}
+      - {id: EF-ACT-F-BURST, phase: PH-BURST, kind: force, value: {expr: [0, 0, "burst_factor * meop * a_stem"], unit: N}, description: The stem cover pulls on the mounting face with the pressure force on the stem area.}
+      - {id: EF-ACT-F-LEAK, phase: PH-LEAK, kind: force, value: {expr: [0, 0, "meop * a_stem"], unit: N}, description: The stem cover pulls on the mounting face with the pressure force on the stem area.}
+      - {id: EF-ACT-F-TRANSPORT, phase: PH-TRANSPORT, kind: force, value: {expr: [0, "m_act * a_transport", 0], unit: N}, description: Inertia force of the actuator.}
+      - {id: EF-ACT-M-TRANSPORT, phase: PH-TRANSPORT, kind: moment, value: {expr: ["-m_act * a_transport * h_cg", 0, 0], unit: "N*m"}, description: Moment of the actuator inertia force about the mounting face.}
+      - {id: EF-ACT-F-CHILL, phase: PH-CHILL, kind: force, value: {expr: [0, 0, "p_chill * a_stem"], unit: N}, description: Pressure force on the stem area.}
+      - {id: EF-ACT-F-PRESTART, phase: PH-PRESTART, kind: force, value: {expr: [0, 0, "p_deadhead * a_stem"], unit: N}, description: Pressure force on the stem area.}
+      - {id: EF-ACT-M-PRESTART, phase: PH-PRESTART, kind: moment, value: {expr: [0, 0, "tq_break"], unit: "N*m"}, description: Reaction of the breakaway torque.}
+      - {id: EF-ACT-F-FIRE, phase: PH-FIRE, kind: force, value: {expr: ["m_act * a_axial", "m_act * a_lat", "p_pump_max * a_stem"], unit: N}, description: Inertia force of the actuator and pressure force on the stem area.}
+      - {id: EF-ACT-M-FIRE, phase: PH-FIRE, kind: moment, value: {expr: ["-m_act * a_lat * h_cg", "m_act * a_axial * h_cg", 0], unit: "N*m"}, description: Moment of the actuator inertia force about the mounting face.}
+      - {id: EF-ACT-F-SHUTDOWN, phase: PH-SHUTDOWN, kind: force, value: {expr: [0, 0, "p_max_inlet * a_stem"], unit: N}, description: Pressure force on the stem area.}
+      - {id: EF-ACT-M-SHUTDOWN, phase: PH-SHUTDOWN, kind: moment, value: {expr: [0, 0, "-tq_run"], unit: "N*m"}, description: Reaction of the running torque during closure.}
+
+  # ------------------------------------------------------------------ environment
+  - id: IF-ENV-MOV
+    name: Environment of the valve
+    from: EL-ENV
+    to: EL-MOV
+    kind: environment
+    description: Ambient air on the outer surfaces, and the acceleration of the engine.
+    effects:
+      - {id: EF-ENV-T, phase: [PH-CHILL, PH-PRESTART, PH-FIRE, PH-SHUTDOWN], kind: fluid_temperature, role: external, value: {expr: t_amb}, h: {expr: h_amb}, description: Ambient air on the outer surfaces.}
+      - {id: EF-ENV-A-FIRE, phase: PH-FIRE, kind: acceleration, value: {expr: ["a_axial", "a_lat", 0], unit: "m/s^2"}, description: Inertial load on the valve per unit mass during firing (quasi-static load factors).}
+      - {id: EF-ENV-A-TRANSPORT, phase: PH-TRANSPORT, kind: acceleration, value: {expr: [0, "a_transport", 0], unit: "m/s^2"}, description: Inertial load on the valve per unit mass from the transport shock.}

@@ -362,3 +362,63 @@ def test_probe_continuous_and_cell_order_independent(tmp_path):
         for d in ([1e-9, 0.0], [0.0, 1e-9]):
             pm = a.probe("ux", [[x0 - d[0], y0 - d[1]], [x0 + d[0], y0 + d[1]]])
             assert abs(pm[0] - pm[1]) < 1e-7
+
+
+def _turbulent_pipe_case(mesh, **opts) -> Case:
+    return Case(mesh=str(mesh),
+                analysis=Analysis(physics="flow", formulation="3d", order=2,
+                                  options={"turbulence": "kOmegaSST", "max_iterations": 3, **opts}),
+                materials={"water": Material(rho=1000.0, mu=1e-3)},
+                bcs=[BC("velocity_inlet", group="inlet", value=[10.0, 0.0, 0.0]),
+                     BC("pressure_outlet", group="outlet", value=0.0), BC("wall", group="wall")],
+                qois=[QoI("q_out", "flow_rate", group="outlet")])
+
+
+def test_turbulent_run_outside_validated_range_warns(tmp_path):
+    """A direct user of the backend gets told when a RANS run leaves the validated range: cells other than
+    hexahedra (tetrahedra read 15-26 % low, prisms 13-17 % high), and a turbulent run keeps the plain schemes
+    (skew_correction 'auto' is off for RANS: the validation used them). Laminar 3D keeps skew correction on
+    (test_pipe_3d_tets_pressure_drop)."""
+    mesh = _tet_pipe(tmp_path / "pipe.msh", 0.005, 0.03, 0.0025)
+    res = solve(_turbulent_pipe_case(mesh), backend="openfoam")
+    try:
+        w = res.info.warnings
+        assert any(s.startswith("turbulent run on tetra cells") for s in w), w
+        assert not any("skew-consistent" in s for s in w)
+    finally:
+        res.cleanup()
+    res = solve(_turbulent_pipe_case(mesh, skew_correction=True), backend="openfoam")     # still selectable
+    try:
+        assert any("skew-consistent" in s for s in res.info.warnings)
+    finally:
+        res.cleanup()
+    import dataclasses
+    lam = dataclasses.replace(_turbulent_pipe_case(mesh), analysis=Analysis(
+        physics="flow", formulation="3d", order=2, options={"max_iterations": 3}))
+    res = solve(lam, backend="openfoam")
+    try:
+        assert any("skew-consistent" in s for s in res.info.warnings)
+        assert not any(s.startswith("turbulent run on") for s in res.info.warnings)
+    finally:
+        res.cleanup()
+
+
+def test_y_plus_outside_validated_range_warns():
+    """The y+ warning: more than 5 % of a wall's area outside 60-1600 (under 30 has its own warning)."""
+    from types import SimpleNamespace
+    from feacore.solver import openfoam_backend as ob
+    case = SimpleNamespace(bcs=[BC("wall", group="w")])
+
+    def warns(yp):
+        yp = np.asarray(yp, dtype=float)
+        res = SimpleNamespace(patch={"w": None}, y_plus=lambda g: {"y_plus": yp, "area": np.ones_like(yp),
+                                                                    "basis": "k"})
+        out: list = []
+        ob._report_y_plus(res, case, out)
+        return [s for s in out if not s.startswith("info:")]
+    assert warns(np.full(100, 200.0)) == []
+    assert warns(np.r_[np.full(97, 200.0), np.full(3, 2000.0)]) == []                # 3 %: tolerated
+    w = warns(np.r_[np.full(90, 200.0), np.full(10, 2000.0)])
+    assert len(w) == 1 and "outside the validated range 60-1600 on 10%" in w[0]
+    w = warns(np.r_[np.full(80, 200.0), np.full(20, 45.0)])
+    assert len(w) == 1 and "20% between 30 and 60" in w[0]

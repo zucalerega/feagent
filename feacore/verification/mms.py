@@ -92,7 +92,7 @@ class _CaseExprPrinter(StrPrinter):
         return repr(float(e))
 
     def _print_Symbol(self, e):
-        if e.name not in ("x", "y", "z"):
+        if e.name not in ("x", "y", "z", "t"):          # t: the time of a transient case
             raise ValueError(f"free symbol {e.name!r} in a case expression")
         return e.name
 

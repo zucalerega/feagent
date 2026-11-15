@@ -48,6 +48,19 @@ elasticity: body_force (vector, force / volume), temperature (T field for therma
             alpha * (T - analysis.T_ref))
 heat:       source (volumetric heat source / Poisson right-hand side)
 
+The ``value`` of a temperature load is a number, an expression in x, y, z, or a temperature field
+from a file: ``{"field": "<path to an .npz file>"}``. This is how the temperatures of a
+heat-conduction solve enter an elasticity case (one-way coupling). The file holds ``x`` (n, dim) node
+coordinates and ``T`` (n,) temperatures; other arrays in it are ignored. A path that is not absolute
+is relative to the folder of the case file (``base_dir``), as the mesh path is. The solver maps the
+values to its own nodes by nearest point. A node of the load's cell group with no field point within
+``FIELD_MATCH_TOL`` (1e-6) of the bounding-box diagonal is a ``CaseError``: the field does not belong
+to this mesh. The solver then interpolates the nodal values with its shape functions, so between the
+nodes the temperature is the FE interpolant, not the exact field. A heat solve on the same mesh and
+order has the same nodes: ``write_temperature_field(path, *heat_result.nodal("T"))``. A field at the
+nodes of a quadratic solve also serves an order-1 analysis of the same mesh (its nodes are the
+corners); the reverse is refused. skfem backend only: the ccx backend refuses a field file.
+
 flow (incompressible, steady by default; OpenFOAM backend):
   velocity_inlet  velocity ``value``: a vector [ux, uy(, uz)] (entries may be expressions) or a scalar
                   speed along the inward normal
@@ -58,6 +71,8 @@ flow (incompressible, steady by default; OpenFOAM backend):
   2D flow meshes lie in the xy-plane; the backend extrudes one cell layer of ``analysis.thickness``,
   so forces and flow rates are per that thickness. ``analysis.order`` selects the convection scheme
   (1 = upwind, 2 = second order). Options: ``turbulence`` ("laminar" default, or a RANS model name),
+  ``wall_treatment`` ("wall_functions" default with a RANS model, or "resolved": the mesh resolves the
+  viscous sublayer, y+ about 1),
   ``max_iterations``, ``residual_tol`` (keep it tight, e.g. 1e-8, so the iteration error stays far
   below the discretization error that the GCI measures).
 
@@ -71,6 +86,10 @@ OpenFOAM backend, rhoCentralFoam run to a steady state; supersonic external flow
   wall            no slip, adiabatic (viscous gas only; an inviscid gas needs slip)
   slip            inviscid wall: zero normal velocity
   symmetry        symmetry plane
+  total_inlet     subsonic inflow from a reservoir: total pressure ``p0`` (Pa) and total temperature
+                  ``T0`` (K), the flow enters along the inward normal
+  pressure_outlet static back pressure ``value`` (Pa) where the flow leaves subsonic; where it leaves
+                  supersonic everything is extrapolated
   Fields: ux, uy, uz, u_mag, p (absolute static pressure, Pa), T (K), rho (kg/m^3), mach. Options:
   ``max_co`` (Courant number), ``steady_tol``, ``max_flow_times``, ``timeout``; see
   feacore/solver/_foam_compressible.py.
@@ -96,6 +115,41 @@ where the cell is in tension (compressive cells at ``compression_factor`` x limi
 ``docs/solver_ccx_nonlinear.md`` for the block / increment options and the method's limits.
 A material with ``plasticity`` requires ``nonlinear: true``. The skfem backend refuses nonlinear cases.
 
+Time-dependent and modal analyses (opt-in; see docs/solver_transient.md)
+-------------------------------------------------------------------------
+Time in values. In a transient analysis a value may depend on the time ``t`` (seconds, from 0):
+an expression may use ``t`` beside x, y, z (``"90 + 203 * exp(-t / 5)"``), and a scalar value may be
+a table ``{"table": [[t0, v0], [t1, v1], ...]}`` (linear between the points, constant before the
+first and after the last). This holds for the ``value`` of a BC or Load (each component of a vector
+separately) and for the ``h`` and ``T_inf`` of a convection BC. A steady analysis refuses both.
+
+``analysis.options["transient"]`` makes the analysis time-dependent:
+  ``t_end``            end time (s); the analysis starts at t = 0
+  ``dt`` | ``n_steps``  the fixed time step (s), or the number of steps (give one of them)
+  ``scheme``           heat: "crank_nicolson" (default, second order), "backward_euler" (first order,
+                       damps the modes a step cannot resolve), "bdf2"; elasticity (dynamics): "newmark"
+                       (average acceleration, default), "hht" (with ``alpha`` in [-1/3, 0]); flow:
+                       "backward" (default, second order) or "euler"
+  ``initial``          the state at t = 0. heat: ``{"T": number | expression in x, y, z |
+                       {"field": "<.npz with x and T>"}}``; elasticity: ``{"u": [...], "v": [...]}``
+                       (displacement and velocity, default at rest); flow: ``{"U": [...], "p": number}``
+                       or ``{"steady": true}`` (start from the steady solution of the t = 0 values)
+  ``output_times`` | ``output_every``  the steps whose full state is kept (default: 10 states evenly
+                       spaced in time, and the last). QoIs are evaluated at every step.
+  ``max_co``           flow only: adapt the step to this Courant number, never above ``dt``
+Materials: transient heat needs ``rho`` and ``cp`` (the heat capacity per volume is rho * cp);
+dynamics and modal analysis need ``rho``. ``analysis.options["damping"] = {"rayleigh": [a, b]}``
+gives the damping matrix C = a M + b K of a dynamic analysis.
+
+``analysis.options["modal"] = {"n_modes": n, "shift": f}`` asks for the n natural frequencies nearest
+above ``f`` (Hz, default 0) of an elasticity case, with their mode shapes. Loads are ignored; the
+Dirichlet BCs act as zero. A model with rigid-body modes is solved too: they are reported, not counted.
+
+A QoI of a transient analysis is a time series. ``QoI.time`` reduces it to one number: omitted = the
+value at ``t_end``; a number = the value at that time (linear between steps); "max", "min", "max_abs",
+"mean", "rms" = over the steps; "frequency" = the dominant frequency of the series (Hz). ``QoI.window``
+= [t0, t1] restricts the reduction to that span (to leave out a start-up transient).
+
 Quantities of interest (``QoI.type``)
 -------------------------------------
   point          ``field`` at ``point`` (stresses use the solver's recovered, continuous field)
@@ -110,6 +164,10 @@ Quantities of interest (``QoI.type``)
                  compressible: with the gauge pressure p - p_inf of the freestream (as if a base at p_inf
                  closed a body that the domain cuts)
   flow_rate      flow: volumetric flow rate through ``group``, positive out of the domain
+  mass_flow      flow, compressible: mass flow rate through ``group`` (kg/s), positive out of the domain
+  natural_frequency  modal: the frequency of mode ``mode`` (1 = lowest elastic mode), Hz
+  effective_mass     modal: the share of the total mass that mode ``mode`` moves along ``component``
+flow only, on a wall group, with max / min / mean: the wall fields ``y_plus`` and ``wall_shear`` (Pa).
 """
 
 from __future__ import annotations
@@ -139,7 +197,7 @@ BC_TYPES = {
     "elasticity": ("fixed", "displacement", "symmetry", "pressure", "traction", "force"),
     "heat": ("temperature", "flux", "convection"),
     "flow": ("velocity_inlet", "pressure_outlet", "wall", "slip", "symmetry"),
-    "compressible": ("freestream", "outlet", "wall", "slip", "symmetry"),
+    "compressible": ("freestream", "outlet", "wall", "slip", "symmetry", "total_inlet", "pressure_outlet"),
 }
 LOAD_TYPES = {
     "elasticity": ("body_force", "temperature"),
@@ -148,7 +206,13 @@ LOAD_TYPES = {
     "compressible": (),
 }
 QOI_TYPES = ("point", "point_difference", "max", "min", "max_abs", "reaction", "integral", "mean",
-             "strain_energy", "force", "flow_rate")
+             "strain_energy", "force", "flow_rate", "mass_flow", "natural_frequency", "effective_mass")
+QOI_TIME = ("max", "min", "max_abs", "mean", "rms", "frequency")   # QoI.time, besides a number
+TRANSIENT_SCHEMES = {"heat": ("crank_nicolson", "backward_euler", "bdf2"), "elasticity": ("newmark", "hht"),
+                     "flow": ("backward", "euler")}
+TRANSIENT_OPTIONS = ("t_end", "dt", "n_steps", "scheme", "alpha", "initial", "output_times", "output_every", "max_co")
+MODAL_OPTIONS = ("n_modes", "shift")
+WALL_FIELDS = ("y_plus", "wall_shear")    # flow: on a wall group, with max / min / mean
 
 # Fields a backend must be able to probe. In 2D, uz, syz and sxz are 0; szz is the out-of-plane
 # stress (0 in plane stress). Axisymmetric: sxx = s_rr, syy = s_zz (axial), sxy = s_rz, and the
@@ -166,6 +230,10 @@ STRESS_LIKE = tuple(f for f in ELASTICITY_FIELDS if f not in DISPLACEMENT_LIKE) 
 
 Value = Union[float, str, list]
 
+# A temperature load from a file: a field point counts as a node of the solver when it is within this
+# fraction of the mesh's bounding-box diagonal (see "Loads" in the module docstring).
+FIELD_MATCH_TOL = 1e-6
+
 
 class CaseError(ValueError):
     """Raised for an invalid case description."""
@@ -181,7 +249,8 @@ class Material:
     alpha: float = 0.0   # coefficient of thermal expansion
     k: float = 1.0       # conductivity (heat) / diffusion coefficient (Poisson)
     plasticity: dict | None = None   # optional J2 plasticity (nonlinear analyses only), see module doc
-    rho: float = 1.0     # density (flow)
+    rho: float = 1.0     # density (flow; transient heat; dynamics and modal analysis)
+    cp: float = 0.0      # specific heat capacity (transient heat), J/(kg K)
     mu: float = 0.0      # dynamic viscosity (flow); kinematic viscosity = mu / rho
     gamma: float | None = None         # compressible: ratio of specific heats cp / cv
     gas_constant: float | None = None  # compressible: specific gas constant R = cp - cv (J/(kg K))
@@ -201,15 +270,17 @@ class BC:
     components: list[int] | None = None
     value: Value | None = None
     where: str | None = None            # Dirichlet node filter, e.g. "abs(z) < 1e-6"
-    h: float | None = None              # convection coefficient
-    T_inf: float | None = None          # convection ambient temperature; freestream static temperature
+    h: Value | dict | None = None       # convection coefficient (transient: also an expression in t or a table)
+    T_inf: Value | dict | None = None   # convection ambient temperature (transient: as h); freestream static temperature
     p_inf: float | None = None          # freestream static pressure (compressible)
+    p0: float | None = None             # total_inlet: total pressure (compressible)
+    T0: float | None = None             # total_inlet: total temperature (compressible)
 
 
 @dataclass
 class Load:
     type: str
-    value: Value
+    value: Value | dict                 # temperature: also {"field": "<.npz with x and T>"}, see module doc
     group: str = "*"
 
 
@@ -222,6 +293,9 @@ class QoI:
     group: str | None = None
     component: int | None = None
     point2: list[float] | None = None   # point_difference: value = field(point) - field(point2)
+    time: float | str | None = None     # transient: None = at t_end, a time, or one of QOI_TIME
+    window: list[float] | None = None   # transient: [t0, t1], the span that `time` reduces over
+    mode: int | None = None             # modal: the mode number (1 = lowest elastic mode)
 
 
 @dataclass
@@ -237,6 +311,25 @@ class Analysis:
     def nonlinear(self) -> bool:
         """True for a load-stepped nonlinear analysis (``options["nonlinear"]``)."""
         return bool((self.options or {}).get("nonlinear", False))
+
+    @property
+    def transient(self) -> dict | None:
+        """The ``options["transient"]`` dict of a time-dependent analysis, else None."""
+        t = (self.options or {}).get("transient")
+        return t if t else None
+
+    @property
+    def modal(self) -> dict | None:
+        """The ``options["modal"]`` dict of a modal analysis, else None."""
+        m = (self.options or {}).get("modal")
+        return m if m else None
+
+    def time_steps(self) -> np.ndarray:
+        """The times of a transient analysis, from 0 to t_end (n + 1 values), for a fixed step."""
+        tr = self.transient or {}
+        t_end = float(tr["t_end"])
+        n = int(tr["n_steps"]) if tr.get("n_steps") is not None else max(1, int(round(t_end / float(tr["dt"]))))
+        return np.linspace(0.0, t_end, n + 1)
 
 
 @dataclass
@@ -255,6 +348,14 @@ class Case:
     # ---- paths
     def mesh_path(self) -> Path:
         p = Path(self.mesh)
+        if not p.is_absolute() and self.base_dir is not None:
+            p = Path(self.base_dir) / p
+        return p
+
+    def file_path(self, name: str | Path) -> Path:
+        """A file the case refers to (a temperature field): a path that is not absolute is relative to
+        ``base_dir``, the folder of the case file, as the mesh path is."""
+        p = Path(name)
         if not p.is_absolute() and self.base_dir is not None:
             p = Path(self.base_dir) / p
         return p
@@ -281,9 +382,16 @@ class Case:
             for k in ("plasticity", "gamma", "gas_constant"):
                 if m.get(k) is None:
                     m.pop(k, None)
+            if not m.get("cp"):
+                m.pop("cp", None)
         for b in d["bcs"]:
-            if b.get("p_inf") is None:
-                b.pop("p_inf", None)
+            for k in ("p_inf", "p0", "T0"):
+                if b.get(k) is None:
+                    b.pop(k, None)
+        for q in d["qois"]:
+            for k in ("time", "window", "mode"):
+                if q.get(k) is None:
+                    q.pop(k, None)
         return d
 
     @classmethod
@@ -346,6 +454,7 @@ class Case:
                 errs.append(f"material {name!r}: a compressible gas needs gamma > 1, gas_constant > 0 and mu >= 0 "
                             f"(mu = 0: inviscid)")
         errs += _validate_nonlinear(self)
+        errs += _validate_time(self)
         for r in self.regions:
             if r.material not in self.materials:
                 errs.append(f"region {r.group!r} references unknown material {r.material!r}")
@@ -364,7 +473,8 @@ class Case:
                     errs.append(f"{tag}: where only for fixed / displacement / temperature on a group")
                 else:
                     try:
-                        _compile(b.where)
+                        if "t" in _compile(b.where).co_names:
+                            errs.append(f"{tag}: a where filter selects nodes once; it cannot depend on the time t")
                     except (CaseError, SyntaxError) as e:
                         errs.append(f"{tag}: bad where expression: {e}")
             if b.type == "displacement":
@@ -397,6 +507,8 @@ class Case:
                     errs.append(f"{tag}: p_inf > 0 (static pressure, Pa) and T_inf > 0 (static temperature, K) required")
             if b.type == "outlet" and b.value is not None:
                 errs.append(f"{tag}: an outlet takes no value (supersonic outflow: everything is extrapolated)")
+            if b.type == "total_inlet" and not (b.p0 is not None and b.p0 > 0 and b.T0 is not None and b.T0 > 0):
+                errs.append(f"{tag}: p0 > 0 (total pressure, Pa) and T0 > 0 (total temperature, K) required")
         for i, l in enumerate(self.loads):
             tag = f"loads[{i}] ({l.type})"
             if l.type not in LOAD_TYPES[a.physics]:
@@ -405,6 +517,14 @@ class Case:
                 errs.append(f"{tag}: value must be a list of {ncomp} components")
             elif l.type == "temperature" and self.materials and all(m.alpha == 0 for m in self.materials.values()):
                 errs.append(f"{tag}: thermal load but every material has alpha = 0")
+            if isinstance(l.value, dict) and "table" not in l.value and l.type in LOAD_TYPES[a.physics] \
+                    and l.type != "body_force":      # a time table is checked with the time-dependent values
+                if l.type != "temperature":
+                    errs.append(f"{tag}: value must be a number or an expression (a field file is for a "
+                                f"temperature load only)")
+                elif set(l.value) != {"field"} or not isinstance(l.value["field"], str) or not l.value["field"].strip():
+                    errs.append(f'{tag}: a field value must be {{"field": "<path to an .npz file with x (n, dim) '
+                                f'and T (n,)>"}}, got {l.value!r}')
         fields = {"elasticity": ELASTICITY_FIELDS, "heat": HEAT_FIELDS, "flow": FLOW_FIELDS,
                   "compressible": COMPRESSIBLE_FIELDS}[a.physics]
         names = set()
@@ -418,7 +538,11 @@ class Case:
                 continue
             if q.type in ("point", "point_difference", "max", "min", "max_abs", "integral", "mean") \
                     and q.field not in fields:
-                errs.append(f"{tag}: field must be one of {fields}")
+                if not (a.physics == "flow" and q.field in WALL_FIELDS and q.type in ("max", "min", "mean")
+                        and q.group is not None):
+                    errs.append(f"{tag}: field must be one of {fields}"
+                                + (f" (or, on a wall group with max / min / mean, one of {WALL_FIELDS})"
+                                   if a.physics == "flow" else ""))
             if q.type == "point_difference" and (q.point is None or q.point2 is None
                                                  or len(q.point) not in (2, 3) or len(q.point2) not in (2, 3)):
                 errs.append(f"{tag}: point_difference needs point and point2 ([x, y(, z)])")
@@ -428,8 +552,30 @@ class Case:
                 errs.append(f"{tag}: reaction needs group and component in {list(range(ncomp))}")
             if q.type == "strain_energy" and a.physics != "elasticity":
                 errs.append(f"{tag}: strain_energy is elasticity-only")
-            if q.type in ("force", "flow_rate") and a.physics not in ("flow", "compressible"):
+            if q.type in ("force", "flow_rate", "mass_flow") and a.physics not in ("flow", "compressible"):
                 errs.append(f"{tag}: {q.type} is flow-only")
+            if q.type == "mass_flow" and q.group is None:
+                errs.append(f"{tag}: mass_flow needs group")
+            if q.type in ("natural_frequency", "effective_mass"):
+                if a.modal is None:
+                    errs.append(f"{tag}: {q.type} needs a modal analysis (analysis.options.modal)")
+                if not isinstance(q.mode, int) or isinstance(q.mode, bool) or q.mode < 1:
+                    errs.append(f"{tag}: {q.type} needs mode, an integer >= 1")
+                if q.type == "effective_mass" and q.component not in range(ncomp):
+                    errs.append(f"{tag}: effective_mass needs component in {list(range(ncomp))}")
+            elif a.modal is not None:
+                errs.append(f"{tag}: a modal analysis gives natural_frequency and effective_mass only")
+            if q.time is not None or q.window is not None:
+                if a.transient is None:
+                    errs.append(f"{tag}: time / window need a transient analysis (analysis.options.transient)")
+                elif isinstance(q.time, str) and q.time not in QOI_TIME:
+                    errs.append(f"{tag}: time must be a number or one of {QOI_TIME}")
+                elif isinstance(q.time, bool) or not isinstance(q.time, (int, float, str, type(None))):
+                    errs.append(f"{tag}: time must be a number or one of {QOI_TIME}")
+                if q.window is not None and not (isinstance(q.window, list) and len(q.window) == 2
+                                                 and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                                                         for v in q.window) and q.window[0] < q.window[1]):
+                    errs.append(f"{tag}: window must be [t0, t1] with t0 < t1")
             if q.type == "force" and (q.group is None or q.component not in range(ncomp)):
                 errs.append(f"{tag}: force needs group and component in {list(range(ncomp))}")
             if q.type == "flow_rate" and q.group is None:
@@ -509,6 +655,153 @@ def _validate_nonlinear(case: "Case") -> list[str]:
     return errs
 
 
+# --------------------------------------------------------------------------- time-dependent and modal
+
+
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _validate_time(case: "Case") -> list[str]:
+    """``options["transient"]``, ``options["modal"]``, ``options["damping"]``, and values that depend on
+    time (module doc, "Time-dependent and modal analyses")."""
+    a, errs = case.analysis, []
+    opts = a.options or {}
+    tr, mo = opts.get("transient"), opts.get("modal")
+    for key, val in (("transient", tr), ("modal", mo)):
+        if val is not None and not isinstance(val, dict):
+            errs.append(f"analysis.options.{key} must be a dict")
+    tr = tr if isinstance(tr, dict) and tr else None
+    mo = mo if isinstance(mo, dict) and mo else None
+    if tr is not None:
+        tag = "analysis.options.transient"
+        if a.physics not in TRANSIENT_SCHEMES:
+            errs.append(f"{tag}: a transient analysis is defined for {tuple(TRANSIENT_SCHEMES)}, not {a.physics!r}")
+        if a.nonlinear:
+            errs.append(f"{tag}: a transient analysis cannot also be nonlinear")
+        unknown = sorted(set(tr) - set(TRANSIENT_OPTIONS))
+        if unknown:
+            errs.append(f"{tag}: unknown keys {unknown}; keys: {TRANSIENT_OPTIONS}")
+        t_end = tr.get("t_end")
+        if not _num(t_end) or not t_end > 0:
+            errs.append(f"{tag}.t_end must be a number > 0 (s)")
+            t_end = None
+        dt, n = tr.get("dt"), tr.get("n_steps")
+        if (dt is None) == (n is None):
+            errs.append(f"{tag}: give exactly one of dt (s) and n_steps")
+        elif dt is not None and (not _num(dt) or not dt > 0 or (t_end is not None and dt > t_end)):
+            errs.append(f"{tag}.dt must be a number > 0 and at most t_end")
+        elif dt is not None and t_end is not None and abs(t_end / dt - round(t_end / dt)) > 1e-6 * max(t_end / dt, 1.0) \
+                and tr.get("max_co") is None:
+            errs.append(f"{tag}: t_end / dt = {t_end / dt:.6g} is not a whole number of steps; give a dt that "
+                        f"divides t_end, or n_steps (the solver would otherwise change the step in silence)")
+        elif n is not None and (not isinstance(n, int) or isinstance(n, bool) or n < 1):
+            errs.append(f"{tag}.n_steps must be an integer >= 1")
+        schemes = TRANSIENT_SCHEMES.get(a.physics, ())
+        if tr.get("scheme") is not None and tr["scheme"] not in schemes:
+            errs.append(f"{tag}.scheme for {a.physics} must be one of {schemes}")
+        if tr.get("alpha") is not None and (tr.get("scheme") != "hht" or not _num(tr["alpha"])
+                                            or not -1.0 / 3.0 - 1e-12 <= tr["alpha"] <= 0.0):
+            errs.append(f"{tag}.alpha is for scheme 'hht' and must be in [-1/3, 0]")
+        ini = tr.get("initial")
+        if ini is not None:
+            keys = {"heat": ("T",), "elasticity": ("u", "v"), "flow": ("U", "p", "steady")}.get(a.physics, ())
+            if not isinstance(ini, dict) or set(ini) - set(keys):
+                errs.append(f"{tag}.initial for {a.physics} must be a dict with keys from {keys}")
+            elif any(uses_time(v) for v in ini.values() if not isinstance(v, bool)):
+                errs.append(f"{tag}.initial is the state at t = 0: it cannot depend on t")
+        ot, oe = tr.get("output_times"), tr.get("output_every")
+        if ot is not None and oe is not None:
+            errs.append(f"{tag}: give output_times or output_every, not both")
+        if ot is not None and not (isinstance(ot, list) and ot and all(_num(v) and v >= 0 for v in ot)
+                                   and (t_end is None or max(ot) <= t_end * (1 + 1e-12))):
+            errs.append(f"{tag}.output_times must be a list of times in [0, t_end]")
+        if oe is not None and (not isinstance(oe, int) or isinstance(oe, bool) or oe < 1):
+            errs.append(f"{tag}.output_every must be an integer >= 1")
+        if tr.get("max_co") is not None and (a.physics != "flow" or not _num(tr["max_co"]) or not tr["max_co"] > 0):
+            errs.append(f"{tag}.max_co is for flow and must be a number > 0")
+        for name, m in case.materials.items():
+            if a.physics == "heat" and not (m.rho > 0 and m.cp > 0):
+                errs.append(f"material {name!r}: transient heat needs rho > 0 (kg/m^3) and cp > 0 (J/(kg K))")
+            if a.physics == "elasticity" and not m.rho > 0:
+                errs.append(f"material {name!r}: a dynamic analysis needs rho > 0 (kg/m^3)")
+    if mo is not None:
+        tag = "analysis.options.modal"
+        if a.physics != "elasticity":
+            errs.append(f"{tag}: a modal analysis is defined for elasticity only")
+        if tr is not None or a.nonlinear:
+            errs.append(f"{tag}: a modal analysis cannot also be transient or nonlinear")
+        unknown = sorted(set(mo) - set(MODAL_OPTIONS))
+        if unknown:
+            errs.append(f"{tag}: unknown keys {unknown}; keys: {MODAL_OPTIONS}")
+        n = mo.get("n_modes")
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            errs.append(f"{tag}.n_modes must be an integer >= 1")
+        if mo.get("shift") is not None and (not _num(mo["shift"]) or mo["shift"] < 0):
+            errs.append(f"{tag}.shift must be a frequency >= 0 (Hz)")
+        for name, m in case.materials.items():
+            if not m.rho > 0:
+                errs.append(f"material {name!r}: a modal analysis needs rho > 0 (kg/m^3)")
+    damp = opts.get("damping")
+    if damp is not None:
+        ray = damp.get("rayleigh") if isinstance(damp, dict) else None
+        if not (isinstance(damp, dict) and set(damp) == {"rayleigh"} and isinstance(ray, list) and len(ray) == 2
+                and all(_num(v) and v >= 0 for v in ray)):
+            errs.append('analysis.options.damping must be {"rayleigh": [a, b]} with a, b >= 0 (C = a M + b K)')
+        elif not (tr is not None and a.physics == "elasticity"):
+            errs.append("analysis.options.damping is for a transient elasticity (dynamic) analysis")
+    # values that depend on time
+    timed = [(f"bcs[{i}] ({b.type}) {k}", v) for i, b in enumerate(case.bcs)
+             for k, v in (("value", b.value), ("h", b.h), ("T_inf", b.T_inf)) if v is not None]
+    timed += [(f"loads[{i}] ({l.type}) value", l.value) for i, l in enumerate(case.loads)]
+    for tag, v in timed:
+        for part in (v if isinstance(v, list) else [v]):
+            if isinstance(part, dict) and "table" in part:
+                err = _table_error(part)
+                if err:
+                    errs.append(f"{tag}: {err}")
+        try:
+            dep = uses_time(v)
+        except (CaseError, SyntaxError):
+            continue                  # a bad expression is reported where it is used
+        if dep and tr is None:
+            errs.append(f"{tag} depends on the time t: that needs a transient analysis (analysis.options.transient)")
+    if tr is None:
+        for i, b in enumerate(case.bcs):
+            if b.type == "convection" and not (_num(b.h) and _num(b.T_inf)) and b.h is not None and b.T_inf is not None:
+                errs.append(f"bcs[{i}] (convection): h and T_inf must be numbers in a steady analysis")
+    return errs
+
+
+def _table_error(value: dict) -> str | None:
+    tab = value.get("table")
+    if set(value) != {"table"} or not isinstance(tab, list) or not tab:
+        return 'a table must be {"table": [[t0, v0], [t1, v1], ...]}'
+    if not all(isinstance(r, (list, tuple)) and len(r) == 2 and _num(r[0]) and _num(r[1]) for r in tab):
+        return "every table row must be [time, value], two numbers"
+    ts = [r[0] for r in tab]
+    if any(b <= a_ for a_, b in zip(ts, ts[1:])):
+        return "the table times must increase"
+    return None
+
+
+def uses_time(value) -> bool:
+    """True when a value (a number, an expression, a table, or a list of these) depends on the time t."""
+    if isinstance(value, dict):
+        return "table" in value
+    if isinstance(value, str):
+        return "t" in _compile(value).co_names
+    if isinstance(value, (list, tuple)):
+        return any(uses_time(v) for v in value)
+    return False
+
+
+def table_value(value: dict, t: float) -> float:
+    """A table at time t: linear between its points, constant before the first and after the last."""
+    tab = np.asarray(value["table"], dtype=float)
+    return float(np.interp(float(t), tab[:, 0], tab[:, 1]))
+
+
 # --------------------------------------------------------------------------- expressions
 
 _FUNCS = {
@@ -519,7 +812,7 @@ _FUNCS = {
     )
 }
 _CONSTS = {"pi": np.pi, "e": np.e}
-_VARS = ("x", "y", "z")
+_VARS = ("x", "y", "z", "t")      # t: the time of a transient analysis (seconds)
 _NODES = (
     ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call, ast.Name, ast.Load, ast.Constant,
     ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod, ast.USub, ast.UAdd,
@@ -541,21 +834,86 @@ def _compile(expr: str):
     return compile(tree, "<expr>", "eval")
 
 
-def eval_expr(expr: str, x, y, z=None) -> np.ndarray:
-    """Evaluate a restricted arithmetic expression in x, y, z (arrays of equal shape)."""
+def eval_expr(expr: str, x, y, z=None, t: float | None = None) -> np.ndarray:
+    """Evaluate a restricted arithmetic expression in x, y, z (arrays of equal shape) and, in a transient
+    analysis, the time t (a number). An expression that uses t without a time is a ``CaseError``."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     z = np.zeros_like(x) if z is None else np.asarray(z, dtype=float)
     env = {"x": x, "y": y, "z": z, **_FUNCS, **_CONSTS}
+    code = _compile(expr)
+    if "t" in code.co_names:
+        if t is None:
+            raise CaseError(f"expression {expr!r} uses the time t, which only a transient analysis has")
+        env["t"] = np.float64(t)
     # errstate: a numpy floating-point warning (e.g. 1/x at r = 0) would otherwise go through the
     # warnings machinery, which needs __import__ and fails under the empty builtins below.
     with np.errstate(all="ignore"):
-        out = eval(_compile(expr), {"__builtins__": {}}, env)  # noqa: S307 - AST-whitelisted above
+        out = eval(code, {"__builtins__": {}}, env)  # noqa: S307 - AST-whitelisted above
     return np.broadcast_to(np.asarray(out, dtype=float), x.shape).copy()
 
 
-def as_field(value: float | str, x, y, z=None) -> np.ndarray:
-    """Scalar or expression -> array of values at the given coordinates."""
+def as_field(value: float | str | dict, x, y, z=None, t: float | None = None) -> np.ndarray:
+    """Scalar, expression or time table -> array of values at the given coordinates (and time)."""
     if isinstance(value, str):
-        return eval_expr(value, x, y, z)
+        return eval_expr(value, x, y, z, t)
+    if isinstance(value, dict) and "table" in value:
+        if t is None:
+            raise CaseError(f"a table ({value!r}) gives a value in time, which only a transient analysis has")
+        return np.full(np.shape(x), table_value(value, t))
+    if isinstance(value, dict):
+        raise CaseError(f"a field file ({value!r}) is not a number or an expression: only a temperature load "
+                        f"of the skfem backend takes one (it maps the field to its nodes)")
     return np.full(np.shape(x), float(value))
+
+
+# --------------------------------------------------------------------------- temperature field files
+
+
+def write_temperature_field(path: str | Path, x, T) -> Path:
+    """Write a temperature field for ``Load(type="temperature", value={"field": path})``: an .npz file
+    with ``x`` (n, dim) node coordinates and ``T`` (n,) temperatures. For a heat result of the same
+    mesh and order: ``write_temperature_field(path, *result.nodal("T"))``."""
+    x, T = np.asarray(x, dtype=float), np.asarray(T, dtype=float).ravel()
+    if x.ndim != 2 or x.shape[1] not in (2, 3) or len(x) != len(T) or len(T) == 0:
+        raise CaseError(f"a temperature field needs x (n, 2 or 3) and T (n,), got x {x.shape} and T {T.shape}")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:          # an open file: np.savez would add ".npz" to another suffix
+        np.savez(f, x=x, T=T)
+    return path
+
+
+def read_temperature_field(path: str | Path, dim: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Read a temperature field file: (x (n, dim), T (n,)). Every problem is a ``CaseError`` that names
+    the file. With ``dim`` = 2, a file with three coordinates is accepted when its third one is constant
+    (a 2D mesh lies in the xy-plane) and comes back with two."""
+    path = Path(path)
+    if not path.is_file():
+        raise CaseError(f"temperature field file not found: {str(path)!r}")
+    try:
+        with np.load(path, allow_pickle=False) as z:
+            names = list(getattr(z, "files", []))
+            if "x" not in names or "T" not in names:
+                raise CaseError(f"temperature field {str(path)!r}: an .npz file with the arrays x (n, dim) and "
+                                f"T (n,) is required; it has {names or 'no named arrays'}")
+            x, T = np.asarray(z["x"], dtype=float), np.asarray(z["T"], dtype=float)
+    except CaseError:
+        raise
+    except Exception as e:  # noqa: BLE001  numpy raises several kinds for a file that is not an .npz
+        raise CaseError(f"cannot read temperature field {str(path)!r}: {type(e).__name__}: {e}") from e
+    if T.ndim == 2 and T.shape[1] == 1:
+        T = T[:, 0]
+    if x.ndim != 2 or x.shape[1] not in (2, 3) or T.ndim != 1 or len(x) != len(T) or len(T) == 0:
+        raise CaseError(f"temperature field {str(path)!r}: need x (n, 2 or 3) and T (n,), got x {x.shape} and "
+                        f"T {T.shape}")
+    if not (np.all(np.isfinite(x)) and np.all(np.isfinite(T))):
+        raise CaseError(f"temperature field {str(path)!r}: x or T holds values that are not finite")
+    if dim is not None and x.shape[1] != dim:
+        span = float(np.ptp(x[:, :2], axis=0).max())
+        if dim == 2 and float(np.ptp(x[:, 2])) <= 1e-9 * max(span, 1e-300):
+            x = x[:, :2]
+        else:
+            raise CaseError(f"temperature field {str(path)!r}: its points have {x.shape[1]} coordinates but the "
+                            f"analysis is {dim}D")
+    return np.ascontiguousarray(x), T

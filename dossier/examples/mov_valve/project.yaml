@@ -1,0 +1,16 @@
+# Verification by analysis of one component in the context of its system.
+# Run it:  python -m dossier run dossier/examples/mov_valve
+id: MOV-VERIF
+name: Main oxidizer valve body, verification by analysis
+description: >
+  The body of the main oxidizer valve of a pump-fed LOX / kerosene engine. The project checks the valve
+  specification against the engine context, selects the load cases, analyses the body and reports the
+  margins. The specification holds six deliberate defects (README.md lists them) so that the validation
+  stage has something to find.
+system: system.yaml
+components: [components/mov_body]
+subject: CMP-MOV-BODY
+materials: materials.yaml
+policy: policy.yaml
+terms: terms.yaml
+author: example
