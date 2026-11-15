@@ -1033,7 +1033,7 @@ def _results(data: list[LevelData], keys: list[str], scls: dict, max_unc: float,
                 rv.uncertainty = rv.uncertainty_abs = rv.extrapolated = None   # no limit, so no uncertainty of a limit
                 rv.order = None
                 why = ("a sharp re-entrant edge" if where["edge"] else "the rim of a rigid support")
-                note += (f" The peak is at {why}, where the stress has no limit in linear theory. "
+                note += (f"\n\nThe peak is at {why}, where the stress has no limit in linear theory. "
                          + ("The value grew at each refinement, so it is singular." if st.grew else
                             "The value did not grow at each refinement, but a finer mesh can make it grow. "
                             "The engine does not call it converged."))

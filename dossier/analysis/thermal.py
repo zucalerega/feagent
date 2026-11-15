@@ -912,8 +912,8 @@ def _convergence_decision(j: Journal, lc: LoadCase, n: int, t_range: float, limi
         how = ("The uncertainty of a result comes from the Grid Convergence Index of the three finest meshes, with "
                "a safety factor of 1.25 to 3.")
     elif n == 2:
-        how = ("The uncertainty of a result is three times the change of its value between the two meshes, or more "
-               "if the meshes are almost equal in size.")
+        how = ("The uncertainty of a result is three times the change of its value between the two meshes. "
+               "The uncertainty is more if the meshes are almost equal in size.")
     else:
         how = "One mesh gives no uncertainty, thus no result is converged."
     d = j.decide(

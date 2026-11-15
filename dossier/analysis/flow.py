@@ -1079,7 +1079,7 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
            else "The flow is laminar. ")
         + f"The mesh study has {len(levels)} meshes of hexahedra, and the finest mesh has {fine.cells} cells. "
         + f"The pressure drop is {_pa(value)}, which is {value / q_dyn:.3f} times the dynamic pressure."
-        + (" The meshes are coarse. This result is a first look." if opts.quick else ""))
+        + ("\n\nThe meshes are coarse. This result is a first look." if opts.quick else ""))
     an.checks = _checks(an.id, levels, setup, bore, regime, re, u_mesh, max_u, est, geo, flows[0], d)
     for lev, mesh, path in meshes:
         an.artifacts.append(Artifact(path=_rel(project, path), kind="mesh",
