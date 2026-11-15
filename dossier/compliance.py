@@ -335,7 +335,7 @@ class _Eval:
     nominal: float | None = None          # of the value without its uncertainty
     k: float | None = None                # not converged with an uncertainty: the factor on it (policy)
     k_margin: float | None = None         # the margin with k x the uncertainty: unsafe side, safe side for a fail
-    governs: str = ""                     # scls: the sentence that names the governing line
+    governs: str = ""                     # scls: the governing line (the statement names it)
 
     @property
     def k_decides(self) -> bool:
@@ -526,12 +526,10 @@ def _worst_line(key: str, crit: Criterion, lc: LoadCase, an: AnalysisRecord, lim
     line = worst.key.partition("@")[2]
     worst.reasons.append(f"The assessment uses each of the {len(usable)} stress classification lines by itself. "
                          f"Line {line} governs.")
-    worst.governs = (f"Line {line} governs of the {len(usable)} stress classification lines." if len(usable) > 1
-                     else f"Line {line} is the only stress classification line with a result.")
+    worst.governs = line
     missing = [s.id for s in comp.scls if prefix + s.id not in {e.key for e in usable}]
     if missing:
         worst.reasons.append(f"Analysis {an.id} has no result for {_join(missing)} on the finest mesh.")
-        worst.governs += f" Analysis {an.id} has no result for {_join(missing)}."
         if worst.verdict == "pass":
             worst.verdict, worst.cause = "inconclusive", "one or more stress classification lines have no result"
     return worst
@@ -784,9 +782,10 @@ def _statement(key: str, lc: LoadCase, ev: _Eval | None, hc: HandCalcResult | No
         else:
             unc = ev.uncertainty_text()
             mesh = " on the finest mesh" if ev.status == "singular" and ev.finest else ""
-            s.append(f"The {_what(ev.key)} is {shown}{mesh}{' with an uncertainty of ' + unc if unc else ''}.")
+            what = _what(ev.key)
             if ev.governs:
-                s.append(ev.governs)
+                what = what.replace(f" on {ev.governs}", f" on the governing line {ev.governs}")
+            s.append(f"The {what} is {shown}{mesh}{' with an uncertainty of ' + unc if unc else ''}.")
     else:
         s.append(f"Load case {lc.id} gives no value for the {_what(key)}.")
     if isinstance(limit, _Limit):

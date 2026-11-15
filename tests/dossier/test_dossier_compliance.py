@@ -157,8 +157,8 @@ def test_pass_is_a_converged_result_with_a_positive_conservative_margin(workproj
     assert (item.requirement, item.criterion, item.load_case, item.analysis) == ("REQ-MOV-002", 0, "LC-PROOF", "AN-PROOF")
     assert item.result_key == MB + "SCL-SHELL" and item.origin.by == "engine:compliance" and item.origin.stage == "assess"
     assert item.statement == (
-        "The von Mises membrane plus bending stress on SCL-SHELL is 71.3 MPa "
-        "with an uncertainty of 2 %. Line SCL-SHELL governs of the 5 stress classification lines. The allowable is 170 MPa (yield strength of MAT-316L). "
+        "The von Mises membrane plus bending stress on the governing line SCL-SHELL is 71.3 MPa "
+        "with an uncertainty of 2 %. The allowable is 170 MPa (yield strength of MAT-316L). "
         "The factor of safety is 1.0 (criterion yield of REQ-MOV-002). "
         "The margin of safety is +1.34 with the uncertainty on the unsafe side. The criterion passes.")
     assert item.reasons == ["The result has the status converged.",
@@ -205,7 +205,7 @@ def test_converged_result_without_an_uncertainty_is_used_as_it_is(workproject):
     assert item.reasons[:3] == ["The result has the status converged.", "The analysis gives no uncertainty for this result.",
                                 "The assessment uses the value as it is."]
     assert "The margin of safety is +0.13. The criterion passes." in item.statement and "uncertainty" not in item.statement
-    assert one(workproject, PROOF, res(MB + "scls", 171 * MPA, u=None)).verdict == "fail"     # 170 / 171 - 1 = -0.0058
+    assert one(workproject, PROOF, res(MB + "scls", 171 * MPA, u=None, method="derived")).verdict == "fail"     # 170 / 171 - 1 = -0.0058
 
 
 def test_absolute_uncertainty_wins_over_the_relative_one(workproject):
@@ -1010,7 +1010,8 @@ def everything(project, ctx):
                     checks=[check("CHK-EQUILIBRIUM", False, statement="The reactions are 12 % smaller than the applied loads.")], **ts),
            analysis("LC-SHUTDOWN", status="failed", message="ValueError: the mesh has no group FT-NECK", **ts),
            analysis("LC-FLOW-FIRE", status="not_supported", analysis_type="flow", message="OpenFOAM is not on this computer."),
-           analysis("LC-FATIGUE", [res("damage.total@part", 0.0, unit="", u=None)], analysis_type="fatigue")]
+           analysis("LC-FATIGUE", [res("damage.total@part", 0.0, unit="", u=None, method="derived")],
+                    analysis_type="fatigue")]
     fnd = [finding("REQ-MOV-001", "meop"), finding("REQ-MOV-004", "yield-factor"), finding("REQ-MOV-009", "not-verifiable")]
     return assess(project, cases, ans, [hand_calc("LC-FLOW-FIRE", warnings=["The loss coefficient K is an estimate."])], fnd)
 
