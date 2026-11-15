@@ -326,10 +326,22 @@ class _Eval:
     nominal: float | None = None          # of the value without its uncertainty
     k: float | None = None                # not converged with an uncertainty: the factor on it (policy)
     k_margin: float | None = None         # the margin with k x the uncertainty: unsafe side, safe side for a fail
+    governs: str = ""                     # scls: the sentence that names the governing line
+
+    @property
+    def k_decides(self) -> bool:
+        """The k rule gave the pass or the fail."""
+        return self.k is not None and self.k_margin is not None and self.verdict in ("pass", "fail")
+
+    @property
+    def deciding(self) -> float | None:
+        """The margin that decides the verdict: the margin with k x the uncertainty when the k rule decides."""
+        return self.k_margin if self.k_decides else self.margin
 
     @property
     def rank(self) -> tuple:
-        return (_RANK[self.verdict], math.inf if self.margin is None else self.margin)
+        m = self.deciding
+        return (_RANK[self.verdict], math.inf if m is None else m)
 
     def uncertainty_text(self) -> str:
         if not self.du:
@@ -387,7 +399,12 @@ def _evaluate(rv: ResultValue, key: str, crit: Criterion, limit: _Limit, factor:
     note = [f'The note of the result is: "{rv.note}"'] if rv.note else []
     at_edge = _HOW_SINGULAR if key.partition(".")[0] in _STRESS else _HOW_SINGULAR_OTHER
 
-    if rv.status == "converged":
+    if rv.status == "converged" and ev.du is None and rv.method not in ("hand_calc", "derived"):
+        ev.verdict, ev.cause = "inconclusive", "the result has the status converged but no uncertainty"
+        ev.reasons += ["The result has the status converged.", no_uncertainty,
+                       f"The method of the result is {rv.method}. Only a hand calculation or a derived result can "
+                       "decide a criterion without an uncertainty.", *note]
+    elif rv.status == "converged":
         ev.reasons.append("The result has the status converged.")
         if ev.du is None:
             ev.reasons += [no_uncertainty, "The assessment uses the value as it is."]
@@ -426,7 +443,12 @@ def _evaluate(rv: ResultValue, key: str, crit: Criterion, limit: _Limit, factor:
             ev.reasons.append(f"The uncertainty of the result is {both}, and the policy limit is {_pct(max_uncertainty)}.")
         elif ev.du is not None:
             ev.reasons.append(f"The uncertainty of the result is {ev.uncertainty_text()}.")
-        if ev.du is not None and k > 0 and _finite(k):
+        if ev.du is not None and not rv.error_estimated:
+            ev.cause = "the result has no error estimate"
+            ev.reasons += ["The result has no error estimate. The values of the mesh study do not converge.",
+                           "The uncertainty of the result is only the scatter of these values. It is not a bound.",
+                           "The assessment does not use such a result for a pass or a fail.", _HOW_REFINE]
+        elif ev.du is not None and k > 0 and _finite(k):
             ev.k = k
             unsafe_k, safe_k = ms(value + unsafe * k * du), ms(value - unsafe * k * du)
             times = _times(k)
@@ -461,37 +483,49 @@ def _response(crit: Criterion, lc: LoadCase, an: AnalysisRecord, limit: _Limit, 
     """The result of the criterion in the analysis: the key itself, or for `scls` the worst line."""
     key = crit.key()
     max_u, k = inp.project.policy.max_uncertainty, inp.project.policy.unconverged_margin_factor
-    ev = None
+    if crit.location == "scls":
+        return _worst_line(key, crit, lc, an, limit, factor, inp)
     if key in an.results:
         ev = _evaluate(an.results[key], key, crit, limit, factor, an.id, max_u, k)
         inp.unconverged |= ev.k is not None
-        if ev.value is not None:
-            return ev
-    if crit.location == "scls":
-        prefix = key[: -len("scls")]
-        comp = inp.project.components.get(lc.component, inp.project.subject)
-        lines = [s.id for s in comp.scls]
-        lines += [k[len(prefix):] for k in an.results if k.startswith(prefix + "SCL-") and k[len(prefix):] not in lines]
-        evals = [_evaluate(an.results[prefix + line], prefix + line, crit, limit, factor, an.id, max_u, k)
-                 for line in lines if prefix + line in an.results]
-        inp.unconverged |= any(e.k is not None for e in evals)
-        usable = [e for e in evals if e.margin is not None]
-        if usable:
-            worst = min(usable, key=lambda e: e.rank)
-            worst.reasons += [f"Analysis {an.id} has no result for all stress classification lines together.",
-                              f"The assessment uses the worst of {len(usable)} lines: {worst.key.partition('@')[2]}."]
-            missing = [s.id for s in comp.scls if prefix + s.id not in {e.key for e in usable}]
-            if missing:
-                worst.reasons.append(f"Analysis {an.id} has no result for {_join(missing)}.")
-                if worst.verdict == "pass":
-                    worst.verdict, worst.cause = "inconclusive", "one or more stress classification lines have no result"
-            return worst
-        if evals and ev is None:
+        return ev
+    return _Eval(key=key, cause=f"analysis {an.id} has no result for {key}",
+                 reasons=[f"Analysis {an.id} has no result with the key {key}."])
+
+
+def _worst_line(key: str, crit: Criterion, lc: LoadCase, an: AnalysisRecord, limit: _Limit, factor: _Factor,
+                inp: _Inputs) -> _Eval:
+    """`scls`: each stress classification line by itself; the worst verdict, then the smallest deciding margin,
+    governs. The aggregate key `...@scls` of the analysis is not used: one number for all lines hides the
+    uncertainty and the status of each line. A line of the component without a result on the finest mesh
+    makes a pass inconclusive."""
+    max_u, k = inp.project.policy.max_uncertainty, inp.project.policy.unconverged_margin_factor
+    prefix = key[: -len("scls")]
+    comp = inp.project.components.get(lc.component, inp.project.subject)
+    lines = [s.id for s in comp.scls]
+    lines += [r[len(prefix):] for r in an.results if r.startswith(prefix + "SCL-") and r[len(prefix):] not in lines]
+    evals = [_evaluate(an.results[prefix + line], prefix + line, crit, limit, factor, an.id, max_u, k)
+             for line in lines if prefix + line in an.results]
+    inp.unconverged |= any(e.k is not None for e in evals)
+    usable = [e for e in evals if e.margin is not None]
+    if not usable:
+        if evals:
             return evals[0]
-    if ev is None:
-        ev = _Eval(key=key, cause=f"analysis {an.id} has no result for {key}",
-                   reasons=[f"Analysis {an.id} has no result with the key {key}."])
-    return ev
+        return _Eval(key=key, cause=f"analysis {an.id} has no result for a stress classification line",
+                     reasons=[f"Analysis {an.id} has no result for a stress classification line ({prefix}SCL-...)."])
+    worst = min(usable, key=lambda e: e.rank)
+    line = worst.key.partition("@")[2]
+    worst.reasons.append(f"The assessment uses each of the {len(usable)} stress classification lines by itself. "
+                         f"Line {line} governs.")
+    worst.governs = (f"Line {line} governs of the {len(usable)} stress classification lines." if len(usable) > 1
+                     else f"Line {line} is the only stress classification line with a result.")
+    missing = [s.id for s in comp.scls if prefix + s.id not in {e.key for e in usable}]
+    if missing:
+        worst.reasons.append(f"Analysis {an.id} has no result for {_join(missing)} on the finest mesh.")
+        worst.governs += f" Analysis {an.id} has no result for {_join(missing)}."
+        if worst.verdict == "pass":
+            worst.verdict, worst.cause = "inconclusive", "one or more stress classification lines have no result"
+    return worst
 
 
 def _estimate(crit: Criterion, lc: LoadCase, limit: _Limit, factor: _Factor,
