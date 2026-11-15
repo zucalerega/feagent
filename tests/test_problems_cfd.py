@@ -83,7 +83,9 @@ def test_case_check(problem, order):
     for r in refs:
         assert r.qoi in names
         assert r.kind in REFERENCE_KINDS
-        assert 0 < r.tolerance <= 0.05
+        # a RANS reference also carries the model error (validation: friction -4.7 % to -2.6 %, separation
+        # loss +7 %; the stated model uncertainty is 10 %), so a turbulent problem may state up to 10 %
+        assert 0 < r.tolerance <= (0.10 if turbulent else 0.05)
         assert len(r.source) > 40 and ("http" in r.source or "(19" in r.source or "(20" in r.source)
         assert math.isfinite(r.value) and r.value != 0
 
