@@ -45,9 +45,11 @@ Convergence rule (exact). u is the absolute uncertainty of the value v on the fi
                    oscillatory, the changes become smaller.
                                         u = 3 x the spread (max - min) of the last three values (the last
                                         change alone can be small by chance: 80, 100, 99.9)
+                   no trend, each change < REMESH_SCATTER (0.2 %) of the value: the scatter of independent
+                                        tetrahedral meshes (feacore: 0.1 to 0.5 %). u = 3 x spread, an estimate.
                    diverging, or no order   u = 3 x spread, spread = max - min of the three values. This is
                                         NOT an error estimate (error_estimated False): it is the scatter of
-                                        values that do not converge.
+                                        values that do not converge. Status not_converged.
                    changes < 1e-6       u = 1.25 x the larger change (round-off)
   line noise     A result on a stress classification line also depends on where the line cuts the elements
                  (the recovered stress scatters at the element scale). On every level the engine evaluates
@@ -148,6 +150,7 @@ SAFETY_TWO_LEVELS = 3.0
 SAFETY_SPREAD = 3.0             # every other error estimate
 MIN_RATIO = 1.3                 # the levels of a GCI are at least this far apart in h where possible
 GROWTH = 1e-3                   # a peak "grew" when its magnitude rose by more than this at a refinement
+REMESH_SCATTER = 2e-3           # changes under this part of the value: the scatter of independent tetrahedral meshes
 EXCLUSION = 2.0                 # peak evaluation: nodes within this many coarse element sizes of a held face are left out
 NEAR_EDGE = 2.5                 # a peak is at a re-entrant edge within this many local element sizes
 NEAR_ZONE = 2.0                 # ... or within this many local element sizes of the border of the left-out zone
@@ -271,6 +274,12 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
             u = SAFETY_SPREAD * spread
             note = (f"The values go up and down between the mesh levels, and the changes become smaller. "
                     f"The uncertainty is {SAFETY_SPREAD:g} times the spread of the last three values ({pct(spread)}).")
+        elif max(abs(vt[1] - vt[0]), last) <= REMESH_SCATTER * abs(fine):
+            # no trend, but every change is inside the scatter of independently made tetrahedral meshes
+            u = SAFETY_SPREAD * spread
+            note = (f"The changes between the mesh levels have no trend, but each change is less than "
+                    f"{100 * REMESH_SCATTER:g} % of the value. This is the scatter of independent tetrahedral meshes. "
+                    f"The uncertainty is {SAFETY_SPREAD:g} times the spread of the three values ({pct(spread)}).")
         else:
             u = SAFETY_SPREAD * spread
             estimated = False

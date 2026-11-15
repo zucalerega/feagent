@@ -318,7 +318,6 @@ def test_free_cylinder_against_lame(cylinder):
     # a free part: displacement relative to the mean rigid-body motion; the bore stays round
     u_i = RI / 200e9 * (hoop_i - 0.3 * (-p + A))                              # radial displacement of the bore
     u_ax = 0.5 * LEN / 200e9 * (A - 0.3 * (hoop_i - p))                       # half the change of length (at the bore)
-    print("DBG", {k: (v.per_level, v.status, v.note) for k, v in r.items() if k.startswith(("displacement", "radial"))})
     assert r["displacement.max@part"].status == "converged"
     assert r["displacement.max@part"].value > max(u_i, abs(u_ax))
     assert r["displacement.max@part"].value < 1.05 * math.hypot(RO / 200e9 * 2 * A, u_ax * 1.1) + u_i

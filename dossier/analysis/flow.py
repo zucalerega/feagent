@@ -172,6 +172,19 @@ def colebrook(reynolds: float, relative_roughness: float = 0.0) -> float:
     return 1.0 / new**2
 
 
+def section_friction(xs, radii, mdot: float, rho: float, mu: float, ks: float = 0.0) -> float:
+    """The friction loss of a stepped bore, Pa: the sum over its sections of f(Re_i, ks / d_i) L_i / d_i
+    rho v_i^2 / 2 with each section's own diameter and velocity (the gradient grows with d^-4.75 in a
+    narrower section; the upstream gradient times the whole length would miss that). Developed flow in each
+    section is assumed."""
+    total = 0.0
+    for r, a, b in zip(radii, xs[:-1], xs[1:]):
+        dd = 2.0 * r
+        v = mdot / (rho * math.pi * r * r)
+        total += colebrook(rho * v * dd / mu, ks / dd) * (b - a) / dd * 0.5 * rho * v * v
+    return total
+
+
 # =========================================================================== the fluid volume
 
 
@@ -1000,21 +1013,38 @@ def run(project, ctx, geo, lc: LoadCase, workdir: Path, opts):
              impact="A gas or a liquid near its vapour pressure needs a different analysis.",
              verify_by="Compare the lowest static pressure with the vapour pressure of the fluid.",
              links=[("uses", eff)])
-    rough_part = 0.0
+    # the friction loss of the part's own sections (each with its own diameter), smooth and with the roughness
+    fr_smooth = section_friction(bore.xs, bore.radii, mdot, rho, mu)
+    fr_rough = {}                           # ks / Ra -> friction loss with that sand-grain roughness
     if regime == "turbulent":
         if fluid.get("roughness", 0.0) > 0.0:
-            rr = fluid["roughness"] / d
-            f_s, f_r = colebrook(re), colebrook(re, rr)
-            rough_part = f_r / f_s - 1.0
-            j.assume(sub, "smooth-walls", "Hydraulically smooth walls",
-                     statement="The walls of the bore are hydraulically smooth in the analysis.",
-                     rationale=f"The wall functions of the solver are for a smooth wall. The flow domain gives a "
-                               f"roughness of {units.fmt(units.Q(fluid['roughness'], 'm'), 'um')}. The Colebrook "
-                               f"formula gives a friction factor of {f_r:.4f} with this roughness and {f_s:.4f} "
-                               f"for a smooth wall.",
-                     impact=f"The friction loss can be {_pct(rough_part, 0)} larger. The uncertainty of the result "
-                            f"includes this difference for the friction part.",
-                     verify_by="Measure the pressure drop in a flow test.", conservative=False)
+            ra = fluid["roughness"]
+            fr_rough = {k: section_friction(bore.xs, bore.radii, mdot, rho, mu, k * ra)
+                        for k in (KS_PER_RA, *KS_PER_RA_RANGE)}
+            corr = fr_rough[KS_PER_RA] - fr_smooth
+            lo_c, hi_c = (fr_rough[k] - fr_smooth for k in KS_PER_RA_RANGE)
+            j.assume(sub, "smooth-walls", "Smooth walls in the solver, roughness by the friction formula",
+                     statement=f"The solver has smooth walls. The result adds the extra friction loss of the "
+                               f"rough walls, from the Colebrook formula for each section of the bore. The roughness "
+                               f"of the flow domain, {units.fmt(units.Q(ra, 'm'), 'um')}, is a surface finish Ra. "
+                               f"The sand-grain roughness of the formula is ks = {KS_PER_RA:g} Ra = "
+                               f"{units.fmt(units.Q(KS_PER_RA * ra, 'm'), 'um')}.",
+                     rationale=f"The wall functions of the solver are for a smooth wall. A surface finish Ra is the "
+                               f"mean height of the profile, not the sand-grain roughness ks of the Colebrook formula: "
+                               f"for machined pipe surfaces ks is about {KS_PER_RA:g} Ra (Adams et al. 2012, "
+                               f"Proc. IMechE C 226), and other correlations give {KS_PER_RA_RANGE[0]:g} Ra to "
+                               f"{KS_PER_RA_RANGE[1]:g} Ra. The friction loss of the sections is "
+                               f"{_pa(fr_smooth)} for a smooth wall and {_pa(fr_rough[KS_PER_RA])} with ks = "
+                               f"{KS_PER_RA:g} Ra ({_pa(fr_rough[KS_PER_RA_RANGE[0]])} to "
+                               f"{_pa(fr_rough[KS_PER_RA_RANGE[1]])} for ks = {KS_PER_RA_RANGE[0]:g} Ra to "
+                               f"{KS_PER_RA_RANGE[1]:g} Ra).",
+                     impact=f"The roughness correction is {_pa(corr)}. Its uncertainty, the larger distance to the "
+                            f"values for ks = {KS_PER_RA_RANGE[0]:g} Ra and {KS_PER_RA_RANGE[1]:g} Ra "
+                            f"({_pa(lo_c)} and {_pa(hi_c)}), is a part of the uncertainty of the result. If the "
+                            f"roughness of the flow domain is already a sand-grain roughness, the correction is too "
+                            f"large.",
+                     verify_by="Measure the pressure drop in a flow test, or measure ks of the bore surface.",
+                     conservative=None)
         else:
             j.assume(sub, "smooth-walls", "Hydraulically smooth walls",
                      statement="The walls of the bore are hydraulically smooth in the analysis.",
