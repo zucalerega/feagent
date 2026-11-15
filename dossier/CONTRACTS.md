@@ -169,6 +169,10 @@ Fields for later engines (fatigue): for the two finest meshes write `fields_L<k>
 `x` (n, 3) node coordinates, `stress` (n, 6) = sxx, syy, szz, sxy, syz, sxz in Pa, `u` (n, 3) in m, and for
 a thermal analysis `T` (n,) in K. List them as `Artifact(kind="field")`.
 
+A check with `passed=False` blocks a pass in the compliance stage, whatever its kind. A check that is
+information only (an error estimate with no stated limit) has `passed=None`; give `passed=False` only when
+the check has a limit and the value is over it.
+
 Checks every analysis makes on itself (`AnalysisRecord.checks`): equilibrium (reactions against applied
 loads), mesh quality, the error estimate, and one check per hand-calculation comparison (the pipeline adds
 those with `handcalc.compare`).

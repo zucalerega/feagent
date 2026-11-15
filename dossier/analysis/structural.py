@@ -40,7 +40,8 @@ Convergence rule (exact). u is the absolute uncertainty of the value v on the fi
                                                 3 x that with p limited to [0.5, p_theory])
                                         (the grid convergence index, Celik et al. 2008 / Roache)
                    monotone, p far above theory (p > 1.5 p_theory + 0.5: not in the asymptotic range)
-                                        u = max(the two values above, 3 x spread)
+                                        u = max(the two values above, 3 x spread). No order and no
+                                        extrapolated value are given (the observed order is not used).
                    oscillatory, the changes become smaller: the limit is between the last two values.
                                         u = 3 x |v_fine - v_medium|
                    diverging, or no order   u = 3 x spread, spread = max - min of the three values
@@ -56,15 +57,17 @@ Convergence rule (exact). u is the absolute uncertainty of the value v on the fi
                  line, and the largest displacement of the feature for a range of the radial displacement.
                  So a component near zero in a large stress state, or a roundness near zero, can be
                  converged. For every other result the reference is the value itself.
-  uncertainty    the field `uncertainty` of a result is u / |v| (relative to the value, as the contract
-                 says). It can be above 1 for a value near zero that is converged against its reference.
+  uncertainty    `uncertainty_abs` of a result is u (in the unit of the value; the compliance stage uses it).
+                 `uncertainty` is u / |v| (relative to the value; empty when v is zero). It can be above 1 for
+                 a value near zero that is converged against its reference.
   peaks          A peak that is within NEAR_EDGE (2.5) local element sizes of a re-entrant edge, or within
                  two local element sizes of the border of the zone left out at a held face, is NEVER
                  converged: the stress there has no limit in linear elasticity, and three meshes can hide
                  the growth. It is `singular` when its magnitude grew at every refinement (by more than
-                 0.1 %), else `not_converged`. Its uncertainty is empty: a value without a limit has none.
+                 0.1 %), else `not_converged`. Its uncertainty and order are empty: a value without a limit
+                 has none.
   aggregate      `@scls` is the line with the largest value. Its uncertainty covers the conservative value
-                 v (1 + U) of every line. Its status is the worst status among the lines whose conservative
+                 v + u of every line. Its status is the worst status among the lines whose conservative
                  value reaches the largest value. A line without a result makes the aggregate not_converged.
   The value of a result is always the value on the finest mesh; `extrapolated` is information.
 
@@ -180,6 +183,7 @@ class Study:
     note: str = ""
     grew: bool = False                 # the magnitude rose at every refinement
     kind: str = ""                     # gci3's convergence class, or two_levels / one_level
+    absolute: float | None = None      # u, the uncertainty in the unit of the value
 
 
 def study(h: list[float], values: list[float], p_theory: float, max_uncertainty: float,
@@ -199,7 +203,8 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
         return Study("not_converged", None, note="The analysis has one mesh level. One level gives no convergence study.",
                      kind="one_level")
     if np.max(np.abs(v)) == 0.0:
-        return Study("converged", 0.0, extrapolated=0.0, note="The value is zero on every mesh level.", kind="exact")
+        return Study("converged", 0.0, extrapolated=0.0, note="The value is zero on every mesh level.", kind="exact",
+                     absolute=0.0)
     size = max(abs(fine), abs(reference or 0.0), 1e-300)
 
     def pct(x: float) -> str:
@@ -232,14 +237,16 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
         elif kind == "monotone":
             p_lim = min(max(g.p, 0.5), p_theory)
             u = max(SAFETY_GCI * last / (g.r21 ** g.p - 1.0), SAFETY_SPREAD * last / (g.r21 ** p_lim - 1.0))
-            order = float(g.p)
             note = (f"The three values converge in one direction with the observed order {g.p:.2f} "
                     f"(theory {p_theory:g}).")
             if "p_above_theory" in g.flags:
+                # not in the asymptotic range: no order and no extrapolated value are given
                 u = max(u, SAFETY_SPREAD * spread)
-                note += (" The observed order is far above the theory, so the meshes are not in the asymptotic range. "
+                note += (" The observed order is far above the theory, so the meshes are not in the asymptotic range "
+                         "and the engine gives no order. "
                          f"The uncertainty is {SAFETY_SPREAD:g} times the spread of the three values ({pct(spread)}).")
             else:
+                order = float(g.p)
                 ext = float(g.phi_ext)
                 note += " The uncertainty is the larger of two grid convergence indexes."
         elif kind == "oscillatory":
@@ -259,7 +266,7 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
         note += (f" The value is small against the size of its field ({size:.4g}). The uncertainty is {pct(u)} of "
                  "that size.")
     rel = float(u / abs(fine)) if abs(fine) > 0 else None
-    return Study(status, rel, extrapolated=ext, order=order, note=note, grew=grew, kind=kind)
+    return Study(status, rel, extrapolated=ext, order=order, note=note, grew=grew, kind=kind, absolute=float(u))
 
 
 # --------------------------------------------------------------------------- locations on one mesh
@@ -946,14 +953,17 @@ def _solve_checks(res, mg: MeshGeom, real: Realized, ideal: Idealizer, U: np.nda
             zz = zz_estimate(SolutionView.from_result(res))
             eta = float(zz["eta_rel"])
             out["error-estimate"] = {
-                "kind": "error_estimate", "value": eta, "limit": ZZ_LIMIT, "passed": bool(eta <= ZZ_LIMIT),
+                # information only (CONTRACTS.md): no limit, passed=None, so it does not block a pass
+                "kind": "error_estimate", "value": eta, "limit": None, "passed": None,
                 "statement": f"The estimated relative error of the finest mesh in the energy norm is {100 * eta:.2g} % "
                              f"(Zienkiewicz-Zhu). The cells with the largest error hold "
                              f"{100 * float(zz['concentration_top1pct']):.2g} % of it in 1 % of the cells, near "
-                             f"{fmt(zz['worst_cell_at'], 'm')}. This value is information: the convergence study "
-                             f"gives the uncertainty of each result."}
+                             f"{fmt(zz['worst_cell_at'], 'm')}. This value is information only and has no limit: the "
+                             f"convergence study gives the uncertainty of each result."
+                             + (f" The value is more than {100 * ZZ_LIMIT:.0f} %, the limit of the solver's own "
+                                f"diagnostics. Examine the mesh near this location." if eta > ZZ_LIMIT else "")}
         except Exception as e:  # noqa: BLE001  an estimate that fails is reported, it does not stop the analysis
-            out["error-estimate"] = {"kind": "error_estimate", "value": None, "limit": ZZ_LIMIT, "passed": None,
+            out["error-estimate"] = {"kind": "error_estimate", "value": None, "limit": None, "passed": None,
                                      "statement": f"The error estimate failed: {type(e).__name__}: {e}"}
     return out
 
@@ -1011,15 +1021,17 @@ def _results(data: list[LevelData], keys: list[str], scls: dict, max_unc: float,
         note = st.note
         if len(have) < len(data):
             note += f" {len(data) - len(have)} coarser mesh levels have no value for this result."
-        rv = ResultValue(key=key, value=float(vals[-1]), unit=unit_of(key), uncertainty=st.uncertainty, status=st.status,
-                         per_level=[float(v) for v in vals], extrapolated=st.extrapolated, order=st.order, method="fe")
+        rv = ResultValue(key=key, value=float(vals[-1]), unit=unit_of(key), uncertainty=st.uncertainty,
+                         uncertainty_abs=st.absolute, status=st.status, per_level=[float(v) for v in vals],
+                         extrapolated=st.extrapolated, order=st.order, method="fe")
         where = fine.where.get(key)
         extra = fine.info.get(key, {})
         if where is not None:
             rv.location, rv.near = where["location"], where["near"]
             if where["edge"] or where["support"]:
                 rv.status = "singular" if st.grew else "not_converged"
-                rv.uncertainty = rv.extrapolated = None          # no limit exists, so no uncertainty of a limit
+                rv.uncertainty = rv.uncertainty_abs = rv.extrapolated = None   # no limit, so no uncertainty of a limit
+                rv.order = None
                 why = ("a sharp re-entrant edge" if where["edge"] else "the rim of a rigid support")
                 note += (f" The peak is at {why}, where the stress has no limit in linear theory. "
                          + ("The value grew at each refinement, so it is singular." if st.grew else
@@ -1075,11 +1087,12 @@ def _aggregate(key: str, lines: dict[str, ResultValue], lost: list[str]) -> Resu
     w = lines[worst_id]
 
     def cons(r: ResultValue) -> float:
-        return r.value * (1.0 + (r.uncertainty or 0.0))
+        return r.value + (r.uncertainty_abs or 0.0)
 
     top = max(cons(r) for r in lines.values())
-    unc = max(top / w.value - 1.0, w.uncertainty or 0.0) if w.value > 0 else w.uncertainty
-    govern = [s for s, r in lines.items() if cons(r) >= w.value or r.uncertainty is None]
+    unc_abs = None if w.uncertainty_abs is None else max(top - w.value, w.uncertainty_abs)
+    unc = unc_abs / abs(w.value) if unc_abs is not None and w.value != 0 else None
+    govern = [s for s, r in lines.items() if cons(r) >= w.value or r.uncertainty_abs is None]
     status = max((lines[s].status for s in govern), key=lambda s: rank[s])
     note = f"The worst line is {worst_id}."
     others = [s for s in govern if s != worst_id]
@@ -1090,7 +1103,8 @@ def _aggregate(key: str, lines: dict[str, ResultValue], lost: list[str]) -> Resu
         note += f" The lines {names(lost)} have no result, so the value is the worst of the other lines only."
     n = min(len(r.per_level) for r in lines.values())
     per_level = [max(r.per_level[len(r.per_level) - n + i] for r in lines.values()) for i in range(n)]
-    return ResultValue(key=key, value=w.value, unit=w.unit, uncertainty=unc, status=status, near=worst_id,
+    return ResultValue(key=key, value=w.value, unit=w.unit, uncertainty=unc, uncertainty_abs=unc_abs, status=status,
+                       near=worst_id,
                        per_level=per_level, extrapolated=w.extrapolated, order=w.order, method="fe", note=note)
 
 
