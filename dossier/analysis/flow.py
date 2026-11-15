@@ -113,9 +113,18 @@ MOMENTUM_TOL = 0.02
 DEVELOPED_TOL = 0.02
 TAP_TOL = 0.05
 YPLUS_AREA_MIN = 0.90
-RESIDUAL_STALL_MAX = 1e-2           # a stalled run counts as converged only under this residual ...
-QOI_WINDOW, QOI_TOL = 200, 1e-3     # ... and when the pressure drop changed less than QOI_TOL in QOI_WINDOW iterations
-HISTORY_INTERVAL = 100              # the solver writes the fields every this many iterations
+RESIDUAL_STALL_MAX = 3e-3           # a stalled run counts as converged only under this residual (the validation's
+                                    # sudden expansion stalls near 3e-3) ...
+QOI_WINDOW, QOI_TOL = 500, 1e-3     # ... and when, over the snapshots of the last QOI_WINDOW iterations, both the
+                                    # spread (largest - smallest) of the pressure drop and the change that a straight
+                                    # line through them gives over the window are under QOI_TOL of the pressure drop
+HISTORY_INTERVAL = 30               # the solver writes the fields every this many iterations: not a divisor of
+                                    # round periods (100, 200), so an oscillation of such a period is not aliased away
+QOI_MIN_SNAPSHOTS = 10              # snapshots in the window, the final state included
+# ---- wall roughness: the flow domain gives a surface finish Ra; the friction formula needs the sand-grain ks
+KS_PER_RA = 5.9                     # ks = 5.9 Ra (Adams et al. 2012, Proc. IMechE C 226, machined pipe surfaces)
+KS_PER_RA_RANGE = (2.0, 10.0)       # the ratios that correlations give for machined and drawn surfaces
+TAP_NEGLIGIBLE = 0.005              # a tap-position spread under this is not added to the uncertainty
 
 
 class FlowDomainError(ValueError):
@@ -558,10 +567,40 @@ class Level:
     log: str = ""
 
 
-Level.solved = property(lambda lv: bool(
-    lv.converged or (lv.residuals and max(lv.residuals.values()) <= RESIDUAL_STALL_MAX and lv.qoi_change
-                     and lv.qoi_change["change"] <= QOI_TOL)),
-    doc="Iteratively converged: the residual tolerance, or stalled residuals with a steady pressure drop.")
+def iteration_window(iterations, values, end: int, window: int = QOI_WINDOW) -> dict | None:
+    """The iterative stability of a QoI from its snapshots (iteration numbers and values, the final state at
+    ``end`` included): over the snapshots in the last ``window`` iterations, the spread (largest - smallest) and
+    the change that a least-squares straight line through them gives from the start of the window to the end of
+    the run, both relative to the final value. None when the window is not covered: the run is shorter than the
+    window, or it has fewer than QOI_MIN_SNAPSHOTS snapshots in it (two snapshots cannot tell an oscillation
+    whose period divides their distance from a steady value)."""
+    it = np.asarray(iterations, dtype=float)
+    v = np.asarray(values, dtype=float)
+    sel = (it >= end - window) & np.isfinite(v)
+    if end < window or sel.sum() < QOI_MIN_SNAPSHOTS or it[sel].min() > end - window + HISTORY_INTERVAL:
+        return None
+    it, v = it[sel], v[sel]
+    final = float(v[np.argmax(it)])
+    if final == 0.0:
+        return None
+    slope = float(np.polyfit(it - it.mean(), v, 1)[0])
+    spread = float((v.max() - v.min()) / abs(final))
+    trend = float(abs(slope) * (end - it.min()) / abs(final))
+    return {"iterations": int(end - it.min()), "snapshots": int(sel.sum()), "spread": spread, "trend": trend,
+            "change": max(spread, trend)}
+
+
+def stalled_but_steady(residuals: dict, qoi_change: dict | None) -> bool:
+    """A run that did not reach the residual tolerance counts as converged when its residuals are under
+    RESIDUAL_STALL_MAX and the pressure drop is steady over the window (``iteration_window``: spread and trend
+    under QOI_TOL)."""
+    return bool(residuals and max(residuals.values()) <= RESIDUAL_STALL_MAX and qoi_change
+                and qoi_change["spread"] <= QOI_TOL and qoi_change["trend"] <= QOI_TOL)
+
+
+Level.solved = property(lambda lv: bool(lv.converged or stalled_but_steady(lv.residuals, lv.qoi_change)),
+                        doc="Iteratively converged: the residual tolerance, or stalled residuals with a pressure "
+                            "drop that is steady over the last QOI_WINDOW iterations.")
 
 
 def _interp(x: np.ndarray, v: np.ndarray, at: float) -> float:
@@ -669,17 +708,19 @@ def solve_level(bore: Bore, mesh: HexMesh, setup: Setup, mesh_path: Path, log_pa
             return _interp(x_mid, pm, x_up) - _interp(x_mid, pm, x_dn) - g * ((0.0 - x_up) + (x_dn - bore.length))
 
         taps = {t: drop(t) for t in (*TAP_DOWN_ALT, TAP_DOWN) if t * d < setup.downstream - 0.5 * d}
-        # ---- iterative convergence of the result: the pressure drop QOI_WINDOW iterations before the end
+        # ---- iterative convergence of the result: the pressure drop at every snapshot of the last QOI_WINDOW
+        # iterations (iteration_window: spread and straight-line trend)
         qoi_change = None
         if not info.converged:
-            earlier = [t for t in res.history_times() if t <= info.iterations - QOI_WINDOW]
-            if earlier:
-                r0 = res.at_time(earlier[-1])
-                p0 = np.bincount(layer, a_cell * r0.p, n_l) / a_sum
-                dp0 = drop(TAP_DOWN, p0)
-                dp1 = taps.get(TAP_DOWN, float("nan"))
-                qoi_change = {"iterations": int(info.iterations - earlier[-1]),
-                              "change": float(abs(dp1 - dp0) / abs(dp1)) if dp1 else float("nan")}
+            its, dps = [], []
+            for t in res.history_times():
+                if info.iterations - QOI_WINDOW <= t < info.iterations:
+                    r0 = res.at_time(t)
+                    its.append(float(t))
+                    dps.append(drop(TAP_DOWN, np.bincount(layer, a_cell * r0.p, n_l) / a_sum))
+            its.append(float(info.iterations))
+            dps.append(taps.get(TAP_DOWN, float("nan")))
+            qoi_change = iteration_window(its, dps, int(info.iterations))
         dp_faces = _interp(x_mid, pt_mean, 0.0) - _interp(x_mid, pt_mean, bore.length)
         # ---- balances
         mass_in = -rho * q["q_in"]
