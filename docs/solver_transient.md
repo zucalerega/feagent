@@ -8,8 +8,8 @@ adds the conventions that hold across physics and one section per capability.
 | capability | physics, backend | module | status |
 |---|---|---|---|
 | transient heat conduction | heat, skfem | `feacore/solver/_skfem_transient.py` | done; verified (closed forms, orders, NAFEMS T3), `tests/test_transient_heat.py` |
-| modal analysis | elasticity, skfem | `feacore/solver/_skfem_modal.py` | see section |
-| transient dynamics | elasticity, skfem | `feacore/solver/_skfem_dynamics.py` | see section |
+| modal analysis | elasticity, skfem | `feacore/solver/_skfem_modal.py` | done, verified (NAFEMS FV32 / FV41 / FV52, exact Rayleigh-Lamb, beam theory) |
+| transient dynamics | elasticity, skfem | `feacore/solver/_skfem_dynamics.py` | done, verified (exact discrete and modal solutions, order 2, energy, waves) |
 | transient incompressible flow | flow, openfoam | `feacore/solver/_foam_transient.py` | see section |
 | turbulent flow (RANS) | flow, openfoam | `feacore/solver/openfoam_backend.py` | see section |
 | compressible internal flow | compressible, openfoam | `feacore/solver/_foam_compressible.py` | see section |
@@ -175,11 +175,183 @@ r.evaluate_all(); r.series(case.qois[0]); r.state(10.0).write_vtu("t10.vtu")
 
 ## Modal analysis
 
-(section written by the capability's author)
+`feacore/solver/_skfem_modal.py`; tests `tests/test_modal.py`; problems `feacore/problems/dynamics/`
+(`nafems_fv32`, `nafems_fv41`, `nafems_fv52`, `ss_strip_modes`, `ss_thick_plate_modes`).
+
+**Equations.** K phi = omega^2 M phi. K is the stiffness of the steady elasticity case
+(`_assemble_elasticity`: the same formulations, materials, Dirichlet sets and options), M the consistent
+mass matrix int rho c u.v with the density of each material region and c = thickness (plane stress / strain),
+2 pi r (axisymmetric) or 1 (3D). Loads and traction / pressure / force BCs are ignored, and every Dirichlet BC
+(`fixed`, `displacement`, `symmetry`, the axis constraint) acts as zero, a prescribed non-zero displacement
+included; both are said in `info.warnings`.
+
+**Solver.** `{"modal": {"n_modes": n, "shift": f}}`: the n lowest elastic modes above f Hz (default 0) by
+shift-invert Lanczos (`scipy.sparse.linalg.eigsh`) with ONE sparse factorization of K - sigma M (MKL PARDISO when
+installed, else SuperLU; `linear_solver` chooses) kept for all iterations. Restrained model: sigma = 0. Free
+body: sigma is a small negative number (minus a geometric estimate of the first elastic eigenvalue), so
+K - sigma M is definite. Shift f > 0: sigma = (2 pi f)^2 (an indefinite factorization). Below 400 free
+unknowns the dense LAPACK solver is used. Unknown options warn (`unknown analysis options ignored`).
+
+**Rigid-body modes.** A model that is not restrained is legal. The rigid motions the Dirichlet set leaves free
+(2D: two translations and the rotation; 3D: three and three; axisymmetric: the axial translation) are built in
+closed form, as `skfem_backend._check_rigid_modes` builds them, and the Lanczos operator is deflated by them
+(M-orthogonal projection). So `ModalResult.rigid_modes` is an exact count, not a threshold on small
+eigenvalues; it is in `info.warnings` with the names of the motions, and the rigid modes are not counted
+among the `n_modes`. A near-zero elastic eigenvalue that is not a rigid motion of the whole model (a mechanism,
+a part that is not connected) is flagged.
+
+**Result.** `SkfemModalResult`: `frequencies` (Hz, ascending), `eigenvalues` (omega^2), `modes` (N, n:
+mass-normalised, phi^T M phi = 1, sign: largest component positive), `rigid_modes`, `rigid_names`,
+`rigid_shapes`, `effective_mass` (n, dim): (phi_k^T M 1_j)^2 / m_j, the share of the total mass that mode k moves
+along axis j (for a restrained model the shares of all modes sum toward 1; the rest sits on the supports;
+axisymmetric: only the axial column, the radial one is NaN), `participation`, `total_mass`, `residuals`,
+`K`, `M`; `shape(mode)`, `nodal(field, mode=1)`, `probe(field, points, mode=1)` for ux, uy, uz, u_mag (a mode has
+no amplitude, so stresses are refused), `write_vtu` (one file, a vector `mode_<k>` per mode, the frequencies in
+the field data). QoIs: `natural_frequency` and `effective_mass` with `mode` (and `component`).
+
+**Verification** (`tests/test_modal.py`; P2, all errors measured):
+
+| check | reference (source) | result |
+|---|---|---|
+| plane-stress cantilever, 4 cells through the depth, L/H = 10, 20, 40 | Euler-Bernoulli (beta L = 1.8751, 4.6941) | f1 -0.65 %, -0.13 %, -0.017 %; f2 -4.9 %, -1.27 %, -0.31 %: always below (shear and rotary inertia), the gap / 4 per doubling of L/H; at L/H = 80 f1 is +0.004 % (the mesh error takes over) |
+| simply supported strip (sliding supports), plane strain, L/t = 10, 20 | Rayleigh-Lamb A0 standing wave (exact, Graff 8.1); pinned Euler-Bernoulli | Lamb within 2e-4; the gap to the beam shrinks as (t/L)^2 |
+| free-free bar 2D (nu = 0) / 3D box | c / (2 L) exact; free-free Euler-Bernoulli | 3 / 6 rigid-body modes; axial mode within 1e-5 (2D) / 1e-4 (3D); first bending within 1 % |
+| `ss_strip_modes` (L = 10, t = 1, plane strain): six modes (A1..A5, S1, one rigid mode) | Rayleigh-Lamb, k = n pi / L (exact for 3D elasticity) | h = 0.5: +1.9e-4 .. +4.5e-3; h = 0.25: +7.8e-6 .. +2.0e-4; h = 0.125: +5.6e-7 .. +1.4e-5; observed order 4.4-4.6 then 3.8-3.9 (2p = 4); from above (consistent mass) |
+| NAFEMS FV32 tapered membrane, plane stress | 44.623, 130.03, 162.70, 246.05, 379.90, 391.44 Hz | h = 1 (h0): +0.007 .. +0.34 %; h = 0.5: -0.013 .. 0 %; h = 0.25: -0.044 .. -0.005 % |
+| NAFEMS FV41 free cylinder, axisymmetric | 243.53, 377.41, 394.11, 397.72, 405.28 Hz | 1 rigid mode (axial); h = 0.2 (h0): -0.014 .. +0.030 %; h = 0.1: -0.014 .. +0.029 % |
+| NAFEMS FV52 'solid' square plate, 3D, uz = 0 on the bottom edges | 45.897, 109.44, 109.44, 167.89, 193.59, 206.19, 206.19 Hz | 3 rigid modes; h = 2: f1 -2.5 %, the rest within 0.22 %; f1 drifts down with refinement (-4.2 % at h = 1, -5.6 % at 0.5): a line support of a solid has no converged answer; only the in-plane mode f5 converges (problem module) |
+| `ss_thick_plate_modes` (3D, 10 x 10 x 1, sliding supports) | Rayleigh-Lamb A(1,1), A(1,2)x2, shear-horizontal c_t / (2 a) x2, A(2,2) | h = 1: +0.5, +1.1, +1.2, 0.000, 0.000, +1.8 % (slow test; the flexural modes converge slowly with one or two cells through the thickness) |
+| mass matrix | rho V t (plane), rho pi (ro^2 - ri^2) L (axisymmetric), rho V (3D); 1^T M 1 = m per axis | to 1e-12 |
+| mode shapes | Phi^T M Phi = I, Phi^T K Phi = diag(omega^2) | 1e-9; residuals below 1e-8 |
+| effective mass | cantilever mode 1: 0.613 (Euler-Bernoulli) | 0.613 +- 0.005; 30 modes sum to > 0.9 in y; free body: 0 |
+| shift, dense path | the modes above the shift equal modes 4-6 of a shift-0 run; dense LAPACK = Lanczos | 1e-9 |
+
+Sources of the NAFEMS values: NAFEMS TNSB Rev. 3 (1990) and R0015 (1987), as reproduced in the Abaqus Benchmarks
+Guide (FV32, FV41, FV52), the Altair OptiStruct verification manual (OS-V 0440, 0450, 0455) and the Ansys
+Verification Manual (benchmark C5, FV52). The booklets and those pages were not opened from this machine (their
+hosts are blocked); the values come from search extracts of them, which confirm the FV32 frequencies, plate
+thickness 0.05 m and the 5 m to 1 m taper. The FV32 length (10 m) and the FV41 radii and length (1.8 / 2.2 m,
+10 m) are not confirmed by an extract; with them the solver converges to every published frequency within
+0.05 %, which wrong dimensions would not do.
+
+**Limits.** Linear elastic, small displacements, no prestress (no geometric stiffness), no damping, no
+complex modes. Modes the mesh cannot resolve: a frequency is good when the mesh has several P2 cells per half
+wave of the mode (the strip: 8 cells per half wave give 2e-4); the highest of `n_modes` is the least
+accurate. Point or line supports of a solid soften with refinement (FV52). Clustered or repeated
+frequencies are found (Lanczos with two spare vectors), but the shapes within a cluster are any orthonormal
+basis of it. Cost: 13 000 unknowns (3D P2 cantilever, 4436 nodes), 10 modes: 5-11 s on 2 shared cores.
+
+**Example.**
+
+```python
+Case(mesh="plate.msh",
+     analysis=Analysis(formulation="plane_stress", order=2, thickness=0.05,
+                       options={"modal": {"n_modes": 6}}),
+     materials={"steel": Material(E=200e9, nu=0.3, rho=8000)},
+     bcs=[BC(type="fixed", group="root")],
+     qois=[QoI("f1", "natural_frequency", mode=1), QoI("m1y", "effective_mass", mode=1, component=1)])
+```
 
 ## Transient dynamics
 
-(section written by the capability's author)
+`feacore/solver/_skfem_dynamics.py`; tests `tests/test_dynamics.py`; problem `bar_wave_step`
+(`feacore/problems/dynamics/bar_wave.py`).
+
+**Equations.** M a + C v + K u = f(t). K, the loads and the Dirichlet set are the steady elasticity case's;
+M is the consistent mass of the modal analysis; C = a M + b K from `analysis.options["damping"] =
+{"rayleigh": [a, b]}` (default none), i.e. a modal damping ratio zeta(omega) = a / (2 omega) + b omega / 2. Any
+load or BC value may depend on time (an expression with `t`, or a table); what does not is assembled once. A
+timed value without x, y, z is one vector times a number of t (assembled once); one that varies in space and
+time is reassembled each step on a kept basis. Body forces, pressures, tractions, forces and Dirichlet values
+may depend on time; a temperature load that does is refused (`CaseError`).
+
+**Schemes** (`transient.scheme`), both in the Hilber-Hughes-Taylor form
+
+    M a_{n+1} + (1 + alpha) (C v_{n+1} + K u_{n+1}) - alpha (C v_n + K u_n) = (1 + alpha) f_{n+1} - alpha f_n,
+    beta = (1 - alpha)^2 / 4,  gamma = (1 - 2 alpha) / 2
+
+- `newmark` (default): alpha = 0, the average-acceleration (trapezoidal) rule: unconditionally stable, second
+  order, no numerical damping; each mode turns by omega_h dt = 2 arctan(omega dt / 2) per step, a period
+  elongation of (omega dt)^2 / 12 + O(dt^4).
+- `hht`: `transient.alpha` in [-1/3, 0], default -0.05: second order, damps the modes the step cannot resolve
+  (spectral radius (1 + alpha) / (1 - alpha) as omega dt -> infinity).
+
+The fixed step comes from `Analysis.time_steps()`. The unknown of a step is u_{n+1}; a and v follow from the
+Newmark relations. **Factored once:** the effective matrix c0 M + (1 + alpha) (c1 C + K) (c0 = 1 / (beta dt^2),
+c1 = gamma / (beta dt)) is constant for the fixed step; its free-free block is factored once and reused at every
+step (`_skfem_modal.Factorization`: SuperLU below 30 000 unknowns, where PARDISO's per-solve overhead
+dominates, else the selected solver), as are M_II (for the initial acceleration) and the scalar mass of the
+stress recovery.
+
+**Initial state.** `transient.initial = {"u": [...], "v": [...]}` (components as numbers or expressions in x, y,
+z; default at rest). The initial acceleration is the equilibrium one: M_II a_I = (f - C v - K u)_I - M_ID a_D at
+t = 0.
+
+**Dirichlet BCs.** The constrained dofs are those of the steady case (same rules: the last BC wins, u_r = 0 on
+the axis). A prescribed value in time is imposed on u_{n+1}; its velocity and acceleration are the ones the
+Newmark relations give for that displacement history, so the prescribed motion is consistent with the scheme
+(at t = 0 they come from one-sided differences of the prescribed value with a step of dt / 100). A prescribed
+initial u or v on a constrained dof is overridden by the BC (warned).
+
+**Rigid-body modes.** A free or partly free body is legal (M makes the effective matrix definite); the number of
+rigid modes is in `info.warnings` and `result.rigid_modes`. A net load accelerates the body: the centre of mass
+moves as F t^2 / (2 m), exactly.
+
+**Result.** `SkfemDynamicsResult` (a `TransientResult`): `times`, `kept` (default 10 states evenly spaced and the
+last; `output_times` / `output_every`), `series(qoi)` for every QoI of the case at every step, `evaluate(qoi)`
+reducing it by `QoI.time` / `QoI.window`. Supported QoI types at each step: point, point_difference, max, min,
+max_abs (displacements and recovered stresses), reaction (the DYNAMIC support reaction M a + C v + K u - f on the
+constrained dofs), integral, mean, strain_energy. A stress QoI costs one stress recovery per step (a solve with
+the kept factorization). `state(t)`: the kept state nearest to t as a steady `SkfemResult` (`DynamicState`:
+probe, nodal, evaluate, stresses, write_vtu with velocity and acceleration). `energy`: per-step arrays
+`kinetic`, `strain`, `external_work` (loads and support reactions, trapezoidal), `damping` (dissipated) and
+`balance` = kinetic + strain + damping - work - initial energy, zero to round-off for `newmark`.
+`info.warnings` has an `info: dynamics:` line with the scheme, alpha, beta, gamma, the steps, the damping and the
+factorization.
+
+**Verification** (`tests/test_dynamics.py`; P2; measured):
+
+| check | reference | result |
+|---|---|---|
+| free vibration of a bar (nu = 0, near its first axial mode) | exact DISCRETE solution: each mode at constant amplitude turning by 2 arctan(omega dt / 2) (dense eigen-decomposition of the solver's K, M) | 2e-12 relative at 10 and 40 steps per period: the scheme is implemented exactly |
+| period error | omega_h / omega = 2 arctan(omega dt / 2) / (omega dt) | measured frequency -3.1 %, -0.81 %, -0.20 % at 10, 20, 40 steps per period, matching the closed form within 3e-4 / 5e-5 |
+| order in time, bar | exact semi-discrete solution (modal superposition) | newmark: errors 0.35, 0.089, 0.023, 0.0057 at 10..80 steps per period (orders 1.96, 1.98, 1.99); Rayleigh [200, 1e-7]: 0.30, 0.077, 0.0195, 0.0049 (1.96, 1.99, 1.99); HHT -0.05: 1.94, 1.97; HHT -0.3: 1.89, 1.97 |
+| Rayleigh damping | zeta_1 = a / (2 omega_1) + b omega_1 / 2 = 0.0131 | the logarithmic decrement of the free decay within 1 % |
+| energy, undamped newmark free vibration | conserved | kinetic + strain constant to 1e-13 relative over 5 periods |
+| energy balance with damping and a load in time | kinetic + strain + dissipated = work | below 1e-10 of the work (measured 1e-13 .. 2e-11); HHT dissipates |
+| prescribed base motion u_D = U (1 - cos W t) | the same problem in the moving frame (body force -rho a_D); exact modal solution | the two formulations differ by O(dt^2) (orders 1.99, 2.02); both 2.2 %, 0.84 %, 0.35 % from the exact at 40, 80, 160 steps (the step excites modes it cannot resolve at first) |
+| free body under a constant force | u_cm = F t^2 / (2 m) | 1e-8 |
+| time-only vs space-time load; table vs expression | the same load | 1e-12; 1e-9 |
+| cantilever (plane stress, 1 x 0.1 m) under a step tip load | static deflection; f1 from the modal solver | peak / static 1.984, 1.985, 1.989 at 20, 40, 80 steps per period (HHT -0.05); dominant frequency -0.81 %, -0.22 %, +0.19 % from f1; mean over 4 periods +0.88 %, +0.22 %, +0.06 % from the static value |
+| quasi-static ramp with damping | static reaction | dynamic reaction within 1 % of the load |
+| `bar_wave_step`: step end load on a fixed-free bar (nu = 0), HHT -0.1, 200 steps per period | d'Alembert solution (Graff 2.1): u_tip a triangle wave, peak 2 sigma L / E, mean sigma L / E, frequency c / (4 L) | h = 0.05: peak -1.4 %, mean +0.055 %, frequency -0.009 %; peak -0.9 % at h = 0.025, -0.56 % at 0.0125 (a corner of the exact history: reached from below, slowly); the stress at mid-length is 0.6 % of sigma before the front arrives (0.8 L / (2 c)) and sigma within 15 % after it |
+| QoI.time reductions | `reduce_series` | max / min / mean with window / a time / frequency through `result.evaluate` |
+
+**Limits.** The step against the highest frequency of interest: the period error is 3.1 % at 10 steps per
+period, 0.8 % at 20, 0.2 % at 40, 0.03 % at 100; a mode with fewer than ~5 steps per period is not followed at
+all (newmark keeps its energy and turns it at the wrong frequency; HHT damps it). A step load or an impact
+excites every mode of the mesh, so point histories converge slower than dt^2 until the step resolves the modes
+that carry the response; use HHT or Rayleigh damping to quiet the unresolved ones, and check the step by
+halving it. Modes the mesh cannot resolve (fewer than a few P2 cells per half wavelength) are wrong whatever the
+step: a wave front is smeared over a few cells. A table whose points are closer than the step is warned about.
+Linear elastic material, small displacements and rotations, no contact, no time-dependent temperature load,
+no variable step. Cost: 217 nodes, 160 steps: 0.2 s; 3D P2 cantilever, 4436 nodes (13 000 unknowns), 200 steps
+with a von Mises QoI: 51 s on 2 shared cores (about 0.13 s of each step is the stress recovery).
+
+**Example.**
+
+```python
+Case(mesh="beam.msh",
+     analysis=Analysis(formulation="plane_stress", order=2, thickness=0.01,
+                       options={"transient": {"t_end": 0.05, "dt": 2.5e-4, "scheme": "hht", "alpha": -0.05},
+                                "damping": {"rayleigh": [5.0, 0.0]}}),
+     materials={"steel": Material(E=200e9, nu=0.3, rho=8000)},
+     bcs=[BC(type="fixed", group="root"),
+          BC(type="force", group="tip", value=[0.0, {"table": [[0.0, 0.0], [1e-3, -1000.0]]}])],
+     qois=[QoI("peak", "point", field="uy", point=[1.0, 0.05], time="min"),
+           QoI("f", "point", field="uy", point=[1.0, 0.05], time="frequency"),
+           QoI("r_max", "reaction", group="root", component=1, time="max_abs")])
+```
 
 ## Transient incompressible flow
 
