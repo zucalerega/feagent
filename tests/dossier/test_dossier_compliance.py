@@ -1093,3 +1093,36 @@ def test_stage_file_round_trip(workproject, example_ctx):
     again = compliance.assess(workproject, context.build(workproject))
     assert again.items == out.items and again.verdicts == out.verdicts
     assert [d.id for d in again.journal.decisions] == [d.id for d in out.journal.decisions]
+
+
+# --------------------------------------------------------------------------- review fixes: honest verdicts
+
+
+def test_converged_fe_result_without_an_uncertainty_is_inconclusive(workproject):
+    item = one(workproject, PROOF, res(MB + "scls", 150 * MPA, u=None))           # method fe
+    assert item.verdict == "inconclusive"
+    assert "The method of the result is fe. Only a hand calculation or a derived result can decide a criterion " \
+           "without an uncertainty." in item.reasons
+    assert one(workproject, PROOF, res(MB + "scls", 150 * MPA, u=None, method="hand_calc")).verdict == "pass"
+
+
+def test_not_converged_without_an_error_estimate_is_inconclusive(workproject):
+    # 116.3 MPa, u 6.9 %: with an error estimate it passes with 2 x u (MS +2.66); as a spread of values that do
+    # not converge it is no bound, and the verdict is inconclusive
+    item = one(workproject, BURST, res("von_mises.membrane@scls", 116.3 * MPA, u=0.069, status="not_converged",
+                                       error_estimated=False))
+    assert item.verdict == "inconclusive" and item.margin == pytest.approx(2.90108, abs=1e-5)
+    assert "The result has no error estimate. The values of the mesh study do not converge." in item.reasons
+    assert item.statement.endswith("The verdict is inconclusive because the result has no error estimate.")
+
+
+def test_the_margin_shown_is_the_margin_that_decides(workproject):
+    _, items, verdicts = assess(workproject, [case("LC-BURST", [BURST])],
+                                [analysis("LC-BURST", [res("von_mises.membrane@scls", 116.3 * MPA, u=0.069,
+                                                           status="not_converged")])])
+    item = next(iter(items.values()))
+    # 2 x: 116.3 x 1.138 = 132.3494 MPa; MS = 485 / 132.3494 - 1 = +2.66455 decides; 1 x gives +2.90108
+    assert item.verdict == "pass" and item.margin == pytest.approx(2.66455, abs=1e-5)
+    assert verdicts["REQ-MOV-003"].margin == pytest.approx(2.66455, abs=1e-5)
+    assert "The margin of safety is +2.90 with the uncertainty on the unsafe side." in item.statement
+    assert "The margin that decides the verdict is +2.66" in item.statement
