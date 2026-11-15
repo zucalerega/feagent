@@ -125,6 +125,16 @@ def load_geometry(project: Project) -> dict:
 def stage_geometry(project: Project, opts: Options) -> dict:
     build = _engine("dossier.geometry", "build", "geometry")
     geo, journal = build(project, opts)
+    # The meshes belong to the geometry stage: every analysis engine uses the same levels, and the decision
+    # for their sizes and the findings of the mesh checks are records a person reviews.
+    meshes: list = []
+    try:
+        levels = _engine("dossier.meshing", "levels_with_journal", "geometry")
+        meshes, mesh_journal = levels(project, geo, opts)
+        journal.extend(mesh_journal)
+    except StageError:
+        pass
+    geo["meshes"] = [m.model_dump(mode="json") for m in meshes]
     project.write_stage("geometry", geometry=geo, **_journal_payload(journal))
     return {"features": len(geo.get("features", {})), "problems": len(geo.get("problems", [])),
             "findings": len(journal.findings)}
