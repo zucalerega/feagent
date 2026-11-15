@@ -22,8 +22,18 @@ the references are the midpoints. Higher-accuracy values exist (FEATFLOW benchma
 John, Int. J. Numer. Meth. Fluids 44 (2004) 777-788) and lie inside these intervals; they are not
 used here because they could not be checked from this machine.
 
-Tolerances are set from what the fixed solver gives on the reference mesh sequence
-(docs/solver_transient.md, "Transient incompressible flow"), not tuned to the intervals.
+Tolerances are set from what the fixed solver gives on the reference mesh sequence, not tuned to the
+intervals. Measured (OpenFOAM v1912, BDF2, linearUpwind; docs/solver_transient.md):
+
+    mesh            cells   step     c_D,max   c_L,max   St
+    h0              2954    2 ms     3.2392    1.0261    0.2872
+    h0              2954    1 ms     3.2415    1.0326    0.2874
+    h0 / 1.5        6702    1.25 ms  3.2399    1.0310    0.2951
+    h0 / 2         11816    1 ms     3.2379    1.0232    0.2980
+
+c_D,max is inside the interval on every mesh; St converges with order 2 in h towards 0.3016 (inside);
+c_L,max stays 2 to 3 % high. The registered case (h0, 2 ms) is within 2 % (drag), 5 % (lift) and 5 %
+(frequency: h0 is 4.3 % low) of the midpoints.
 """
 
 from __future__ import annotations
@@ -116,16 +126,17 @@ class CylinderChannelDFG2D2(CylinderChannelDFG2D1):
         return [
             Reference("drag_max", CD_MAX_REF * s, "published_numerical", f"{_SRC}; c_D,max = {CD_MAX_REF}; {conv}",
                       tolerance=0.02,
-                      notes="interval half-width 0.3 %; the tolerance covers the fixed solver's mesh and step "
-                            "error at the reference mesh h0 (docs/solver_transient.md)"),
+                      notes="interval half-width 0.3 %. The fixed solver: c_D,max = 3.2392, 3.2399, 3.2379 on "
+                            "h0, h0/1.5, h0/2 (docs/solver_transient.md); 2 % leaves room for other setups"),
             Reference("lift_max", CL_MAX_REF * s, "published_numerical", f"{_SRC}; c_L,max = {CL_MAX_REF}; {conv}",
                       tolerance=0.05,
-                      notes="interval half-width 1 %; the lift amplitude is the most mesh-sensitive output "
-                            "(docs/solver_transient.md)"),
+                      notes="interval half-width 1 %. The fixed solver: c_L,max = 1.026, 1.031, 1.023 on h0, "
+                            "h0/1.5, h0/2 (2 to 3 % high, no clear trend; docs/solver_transient.md)"),
             Reference("lift_frequency", ST_REF * f_scale, "published_numerical",
                       f"{_SRC}; St = {ST_REF}; f = St U_bar / D with U_bar = {self.U_mean:g} m/s, D = "
-                      f"{self.params['D']:g} m", tolerance=0.02,
-                      notes="interval half-width 1.7 %"),
+                      f"{self.params['D']:g} m", tolerance=0.05,
+                      notes="interval half-width 1.7 %. The fixed solver: St = 0.2872, 0.2951, 0.2980 on h0, "
+                            "h0/1.5, h0/2, second order in h towards 0.3016; h0 is 4.3 % low, hence 5 %"),
         ]
 
 

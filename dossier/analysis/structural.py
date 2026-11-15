@@ -184,6 +184,7 @@ class Study:
     grew: bool = False                 # the magnitude rose at every refinement
     kind: str = ""                     # gci3's convergence class, or two_levels / one_level
     absolute: float | None = None      # u, the uncertainty in the unit of the value
+    estimated: bool = False            # u is an error estimate of a converging sequence (ResultValue.error_estimated)
 
 
 def study(h: list[float], values: list[float], p_theory: float, max_uncertainty: float,
@@ -204,19 +205,21 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
                      kind="one_level")
     if np.max(np.abs(v)) == 0.0:
         return Study("converged", 0.0, extrapolated=0.0, note="The value is zero on every mesh level.", kind="exact",
-                     absolute=0.0)
+                     absolute=0.0, estimated=True)
     size = max(abs(fine), abs(reference or 0.0), 1e-300)
 
     def pct(x: float) -> str:
         return f"{100 * x / size:.2g} %"
 
     ext = order = None
+    estimated = True
     if n == 2:
         r = h[0] / h[1]
         p = min(p_theory, 2.0)
         change = abs(v[1] - v[0])
         factor = max(1.0, 1.0 / (r ** p - 1.0)) if r > 1.0 else math.inf
         u = SAFETY_TWO_LEVELS * change * factor
+        estimated = math.isfinite(u)
         kind = "two_levels"
         note = (f"Two mesh levels with a size ratio of {r:.2f}. The value changes by {pct(change)} between them. "
                 f"The uncertainty is {SAFETY_TWO_LEVELS:g} times this change"
@@ -250,23 +253,28 @@ def study(h: list[float], values: list[float], p_theory: float, max_uncertainty:
                 ext = float(g.phi_ext)
                 note += " The uncertainty is the larger of two grid convergence indexes."
         elif kind == "oscillatory":
-            u = SAFETY_SPREAD * last
+            # the last change alone can be small by chance (80, 100, 99.9): the spread of the last three values
+            spread = max(spread, float(np.max(v[-3:]) - np.min(v[-3:])))
+            u = SAFETY_SPREAD * spread
             note = (f"The values go up and down between the mesh levels, and the changes become smaller. "
-                    f"The uncertainty is {SAFETY_SPREAD:g} times the last change ({pct(last)}).")
+                    f"The uncertainty is {SAFETY_SPREAD:g} times the spread of the last three values ({pct(spread)}).")
         else:
             u = SAFETY_SPREAD * spread
-            note = (f"The changes between the mesh levels do not become smaller. The uncertainty is "
-                    f"{SAFETY_SPREAD:g} times the spread of the three values ({pct(spread)}).")
+            estimated = False
+            note = (f"The changes between the mesh levels do not become smaller. The values do not converge, so the "
+                    f"mesh study gives no error estimate. {SAFETY_SPREAD:g} times the spread of the three values "
+                    f"({pct(spread)}) shows their scatter only.")
     if noise is not None and SAFETY_SPREAD * noise > u:
         u = SAFETY_SPREAD * noise
         note += (f"\n\nA move of the line by a quarter of an element changes the value by {pct(noise)}. The uncertainty "
                  f"is {SAFETY_SPREAD:g} times this change, which is more than the estimate from the mesh levels.")
-    status = "converged" if u <= max_uncertainty * size else "not_converged"
+    status = "converged" if estimated and u <= max_uncertainty * size else "not_converged"
     if abs(fine) < 0.5 * size:
         note += (f"\n\nThe value is small against the size of its field ({size:.4g}). The uncertainty is {pct(u)} of "
                  "that size.")
     rel = float(u / abs(fine)) if abs(fine) > 0 else None
-    return Study(status, rel, extrapolated=ext, order=order, note=note, grew=grew, kind=kind, absolute=float(u))
+    return Study(status, rel, extrapolated=ext, order=order, note=note, grew=grew, kind=kind, absolute=float(u),
+                 estimated=estimated)
 
 
 # --------------------------------------------------------------------------- locations on one mesh
@@ -1010,28 +1018,42 @@ def _results(data: list[LevelData], keys: list[str], scls: dict, max_unc: float,
     fine = data[-1]
     out: dict[str, ResultValue] = {}
     missing: dict[str, str] = {}
+    judged = _judged(lc, scls)
     for key in keys:
         if key in fine.failed or key not in fine.values:
             missing[key] = fine.failed.get(key, "The finest mesh has no value.")
             continue
         have = [d for d in data if key in d.values]
         vals = [d.values[key] for d in have]
-        st = study([d.h for d in have], vals, p_theory_of(key), max_unc, reference=fine.info.get(key, {}).get("ref"),
+        ref = fine.info.get(key, {}).get("ref")
+        if key in judged:       # a criterion or a hand calculation uses the value: judge u against the value itself
+            ref = None
+        st = study([d.h for d in have], vals, p_theory_of(key), max_unc, reference=ref,
                    noise=fine.info.get(key, {}).get("noise"))
         note = st.note
+        if key in judged and fine.info.get(key, {}).get("ref") is not None and st.status != "converged":
+            note += ("\n\nA criterion or a hand calculation uses this result. Thus the engine compares the uncertainty "
+                     "with the value itself, not with the size of its field.")
         if len(have) < len(data):
             note += f" {len(data) - len(have)} coarser mesh levels have no value for this result."
         rv = ResultValue(key=key, value=float(vals[-1]), unit=unit_of(key), uncertainty=st.uncertainty,
                          uncertainty_abs=st.absolute, status=st.status, per_level=[float(v) for v in vals],
-                         extrapolated=st.extrapolated, order=st.order, method="fe")
+                         extrapolated=st.extrapolated, order=st.order, method="fe", error_estimated=st.estimated)
         where = fine.where.get(key)
         extra = fine.info.get(key, {})
+        if st.grew and st.kind in GROWS_WITHOUT_LIMIT and _measure(key) == "peak":
+            # a peak that rose at every refinement and does not converge: singular, wherever it is (the list of
+            # re-entrant edges can miss an edge)
+            rv.status, rv.error_estimated = "singular", False
+            rv.uncertainty = rv.uncertainty_abs = rv.extrapolated = rv.order = None
+            note += ("\n\nThe peak grew at each refinement and the values do not converge. "
+                     "The engine gives it the status singular and no uncertainty.")
         if where is not None:
             rv.location, rv.near = where["location"], where["near"]
-            if where["edge"] or where["support"]:
+            if (where["edge"] or where["support"]) and rv.status != "singular":
                 rv.status = "singular" if st.grew else "not_converged"
                 rv.uncertainty = rv.uncertainty_abs = rv.extrapolated = None   # no limit, so no uncertainty of a limit
-                rv.order = None
+                rv.order, rv.error_estimated = None, False
                 why = ("a sharp re-entrant edge" if where["edge"] else "the rim of a rigid support")
                 note += (f"\n\nThe peak is at {why}, where the stress has no limit in linear theory. "
                          + ("The value grew at each refinement, so it is singular." if st.grew else
@@ -1070,6 +1092,24 @@ def _results(data: list[LevelData], keys: list[str], scls: dict, max_unc: float,
     return out, missing
 
 
+GROWS_WITHOUT_LIMIT = ("divergent", "oscillatory_divergent", "indeterminate")
+
+
+def _measure(key: str) -> str:
+    head = key.partition("@")[0]
+    return head.partition(".")[2]
+
+
+def _judged(lc: LoadCase, scls: dict) -> set[str]:
+    """The result keys that a criterion or a hand-calculation comparison of the load case uses. A worst-line
+    key (`@scls`) stands for the key of each line: the compliance stage assesses each line by itself."""
+    out = set(lc.result_keys)
+    for k in lc.result_keys:
+        if k.endswith("@scls"):
+            out |= {k[: -len("scls")] + sid for sid in scls}
+    return out
+
+
 def _moved(have: list[LevelData], key: str) -> str:
     if len(have) < 2 or key not in have[-2].where:
         return ""
@@ -1103,8 +1143,9 @@ def _aggregate(key: str, lines: dict[str, ResultValue], lost: list[str]) -> Resu
         note += f" The lines {names(lost)} have no result, so the value is the worst of the other lines only."
     n = min(len(r.per_level) for r in lines.values())
     per_level = [max(r.per_level[len(r.per_level) - n + i] for r in lines.values()) for i in range(n)]
+    estimated = bool(not lost and unc_abs is not None and all(lines[s].error_estimated for s in govern))
     return ResultValue(key=key, value=w.value, unit=w.unit, uncertainty=unc, uncertainty_abs=unc_abs, status=status,
-                       near=worst_id,
+                       near=worst_id, error_estimated=estimated,
                        per_level=per_level, extrapolated=w.extrapolated, order=w.order, method="fe", note=note)
 
 

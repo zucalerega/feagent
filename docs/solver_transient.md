@@ -10,7 +10,7 @@ adds the conventions that hold across physics and one section per capability.
 | transient heat conduction | heat, skfem | `feacore/solver/_skfem_transient.py` | done; verified (closed forms, orders, NAFEMS T3), `tests/test_transient_heat.py` |
 | modal analysis | elasticity, skfem | `feacore/solver/_skfem_modal.py` | done, verified (NAFEMS FV32 / FV41 / FV52, exact Rayleigh-Lamb, beam theory) |
 | transient dynamics | elasticity, skfem | `feacore/solver/_skfem_dynamics.py` | done, verified (exact discrete and modal solutions, order 2, energy, waves) |
-| transient incompressible flow | flow, openfoam | `feacore/solver/_foam_transient.py` | see section |
+| transient incompressible flow | flow, openfoam | `feacore/solver/_foam_transient.py` | laminar 2D / 3D done: BDF2 order 2, Taylor-Green and DFG 2D-2 registered (see section) |
 | turbulent flow (RANS) | flow, openfoam | `feacore/solver/openfoam_backend.py` | see section |
 | compressible internal flow | compressible, openfoam | `feacore/solver/_foam_compressible.py`, `_foam_internal.py` | done, verified (exact quasi-1D nozzle in three regimes, NACA 1135), `tests/test_compressible_internal.py` |
 
@@ -355,7 +355,132 @@ Case(mesh="beam.msh",
 
 ## Transient incompressible flow
 
-(section written by the capability's author)
+Module `feacore/solver/_foam_transient.py`, reached through `feacore.solver.solve(case, backend="openfoam")`
+for a physics `flow` case with `analysis.options["transient"]`; formulations `2d` and `3d`, laminar. Tests:
+`tests/test_transient_flow.py` (fast: tiny cases end to end; `-m slow`: the orders and the benchmarks).
+Benchmark problems: `taylor_green_vortex_2d` (`feacore/problems/cfd/taylor_green.py`) and
+`cylinder_channel_dfg_2d2` (`feacore/problems/cfd/cylinder_unsteady.py`).
+
+**Solver.** OpenFOAM's `pimpleFoam` on the steady backend's mesh, patches and boundary conditions (the
+helpers of `openfoam_backend.py` are called, not copied). Pressure-velocity coupling: PIMPLE with outer
+correctors, not PISO. Every step repeats the momentum predictor and `n_correctors` pressure corrections until
+the initial residuals of U and p of an outer iteration are below `outer_tol` (default 1e-6, at most
+`n_outer_correctors` = 20 iterations); the last iteration solves to `residual_tol` (1e-8, absolute). Why:
+one outer iteration (PISO) linearises the convection with the previous step's flux, which is a first-order
+error in the step whatever the time scheme. Measured on the Taylor-Green vortex (32 x 32, BDF2, steps 0.02 /
+0.01 / 0.005 s): PISO gives an observed order of 0.76 and errors of 13.9 %, 7.6 %, 3.9 % in ux at A against the exact value; three outer
+iterations give 1.56; the converged outer loop gives 1.98, with a step error of 4e-5 (0.02 %) at 0.02 s. A step that does
+not converge in `n_outer_correctors` iterations is reported (`NOT CONVERGED` in `info.warnings`,
+`info.converged = False`). `n_outer_correctors = 1` gives PISO on purpose, with a warning.
+
+Discretisation: time `backward` (BDF2; OpenFOAM starts it with one Euler step) or `euler`; convection
+`linearUpwind` for `analysis.order` 2 and `upwind` for 1 (option `convection`: also `linear`,
+`limitedLinear`); diffusion `Gauss linear corrected`; in 3D the steady backend's skew-consistent schemes.
+GAMG for p, smoothSolver for U.
+
+**Options** (`analysis.options["transient"]`): `t_end`; `dt` or `n_steps` (the fixed step); `scheme`
+`"backward"` (default) or `"euler"`; `initial` = `{"U": [...], "p": number}` (numbers or expressions in x, y,
+z; default at rest, p = 0) or `{"steady": true}` (the steady backend solves the boundary values at t = 0 on
+the same mesh and its U, p and face flux are the initial state); `output_times` / `output_every` (the kept
+states; default 11 evenly spaced, always the first and the last); `max_co` (the solver cuts its step to that
+Courant number, `adjustableRunTime`, and still lands on every multiple of `dt`: those are the steps of the
+result). Beside it in `analysis.options` or as keywords of `solve`: `n_outer_correctors` (20), `outer_tol`
+(1e-6), `n_correctors` (2), `n_non_orth_correctors` (0), `residual_tol` (1e-8), `convection`, `timeout`,
+`case_dir` / `keep_case`.
+
+**Boundary values in time** are written as OpenFOAM boundary conditions that vary in time, not by restarting
+per block of steps: a value that is the same on the whole patch (a table, or an expression in t only)
+becomes `uniformFixedValue` with a `table` (OpenFOAM interpolates it linearly, as `feacore.case.table_value`
+does, so a table is exact at every step); a value that also varies over the patch (a profile times a ramp)
+becomes `timeVaryingMappedFixedValue` with one sample per face centre in `constant/boundaryData`, sampled at
+every step (at most 20000 samples, linear in between, with an `info:` line when that limit cuts it). Both
+work in v1912 and are tested (`test_table_inlet_is_exact_at_every_step`, `test_expression_in_t_inlet`).
+
+**QoIs per step.** Every step is written (binary) and read back by Python while the solver runs, the QoIs of
+the case are evaluated in numpy with the steady backend's formulas (forces, flow rates, probes, max / min /
+mean / integral; v1912's function objects crash), and the step directory is deleted unless it is a kept
+state. `series(qoi)` is the QoI at every step for the QoIs of the case (QoIs that differ only in `time` /
+`window` share one series); `evaluate` reduces it as `QoI.time` asks (`reduce_series`). `state(t)` is the
+kept state nearest to t, a steady `OpenFOAMResult` (probe, nodal, evaluate, write_vtu) with its `time`; the
+fast per-step loader and the full loader give the same numbers (tested to 1e-9). Diagnostics per step:
+`boundary_flux` (the sum of the boundary face fluxes), `courant`, `continuity`, `outer`. A step of the DFG case (2954 cells, about 10 outer
+iterations) took 70 ms on an idle core and 130 ms on the shared machine.
+
+**Verification** (measured with OpenFOAM v1912; tolerances in the tests and why):
+
+| check | case | measured | test tolerance |
+|---|---|---|---|
+| order in time, BDF2 | Taylor-Green, 32 x 32, dt 0.02 / 0.01 / 0.005 s, ux at A | 1.98 | 2 +- 0.1 |
+| order in time, Euler | same | 0.99 | 1 +- 0.1 (50 outer correctors: Euler at Courant 0.64 needs more than 20) |
+| order in space | Taylor-Green, 16 / 32 / 64 cells, dt 0.005 s | errors 0.94 %, 0.19 %, 0.042 % (orders 2.3, 2.2) | each halving > 1.7; 3-mesh order 2 +- 0.4 (independent remeshing of the probe point) |
+| closed form | `taylor_green_vortex_2d` at h0 (16 cells) | ux_A -0.94 %, ux_A_mean -0.99 %, dp_CB -0.09 % | the registered tolerance 2 % |
+| table inlet | channel, inflow speed ramp 0 -> 1 m/s by a table | inflow exact at every step (1e-12) | 1e-12 Q |
+| expression in t | parabolic profile x minimum(t / 0.01, 1) | exact at every step (1e-12) | 1e-12 Q |
+| mass per step | sum of boundary fluxes, every step after the first | < 5e-9 Q | 1e-8 Q |
+| at rest | closed box, walls and symmetry, 10 steps | max u_mag 0 | 1e-12 |
+| to steady | channel Re 10 from rest, 0.2 s | dp, u: 1e-7; wall shear 2.5e-5 | 1e-5; wall shear 2e-4 (below) |
+| steady initial | `initial = {"steady": true}` | step 0 = the steady solution (1e-9), then within 1e-4 | 2e-4 |
+| 3D | hex duct from rest, 10 steps | inflow exact, outflow = inflow after the first step | 1e-7 |
+
+The steady state of pimpleFoam is not simpleFoam's to round-off: its face flux (the Rhie-Chow interpolation
+with the time term in the coefficient) depends on the step, so wall shear and peak velocity differ by about
+1e-4 (8.8e-5, 7.8e-5, 3.0e-5 at steps 4, 2, 1 ms on the test channel), far below the discretisation error.
+
+**Slip walls.** The Taylor-Green box uses `symmetry` edges. With `slip` (OpenFOAM's `slip` on a plain patch,
+as the steady backend writes it) the decay is too fast by 5.6 % of the viscous rate at 16 cells and 2.9 % at
+32: first order in h, and independent of the convection scheme. The symmetry patch converges with order
+2. The probable cause is the explicit viscous term `div(nuEff*dev2(T(grad(U))))`, whose gradient on a plain
+patch is extrapolated where a symmetry patch mirrors it; this affects the steady backend's `slip` too and is
+reported to its owner, not changed here.
+
+**DFG 2D-2** (Schaefer & Turek 1996, Re = 100; the 2D-1 geometry and mesh with U_m = 1.5 m/s; impulsive start
+from rest; the QoIs reduced over 6 <= t <= 8 s, about 6 periods; the flow is periodic from t = 5 s: the
+maxima in [5, 6], [6, 7], [7, 8] s agree to 1e-4). Reference: the paper's intervals c_D,max 3.22-3.24,
+c_L,max 0.99-1.01, St 0.295-0.305 (midpoints registered; FEATFLOW's higher-accuracy values lie inside them
+and were not checked from this machine).
+
+| mesh | cells | step | Courant max | c_D,max | c_L,max | St | wall time (shared machine) |
+|---|---|---|---|---|---|---|---|
+| h0 | 2954 | 2 ms | 0.95 | 3.2392 | 1.0261 | 0.2872 | 8.5 min |
+| h0 | 2954 | 1 ms | 0.48 | 3.2415 | 1.0326 | 0.2874 | 7.2 min |
+| h0 / 1.5 | 6702 | 1.25 ms | 0.90 | 3.2399 | 1.0310 | 0.2951 | 22 min |
+| h0 / 2 | 11816 | 1 ms | 0.97 | 3.2379 | 1.0232 | 0.2980 | 66 min |
+| reference interval | | | | 3.22-3.24 | 0.99-1.01 | 0.295-0.305 | |
+
+The step matters little (halving it on h0 moves c_D,max by 0.07 %, c_L,max by 0.6 %, St by 0.08 %). c_D,max is
+inside the interval on every mesh. St converges with order 2 in h (St = St_inf - C / k^2 fits h0 and h0/2 and
+predicts h0/1.5 to 1e-4) towards 0.3016, inside the interval from h0/2 on. c_L,max stays 2 to 3 % high without
+a clear trend over these meshes, so the reference interval is not reached here; it needs a finer mesh than
+h0/2 (likely in the near wake, which the reference mesh grades coarse towards the outlet) and was not
+affordable on this machine (h0/4: about 47000 cells and 16000 steps, some 8 hours on a shared core). The
+registered case is h0 at 2 ms with tolerances 2 % (drag), 5 % (lift), 5 % (frequency: h0 is 4.3 % low), set
+from these numbers. On h0/2 at Courant 0.97, 180 of 8000 steps did not converge the outer loop to 1e-6 in 20
+iterations (reported in `info.warnings`); at Courant 0.5 every step converges.
+
+**Limits.** Laminar only (`turbulence` other than laminar raises NotImplementedError until the RANS models
+are validated for steady flow); fixed meshes (no moving or deforming meshes); a 2D case sheds two-dimensional
+vortices, which a real cylinder above Re of about 190 does not; the Courant number: the outer loop converges
+to about Co 1 with the defaults (20 iterations), above that raise `n_outer_correctors`, cut the step or use
+`max_co`; every step is written to disk and read back, affordable for meshes of some 10^4 cells (the step
+directories are deleted as the run goes); a point QoI per step builds the cell-to-point interpolator once.
+
+**Example.**
+
+```python
+from feacore.case import BC, Analysis, Case, Material, QoI, Region
+case = Case(mesh="channel.msh",
+            analysis=Analysis(physics="flow", formulation="2d", order=2, thickness=0.01,
+                              options={"transient": {"t_end": 0.1, "dt": 0.002, "scheme": "backward",
+                                                     "output_every": 10}}),
+            materials={"water": Material(rho=1.0, mu=0.01)},
+            bcs=[BC("velocity_inlet", group="inlet", value={"table": [[0, 0], [0.05, 1.0]]}),
+                 BC("pressure_outlet", group="outlet", value=0.0), BC("wall", group="walls")],
+            regions=[Region(group="fluid", material="water")],
+            qois=[QoI("drag_max", "force", group="walls", component=0, time="max"),
+                  QoI("q_out", "flow_rate", group="outlet")])
+res = feacore.solver.solve(case, backend="openfoam")
+res.times, res.series(case.qois[1]), res.evaluate_all(), res.state(0.05).probe("ux", [[0.3, 0.05]])
+```
 
 ## Turbulent flow (RANS)
 
